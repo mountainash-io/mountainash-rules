@@ -1,0 +1,48 @@
+# environment.yaml
+name: mash_utils_rules_p312
+dependencies:
+  - python>=3.12.0
+  - ipython
+  - pip
+  - pip:
+    - ipykernel
+    - pytest
+    - pytest_check
+    - radon
+    - coverage
+    - ruff
+    - hatch
+    # - ipykernel
+    # - pathlib
+    - pandas
+    - polars
+    - ibis-framework[polars,pandas]
+    # - pydantic>=2
+    # - lxml
+    # - simplejson
+    # - jsonschema
+    # - autopep8
+    - pydantic-settings
+    - trinary
+    # - universal_pathlib
+    # - ruff
+    # - faker
+    # - duckdb
+    # - pysqlite3
+    # - boltons
+    # - rstr
+    # - flake8
+    # - flake8-bugbear
+    # - scipy
+    # - sphinx
+    # - sphinx-rtd-theme
+    # - pytest_check
+    #This package
+    # - -e .
+    #Other Mountain Ash Packages
+    # - -e ../mountainash-constants
+    - -e ../mountainash-settings
+    #- -e ../mountainash-auth-settings
+    #- -e ../mountainash-utils
+    - -e ../mountainash-data
+    # - -e ../mountainash-utils-dataframes

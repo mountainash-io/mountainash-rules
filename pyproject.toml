@@ -1,0 +1,181 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "mountainash_utils_rules"
+dynamic = ["version"]
+description = 'Mountain Ash - Utils - Rules'
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT"
+keywords = []
+authors = [
+  { name = "Nathaniel Ramm", email = "nathaniel.ramm@discretedatascience.com" },
+]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Programming Language :: Python",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: Implementation :: CPython",
+  "Programming Language :: Python :: Implementation :: PyPy",
+]
+dependencies = [
+  "pandas",
+  "polars",
+  "ibis-framework[pandas,polars]",
+  "trinary"
+
+]
+
+
+[project.urls]
+Documentation = "https://github.com/mountainash-io/mountainash-utils-rules#readme"
+Issues = "https://github.com/mountainash-io/mountainash-utils-rules/issues"
+Source = "https://github.com/mountainash-io/mountainash-utils-rules"
+
+[tool.hatch.metadata]
+allow-direct-references = true
+
+
+[tool.hatch.version]
+path = "src/mountainash_utils_rules/__version__.py"
+
+
+# Pytest and Test Coverage - Githubb
+[[tool.hatch.envs.test_github.matrix]]
+python = ["3.12","3.11", "3.10" ] # "3.8", "3.9","3.9",
+
+[tool.hatch.envs.test_github]
+dependencies = [
+  "coverage[toml]>=6.5",
+  "pytest",
+  "pytest_check",
+]
+[tool.hatch.envs.test_github.scripts]
+test = "pytest"
+test-cov = "coverage run -m pytest"
+test-rules = "coverage rules"
+cov-report = [
+  "- coverage combine",
+  "coverage report",
+]
+cov = [
+  "test-cov",
+  "cov-report",
+  "test-rules",
+]
+cov-html = [
+  "coverage html",
+]
+
+# Pytest and Test Coverage
+[[tool.hatch.envs.test.matrix]]
+python = ["3.11", "3.12",  "3.10" ] # "3.8", "3.9","3.9",
+
+[tool.hatch.envs.test]
+dependencies = [
+  "coverage[toml]>=6.5",
+  "pytest",
+  "pytest_check",
+]
+[tool.hatch.envs.test.scripts]
+test = "pytest"
+test-cov = "coverage run -m pytest"
+test-rules = "coverage rules"
+cov-report = [
+  "- coverage combine",
+  "coverage report",
+]
+cov = [
+  "test-cov",
+  "cov-report",
+  "test-rules",
+]
+cov-html = [
+  "coverage html",
+]
+
+
+# Ruff Linting Checks
+[tool.hatch.envs.ruff]
+dependencies = [
+  "ruff"
+]
+[tool.hatch.envs.ruff.scripts]
+check = "ruff check ./src"
+
+# Radon Complexity Checks
+[tool.hatch.envs.radon]
+dependencies = [
+  "radon",
+]
+[tool.hatch.envs.radon.scripts]
+radon-cc = "radon cc . -nd"
+radon-mi = "radon mi . -nd"
+
+# Mypy Type checks
+[tool.hatch.envs.types]
+dependencies = [
+  "mypy>=1.0.0",
+]
+[tool.hatch.envs.types.scripts]
+check = "mypy --install-types --non-interactive {args:src/mountainash_utils_rules tests}"
+
+# Downstream package testing
+# [tool.hatch.envs.test_downstream]
+# dependencies = [  
+#   "pytest",
+#   "pytest_check",
+#   "mountainash_auth_utils_rules @ {root:uri}/../mountainash-auth-utils-rules",
+#   "mountainash_acrds_utils_rules @ {root:uri}/../mountainash-acrds-utils-rules",
+#   "mountainash_constants @ {root:uri}/../mountainash-constants",
+#   "mountainash_acrds_constants @ {root:uri}/../mountainash-acrds-constants",
+#   "mountainash_utils_rules @ {root:uri}/../mountainash-utils-rules"
+#   ]
+
+# [tool.hatch.envs.test_downstream.scripts]
+# test = [#"pytest {args:tests}", 
+#         "pytest ../mountainash-auth-utils-rules"
+# ]
+
+# # Downstream ACRDS package testing
+# [tool.hatch.envs.test_downstream_acrds]
+# dependencies = [  
+#   "pytest",
+#   "pytest_check",
+#   "mountainash_constants @ {root:uri}/../mountainash-constants",
+#   "mountainash_acrds_utils_rules @ {root:uri}/../mountainash-acrds-utils-rules",
+#   "mountainash_acrds_constants @ {root:uri}/../mountainash-acrds-constants",
+#   "mountainash_utils_rules @ {root:uri}/../mountainash-utils-rules",
+#   "mountainash_utils @ {root:uri}/../mountainash-utils"
+#   ]
+
+# [tool.hatch.envs.test_downstream_acrds.scripts]
+# test = ["pytest ../mountainash-acrds-utils-rules"]
+
+
+# Coverage Parameters
+[tool.coverage.run]
+source_pkgs = ["mountainash_utils_rules", "tests"]
+branch = true
+parallel = true
+omit = [
+  "src/mountainash_utils_rules/__version__.py",
+]
+
+[tool.coverage.paths]
+mountainash_utils_rules = ["src/mountainash_utils_rules", "*/mountainash-utils-rules/src/mountainash_utils_rules"]
+tests = ["tests", "*/mountainash-utils-rules/tests"]
+
+[tool.coverage.report]
+exclude_lines = [
+  "no cov",
+  "if __name__ == .__main__:",
+  "if TYPE_CHECKING:",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/mountainash_utils_rules"]

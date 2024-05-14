@@ -1,0 +1,28 @@
+name: Ruff Linting Checks
+
+on: 
+  push:
+    paths:
+      - 'src/mountainash_utils_files/**'    
+  workflow_dispatch:
+
+jobs:
+
+  linting-checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.12"
+
+      - name: Install Hatch
+        run: pip install hatch
+
+      - name: Create virtual environment
+        run: hatch env create ruff
+
+      - name: Linting checks with ruff
+        run: hatch run ruff:check
