@@ -3,7 +3,7 @@ name: Radon Complexity Checks
 on: 
   push:
     paths:
-      - 'src/mountainash_utils_files/**'    
+      - 'src/mountainash_utils_rules/**'    
   workflow_dispatch:
 
 jobs:

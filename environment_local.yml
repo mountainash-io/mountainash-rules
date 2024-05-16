@@ -24,7 +24,7 @@ dependencies:
     # - autopep8
     - pydantic-settings
     - trinary
-    # - universal_pathlib
+    - universal_pathlib
     # - ruff
     # - faker
     # - duckdb
@@ -38,11 +38,13 @@ dependencies:
     # - sphinx-rtd-theme
     # - pytest_check
     #This package
-    # - -e .
+    - -e .
     #Other Mountain Ash Packages
-    # - -e ../mountainash-constants
+    - -e ../mountainash-constants
     - -e ../mountainash-settings
-    #- -e ../mountainash-auth-settings
-    #- -e ../mountainash-utils
+    - -e ../mountainash-auth-settings
     - -e ../mountainash-data
-    # - -e ../mountainash-utils-dataframes
+    - -e ../mountainash-utils-ssh
+    - -e ../mountainash-utils-files
+    - -e ../mountainash-utils-dataclasses
+

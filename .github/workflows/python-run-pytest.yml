@@ -3,7 +3,7 @@ name: Pytest Runner
 on: 
   push:
     paths:
-      - 'src/mountainash_utils_files/**'    
+      - 'src/mountainash_utils_rules/**'    
   workflow_dispatch:
 
 jobs:
@@ -23,26 +23,6 @@ jobs:
         uses: actions/setup-python@v4
         with:
           python-version: ${{ matrix.python-version }}
-          
-      - name: Checkout private repositories - mountainash-settings
-        uses: actions/checkout@v4
-        with:          
-          repository: mountainash-io/mountainash-settings
-          ref: main
-          token: ${{ secrets.CLONE_PRIVATE_REPOS_TOKEN }}
-          path: temp/mountainash-settings
-          fetch-depth: 1     
-                  
-
-      - name: Checkout private repositories - mountainash-data
-        uses: actions/checkout@v4
-        with:
-          repository: mountainash-io/mountainash-data
-          ref: main
-          token: ${{ secrets.CLONE_PRIVATE_REPOS_TOKEN }}
-          path: temp/mountainash-data   
-          fetch-depth: 1
-
 
       - name: Install Hatch
         run: pip install hatch
