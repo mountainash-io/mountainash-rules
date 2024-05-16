@@ -115,15 +115,15 @@ dependencies = [
 [tool.hatch.envs.test.scripts]
 test = "pytest"
 test-cov = "coverage run -m pytest"
-test-rules = "coverage report"
+test-rules = "coverage xml"
 cov-report = [
   "- coverage combine",
-  "coverage xml",
+  "coverage report",
 ]
 cov = [
   "test-cov",
   "cov-report",
-  "test-xml",
+  "test-xml", 
 ]
 cov-html = [
   "coverage html",
