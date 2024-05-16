@@ -73,7 +73,7 @@ dependencies = [
 [tool.hatch.envs.test_github.scripts]
 test = "pytest"
 test-cov = "coverage run -m pytest"
-test-rules = "coverage rules"
+test-rules = "coverage xml"
 cov-report = [
   "- coverage combine",
   "coverage report",
@@ -81,7 +81,7 @@ cov-report = [
 cov = [
   "test-cov",
   "cov-report",
-  "test-rules",
+  "test-xml",
 ]
 cov-html = [
   "coverage html",
