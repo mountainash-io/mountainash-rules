@@ -102,7 +102,7 @@ dependencies = [
   "ibis-framework[pandas,polars]",
   # "trinary",
   # "pydantic-settings",
-  # "universal-pathlib",
+  # "universal-pathlib", 
   # "mountainash_data @ {root:uri}/../mountainash-data",
   # "mountainash_settings @ {root:uri}/../mountainash-settings",
   # "mountainash_constants @ {root:uri}/../mountainash-constants",
