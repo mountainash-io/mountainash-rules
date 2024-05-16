@@ -1,15 +1,10 @@
 
-from typing import List, Dict,  Set, Any, Optional
-from upath import UPath
+from typing import List, Any,Type
 from dataclasses import dataclass
 
-import polars as pl
 import ibis
-import ibis.expr.types as ir
-from typing import Dict, Any, Type
 
 from mountainash_data import BaseDataFrame
-import trinary 
 
 UNKNOWN = "<NA>"
 NOT_SET = object()
@@ -124,6 +119,6 @@ def apply_context_rules_engine_ibis(CONTEXT: Type[dataclass],
     if keep_all:
         return rules
     else:
-        return rules.filter(ibis._.keep == True)
+        return rules.filter(ibis._.keep)
 
 
