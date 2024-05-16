@@ -24,6 +24,27 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
+
+      # - name: Checkout private repositories - mountainash-constants
+      #   uses: actions/checkout@v4
+      #   with:
+      #     repository: mountainash-io/mountainash-constants
+      #     ref: main
+      #     token: ${{ secrets.CLONE_PRIVATE_REPOS_TOKEN }}
+      #     path: temp/mountainash-constants        
+      #     fetch-depth: 1
+  
+      # - name: Checkout private repositories - mountainash-settings
+      #   uses: actions/checkout@v4
+      #   with:
+      #     repository: mountainash-io/mountainash-settings
+      #     ref: main
+      #     token: ${{ secrets.CLONE_PRIVATE_REPOS_TOKEN }}
+      #     path: temp/mountainash-settings        
+      #     fetch-depth: 1
+  
+
+
       - name: Install Hatch
         run: pip install hatch
 

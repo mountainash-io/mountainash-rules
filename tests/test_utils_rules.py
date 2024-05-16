@@ -2,12 +2,13 @@ import pytest
 from pytest_check import check 
 
 import polars as pl
+import ibis
 import ibis.expr.types as ir
 from mountainash_utils_rules import apply_context_rules_engine_ibis  # Replace `your_module` with the actual module name
 from dataclasses import dataclass
 from typing import Optional
 
-from mountainash_data import BaseDataFrame, DataFrameUtils, IbisDataFrame
+# from mountainash_data import BaseDataFrame, DataFrameUtils, IbisDataFrame
 
 UNKNOWN = "<NA>"
 
@@ -28,7 +29,7 @@ rules = pl.DataFrame({  "rule_name": ["rule_1", "rule_2", "rule_3"],
                         "DIM_2": ["1", "2", "3"],
                         "DIM_3": ["X", UNKNOWN, UNKNOWN]
                     })
-df_rules = IbisDataFrame(rules)
+df_rules = ibis.memtable(data=rules, columns = rules.columns)
 
 dimensions = ["DIM_1", "DIM_2", "DIM_3"]
 
@@ -47,18 +48,19 @@ def test_single_dimension(dimension, count_matching):
     print(rules)
 
     with check:
-        assert rules.count() == count_matching
+        assert rules.count().execute() == count_matching
 
 
 
 
 def test_apply_context_rules_engine_ibis_no_rules_specified():
     empty_rules = pl.DataFrame({})
-    df_empty_rules = IbisDataFrame(empty_rules)
+    df_empty_rules = ibis.memtable(data=empty_rules, columns = empty_rules.columns)   
+
 
     with pytest.raises(ValueError):
         apply_context_rules_engine_ibis(CONTEXT=CONTEXT, rules=df_empty_rules, dimensions=dimensions)
 
 def test_apply_context_rules_engine_ibis_result_type():
     result = apply_context_rules_engine_ibis(CONTEXT=CONTEXT, rules=df_rules, dimensions=dimensions)
-    assert isinstance(result, BaseDataFrame)
+    assert isinstance(result, ir.Table)

@@ -3,8 +3,10 @@ from typing import List, Any,Type
 from dataclasses import dataclass
 
 import ibis
+import ibis.expr.types as ir
 
-from mountainash_data import BaseDataFrame
+ibis.set_backend(backend="polars")
+# from mountainash_data import BaseDataFrame
 
 UNKNOWN = "<NA>"
 NOT_SET = object()
@@ -18,14 +20,12 @@ PRIME_UNKNOWN = 5
 
 
 def apply_context_rules_engine_ibis(CONTEXT: Type[dataclass], 
-                                    rules: BaseDataFrame,  
+                                    rules: ir.Table,  
                                     dimensions: List[Any],
-                                    keep_all: bool=True) -> BaseDataFrame:
-    
-    print(CONTEXT.DIM_1)
-        
+                                    keep_all: bool=True) -> ir.Table:
+            
     # Validate Rules
-    if rules.count() == 0:
+    if rules.count().execute() == 0:
         raise ValueError("No rules specified.")
     
     # Initialization - add flags and counters to the rules
@@ -42,7 +42,7 @@ def apply_context_rules_engine_ibis(CONTEXT: Type[dataclass],
     
     #identify dimensions in Context
     context_dimensions = [dim for dim in dimensions if getattr(CONTEXT, dim, NOT_SET) is not NOT_SET]
-    rule_dimensions = [dim for dim in dimensions if dim in rules.get_column_names()]
+    rule_dimensions = [dim for dim in dimensions if dim in rules.columns]
 
     #find the common elements in the context and the rules
     active_dimensions = list(set(context_dimensions).union(set(rule_dimensions)))
@@ -71,13 +71,13 @@ def apply_context_rules_engine_ibis(CONTEXT: Type[dataclass],
         # 1. Rule dimension is UNKNOWN - soft match
         # 2. Context dimension is UNKNOWN - soft match
         # 3. Rule dimension matches context dimension
-        filter1 = ibis.ifelse(condition=rules.ibis_df[dimension] == ibis.literal(UNKNOWN), 
+        filter1 = ibis.ifelse(condition=rules[dimension] == ibis.literal(UNKNOWN), 
                               true_expr=ibis.literal(PRIME_TRUE), 
                               false_expr=ibis.literal(PRIME_UNKNOWN) )
         filter2 = ibis.ifelse(condition=ibis.literal(context_value == UNKNOWN), 
                               true_expr=ibis.literal(PRIME_TRUE), 
                               false_expr=ibis.literal(PRIME_UNKNOWN) )
-        filter3 = ibis.ifelse(condition=rules.ibis_df[dimension] == ibis.literal(context_value), 
+        filter3 = ibis.ifelse(condition=rules[dimension] == ibis.literal(context_value), 
                               true_expr=ibis.literal(PRIME_TRUE), 
                               false_expr=ibis.literal(PRIME_FALSE) )
         
