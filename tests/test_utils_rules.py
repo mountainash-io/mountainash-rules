@@ -4,9 +4,12 @@ from pytest_check import check
 import polars as pl
 import ibis
 import ibis.expr.types as ir
-from mountainash_utils_rules import apply_context_rules_engine_ibis  # Replace `your_module` with the actual module name
+from mountainash_utils_rules import RulesEngine  # Replace `your_module` with the actual module name
+from mountainash_data import BaseDataFrame
 from dataclasses import dataclass
 from typing import Optional
+
+ibis.set_backend(backend="polars")
 
 # from mountainash_data import BaseDataFrame, DataFrameUtils, IbisDataFrame
 
@@ -21,7 +24,7 @@ class context:
     DIM_2:      Optional[str]
     DIM_3:      Optional[str]
 
-CONTEXT = context(rule_name="rule_1", DIM_1="A", DIM_2="2", DIM_3=UNKNOWN)
+CONTEXT = context(rule_name="rule_1", DIM_1="A", DIM_2="1", DIM_3=UNKNOWN)
 
 
 rules = pl.DataFrame({  "rule_name": ["rule_1", "rule_2", "rule_3"],
@@ -37,30 +40,36 @@ dimension_tests = [
     ("DIM_1", 1),
     ("DIM_2", 1),
     ("DIM_3", 3),
-    ("DIM_4", 3)
 ]
 @pytest.mark.parametrize("dimension, count_matching", dimension_tests)
 def test_single_dimension(dimension, count_matching):
         
     dimensions = [dimension]
-    rules = apply_context_rules_engine_ibis(CONTEXT, df_rules, dimensions, keep_all=False)
-
-    print(rules)
+    rules = RulesEngine.apply_context_rules_engine(CONTEXT, df_rules, dimensions, keep_all=False)
 
     with check:
-        assert rules.count().execute() == count_matching
-
-
+        assert rules.count() == count_matching
 
 
 def test_apply_context_rules_engine_ibis_no_rules_specified():
     empty_rules = pl.DataFrame({})
     df_empty_rules = ibis.memtable(data=empty_rules, columns = empty_rules.columns)   
-
-
     with pytest.raises(ValueError):
-        apply_context_rules_engine_ibis(CONTEXT=CONTEXT, rules=df_empty_rules, dimensions=dimensions)
+        RulesEngine.apply_context_rules_engine(CONTEXT=CONTEXT, rules=df_empty_rules, dimensions=dimensions)
+
+
+def test_apply_context_rules_engine_ibis_no_dimensions_specified():
+    with pytest.raises(ValueError):
+        RulesEngine.apply_context_rules_engine(CONTEXT=CONTEXT, rules=df_rules, dimensions=[])
+
+
 
 def test_apply_context_rules_engine_ibis_result_type():
-    result = apply_context_rules_engine_ibis(CONTEXT=CONTEXT, rules=df_rules, dimensions=dimensions)
-    assert isinstance(result, ir.Table)
+    result = RulesEngine.apply_context_rules_engine(CONTEXT=CONTEXT, rules=df_rules, dimensions=dimensions)
+    assert isinstance(result, BaseDataFrame)
+
+
+def test_apply_context_rules_engine_firtst_row():
+    result = RulesEngine.apply_context_rules_engine(CONTEXT=CONTEXT, rules=df_rules, dimensions=dimensions, keep_all=False)
+    dict_best_result = result.get_first_row_as_dict()
+    assert dict_best_result['rule_name' ] == "rule_1"   

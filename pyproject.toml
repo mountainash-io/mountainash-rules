@@ -44,6 +44,8 @@ allow-direct-references = true
 [tool.hatch.version]
 path = "src/mountainash_utils_rules/__version__.py"
 
+[tool.hatch.envs.default]
+installer = "uv"
 
 # Pytest and Test Coverage - Githubb
 [[tool.hatch.envs.test_github.matrix]]
@@ -57,17 +59,17 @@ dependencies = [
 
   "pandas",
   "polars",
-  "ibis-framework[pandas,polars]",
+  "ibis-framework[pandas,polars,sqlite]",
   # "trinary",
   # "pydantic-settings",
   # "universal-pathlib",
-  # "mountainash_data @ {root:uri}/temp/mountainash-data",
-  # "mountainash_settings @ {root:uri}/temp/mountainash-settings",
-  # "mountainash_constants @ {root:uri}/temp/mountainash-constants",
+  "mountainash_data @ {root:uri}/temp/mountainash-data",
+  "mountainash_settings @ {root:uri}/temp/mountainash-settings",
+  "mountainash_constants @ {root:uri}/temp/mountainash-constants",
   # "mountainash_auth_settings @ {root:uri}/temp/mountainash-auth-settings",
   # "mountainash_utils_ssh @ {root:uri}/temp/mountainash-utils-ssh",
   # "mountainash_utils_files @ {root:uri}/temp/mountainash-utils-files",
-  # "mountainash_utils_dataclasses @ {root:uri}/temp/mountainash-utils-dataclasses",
+  "mountainash_utils_dataclasses @ {root:uri}/temp/mountainash-utils-dataclasses",
 
 ]
 [tool.hatch.envs.test_github.scripts]
@@ -99,17 +101,17 @@ dependencies = [
 
   "pandas",
   "polars",
-  "ibis-framework[pandas,polars]",
+  "ibis-framework[pandas,polars,sqlite]",
   # "trinary",
   # "pydantic-settings",
   # "universal-pathlib", 
-  # "mountainash_data @ {root:uri}/../mountainash-data",
-  # "mountainash_settings @ {root:uri}/../mountainash-settings",
-  # "mountainash_constants @ {root:uri}/../mountainash-constants",
-  # "mountainash_auth_settings @ {root:uri}/../mountainash-auth-settings",
-  # "mountainash_utils_ssh @ {root:uri}/../mountainash-utils-ssh",
+  "mountainash_data @ {root:uri}/../mountainash-data",
+  "mountainash_settings @ {root:uri}/../mountainash-settings",
+  "mountainash_constants @ {root:uri}/../mountainash-constants",
+  "mountainash_auth_settings @ {root:uri}/../mountainash-auth-settings",
+  "mountainash_utils_ssh @ {root:uri}/../mountainash-utils-ssh",
   # "mountainash_utils_files @ {root:uri}/../mountainash-utils-files",
-  # "mountainash_utils_dataclasses @ {root:uri}/../mountainash-utils-dataclasses",
+  "mountainash_utils_dataclasses @ {root:uri}/../mountainash-utils-dataclasses",
 
 ]
 [tool.hatch.envs.test.scripts]

@@ -16,7 +16,7 @@ dependencies:
     # - pathlib
     - pandas
     - polars
-    - ibis-framework[polars,pandas]
+    - ibis-framework[polars,pandas,sqlite]
     # - pydantic>=2
     # - lxml
     # - simplejson
@@ -40,10 +40,10 @@ dependencies:
     #This package
     - -e .
     #Other Mountain Ash Packages
-    # - -e ../mountainash-constants
+    - -e ../mountainash-constants
     # - -e ../mountainash-settings
     # - -e ../mountainash-auth-settings
-    # - -e ../mountainash-data
+    - -e ../mountainash-data
     # - -e ../mountainash-utils-ssh
     # - -e ../mountainash-utils-files
     # - -e ../mountainash-utils-dataclasses
