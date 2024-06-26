@@ -16,7 +16,7 @@
       }
     }
   },
-  "postCreateCommand": "pip install hatch && bash .devcontainer/clone_repos.sh && hatch env create",
+  "postCreateCommand": "pip install hatch && pip install uv && bash .devcontainer/clone_repos.sh && hatch env create",
   "remoteUser": "vscode",
   "mounts": [
     "source=${localEnv:HOME}${localEnv:USERPROFILE}/.ssh,target=/home/vscode/.ssh,type=bind,consistency=cached"
