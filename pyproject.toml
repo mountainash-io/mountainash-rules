@@ -23,9 +23,9 @@ classifiers = [
   "Programming Language :: Python :: Implementation :: PyPy",
 ]
 dependencies = [
-  "pandas",
-  "polars",
-  "ibis-framework[pandas,polars]",
+  "pandas==2.2.2",
+  "polars==0.20.19",
+  "ibis-framework[polars,pandas,sqlite] >= 9.0.0",
 ]
 
 

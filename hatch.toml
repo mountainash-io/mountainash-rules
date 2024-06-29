@@ -35,8 +35,8 @@ python = ["3.12","3.11", "3.10" ] # "3.8", "3.9","3.9",
 installer = "uv"
 dependencies = [
   "coverage[toml]>=6.5",
-  "pytest",
-  "pytest_check",
+  "pytest==8.1.1",
+  "pytest-check==2.3.1",
 
   "mountainash_auth_settings @  {root:uri}/temp/mountainash-auth-settings",
   "mountainash_constants @      {root:uri}/temp/mountainash-constants",
@@ -75,8 +75,8 @@ python = ["3.11", "3.12",  "3.10" ] # "3.8", "3.9","3.9",
 installer = "uv"
 dependencies = [
   "coverage[toml]>=6.5",
-  "pytest",
-  "pytest_check",
+  "pytest==8.1.1",
+  "pytest-check==2.3.1",
   
   "mountainash_auth_settings @      {root:uri}/../mountainash-auth-settings",
   "mountainash_constants @          {root:uri}/../mountainash-constants",
@@ -112,7 +112,7 @@ cov-html = [
 [tool.hatch.envs.ruff]
 installer = "uv"
 dependencies = [
-  "ruff"
+  "ruff==0.3.7"
 ]
 [tool.hatch.envs.ruff.scripts]
 check = "ruff check ./src"
@@ -124,7 +124,7 @@ check = "ruff check ./src"
 [envs.radon]
 installer = "uv"
 dependencies = [
-  "radon",
+  "radon==6.0.1",
 ]
 [envs.radon.scripts]
 radon-cc = "radon cc . -nd"
@@ -137,7 +137,7 @@ radon-mi = "radon mi . -nd"
 [envs.mypy]
 installer = "uv"
 dependencies = [
-  "mypy>=1.0.0",
+  "mypy==1.10.1",
 ]
 [envs.mypy.scripts]
 check = "mypy --install-types --non-interactive {args:src/mountainash_utils_rules tests}"
