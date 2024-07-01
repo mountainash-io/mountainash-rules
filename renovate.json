@@ -7,12 +7,7 @@
       "matchManagers": ["pep621"],
       "matchFileNames": ["pyproject.toml", "hatch.toml"],
       "automerge": true,
-      "schedule": ["after 5pm on Friday"],
-      "prCreation": "immediate",
-      "prTitle": "Update Python dependencies",
-      "prBody": "This PR updates the Python dependencies managed in pyproject.toml and hatch.toml.",
-      "prBranchName": "renovate/python-deps",
-      "prAssignees": ["@discreteds"]
+      "schedule": ["after 5pm on Friday"]
     }
   ]
 }
