@@ -1,17 +1,17 @@
 
-[tool.hatch.metadata]
+[metadata]
 allow-direct-references = true
 
-[tool.hatch.version]
+[version]
 path = "src/mountainash_utils_rules/__version__.py"
 
-[tool.hatch.build.targets.wheel]
+[build.targets.wheel]
 packages = ["src/mountainash_utils_rules"]
 
 #================
 # Env: default
 #================
-[tool.hatch.envs.default]
+[envs.default]
 installer = "uv"
 dependencies = [
   "mountainash_auth_settings @  {root:uri}/../mountainash-auth-settings",
@@ -28,10 +28,10 @@ dependencies = [
 #================
 # Env: test_github
 #================
-[[tool.hatch.envs.test_github.matrix]]
+[[envs.test_github.matrix]]
 python = ["3.12","3.11", "3.10" ] # "3.8", "3.9","3.9",
 
-[tool.hatch.envs.test_github]
+[envs.test_github]
 installer = "uv"
 dependencies = [
   "coverage[toml]>=6.5",
@@ -48,7 +48,7 @@ dependencies = [
   "mountainash_utils_ssh @          {root:uri}/temp/mountainash-utils-ssh",
 
 ]
-[tool.hatch.envs.test_github.scripts]
+[envs.test_github.scripts]
 test = "pytest"
 test-cov = "coverage run -m pytest"
 test-xml = "coverage xml"
@@ -68,10 +68,10 @@ cov-html = [
 #================
 # Env: test
 #================
-[[tool.hatch.envs.test.matrix]]
+[[envs.test.matrix]]
 python = ["3.11", "3.12",  "3.10" ] # "3.8", "3.9","3.9",
 
-[tool.hatch.envs.test]
+[envs.test]
 installer = "uv"
 dependencies = [
   "coverage[toml]>=6.5",
@@ -88,7 +88,7 @@ dependencies = [
   "mountainash_utils_ssh @          {root:uri}/../mountainash-utils-ssh",
 ]
 
-[tool.hatch.envs.test.scripts]
+[envs.test.scripts]
 test = "pytest"
 test-cov = "coverage run -m pytest"
 test-xml = "coverage xml"
@@ -109,12 +109,12 @@ cov-html = [
 #================
 # Env: ruff
 #================
-[tool.hatch.envs.ruff]
+[envs.ruff]
 installer = "uv"
 dependencies = [
   "ruff==0.3.7"
 ]
-[tool.hatch.envs.ruff.scripts]
+[envs.ruff.scripts]
 check = "ruff check ./src"
 
 #================
@@ -143,7 +143,7 @@ dependencies = [
 check = "mypy --install-types --non-interactive {args:src/mountainash_utils_rules tests}"
 
 # Downstream package testing
-# [tool.hatch.envs.test_downstream]
+# [envs.test_downstream]
 # dependencies = [  
 #   "pytest",
 #   "pytest_check",
@@ -154,13 +154,13 @@ check = "mypy --install-types --non-interactive {args:src/mountainash_utils_rule
 #   "mountainash_utils_rules @ {root:uri}/../mountainash-utils-rules"
 #   ]
 
-# [tool.hatch.envs.test_downstream.scripts]
+# [envs.test_downstream.scripts]
 # test = [#"pytest {args:tests}", 
 #         "pytest ../mountainash-auth-utils-rules"
 # ]
 
 # # Downstream ACRDS package testing
-# [tool.hatch.envs.test_downstream_acrds]
+# [envs.test_downstream_acrds]
 # dependencies = [  
 #   "pytest",
 #   "pytest_check",
@@ -171,7 +171,7 @@ check = "mypy --install-types --non-interactive {args:src/mountainash_utils_rule
 #   "mountainash_utils @ {root:uri}/../mountainash-utils"
 #   ]
 
-# [tool.hatch.envs.test_downstream_acrds.scripts]
+# [envs.test_downstream_acrds.scripts]
 # test = ["pytest ../mountainash-acrds-utils-rules"]
 
 
