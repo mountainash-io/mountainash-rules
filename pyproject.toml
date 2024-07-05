@@ -33,3 +33,26 @@ dependencies = [
 Documentation = "https://github.com/mountainash-io/mountainash-utils-rules#readme"
 Issues = "https://github.com/mountainash-io/mountainash-utils-rules/issues"
 Source = "https://github.com/mountainash-io/mountainash-utils-rules"
+
+#================
+# Tool: Coverage
+#================
+[tool.coverage.run]
+source_pkgs = ["mountainash_utils_rules", "tests"]
+branch = true
+parallel = true
+omit = [
+  "src/mountainash_utils_rules/__version__.py",
+]
+
+[tool.coverage.paths]
+mountainash_utils_rules = ["src/mountainash_utils_rules", "*/mountainash-utils-rules/src/mountainash_utils_rules"]
+tests = ["tests", "*/mountainash-utils-rules/tests"]
+
+[tool.coverage.report]
+exclude_lines = [
+  "no cov",
+  "if __name__ == .__main__:",
+  "if TYPE_CHECKING:",
+]
+
