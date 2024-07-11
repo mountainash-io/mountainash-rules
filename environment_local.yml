@@ -16,7 +16,7 @@ dependencies:
     # - pathlib
     - pandas
     - polars
-    - ibis-framework[polars,pandas,sqlite]
+    - ibis-framework[polars,pandas,sqlite,duckdb] == 9.0.0
     # - pydantic>=2
     # - lxml
     # - simplejson
