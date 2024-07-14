@@ -4,7 +4,7 @@ on:
   push:
     paths:
       - 'src/mountainash_utils_rules/**'    
-  pull_request:
+  pull_request_target:
     paths:
       - 'src/mountainash_utils_rules/**'              
     
