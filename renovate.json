@@ -14,16 +14,10 @@
 
     },
     {
-      "matchUpdateTypes": ["patch", "minor"],
-      "groupName": "patch and minor dependencies",
-      "automerge": true,
-      "commitMessagePrefix": "chore(patch and minor dependencies):"
-    },
-    {
-      "matchUpdateTypes": ["major"],
-      "groupName": "major dependencies",
+      "matchUpdateTypes": ["patch", "minor", "major"],
+      "groupName": "dependencies",
       "automerge": false,
-      "commitMessagePrefix": "chore(major dependencies):"
+      "commitMessagePrefix": "chore(dependencies):"
     },
     {
       "excludePackagePatterns": ["^@types/"]

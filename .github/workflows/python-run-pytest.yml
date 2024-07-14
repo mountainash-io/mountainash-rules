@@ -25,32 +25,237 @@ jobs:
           python-version: ${{ matrix.python-version }}
 
 
-      # - name: Checkout private repositories - mountainash-constants
-      #   uses: actions/checkout@v4
-      #   with:
-      #     repository: mountainash-io/mountainash-constants
-      #     ref: main
-      #     token: ${{ secrets.CLONE_PRIVATE_REPOS_TOKEN }}
-      #     path: temp/mountainash-constants        
-      #     fetch-depth: 1
-  
-      # - name: Checkout private repositories - mountainash-settings
-      #   uses: actions/checkout@v4
-      #   with:
-      #     repository: mountainash-io/mountainash-settings
-      #     ref: main
-      #     token: ${{ secrets.CLONE_PRIVATE_REPOS_TOKEN }}
-      #     path: temp/mountainash-settings        
-      #     fetch-depth: 1
-  
+      # Current Branch
+      - name: Get branch name
+        shell: bash
+        run: echo "BRANCH_NAME=$(echo ${GITHUB_HEAD_REF:-${GITHUB_REF#refs/heads/}})" >> $GITHUB_ENV
+
+      ###### MtAsh DEPENDENCIES ######
+
+      # mountainash-auth-settings
+      - name: Check if branch exists - mountainash-auth-settings
+        id: check_branch_auth_settings
+        env:
+          GH_TOKEN: ${{ secrets.CLONE_PRIVATE_REPOS_TOKEN }}
+        run: |
+          git ls-remote --exit-code --heads https://${GH_TOKEN}@github.com/mountainash-io/mountainash-auth-settings.git ${{ env.BRANCH_NAME }} && echo "EXISTS=true" >> $GITHUB_OUTPUT || echo "EXISTS=false" >> $GITHUB_OUTPUT
+
+      - name: Checkout matching branch - mountainash-auth-settings
+        if: steps.check_branch_auth_settings.outputs.EXISTS == 'true'
+        uses: actions/checkout@v4
+        with:
+          repository: mountainash-io/mountainash-auth-settings
+          ref: ${{ env.BRANCH_NAME }}
+          token: ${{ secrets.CLONE_PRIVATE_REPOS_TOKEN }}
+          path: temp/mountainash-auth-settings
+          fetch-depth: 1
+
+      - name: Checkout main branch - mountainash-auth-settings
+        if: steps.check_branch_auth_settings.outputs.EXISTS != 'true'
+        uses: actions/checkout@v4
+        with:
+          repository: mountainash-io/mountainash-auth-settings
+          ref: main
+          token: ${{ secrets.CLONE_PRIVATE_REPOS_TOKEN }}
+          path: temp/mountainash-auth-settings
+          fetch-depth: 1
+
+      # mountainash-constants
+      - name: Check if branch exists - mountainash-constants
+        id: check_branch_constants
+        env:
+          GH_TOKEN: ${{ secrets.CLONE_PRIVATE_REPOS_TOKEN }}
+        run: |
+          git ls-remote --exit-code --heads https://${GH_TOKEN}@github.com/mountainash-io/mountainash-constants.git ${{ env.BRANCH_NAME }} && echo "EXISTS=true" >> $GITHUB_OUTPUT || echo "EXISTS=false" >> $GITHUB_OUTPUT
+
+      - name: Checkout matching branch - mountainash-constants
+        if: steps.check_branch_constants.outputs.EXISTS == 'true'
+        uses: actions/checkout@v4
+        with:
+          repository: mountainash-io/mountainash-constants
+          ref: ${{ env.BRANCH_NAME }}
+          token: ${{ secrets.CLONE_PRIVATE_REPOS_TOKEN }}
+          path: temp/mountainash-constants
+          fetch-depth: 1
+
+      - name: Checkout main branch - mountainash-constants
+        if: steps.check_branch_constants.outputs.EXISTS != 'true'
+        uses: actions/checkout@v4
+        with:
+          repository: mountainash-io/mountainash-constants
+          ref: main
+          token: ${{ secrets.CLONE_PRIVATE_REPOS_TOKEN }}
+          path: temp/mountainash-constants
+          fetch-depth: 1
+
+      # mountainash-data
+      - name: Check if branch exists - mountainash-data
+        id: check_branch_data
+        env:
+          GH_TOKEN: ${{ secrets.CLONE_PRIVATE_REPOS_TOKEN }}
+        run: |
+          git ls-remote --exit-code --heads https://${GH_TOKEN}@github.com/mountainash-io/mountainash-data.git ${{ env.BRANCH_NAME }} && echo "EXISTS=true" >> $GITHUB_OUTPUT || echo "EXISTS=false" >> $GITHUB_OUTPUT
+
+      - name: Checkout matching branch - mountainash-data
+        if: steps.check_branch_data.outputs.EXISTS == 'true'
+        uses: actions/checkout@v4
+        with:
+          repository: mountainash-io/mountainash-data
+          ref: ${{ env.BRANCH_NAME }}
+          token: ${{ secrets.CLONE_PRIVATE_REPOS_TOKEN }}
+          path: temp/mountainash-data
+          fetch-depth: 1
+
+      - name: Checkout main branch - mountainash-data
+        if: steps.check_branch_data.outputs.EXISTS != 'true'
+        uses: actions/checkout@v4
+        with:
+          repository: mountainash-io/mountainash-data
+          ref: main
+          token: ${{ secrets.CLONE_PRIVATE_REPOS_TOKEN }}
+          path: temp/mountainash-data
+          fetch-depth: 1
 
 
+
+      # mountainash-settings
+      - name: Check if branch exists - mountainash-settings
+        id: check_branch_settings
+        env:
+          GH_TOKEN: ${{ secrets.CLONE_PRIVATE_REPOS_TOKEN }}
+        run: |
+          git ls-remote --exit-code --heads https://${GH_TOKEN}@github.com/mountainash-io/mountainash-settings.git ${{ env.BRANCH_NAME }} && echo "EXISTS=true" >> $GITHUB_OUTPUT || echo "EXISTS=false" >> $GITHUB_OUTPUT
+
+      - name: Checkout matching branch - mountainash-settings
+        if: steps.check_branch_settings.outputs.EXISTS == 'true'
+        uses: actions/checkout@v4
+        with:
+          repository: mountainash-io/mountainash-settings
+          ref: ${{ env.BRANCH_NAME }}
+          token: ${{ secrets.CLONE_PRIVATE_REPOS_TOKEN }}
+          path: temp/mountainash-settings
+          fetch-depth: 1
+
+      - name: Checkout main branch - mountainash-settings
+        if: steps.check_branch_settings.outputs.EXISTS != 'true'
+        uses: actions/checkout@v4
+        with:
+          repository: mountainash-io/mountainash-settings
+          ref: main
+          token: ${{ secrets.CLONE_PRIVATE_REPOS_TOKEN }}
+          path: temp/mountainash-settings
+          fetch-depth: 1
+
+
+
+
+      ###### MtAsh UTILS DEPENDENCIES ######
+
+      # mountainash-utils-dataclasses
+      - name: Check if branch exists - mountainash-utils-dataclasses
+        id: check_branch_utils_dataclasses
+        env:
+          GH_TOKEN: ${{ secrets.CLONE_PRIVATE_REPOS_TOKEN }}
+        run: |
+          git ls-remote --exit-code --heads https://${GH_TOKEN}@github.com/mountainash-io/mountainash-utils-dataclasses.git ${{ env.BRANCH_NAME }} && echo "EXISTS=true" >> $GITHUB_OUTPUT || echo "EXISTS=false" >> $GITHUB_OUTPUT
+
+      - name: Checkout matching branch - mountainash-utils-dataclasses
+        if: steps.check_branch_utils_dataclasses.outputs.EXISTS == 'true'
+        uses: actions/checkout@v4
+        with:
+          repository: mountainash-io/mountainash-utils-dataclasses
+          ref: ${{ env.BRANCH_NAME }}
+          token: ${{ secrets.CLONE_PRIVATE_REPOS_TOKEN }}
+          path: temp/mountainash-utils-dataclasses
+          fetch-depth: 1
+
+      - name: Checkout main branch - mountainash-utils-dataclasses
+        if: steps.check_branch_utils_dataclasses.outputs.EXISTS != 'true'
+        uses: actions/checkout@v4
+        with:
+          repository: mountainash-io/mountainash-utils-dataclasses
+          ref: main
+          token: ${{ secrets.CLONE_PRIVATE_REPOS_TOKEN }}
+          path: temp/mountainash-utils-dataclasses
+          fetch-depth: 1
+
+
+
+      # mountainash-utils-os
+      - name: Check if branch exists - mountainash-utils-os
+        id: check_branch_utils_os
+        env:
+          GH_TOKEN: ${{ secrets.CLONE_PRIVATE_REPOS_TOKEN }}
+        run: |
+          git ls-remote --exit-code --heads https://${GH_TOKEN}@github.com/mountainash-io/mountainash-utils-os.git ${{ env.BRANCH_NAME }} && echo "EXISTS=true" >> $GITHUB_OUTPUT || echo "EXISTS=false" >> $GITHUB_OUTPUT
+
+      - name: Checkout matching branch - mountainash-utils-os
+        if: steps.check_branch_utils_os.outputs.EXISTS == 'true'
+        uses: actions/checkout@v4
+        with:
+          repository: mountainash-io/mountainash-utils-os
+          ref: ${{ env.BRANCH_NAME }}
+          token: ${{ secrets.CLONE_PRIVATE_REPOS_TOKEN }}
+          path: temp/mountainash-utils-os
+          fetch-depth: 1
+
+      - name: Checkout main branch - mountainash-utils-os
+        if: steps.check_branch_utils_os.outputs.EXISTS != 'true'
+        uses: actions/checkout@v4
+        with:
+          repository: mountainash-io/mountainash-utils-os
+          ref: main
+          token: ${{ secrets.CLONE_PRIVATE_REPOS_TOKEN }}
+          path: temp/mountainash-utils-os
+          fetch-depth: 1
+
+
+      # mountainash-utils-ssh
+      - name: Check if branch exists - mountainash-utils-ssh
+        id: check_branch_utils_ssh
+        env:
+          GH_TOKEN: ${{ secrets.CLONE_PRIVATE_REPOS_TOKEN }}
+        run: |
+          git ls-remote --exit-code --heads https://${GH_TOKEN}@github.com/mountainash-io/mountainash-utils-ssh.git ${{ env.BRANCH_NAME }} && echo "EXISTS=true" >> $GITHUB_OUTPUT || echo "EXISTS=false" >> $GITHUB_OUTPUT
+
+      - name: Checkout matching branch - mountainash-utils-ssh
+        if: steps.check_branch_utils_ssh.outputs.EXISTS == 'true'
+        uses: actions/checkout@v4
+        with:
+          repository: mountainash-io/mountainash-utils-ssh
+          ref: ${{ env.BRANCH_NAME }}
+          token: ${{ secrets.CLONE_PRIVATE_REPOS_TOKEN }}
+          path: temp/mountainash-utils-ssh
+          fetch-depth: 1
+
+      - name: Checkout main branch - mountainash-utils-ssh
+        if: steps.check_branch_utils_ssh.outputs.EXISTS != 'true'
+        uses: actions/checkout@v4
+        with:
+          repository: mountainash-io/mountainash-utils-ssh
+          ref: main
+          token: ${{ secrets.CLONE_PRIVATE_REPOS_TOKEN }}
+          path: temp/mountainash-utils-ssh
+          fetch-depth: 1
+
+
+      # Install Hatch
       - name: Install Hatch
         run: pip install hatch
 
       - name: Create virtual environment
         run: hatch env create test_github
 
+      #Run Pytest
       - name: Run tests
         run: hatch run test_github:test
 
+      # Run Coverage
+      - name: Run Coverage Tests
+        run: hatch run test_github:cov
+
+      - name: Upload coverage reports to Codecov
+        uses: codecov/codecov-action@v4.0.1
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          slug: mountainash-io/mountainash-utils-rules
