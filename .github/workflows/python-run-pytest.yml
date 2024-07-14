@@ -4,6 +4,10 @@ on:
   push:
     paths:
       - 'src/mountainash_utils_rules/**'    
+  pull_request:
+    paths:
+      - 'src/mountainash_utils_rules/**'              
+    
   workflow_dispatch:
 
 jobs:
