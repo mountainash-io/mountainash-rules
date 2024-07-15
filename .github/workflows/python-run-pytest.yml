@@ -28,7 +28,6 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
-
       # Current Branch
       - name: Get branch name
         shell: bash
@@ -37,15 +36,9 @@ jobs:
       ###### MtAsh DEPENDENCIES ######
 
       # mountainash-auth-settings
-      - name: Check if branch exists - mountainash-auth-settings
-        id: check_branch_auth_settings
-        env:
-          GH_TOKEN: ${{ secrets.CLONE_PRIVATE_REPOS_TOKEN }}
-        run: |
-          git ls-remote --exit-code --heads https://${GH_TOKEN}@github.com/mountainash-io/mountainash-auth-settings.git ${{ env.BRANCH_NAME }} && echo "EXISTS=true" >> $GITHUB_OUTPUT || echo "EXISTS=false" >> $GITHUB_OUTPUT
-
       - name: Checkout matching branch - mountainash-auth-settings
-        if: steps.check_branch_auth_settings.outputs.EXISTS == 'true'
+        id: check_branch_auth_settings
+        continue-on-error: true
         uses: actions/checkout@v4
         with:
           repository: mountainash-io/mountainash-auth-settings
@@ -55,7 +48,7 @@ jobs:
           fetch-depth: 1
 
       - name: Checkout main branch - mountainash-auth-settings
-        if: steps.check_branch_auth_settings.outputs.EXISTS != 'true'
+        if: steps.check_branch_auth_settings.outcome == 'failure'
         uses: actions/checkout@v4
         with:
           repository: mountainash-io/mountainash-auth-settings
@@ -65,15 +58,9 @@ jobs:
           fetch-depth: 1
 
       # mountainash-constants
-      - name: Check if branch exists - mountainash-constants
-        id: check_branch_constants
-        env:
-          GH_TOKEN: ${{ secrets.CLONE_PRIVATE_REPOS_TOKEN }}
-        run: |
-          git ls-remote --exit-code --heads https://${GH_TOKEN}@github.com/mountainash-io/mountainash-constants.git ${{ env.BRANCH_NAME }} && echo "EXISTS=true" >> $GITHUB_OUTPUT || echo "EXISTS=false" >> $GITHUB_OUTPUT
-
       - name: Checkout matching branch - mountainash-constants
-        if: steps.check_branch_constants.outputs.EXISTS == 'true'
+        id: check_branch_constants
+        continue-on-error: true
         uses: actions/checkout@v4
         with:
           repository: mountainash-io/mountainash-constants
@@ -83,7 +70,7 @@ jobs:
           fetch-depth: 1
 
       - name: Checkout main branch - mountainash-constants
-        if: steps.check_branch_constants.outputs.EXISTS != 'true'
+        if: steps.check_branch_constants.outcome == 'failure'
         uses: actions/checkout@v4
         with:
           repository: mountainash-io/mountainash-constants
@@ -93,15 +80,9 @@ jobs:
           fetch-depth: 1
 
       # mountainash-data
-      - name: Check if branch exists - mountainash-data
-        id: check_branch_data
-        env:
-          GH_TOKEN: ${{ secrets.CLONE_PRIVATE_REPOS_TOKEN }}
-        run: |
-          git ls-remote --exit-code --heads https://${GH_TOKEN}@github.com/mountainash-io/mountainash-data.git ${{ env.BRANCH_NAME }} && echo "EXISTS=true" >> $GITHUB_OUTPUT || echo "EXISTS=false" >> $GITHUB_OUTPUT
-
       - name: Checkout matching branch - mountainash-data
-        if: steps.check_branch_data.outputs.EXISTS == 'true'
+        id: check_branch_data
+        continue-on-error: true
         uses: actions/checkout@v4
         with:
           repository: mountainash-io/mountainash-data
@@ -111,7 +92,7 @@ jobs:
           fetch-depth: 1
 
       - name: Checkout main branch - mountainash-data
-        if: steps.check_branch_data.outputs.EXISTS != 'true'
+        if: steps.check_branch_data.outcome == 'failure'
         uses: actions/checkout@v4
         with:
           repository: mountainash-io/mountainash-data
@@ -123,15 +104,9 @@ jobs:
 
 
       # mountainash-settings
-      - name: Check if branch exists - mountainash-settings
-        id: check_branch_settings
-        env:
-          GH_TOKEN: ${{ secrets.CLONE_PRIVATE_REPOS_TOKEN }}
-        run: |
-          git ls-remote --exit-code --heads https://${GH_TOKEN}@github.com/mountainash-io/mountainash-settings.git ${{ env.BRANCH_NAME }} && echo "EXISTS=true" >> $GITHUB_OUTPUT || echo "EXISTS=false" >> $GITHUB_OUTPUT
-
       - name: Checkout matching branch - mountainash-settings
-        if: steps.check_branch_settings.outputs.EXISTS == 'true'
+        id: check_branch_settings
+        continue-on-error: true
         uses: actions/checkout@v4
         with:
           repository: mountainash-io/mountainash-settings
@@ -141,7 +116,7 @@ jobs:
           fetch-depth: 1
 
       - name: Checkout main branch - mountainash-settings
-        if: steps.check_branch_settings.outputs.EXISTS != 'true'
+        if: steps.check_branch_settings.outcome == 'failure'
         uses: actions/checkout@v4
         with:
           repository: mountainash-io/mountainash-settings
@@ -151,20 +126,12 @@ jobs:
           fetch-depth: 1
 
 
-
-
       ###### MtAsh UTILS DEPENDENCIES ######
 
       # mountainash-utils-dataclasses
-      - name: Check if branch exists - mountainash-utils-dataclasses
-        id: check_branch_utils_dataclasses
-        env:
-          GH_TOKEN: ${{ secrets.CLONE_PRIVATE_REPOS_TOKEN }}
-        run: |
-          git ls-remote --exit-code --heads https://${GH_TOKEN}@github.com/mountainash-io/mountainash-utils-dataclasses.git ${{ env.BRANCH_NAME }} && echo "EXISTS=true" >> $GITHUB_OUTPUT || echo "EXISTS=false" >> $GITHUB_OUTPUT
-
       - name: Checkout matching branch - mountainash-utils-dataclasses
-        if: steps.check_branch_utils_dataclasses.outputs.EXISTS == 'true'
+        id: check_branch_utils_dataclasses
+        continue-on-error: true
         uses: actions/checkout@v4
         with:
           repository: mountainash-io/mountainash-utils-dataclasses
@@ -174,7 +141,7 @@ jobs:
           fetch-depth: 1
 
       - name: Checkout main branch - mountainash-utils-dataclasses
-        if: steps.check_branch_utils_dataclasses.outputs.EXISTS != 'true'
+        if: steps.check_branch_utils_dataclasses.outcome == 'failure'
         uses: actions/checkout@v4
         with:
           repository: mountainash-io/mountainash-utils-dataclasses
@@ -183,18 +150,10 @@ jobs:
           path: temp/mountainash-utils-dataclasses
           fetch-depth: 1
 
-
-
       # mountainash-utils-os
-      - name: Check if branch exists - mountainash-utils-os
-        id: check_branch_utils_os
-        env:
-          GH_TOKEN: ${{ secrets.CLONE_PRIVATE_REPOS_TOKEN }}
-        run: |
-          git ls-remote --exit-code --heads https://${GH_TOKEN}@github.com/mountainash-io/mountainash-utils-os.git ${{ env.BRANCH_NAME }} && echo "EXISTS=true" >> $GITHUB_OUTPUT || echo "EXISTS=false" >> $GITHUB_OUTPUT
-
       - name: Checkout matching branch - mountainash-utils-os
-        if: steps.check_branch_utils_os.outputs.EXISTS == 'true'
+        id: check_branch_utils_os
+        continue-on-error: true
         uses: actions/checkout@v4
         with:
           repository: mountainash-io/mountainash-utils-os
@@ -204,7 +163,7 @@ jobs:
           fetch-depth: 1
 
       - name: Checkout main branch - mountainash-utils-os
-        if: steps.check_branch_utils_os.outputs.EXISTS != 'true'
+        if: steps.check_branch_utils_os.outcome == 'failure'
         uses: actions/checkout@v4
         with:
           repository: mountainash-io/mountainash-utils-os
@@ -213,17 +172,9 @@ jobs:
           path: temp/mountainash-utils-os
           fetch-depth: 1
 
-
       # mountainash-utils-ssh
-      - name: Check if branch exists - mountainash-utils-ssh
-        id: check_branch_utils_ssh
-        env:
-          GH_TOKEN: ${{ secrets.CLONE_PRIVATE_REPOS_TOKEN }}
-        run: |
-          git ls-remote --exit-code --heads https://${GH_TOKEN}@github.com/mountainash-io/mountainash-utils-ssh.git ${{ env.BRANCH_NAME }} && echo "EXISTS=true" >> $GITHUB_OUTPUT || echo "EXISTS=false" >> $GITHUB_OUTPUT
-
       - name: Checkout matching branch - mountainash-utils-ssh
-        if: steps.check_branch_utils_ssh.outputs.EXISTS == 'true'
+        id: check_branch_utils_ssh
         uses: actions/checkout@v4
         with:
           repository: mountainash-io/mountainash-utils-ssh
@@ -233,7 +184,7 @@ jobs:
           fetch-depth: 1
 
       - name: Checkout main branch - mountainash-utils-ssh
-        if: steps.check_branch_utils_ssh.outputs.EXISTS != 'true'
+        if: steps.check_branch_utils_ssh.outcome == 'failure'
         uses: actions/checkout@v4
         with:
           repository: mountainash-io/mountainash-utils-ssh
