@@ -210,7 +210,7 @@ jobs:
         run: hatch run test_github:cov
 
       - name: Upload coverage reports to Codecov
-        uses: codecov/codecov-action@v4.0.1
+        uses: codecov/codecov-action@v4.5.0
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           slug: mountainash-io/mountainash-utils-rules
