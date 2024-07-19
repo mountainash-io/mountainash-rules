@@ -4,7 +4,7 @@ from dataclasses import dataclass
 
 import ibis
 import ibis.expr.types as ir
-from mountainash_data import BaseDataFrame, IbisDataFrame, DataFrameFactory
+from mountainash_data import BaseDataFrame, DataFrameFactory
 
 # ibis.set_backend(backend="polars")
 # from mountainash_data import BaseDataFrame

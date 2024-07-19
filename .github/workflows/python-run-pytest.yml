@@ -1,9 +1,6 @@
 name: Pytest Runner
 
-on: 
-  push:
-    paths:
-      - 'src/mountainash_utils_rules/**'    
+on:   
   pull_request_target:
     paths:
       - 'src/mountainash_utils_rules/**'              
