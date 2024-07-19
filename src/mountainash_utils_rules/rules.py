@@ -53,8 +53,8 @@ class RulesEngine:
             context_softmatch_count=    ibis.literal(0),
             dual_softmatch_count =      ibis.literal(0),
             hard_match_count=           ibis.literal(0),
-            dropped=                    ibis.NA,
-            dropped_by=                 ibis.NA,
+            dropped=                    ibis.null(),
+            dropped_by=                 ibis.null(),
             filter_all_false=           ibis.literal(False),
             filter_all_true=            ibis.literal(True)
         )
