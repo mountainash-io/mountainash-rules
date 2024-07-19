@@ -14,10 +14,11 @@
 
     },
     {
-      "matchUpdateTypes": ["patch", "minor", "major"],
-      "groupName": "dependencies",
-      "automerge": false,
-      "commitMessagePrefix": "chore(dependencies):"
+      "matchManagers": ["github-actions"],
+      "groupName": "github dependencies",
+      "automerge": true,
+      "schedule": ["after 5pm on Saturday"],
+      "commitMessagePrefix": "chore(github dependencies):"
     },
     {
       "excludePackagePatterns": ["^@types/"]
