@@ -19,6 +19,7 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+      - uses: mountainash-io/checkout_no_retries@main
 
       - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v4
@@ -36,7 +37,7 @@ jobs:
       - name: Checkout matching branch - mountainash-auth-settings
         id: check_branch_auth_settings
         continue-on-error: true
-        uses: mountainash-io/checkout_no_retries/checkout@v4
+        uses: mountainash-io/checkout_no_retries@main
         with:
           repository: mountainash-io/mountainash-auth-settings
           ref: ${{ env.BRANCH_NAME }}
@@ -58,7 +59,7 @@ jobs:
       - name: Checkout matching branch - mountainash-constants
         id: check_branch_constants
         continue-on-error: true
-        uses: mountainash-io/checkout_no_retries/checkout@v4
+        uses: mountainash-io/checkout_no_retries@main
         with:
           repository: mountainash-io/mountainash-constants
           ref: ${{ env.BRANCH_NAME }}
@@ -80,7 +81,7 @@ jobs:
       - name: Checkout matching branch - mountainash-data
         id: check_branch_data
         continue-on-error: true
-        uses: mountainash-io/checkout_no_retries/checkout@v4
+        uses: mountainash-io/checkout_no_retries@main
         with:
           repository: mountainash-io/mountainash-data
           ref: ${{ env.BRANCH_NAME }}
@@ -104,7 +105,7 @@ jobs:
       - name: Checkout matching branch - mountainash-settings
         id: check_branch_settings
         continue-on-error: true
-        uses: mountainash-io/checkout_no_retries/checkout@v4
+        uses: mountainash-io/checkout_no_retries@main
         with:
           repository: mountainash-io/mountainash-settings
           ref: ${{ env.BRANCH_NAME }}
@@ -129,7 +130,7 @@ jobs:
       - name: Checkout matching branch - mountainash-utils-dataclasses
         id: check_branch_utils_dataclasses
         continue-on-error: true
-        uses: mountainash-io/checkout_no_retries/checkout@v4
+        uses: mountainash-io/checkout_no_retries@main
         with:
           repository: mountainash-io/mountainash-utils-dataclasses
           ref: ${{ env.BRANCH_NAME }}
@@ -151,7 +152,7 @@ jobs:
       - name: Checkout matching branch - mountainash-utils-os
         id: check_branch_utils_os
         continue-on-error: true
-        uses: mountainash-io/checkout_no_retries/checkout@v4
+        uses: mountainash-io/checkout_no_retries@main
         with:
           repository: mountainash-io/mountainash-utils-os
           ref: ${{ env.BRANCH_NAME }}
@@ -172,7 +173,7 @@ jobs:
       # mountainash-utils-ssh
       - name: Checkout matching branch - mountainash-utils-ssh
         id: check_branch_utils_ssh
-        uses: mountainash-io/checkout_no_retries/checkout@v4
+        uses: mountainash-io/checkout_no_retries@main
         with:
           repository: mountainash-io/mountainash-utils-ssh
           ref: ${{ env.BRANCH_NAME }}
