@@ -19,7 +19,6 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
-      - uses: mountainash-io/checkout_no_retries@main
 
       - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v4
