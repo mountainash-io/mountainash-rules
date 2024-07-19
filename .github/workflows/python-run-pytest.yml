@@ -172,6 +172,7 @@ jobs:
       # mountainash-utils-ssh
       - name: Checkout matching branch - mountainash-utils-ssh
         id: check_branch_utils_ssh
+        continue-on-error: true
         uses: mountainash-io/checkout_no_retries@main
         with:
           repository: mountainash-io/mountainash-utils-ssh

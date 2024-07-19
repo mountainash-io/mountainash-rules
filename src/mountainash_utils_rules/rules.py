@@ -4,7 +4,7 @@ from dataclasses import dataclass
 
 import ibis
 import ibis.expr.types as ir
-from mountainash_data import BaseDataFrame, IbisDataFrame, DataFrameFactory
+from mountainash_data import BaseDataFrame, DataFrameFactory
 
 # ibis.set_backend(backend="polars")
 # from mountainash_data import BaseDataFrame
@@ -53,8 +53,8 @@ class RulesEngine:
             context_softmatch_count=    ibis.literal(0),
             dual_softmatch_count =      ibis.literal(0),
             hard_match_count=           ibis.literal(0),
-            dropped=                    ibis.NA,
-            dropped_by=                 ibis.NA,
+            dropped=                    ibis.null(),
+            dropped_by=                 ibis.null(),
             filter_all_false=           ibis.literal(False),
             filter_all_true=            ibis.literal(True)
         )
