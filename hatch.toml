@@ -116,6 +116,7 @@ dependencies = [
 ]
 [envs.ruff.scripts]
 check = "ruff check ./src"
+fix = "ruff check ./src --fix"
 
 #================
 # Env: radon
@@ -127,8 +128,12 @@ dependencies = [
   "radon==6.0.1",
 ]
 [envs.radon.scripts]
-radon-cc = "radon cc . -nd"
-radon-mi = "radon mi . -nd"
+radon-cc = "radon cc ./src -nd"
+radon-mi = "radon mi ./src -nd"
+radon-cc-strict = "radon cc ./src -nc"
+radon-mi-strict = "radon mi ./src -nc"
+radon-mi-detail = "radon mi ./src"
+radon-cc-detail = "radon cc ./src"
 
 #================
 # Env: mypy
