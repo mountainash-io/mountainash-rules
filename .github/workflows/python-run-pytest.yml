@@ -30,165 +30,189 @@ jobs:
         shell: bash
         run: echo "BRANCH_NAME=$(echo ${GITHUB_HEAD_REF:-${GITHUB_REF#refs/heads/}})" >> $GITHUB_ENV
 
+      #Set the ORGNAME
+      - name: Set ORGNAME - mountainash-io
+        env:
+          ORGNAME: mountainash-io
+        run: echo "ORGNAME=$ORGNAME" >> $GITHUB_ENV
+
+
       ###### MtAsh DEPENDENCIES ######
 
       # mountainash-auth-settings
-      - name: Checkout matching branch - mountainash-auth-settings
-        id: check_branch_auth_settings
-        continue-on-error: true
-        uses: mountainash-io/checkout_no_retries@main
-        with:
-          repository: mountainash-io/mountainash-auth-settings
-          ref: ${{ env.BRANCH_NAME }}
-          token: ${{ secrets.CLONE_PRIVATE_REPOS_TOKEN }}
-          path: temp/mountainash-auth-settings
-          fetch-depth: 1
+      - name: Set Repo - mountainash-auth-settings
+        env:
+          REPO: mountainash-auth-settings
+        run: echo "REPO=$REPO" >> $GITHUB_ENV
 
-      - name: Checkout main branch - mountainash-auth-settings
-        if: steps.check_branch_auth_settings.outcome == 'failure'
+      - name: Determine Branch to Use - ${{ env.REPO }}
+        env:
+          TOKEN: ${{ secrets.CLONE_PRIVATE_REPOS_TOKEN }}
+          TARGET_BRANCH_NAME: ${{ env.BRANCH_NAME }} # or set your branch name here
+          DEFAULT_BRANCH_NAME: main # or set your branch name here
+        run: |
+          BRANCH_EXISTS=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: token $TOKEN" -H "Accept: application/vnd.github.v3+json" "https://api.github.com/repos/$ORGNAME/$REPO/branches/$TARGET_BRANCH_NAME")
+          echo "BRANCH_TO_USE=$( [ $BRANCH_EXISTS -eq 200 ] && echo $TARGET_BRANCH_NAME || echo $DEFAULT_BRANCH_NAME )" >> $GITHUB_ENV        
+
+      - name: Checkout matching branch - ${{ env.REPO }}
         uses: actions/checkout@v4
         with:
-          repository: mountainash-io/mountainash-auth-settings
-          ref: main
+          repository: mountainash-io/${{ env.REPO }}
+          ref: ${{ env.BRANCH_TO_USE }}
           token: ${{ secrets.CLONE_PRIVATE_REPOS_TOKEN }}
-          path: temp/mountainash-auth-settings
+          path: temp/${{ env.REPO }}
           fetch-depth: 1
+
 
       # mountainash-constants
-      - name: Checkout matching branch - mountainash-constants
-        id: check_branch_constants
-        continue-on-error: true
-        uses: mountainash-io/checkout_no_retries@main
-        with:
-          repository: mountainash-io/mountainash-constants
-          ref: ${{ env.BRANCH_NAME }}
-          token: ${{ secrets.CLONE_PRIVATE_REPOS_TOKEN }}
-          path: temp/mountainash-constants
-          fetch-depth: 1
+      - name: Set Repo - mountainash-constants
+        env:
+          REPO: mountainash-constants
+        run: echo "REPO=$REPO" >> $GITHUB_ENV
 
-      - name: Checkout main branch - mountainash-constants
-        if: steps.check_branch_constants.outcome == 'failure'
+      - name: Determine Branch to Use - ${{ env.REPO }}
+        env:
+          TOKEN: ${{ secrets.CLONE_PRIVATE_REPOS_TOKEN }}
+          TARGET_BRANCH_NAME: ${{ env.BRANCH_NAME }} # or set your branch name here
+          DEFAULT_BRANCH_NAME: main # or set your branch name here
+        run: |
+          BRANCH_EXISTS=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: token $TOKEN" -H "Accept: application/vnd.github.v3+json" "https://api.github.com/repos/$ORGNAME/$REPO/branches/$TARGET_BRANCH_NAME")
+          echo "BRANCH_TO_USE=$( [ $BRANCH_EXISTS -eq 200 ] && echo $TARGET_BRANCH_NAME || echo $DEFAULT_BRANCH_NAME )" >> $GITHUB_ENV        
+
+      - name: Checkout matching branch - ${{ env.REPO }}
         uses: actions/checkout@v4
         with:
-          repository: mountainash-io/mountainash-constants
-          ref: main
+          repository: mountainash-io/${{ env.REPO }}
+          ref: ${{ env.BRANCH_TO_USE }}
           token: ${{ secrets.CLONE_PRIVATE_REPOS_TOKEN }}
-          path: temp/mountainash-constants
+          path: temp/${{ env.REPO }}
           fetch-depth: 1
+
 
       # mountainash-data
-      - name: Checkout matching branch - mountainash-data
-        id: check_branch_data
-        continue-on-error: true
-        uses: mountainash-io/checkout_no_retries@main
-        with:
-          repository: mountainash-io/mountainash-data
-          ref: ${{ env.BRANCH_NAME }}
-          token: ${{ secrets.CLONE_PRIVATE_REPOS_TOKEN }}
-          path: temp/mountainash-data
-          fetch-depth: 1
+      - name: Set Repo - mountainash-data
+        env:
+          REPO: mountainash-data
+        run: echo "REPO=$REPO" >> $GITHUB_ENV
 
-      - name: Checkout main branch - mountainash-data
-        if: steps.check_branch_data.outcome == 'failure'
+      - name: Determine Branch to Use - ${{ env.REPO }}
+        env:
+          TOKEN: ${{ secrets.CLONE_PRIVATE_REPOS_TOKEN }}
+          TARGET_BRANCH_NAME: ${{ env.BRANCH_NAME }} # or set your branch name here
+          DEFAULT_BRANCH_NAME: main # or set your branch name here
+        run: |
+          BRANCH_EXISTS=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: token $TOKEN" -H "Accept: application/vnd.github.v3+json" "https://api.github.com/repos/$ORGNAME/$REPO/branches/$TARGET_BRANCH_NAME")
+          echo "BRANCH_TO_USE=$( [ $BRANCH_EXISTS -eq 200 ] && echo $TARGET_BRANCH_NAME || echo $DEFAULT_BRANCH_NAME )" >> $GITHUB_ENV        
+
+      - name: Checkout matching branch - ${{ env.REPO }}
         uses: actions/checkout@v4
         with:
-          repository: mountainash-io/mountainash-data
-          ref: main
+          repository: mountainash-io/${{ env.REPO }}
+          ref: ${{ env.BRANCH_TO_USE }}
           token: ${{ secrets.CLONE_PRIVATE_REPOS_TOKEN }}
-          path: temp/mountainash-data
+          path: temp/${{ env.REPO }}
           fetch-depth: 1
+
 
 
 
       # mountainash-settings
-      - name: Checkout matching branch - mountainash-settings
-        id: check_branch_settings
-        continue-on-error: true
-        uses: mountainash-io/checkout_no_retries@main
-        with:
-          repository: mountainash-io/mountainash-settings
-          ref: ${{ env.BRANCH_NAME }}
-          token: ${{ secrets.CLONE_PRIVATE_REPOS_TOKEN }}
-          path: temp/mountainash-settings
-          fetch-depth: 1
+      - name: Set Repo - mountainash-settings
+        env:
+          REPO: mountainash-settings
+        run: echo "REPO=$REPO" >> $GITHUB_ENV
 
-      - name: Checkout main branch - mountainash-settings
-        if: steps.check_branch_settings.outcome == 'failure'
+      - name: Determine Branch to Use - ${{ env.REPO }}
+        env:
+          TOKEN: ${{ secrets.CLONE_PRIVATE_REPOS_TOKEN }}
+          TARGET_BRANCH_NAME: ${{ env.BRANCH_NAME }} # or set your branch name here
+          DEFAULT_BRANCH_NAME: main # or set your branch name here
+        run: |
+          BRANCH_EXISTS=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: token $TOKEN" -H "Accept: application/vnd.github.v3+json" "https://api.github.com/repos/$ORGNAME/$REPO/branches/$TARGET_BRANCH_NAME")
+          echo "BRANCH_TO_USE=$( [ $BRANCH_EXISTS -eq 200 ] && echo $TARGET_BRANCH_NAME || echo $DEFAULT_BRANCH_NAME )" >> $GITHUB_ENV        
+
+      - name: Checkout matching branch - ${{ env.REPO }}
         uses: actions/checkout@v4
         with:
-          repository: mountainash-io/mountainash-settings
-          ref: main
+          repository: mountainash-io/${{ env.REPO }}
+          ref: ${{ env.BRANCH_TO_USE }}
           token: ${{ secrets.CLONE_PRIVATE_REPOS_TOKEN }}
-          path: temp/mountainash-settings
+          path: temp/${{ env.REPO }}
           fetch-depth: 1
 
 
       ###### MtAsh UTILS DEPENDENCIES ######
 
       # mountainash-utils-dataclasses
-      - name: Checkout matching branch - mountainash-utils-dataclasses
-        id: check_branch_utils_dataclasses
-        continue-on-error: true
-        uses: mountainash-io/checkout_no_retries@main
-        with:
-          repository: mountainash-io/mountainash-utils-dataclasses
-          ref: ${{ env.BRANCH_NAME }}
-          token: ${{ secrets.CLONE_PRIVATE_REPOS_TOKEN }}
-          path: temp/mountainash-utils-dataclasses
-          fetch-depth: 1
+      - name: Set Repo - mountainash-utils-dataclasses
+        env:
+          REPO: mountainash-utils-dataclasses
+        run: echo "REPO=$REPO" >> $GITHUB_ENV
 
-      - name: Checkout main branch - mountainash-utils-dataclasses
-        if: steps.check_branch_utils_dataclasses.outcome == 'failure'
+      - name: Determine Branch to Use - ${{ env.REPO }}
+        env:
+          TOKEN: ${{ secrets.CLONE_PRIVATE_REPOS_TOKEN }}
+          TARGET_BRANCH_NAME: ${{ env.BRANCH_NAME }} # or set your branch name here
+          DEFAULT_BRANCH_NAME: main # or set your branch name here
+        run: |
+          BRANCH_EXISTS=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: token $TOKEN" -H "Accept: application/vnd.github.v3+json" "https://api.github.com/repos/$ORGNAME/$REPO/branches/$TARGET_BRANCH_NAME")
+          echo "BRANCH_TO_USE=$( [ $BRANCH_EXISTS -eq 200 ] && echo $TARGET_BRANCH_NAME || echo $DEFAULT_BRANCH_NAME )" >> $GITHUB_ENV        
+
+      - name: Checkout matching branch - ${{ env.REPO }}
         uses: actions/checkout@v4
         with:
-          repository: mountainash-io/mountainash-utils-dataclasses
-          ref: main
+          repository: mountainash-io/${{ env.REPO }}
+          ref: ${{ env.BRANCH_TO_USE }}
           token: ${{ secrets.CLONE_PRIVATE_REPOS_TOKEN }}
-          path: temp/mountainash-utils-dataclasses
+          path: temp/${{ env.REPO }}
           fetch-depth: 1
 
       # mountainash-utils-os
-      - name: Checkout matching branch - mountainash-utils-os
-        id: check_branch_utils_os
-        continue-on-error: true
-        uses: mountainash-io/checkout_no_retries@main
-        with:
-          repository: mountainash-io/mountainash-utils-os
-          ref: ${{ env.BRANCH_NAME }}
-          token: ${{ secrets.CLONE_PRIVATE_REPOS_TOKEN }}
-          path: temp/mountainash-utils-os
-          fetch-depth: 1
+      - name: Set Repo - mountainash-utils-os
+        env:
+          REPO: mountainash-utils-os
+        run: echo "REPO=$REPO" >> $GITHUB_ENV
 
-      - name: Checkout main branch - mountainash-utils-os
-        if: steps.check_branch_utils_os.outcome == 'failure'
+      - name: Determine Branch to Use - ${{ env.REPO }}
+        env:
+          TOKEN: ${{ secrets.CLONE_PRIVATE_REPOS_TOKEN }}
+          TARGET_BRANCH_NAME: ${{ env.BRANCH_NAME }} # or set your branch name here
+          DEFAULT_BRANCH_NAME: main # or set your branch name here
+        run: |
+          BRANCH_EXISTS=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: token $TOKEN" -H "Accept: application/vnd.github.v3+json" "https://api.github.com/repos/$ORGNAME/$REPO/branches/$TARGET_BRANCH_NAME")
+          echo "BRANCH_TO_USE=$( [ $BRANCH_EXISTS -eq 200 ] && echo $TARGET_BRANCH_NAME || echo $DEFAULT_BRANCH_NAME )" >> $GITHUB_ENV        
+
+      - name: Checkout matching branch - ${{ env.REPO }}
         uses: actions/checkout@v4
         with:
-          repository: mountainash-io/mountainash-utils-os
-          ref: main
+          repository: mountainash-io/${{ env.REPO }}
+          ref: ${{ env.BRANCH_TO_USE }}
           token: ${{ secrets.CLONE_PRIVATE_REPOS_TOKEN }}
-          path: temp/mountainash-utils-os
+          path: temp/${{ env.REPO }}
           fetch-depth: 1
 
       # mountainash-utils-ssh
-      - name: Checkout matching branch - mountainash-utils-ssh
-        id: check_branch_utils_ssh
-        continue-on-error: true
-        uses: mountainash-io/checkout_no_retries@main
-        with:
-          repository: mountainash-io/mountainash-utils-ssh
-          ref: ${{ env.BRANCH_NAME }}
-          token: ${{ secrets.CLONE_PRIVATE_REPOS_TOKEN }}
-          path: temp/mountainash-utils-ssh
-          fetch-depth: 1
+      - name: Set Repo - mountainash-utils-ssh
+        env:
+          REPO: mountainash-utils-ssh
+        run: echo "REPO=$REPO" >> $GITHUB_ENV
 
-      - name: Checkout main branch - mountainash-utils-ssh
-        if: steps.check_branch_utils_ssh.outcome == 'failure'
+      - name: Determine Branch to Use - ${{ env.REPO }}
+        env:
+          TOKEN: ${{ secrets.CLONE_PRIVATE_REPOS_TOKEN }}
+          TARGET_BRANCH_NAME: ${{ env.BRANCH_NAME }} # or set your branch name here
+          DEFAULT_BRANCH_NAME: main # or set your branch name here
+        run: |
+          BRANCH_EXISTS=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: token $TOKEN" -H "Accept: application/vnd.github.v3+json" "https://api.github.com/repos/$ORGNAME/$REPO/branches/$TARGET_BRANCH_NAME")
+          echo "BRANCH_TO_USE=$( [ $BRANCH_EXISTS -eq 200 ] && echo $TARGET_BRANCH_NAME || echo $DEFAULT_BRANCH_NAME )" >> $GITHUB_ENV        
+
+      - name: Checkout matching branch - ${{ env.REPO }}
         uses: actions/checkout@v4
         with:
-          repository: mountainash-io/mountainash-utils-ssh
-          ref: main
+          repository: mountainash-io/${{ env.REPO }}
+          ref: ${{ env.BRANCH_TO_USE }}
           token: ${{ secrets.CLONE_PRIVATE_REPOS_TOKEN }}
-          path: temp/mountainash-utils-ssh
+          path: temp/${{ env.REPO }}
           fetch-depth: 1
 
 
