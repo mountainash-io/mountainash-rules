@@ -75,19 +75,65 @@ def test_apply_context_rules_engine_firtst_row():
     assert dict_best_result['rule_name' ] == "rule_1"   
 
 
-@pytest.mark.parametrize("non_rules", [
-    (1),
-    ("A"),
-    ([1,2,3]),
-    (None),
-    (True),
-    (["A", "B", "C"])
+@pytest.mark.parametrize("non_rules, error", [
+    (1, TypeError),
+    ("A", TypeError),
+    ([1,2,3], TypeError),
+    (None, ValueError),
+    (True, TypeError),
+    (["A", "B", "C"], TypeError)
 ])
-def test_apply_context_rules_engine_non_datafram_rules1(non_rules):
-    with pytest.raises(TypeError):
+def test_apply_context_rules_engine_non_datafram_rules1(non_rules, error):
+    with pytest.raises(error):
         RulesEngine.apply_context_rules_engine(CONTEXT=CONTEXT, rules=non_rules, dimensions=dimensions)
         #Error goes all the way to the dataframe factory, it is caught and raised when trying to convert the rules to Polars
-        #Pretty sure this is good
+        #Only small issue is that None will be caught by a different ValueError, but it is still caught
+
+#Attemps to break function
+
+CONTEXT_ONE = context(rule_name="None", DIM_1=None, DIM_2=None, DIM_3=None)
+
+CONTEXT_TWO = context(rule_name="rule_1", DIM_1=1, DIM_2="1", DIM_3=[1])
+
+CONTEXT_THREE = context(rule_name="rule_1", DIM_1="1", DIM_2="2", DIM_3=context(rule_name="rule_1", DIM_1="A", DIM_2="1", DIM_3=UNKNOWN))
+
+CONTEXT_FOUR = context(rule_name="rule_1", DIM_1={1:"four"}, DIM_2=("tuples", "AHHHHH"), DIM_3=7)
+
+
+def test_bad_contexts_one():
+    rules = RulesEngine.apply_context_rules_engine(CONTEXT_ONE, df_rules, dimensions, keep_all=False)
+    assert isinstance(rules, BaseDataFrame)
+    #Returns an empty dataframe with keep_all=False but does return a full dataframe with keep_all=True
+
+
+
+def test_bad_contexts_two():
+    rules = RulesEngine.apply_context_rules_engine(CONTEXT_TWO, df_rules, dimensions, keep_all=False)
+
+def test_bad_contexts_three():
+    rules = RulesEngine.apply_context_rules_engine(CONTEXT_THREE, df_rules, dimensions, keep_all=False)
+
+def test_bad_contexts_four():
+    rules = RulesEngine.apply_context_rules_engine(CONTEXT_FOUR, df_rules, dimensions, keep_all=False)
+"""
+Problem
+TODO: 
+    - The function is not able to handle the context dataclass with nested dataclasses. 
+    - The function is not able to handle the context dataclass with complex data types.
+
+    It breaks unpredictably if the context dataclass uses unsupported data types.
+
+"""
+
+
+
+
+rules = pl.DataFrame({  "rule_name": ["rule_1", "rule_2", "rule_3"],
+                        "DIM_1": ["A", "B", "C"],
+                        "DIM_2": ["1", "2", "3"],
+                        "DIM_3": ["X", UNKNOWN, UNKNOWN]
+                    })
+df_rules = ibis.memtable(data=rules, columns = rules.columns)
 
 
     
