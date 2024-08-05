@@ -217,3 +217,43 @@ def test_bad_dimensions_four():
         result = RulesEngine.apply_context_rules_engine(CONTEXT=CONTEXT, rules=df_rules, dimensions=dimensions_four)
         print(result.materialize())
     #Same as above
+
+
+#Breaking the context class
+@dataclass
+class context_one:
+    None
+
+class context_two:
+    def __init__(self, rule_name, DIM_1, DIM_2, DIM_3):
+        self.rule_name = rule_name
+        self.DIM_1 = DIM_1
+        self.DIM_2 = DIM_2
+        self.DIM_3 = DIM_3
+
+
+
+CONTEXT_EMPTY = context_one()
+
+CONTEXT_NON_DATACLASS = context_two(rule_name="rule_1", DIM_1="A", DIM_2="1", DIM_3=UNKNOWN)
+
+def test_context_empty():
+    with pytest.raises(Exception):
+        result = RulesEngine.apply_context_rules_engine(CONTEXT=CONTEXT_EMPTY, rules=df_rules, dimensions=dimensions)
+    #Catches and raises error with the correct exception message
+
+def test_context_non_dataclass():
+    result1 = RulesEngine.apply_context_rules_engine(CONTEXT=CONTEXT_NON_DATACLASS, rules=df_rules, dimensions=dimensions)
+    print(result1.materialize())
+
+    result2 = RulesEngine.apply_context_rules_engine(CONTEXT=CONTEXT, rules=df_rules, dimensions=dimensions)
+    print(result2.materialize())
+
+    assert result1.count() == result2.count()
+    assert isinstance(result1, BaseDataFrame)
+    assert isinstance(result2, BaseDataFrame)
+    assert result1.get_first_row_as_dict() == result2.get_first_row_as_dict()
+    #I may have just created a dataclass but if not then it allows for the context to be a non @dataclass class. returns same as a @dataclass class with same values
+
+
+#I am not really sure how to test "if not instance(rules, BaseDataFrame):" line 
