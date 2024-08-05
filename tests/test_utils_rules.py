@@ -73,3 +73,21 @@ def test_apply_context_rules_engine_firtst_row():
     result = RulesEngine.apply_context_rules_engine(CONTEXT=CONTEXT, rules=df_rules, dimensions=dimensions, keep_all=False)
     dict_best_result = result.get_first_row_as_dict()
     assert dict_best_result['rule_name' ] == "rule_1"   
+
+
+@pytest.mark.parametrize("non_rules", [
+    (1),
+    ("A"),
+    ([1,2,3]),
+    (None),
+    (True),
+    (["A", "B", "C"])
+])
+def test_apply_context_rules_engine_non_datafram_rules1(non_rules):
+    with pytest.raises(TypeError):
+        RulesEngine.apply_context_rules_engine(CONTEXT=CONTEXT, rules=non_rules, dimensions=dimensions)
+        #Error goes all the way to the dataframe factory, it is caught and raised when trying to convert the rules to Polars
+        #Pretty sure this is good
+
+
+    
