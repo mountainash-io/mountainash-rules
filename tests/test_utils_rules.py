@@ -182,3 +182,38 @@ def test_bad_rules_three():
     Problem
     TODO: Incompatible rules are allowed through. I do not know where the KeyError is coming from, but it is not caught by the function.
     """
+
+#Dimension tests
+dimensions_one = ["DIM_1", "DIM_2"]
+
+dimensions_two = ["DIM_1", "DIM_2", "DIM_3", "DIM_4"]
+
+dimensions_three = [None, None, None]
+
+dimensions_four = [1, 2, 3]
+
+
+def test_bad_dimensions_one():
+    result = RulesEngine.apply_context_rules_engine(CONTEXT=CONTEXT, rules=df_rules, dimensions=dimensions_one)
+    print(result.materialize())
+    assert isinstance(result, BaseDataFrame)
+    #Doesn't seem to be a difference when the dimensions are not in the rules
+
+def test_bad_dimensions_two():
+    result = RulesEngine.apply_context_rules_engine(CONTEXT=CONTEXT, rules=df_rules, dimensions=dimensions_two)
+    print(result.materialize())
+    assert isinstance(result, BaseDataFrame)
+    #Prints out the missing DIM_4 but doesn't seem to change anything
+
+def test_bad_dimensions_three():
+    with pytest.raises(TypeError):
+        result = RulesEngine.apply_context_rules_engine(CONTEXT=CONTEXT, rules=df_rules, dimensions=dimensions_three)
+        print(result.materialize())
+
+    #Raises error when translating the dimension, might be worth doing independent validation
+
+def test_bad_dimensions_four():
+    with pytest.raises(TypeError):
+        result = RulesEngine.apply_context_rules_engine(CONTEXT=CONTEXT, rules=df_rules, dimensions=dimensions_four)
+        print(result.materialize())
+    #Same as above
