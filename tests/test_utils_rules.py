@@ -5,7 +5,7 @@ import polars as pl
 import ibis
 import ibis.expr.types as ir
 from mountainash_utils_rules import RulesEngine  # Replace `your_module` with the actual module name
-from mountainash_data import BaseDataFrame
+from mountainash_data import BaseDataFrame, DataFrameFactory
 from dataclasses import dataclass
 from typing import Optional
 
@@ -128,12 +128,57 @@ TODO:
 
 
 
-rules = pl.DataFrame({  "rule_name": ["rule_1", "rule_2", "rule_3"],
-                        "DIM_1": ["A", "B", "C"],
-                        "DIM_2": ["1", "2", "3"],
-                        "DIM_3": ["X", UNKNOWN, UNKNOWN]
+rules_one = pl.DataFrame({  "rule_name": ["rule_1", "rule_2", "rule_3"],
+                        "DIM_1": [None, None, None],
+                        "DIM_2": [None, None, None],
+                        "DIM_3": [None, None, None]
                     })
-df_rules = ibis.memtable(data=rules, columns = rules.columns)
+
+rules_two = pl.DataFrame({  "rule_name": ["rule_1", "rule_2", "rule_3"],
+                        "DIM_1": ["A", 1, 2],
+                        "DIM_2": ["1", "2", "3"],
+                        "DIM_3": [None, "X", UNKNOWN]
+                    })
+rules_three = pl.DataFrame({
+    "rule_name": ["rule_1", "rule_2", "rule_3"],
+    "DIM_1": [complex(1, 1), [1, 2, 3], {"key": "value"}],
+    "DIM_2": [None, None, None],
+    "DIM_3": [None, None, None]
+})
 
 
+def test_rules_sqlite_backend():
+    df_rules_sqlite = DataFrameFactory.create_ibis_dataframe_object_from_dataframe(rules, ibis_backend_schema = "sqlite")
+    result = RulesEngine.apply_context_rules_engine(CONTEXT=CONTEXT, rules=df_rules_sqlite, dimensions=dimensions)
+    assert isinstance(result, BaseDataFrame)
     
+def test_bad_rules_one():
+    df_rules_one = ibis.memtable(data=rules_one, columns = rules.columns)
+    result = RulesEngine.apply_context_rules_engine(CONTEXT=CONTEXT, rules=df_rules_one, dimensions=dimensions)
+    print(result.materialize())
+    assert isinstance(result, BaseDataFrame)
+
+    result = RulesEngine.apply_context_rules_engine(CONTEXT=CONTEXT_ONE, rules=df_rules_one, dimensions=dimensions)
+    print(result.materialize())
+    assert isinstance(result, BaseDataFrame)
+    print(result.materialize())
+    #Doesn't break, but returns None for the columns
+
+def test_bad_rules_two():
+    df_rules_two = ibis.memtable(data=rules_two, columns = rules.columns)
+    result = RulesEngine.apply_context_rules_engine(CONTEXT=CONTEXT, rules=df_rules_two, dimensions=dimensions)
+    print(result.materialize())
+    assert isinstance(result, BaseDataFrame)
+    assert True == False
+    #This is allowed through, I dont understand this function enough to know if this is a problem or if it returns incorrect things
+    #TODO: Investigate this further
+
+def test_bad_rules_three():
+    df_rules_three = ibis.memtable(data=rules_three, columns = rules.columns)
+    result = RulesEngine.apply_context_rules_engine(CONTEXT=CONTEXT, rules=df_rules_three, dimensions=dimensions)
+    print(result.materialize())
+    assert isinstance(result, BaseDataFrame)
+    """
+    Problem
+    TODO: Incompatible rules are allowed through. I do not know where the KeyError is coming from, but it is not caught by the function.
+    """
