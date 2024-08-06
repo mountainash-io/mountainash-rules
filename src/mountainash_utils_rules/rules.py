@@ -25,7 +25,7 @@ class RulesEngine:
 
     @classmethod
     def apply_context_rules_engine(cls,
-                                        CONTEXT: Type[dataclass], 
+                                        CONTEXT: dataclass, 
                                         rules: BaseDataFrame|Any,  
                                         dimensions: List[Any],
                                         keep_all: bool=True
@@ -38,7 +38,7 @@ class RulesEngine:
             raise ValueError("Rules must be a BaseDataFrame")
 
         # Convert the rules to a backend that supports window functions        
-        if rules.ibis_backend_schema in ("polars", "pandas"):
+        if rules.ibis_backend_schema in ["polars"]:
             rules = rules.convert_backend_schema("sqlite")
 
 
