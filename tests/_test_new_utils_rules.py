@@ -40,9 +40,9 @@ def df_rules(rules_df):
 def rule_metadata():
     return RuleMetadata(
         dimensions=[
-            DimensionMetadata(name="DIM_1", rule_type=RuleType.EXACT),
-            DimensionMetadata(name="DIM_2", rule_type=RuleType.EXACT),
-            DimensionMetadata(name="DIM_3", rule_type=RuleType.EXACT)
+            DimensionMetadata(dimension_name="DIM_1", rule_type=RuleType.EXACT, data_type="string"),
+            DimensionMetadata(dimension_name="DIM_2", rule_type=RuleType.EXACT, data_type="int"),
+            DimensionMetadata(dimension_name="DIM_3", rule_type=RuleType.EXACT, data_type="string")
         ]
     )
 
@@ -57,8 +57,8 @@ def rules_engine(df_rules, rule_metadata) -> RulesEngine:
 
 def test_rules_engine_initialization(rules_engine):
     assert isinstance(rules_engine, RulesEngine)
-    assert isinstance(rules_engine.rules, BaseDataFrame)
-    assert isinstance(rules_engine.rule_metadata, RuleMetadata)
+    assert isinstance(rules_engine.rule_manager.rules, BaseDataFrame)
+    assert isinstance(rules_engine.metadata_manager.raw_rule_metadata, RuleMetadata)
 
 def test_apply_context_rules_engine_single_dimension(rules_engine):
     dimension_tests = [
@@ -192,22 +192,27 @@ def test_flexible_type_matching(rules_engine):
     # Test with string, int, and float
     context1 = FlexibleTypeContext(DIM_1="A", DIM_2="1", DIM_3="X")
     result1 = rules_engine.apply_context_rules_engine(context1, ["DIM_1", "DIM_2", "DIM_3"])
-    print(rules_engine.intermediate_values['DIM_1'].as_dict())
+    print(f"DIM_1: {rules_engine.intermediate_values['DIM_1'].as_dict()}")
+    print(f"DIM_2: {rules_engine.intermediate_values['DIM_2'].as_dict()}")
+    print(f"DIM_3: {rules_engine.intermediate_values['DIM_3'].as_dict()}")
 
-    assert result1.filter(ibis._.keep == True).count() > 0, "Should find matches for string, int, and string"
+    with check:
+        assert result1.filter(ibis._.keep == True).count() > 0#, "Should find matches for string, int, and string"
 
     # Test with all strings
     context2 = FlexibleTypeContext(DIM_1="A", DIM_2="1", DIM_3="X")
     result2 = rules_engine.apply_context_rules_engine(context2, ["DIM_1", "DIM_2", "DIM_3"])
     print(rules_engine.intermediate_values)
-    assert result2.filter(ibis._.keep == True).count() > 0, "Should find matches for all strings"
+    with check:
+        assert result2.filter(ibis._.keep == True).count() > 0#, "Should find matches for all strings"
 
     # Test with mixed types
     context3 = FlexibleTypeContext(DIM_1="A", DIM_2=1.0, DIM_3="X")
     result3 = rules_engine.apply_context_rules_engine(context3, ["DIM_1", "DIM_2", "DIM_3"])
     print(rules_engine.intermediate_values)
 
-    assert result3.filter(ibis._.keep == True).count() > 0, "Should find matches for string, float, and string"
+    with check:
+        assert result3.filter(ibis._.keep == True).count() > 0#, "Should find matches for string, float, and string"
 
 def test_unsupported_type_handling(rules_engine):
     @dataclass
@@ -231,14 +236,14 @@ def test_unsupported_type_handling(rules_engine):
 def test_rule_type_exact(df_rules):
     metadata = RuleMetadata(
         dimensions=[
-            DimensionMetadata(name="DIM_1", rule_type=RuleType.EXACT),
-            DimensionMetadata(name="DIM_2", rule_type=RuleType.EXACT),
-            DimensionMetadata(name="DIM_3", rule_type=RuleType.EXACT)
+            DimensionMetadata(dimension_name="DIM_1", rule_type=RuleType.EXACT),
+            DimensionMetadata(dimension_name="DIM_2", rule_type=RuleType.EXACT),
+            DimensionMetadata(dimension_name="DIM_3", rule_type=RuleType.EXACT)
         ]
     )
     engine = RulesEngine(rules=df_rules, rule_metadata=metadata)
     result = engine.apply_context_rules_engine(CONTEXT, ["DIM_1", "DIM_2", "DIM_3"])
-    print(engine.intermediate_values)
+    # print(engine.intermediate_values)
     assert result.filter(ibis._.keep == True).count() == 1, "Should find exactly one match for EXACT rule type"
 
 def test_rule_type_range():
@@ -254,20 +259,20 @@ def test_rule_type_range():
 
     metadata = RuleMetadata(
         dimensions=[
-            DimensionMetadata(name="DIM_1", rule_type=RuleType.EXACT),
-            DimensionMetadata(name="DIM_2", rule_type=RuleType.RANGE, range_min_field="DIM_2_MIN", range_max_field="DIM_2_MAX", data_type="int"),
-            DimensionMetadata(name="DIM_3", rule_type=RuleType.EXACT)
+            DimensionMetadata(dimension_name="DIM_1", rule_type=RuleType.EXACT),
+            DimensionMetadata(dimension_name="DIM_2", rule_type=RuleType.RANGE, range_min_field="DIM_2_MIN", range_max_field="DIM_2_MAX", data_type="int"),
+            DimensionMetadata(dimension_name="DIM_3", rule_type=RuleType.EXACT)
         ]
     )
     engine = RulesEngine(rules=range_rules, rule_metadata=metadata)
     context = Context(DIM_1="A", DIM_2=1, DIM_3=UNKNOWN)
     result = engine.apply_context_rules_engine(context, ["DIM_1", "DIM_2", "DIM_3"])
-    print(engine.intermediate_values)
+    # print(engine.intermediate_values)
     assert result.filter(ibis._.keep == True).count() == 1, "Should find one match for RANGE rule type with correct type in context"
 
     context = Context(DIM_1="A", DIM_2="1", DIM_3=UNKNOWN)
     result2 = engine.apply_context_rules_engine(context, ["DIM_1", "DIM_2", "DIM_3"])
-    print(engine.intermediate_values)
+    # print(engine.intermediate_values)
     assert result2.filter(ibis._.keep == True).count() == 1, "Should find one match for RANGE rule type with Incorrect type in context cast to int"
 
 # def test_rule_type_wildcard(rules_df):
@@ -319,9 +324,9 @@ def test_rule_type_regex():
 
     metadata = RuleMetadata(
         dimensions=[
-            DimensionMetadata(name="DIM_1", rule_type=RuleType.REGEX),
-            DimensionMetadata(name="DIM_2", rule_type=RuleType.EXACT),
-            DimensionMetadata(name="DIM_3", rule_type=RuleType.EXACT)
+            DimensionMetadata(dimension_name="DIM_1", rule_type=RuleType.REGEX),
+            DimensionMetadata(dimension_name="DIM_2", rule_type=RuleType.EXACT),
+            DimensionMetadata(dimension_name="DIM_3", rule_type=RuleType.EXACT)
         ]
     )
     engine = RulesEngine(rules=regex_rules, rule_metadata=metadata)
@@ -329,25 +334,25 @@ def test_rule_type_regex():
     # Test regex match
     context1 = Context(DIM_1="A5", DIM_2="1", DIM_3=UNKNOWN)
     result1 = engine.apply_context_rules_engine(context1, ["DIM_1", "DIM_2", "DIM_3"])
-    print(engine.intermediate_values)
+    # print(engine.tracability_manager.intermediate_values)
     assert result1.filter(ibis._.keep == True).count() == 1, "Should find one match for regex match A[0-9]"
     
     # Test another regex match
     context2 = Context(DIM_1="Bz", DIM_2="2", DIM_3=UNKNOWN)
     result2 = engine.apply_context_rules_engine(context2, ["DIM_1", "DIM_2", "DIM_3"])
-    print(engine.intermediate_values)
+    # print(engine.intermediate_values)
     assert result2.filter(ibis._.keep == True).count() == 1, "Should find one match for regex match B[a-z]"
     
     # Test wildcard-like regex match
     context3 = Context(DIM_1="CAnything", DIM_2="3", DIM_3=UNKNOWN)
     result3 = engine.apply_context_rules_engine(context3, ["DIM_1", "DIM_2", "DIM_3"])
-    print(engine.intermediate_values)
+    # print(engine.intermediate_values)
     assert result3.filter(ibis._.keep == True).count() == 1, "Should find one match for regex match C.*"
     
     # Test no match
     context4 = Context(DIM_1="D1", DIM_2="1", DIM_3=UNKNOWN)
     result4 = engine.apply_context_rules_engine(context4, ["DIM_1", "DIM_2", "DIM_3"])
-    print(engine.intermediate_values)
+    # print(engine.intermediate_values)
     assert result4.filter(ibis._.keep == True).count() == 0, "Should find no matches for non-matching regex"
 
 # def test_mixed_rule_types():

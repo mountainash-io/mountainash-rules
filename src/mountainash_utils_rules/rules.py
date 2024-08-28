@@ -64,18 +64,20 @@ class RulesEngine:
                     rules: BaseDataFrame, 
                     rule_metadata: RuleMetadata):
 
-        self.rules: BaseDataFrame
         #Prepare Rules
+        self.rules: BaseDataFrame
         self._init_rules(rules)
 
-        self.rule_metadata: RuleMetadata = rule_metadata
-        self.lookup_rule_metadata: Optional[Dict[str, DimensionMetadata]] = None
 
         #Prepare Metadata
+        self.rule_metadata: RuleMetadata = rule_metadata
+        self.lookup_rule_metadata: Optional[Dict[str, DimensionMetadata]] = None
         self._init_rule_metadata(rule_metadata)
+
 
         #Tracability of intermediate values during each
         self.intermediate_values = {}
+        self.warnings = {}
 
 
     def _init_rules(self, rules: BaseDataFrame):
@@ -325,6 +327,15 @@ class RulesEngine:
         return rules
 
 
+    def _log_context_cast_warning(self, dimension_name: str, context_value: Any, context_type: Type, target_type: str) -> None:
+        """
+        Log a warning for a context value that is not of the correct type.
+        """
+        if dimension_name not in self.warnings:
+            self.warnings[dimension_name] = {}
+
+        self.warnings[dimension_name]["context_cast"] = f"Context value {context_value} of type {context_type} has been cast to {target_type} for dimension {dimension_name}"
+
 
     def _apply_filter_exact_match(self, 
                                    rules: BaseDataFrame,  
@@ -338,7 +349,11 @@ class RulesEngine:
         dimension_rule_fieldname: str = self.get_dimension_rule_fieldname(dimension_name=dimension_name)
 
         
+
+
         try:
+            self._log_context_cast_warning(dimension_name=dimension_name, context_value=context_value, context_type=type(context_value), target_type=target_type)
+
             context_value_cast = ibis.literal(context_value).cast(target_type)
         except (Exception,IbisTypeError):
             rules = rules.mutate(filter_match = ibis.literal(self.PRIME_FALSE))
@@ -526,6 +541,21 @@ class RulesEngine:
 
         return rules
 
+    def _save_dimension_intermediate_values(self, rules: BaseDataFrame, dimension_name: str) -> None:
+
+        self.intermediate_values[dimension_name] = rules.select([
+            'rule_name',
+            'dimension_filter_product',
+            'dimension_any_false',
+            'dimension_any_true',
+            'cumu_dimension_count',
+            'cumu_soft_match_count',
+            'cumu_hard_match_count',
+            'dropped',
+            'dropped_by_dimension'
+        ])
+
+
     def _initialize_rule_flags(self, rules: BaseDataFrame) -> BaseDataFrame:
         """
         Initialize the rule flags for the rules table.
@@ -545,19 +575,7 @@ class RulesEngine:
 
         return rules
 
-    def _save_dimension_intermediate_values(self, rules: BaseDataFrame, dimension_name: str) -> None:
 
-        self.intermediate_values[dimension_name] = rules.select([
-            'rule_name',
-            'dimension_filter_product',
-            'dimension_any_false',
-            'dimension_any_true',
-            'cumu_dimension_count',
-            'cumu_soft_match_count',
-            'cumu_hard_match_count',
-            'dropped',
-            'dropped_by_dimension'
-        ])
 
 
     def _apply_dimension_filter_flags(self, 
