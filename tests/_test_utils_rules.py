@@ -257,17 +257,17 @@ def test_context_non_dataclass():
 """
 
 #New Tests:
-# import pytest
-# from pytest_check import check
-# import polars as pl
-# import ibis
-# import ibis.expr.types as ir
-# from mountainash_utils_rules import RulesEngine
-# from mountainash_data import BaseDataFrame, DataFrameFactory
-# from dataclasses import dataclass
-# from typing import Optional, Any
+import pytest
+from pytest_check import check
+import polars as pl
+import ibis
+import ibis.expr.types as ir
+from mountainash_utils_rules import RulesEngine
+from mountainash_data import BaseDataFrame, DataFrameFactory
+from dataclasses import dataclass
+from typing import Optional, Any
 
-# ibis.set_backend(backend="polars")
+ibis.set_backend(backend="polars")
 
 UNKNOWN = "<NA>"
 

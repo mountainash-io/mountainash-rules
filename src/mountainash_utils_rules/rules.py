@@ -1,32 +1,41 @@
 
-from typing import List, Any,Type
-from dataclasses import dataclass
+from typing import List, Any,Optional, Dict
 
 import ibis
 import ibis.expr.types as ir
-from mountainash_data import BaseDataFrame, DataFrameFactory
+from ibis.common.deferred import Deferred
+from ibis.common.exceptions import IbisTypeError
 
-# ibis.set_backend(backend="polars")
-# from mountainash_data import BaseDataFrame
+
+from mountainash_data import BaseDataFrame, DataFrameFactory
+import re
+from pydantic import BaseModel
+from enum import Enum
+# import operator 
+
+
 
 
 class RuleType(Enum):
-    EXACT = "exact"
-    RANGE = "range"
-    WILDCARD = "wildcard"
+    EXACT = "EXACT"
+    RANGE = "RANGE"
+    REGEX = "REGEX"
+    # WILDCARD = "WILDCARD"
+    # FUZZY = "FUZZY"
 
 class DimensionMetadata(BaseModel):
+
     name: str
     context_field: Optional[str] = None
     rule_field: Optional[str] = None
 
-    rule_type: RuleType
-    data_type: Type = str  # Default to string, but can be int, float, date, bool etc.
+    rule_type: RuleType = RuleType.EXACT
+    data_type: str = "string"  # Default to string, but can be int, float, date, bool etc.
     
     valid_values: List[Any] = []  # List of possible values for the dimension
     
-    range_min_field: str = None  # Minimum value for the dimension
-    range_max_field: str = None  # Maximum value for the dimension
+    range_min_field: Optional[str] = None  # Minimum value for the dimension
+    range_max_field: Optional[str] = None   # Maximum value for the dimension
     range_min_inclusive: bool = True  # Whether the minimum value is inclusive
     range_max_inclusive: bool = True  # Whether the maximum value is inclusive
 
@@ -37,6 +46,7 @@ class RuleMetadata(BaseModel):
 
 class RulesEngine:
 
+    #TODO: Create separate classes for handling and validating: rules, context and metadata
 
     UNKNOWN = "<NA>"
     NOT_SET = "<NOT_SET>"
@@ -46,64 +56,206 @@ class RulesEngine:
     PRIME_FALSE = 3
     PRIME_UNKNOWN = 5
 
-    ALLOWED_CONTEXT_TYPES = (ir.IntegerScalar, ir.FloatingScalar, ir.BooleanScalar, ir.StringScalar)
+    # ALLOWED_CONTEXT_TYPES = (ir.IntegerScalar, ir.FloatingScalar, ir.BooleanScalar, ir.StringScalar)
+    ALLOWED_CONTEXT_TYPES = (str, int, float, bool, type(None))
 
 
     def __init__(self, 
-                    rules: ir.Table, 
+                    rules: BaseDataFrame, 
                     rule_metadata: RuleMetadata):
 
-        self.rules: BaseDataFrame = rules
+        self.rules: BaseDataFrame
+        #Prepare Rules
+        self._init_rules(rules)
+
         self.rule_metadata: RuleMetadata = rule_metadata
+        self.lookup_rule_metadata: Optional[Dict[str, DimensionMetadata]] = None
 
-        self.prepare_rule_metadata(raw_rule_metadata)
+        #Prepare Metadata
+        self._init_rule_metadata(rule_metadata)
 
-        # Create a dictionary of dimension metadata for easy access
-        self.lookup_rule_metadata: Optional[Dict[str, DimensionMetadata]] = {dimension.name: dimension for dimension in rule_metadata.dimensions}
+        #Tracability of intermediate values during each
+        self.intermediate_values = {}
 
 
-    def get_dimension_context_fieldname(self, dimension_name:str) -> List[str]:
+    def _init_rules(self, rules: BaseDataFrame):
+        """
+        Validate the dimensions in the rule metadata.
+        """
+        if rules is None:
+            raise ValueError("No rules specified.")
+
+        if not isinstance(rules, BaseDataFrame):
+            raise ValueError("Rules must be a BaseDataFrame")
+
+        # Convert the rules to a backend that supports window functions        
+        if rules.ibis_backend_schema in ["polars"]:
+            rules = rules.convert_backend_schema(new_backend_schema="sqlite")
+
+        if rules.count() == int(0):
+            raise ValueError("No rules specified.")
+
+        self.rules = rules
+
+ 
+
+    def _init_rule_metadata(self, rule_metadata: Optional[RuleMetadata] = None):
+        """
+        Validate the dimensions in the rule metadata.
+        """
+
+        if rule_metadata is not None:
+
+            #validate the rule metadata
+            for dimension in rule_metadata.dimensions:
+
+                if dimension.rule_type == RuleType.RANGE:
+                    if dimension.range_min_field is None or dimension.range_max_field is None:
+                        raise ValueError(f"Dimension {dimension.name} is of type RANGE but no min/max fields are specified.")
+                elif dimension.rule_type in { #RuleType.WILDCARD, 
+                                             RuleType.REGEX, RuleType.EXACT }:
+                    continue
+                else:
+                    raise ValueError(f"Dimension {dimension.name} has an invalid rule type: {dimension.rule_type}")
+
+            #validate names are unique:
+            dimension_names = [dimension.name for dimension in rule_metadata.dimensions]
+            if len(dimension_names) != len(set(dimension_names)):
+                raise ValueError("Dimension names must be unique.")
+
+            #If we get this far, set up the dimensions lookup!
+            self.lookup_rule_metadata: Optional[Dict[str, DimensionMetadata]] = {dimension.name: dimension for dimension in rule_metadata.dimensions}
+
+    def get_dimension_attribute(self, 
+                                dimension_name:str, 
+                                attribute: str, 
+                                default_value: Any) -> Any:
         """
         Get the field name for the context for a given dimension.
         """
 
+        if self.lookup_rule_metadata:
+            dimension: Optional[DimensionMetadata] = self.lookup_rule_metadata.get(dimension_name, None)
 
-        if self.lookup_rule_metadata[dimension_name].context_field:
-            return self.lookup_rule_metadata[dimension_name].context_field
-        else:
-            return dimension_name
+            if dimension is not None:
+                value = getattr(dimension, attribute, default_value)
+                if value is not None:
+                    return value
+                
+        return default_value
 
-    def get_dimension_rule_fieldname(self, dimension_name:str) -> List[str]:
+
+
+    def get_dimension_context_fieldname(self, dimension_name:str) -> str:
+        """
+        Get the field name for the context for a given dimension.
+        """
+
+        return self.get_dimension_attribute(dimension_name=dimension_name, attribute="context_field", default_value=dimension_name)
+
+
+    def get_dimension_rule_fieldname(self, dimension_name:str) -> str:
         """
         Get the field name for the rule_field for a given dimension.
         """
-        if self.lookup_rule_metadata[dimension_name].rule_field:
-            return self.lookup_rule_metadata[dimension_name].rule_field
+
+        rule_type = self.get_dimension_rule_type(dimension_name=dimension_name)
+
+        if rule_type == RuleType.RANGE:
+            return self.get_dimension_rule_range_min_field(dimension_name=dimension_name)
         else:
-            return dimension_name
+            return self.get_dimension_attribute(dimension_name=dimension_name, attribute="rule_field", default_value=dimension_name)
 
 
-    def get_dimension_rule_type(self, dimension_name:str) -> List[str]:
+    def get_dimension_rule_type(self, dimension_name:str) -> RuleType:
         """
-        Get the field name for the rule_field for a given dimension.
+        Get the field name for the rule_type for a given dimension.
         """
-        if self.lookup_rule_metadata[dimension_name].rule_type:
-            return self.lookup_rule_metadata[dimension_name].rule_type
+
+        return self.get_dimension_attribute(dimension_name=dimension_name, attribute="rule_type", default_value=RuleType.EXACT)
+
+
+    def get_dimension_data_type(self, dimension_name:str) -> str:
+        """
+        Get the field name for the data_type for a given dimension.
+        """
+
+        return self.get_dimension_attribute(dimension_name=dimension_name, attribute="data_type", default_value="string")
+
+
+    def get_dimension_rule_range_min_field(self, dimension_name:str) -> str:
+        """
+        Get the field name for the range_min_field for a given dimension.
+        """
+
+        range_min_field = self.get_dimension_attribute(dimension_name=dimension_name, attribute="range_min_field", default_value=None)
+
+        if range_min_field is None:
+            return self.get_dimension_rule_fieldname(dimension_name=dimension_name)
         else:
-            return RuleType.EXACT
+            return range_min_field
+
+
+    def get_dimension_rule_range_max_field(self, dimension_name:str) -> str:
+        """
+        Get the field name for the range_max_field for a given dimension.
+        """
+
+        range_max_field = self.get_dimension_attribute(dimension_name=dimension_name, attribute="range_max_field", default_value=None)
+
+        if range_max_field is None:
+            return self.get_dimension_rule_fieldname(dimension_name=dimension_name)
+        else:
+            return range_max_field
+
+
+    def get_dimension_rule_range_min_inclusive(self, dimension_name:str) -> bool:
+        """
+        Get the field name for the range_min_inclusive for a given dimension.
+        """
+
+        return self.get_dimension_attribute(dimension_name=dimension_name, attribute="range_min_inclusive", default_value=True)
+
+
+
+    def get_dimension_rule_range_max_inclusive(self, dimension_name:str) -> bool:
+        """
+        Get the field name for the range_max_inclusive for a given dimension.
+        """
+
+        return self.get_dimension_attribute(dimension_name=dimension_name, attribute="range_max_inclusive", default_value=True)
+
+
+
 
     def get_active_dimension_names(self, 
-                              context: dataclass, 
+                              context: BaseModel, 
                               rules: BaseDataFrame,
                               dimension_names: List[str]
                               ) -> List[str]:
 
-       #Validate fieldnames
+        if dimension_names == []:
+            raise ValueError("No dimension names specified") 
 
-        #identify dimensions in Context and Rules
-        actual_context_fields: List[Dict[str,str]] = {dimension_name: self.get_dimension_context_fieldname(dimension_name=dimension_name) for dimension_name in dimension_names if getattr(context, self.get_dimension_context_fieldname(dimension_name=dimension_name), self.NOT_SET) is not self.NOT_SET}
-        actual_rule_fields: List[Dict[str,str]] =    {dimension_name: self.get_dimension_rule_fieldname(dimension_name=dimension_name) for dimension_name in dimension_names if self.get_dimension_rule_fieldname(dimension_name=dimension_name) in rules.get_column_names()}
 
+
+        #The fields the rule metadata asks for:
+        expected_rule_fields:   Dict[str,str] = {dimension_name: self.get_dimension_rule_fieldname(dimension_name=dimension_name) for dimension_name in dimension_names}
+        expected_context_fields: Dict[str,str] = {dimension_name: self.get_dimension_context_fieldname(dimension_name=dimension_name) for dimension_name in dimension_names}
+
+
+        #The fields that actually exist
+        actual_rule_fields:    Dict[str,str] = {dimension_name: fieldname
+                                                    for dimension_name, fieldname in expected_rule_fields.items() 
+                                                    if fieldname in rules.get_column_names()}
+
+
+        actual_context_fields: Dict[str,str] = {dimension_name: fieldname
+                                                    for dimension_name, fieldname in expected_context_fields.items() 
+                                                    if getattr(context, fieldname, self.NOT_SET) is not self.NOT_SET}
+        
+
+        #find the dimensions that have their fields active in the rules and the context
         active_context_dimensions =    [dimension_name for dimension_name in dimension_names if dimension_name in actual_context_fields]
         active_rule_dimensions =       [dimension_name for dimension_name in dimension_names if dimension_name in actual_rule_fields]
 
@@ -114,7 +266,7 @@ class RulesEngine:
         missing_dimensions = set(dimension_names) - set(active_dimensions)
 
         if missing_dimensions:
-            print(f"Warning: Dimensons missing in rules or context: {missing_dimensions}")
+            print(f"Warning: Dimensons requested in rules_meatadata, but are missing in rules or context: {missing_dimensions}")
     
         if active_dimensions == []:
             raise ValueError("No active dimensions found in rules or context")        
@@ -122,80 +274,28 @@ class RulesEngine:
         return active_dimensions
 
 
-    def prepare_rule_metadata(self, rule_metadata: Optional[RuleMetadata] = None):
-        """
-        Validate the dimensions in the rule metadata.
-        """
+    ##################
+    # Apply Filters
 
-        if rule_metadata is not None
-
-        #validate the rule metadata
-        for dimension in rule_metadata.dimensions:
-            elif dimension.rule_type == RuleType.RANGE:
-                if dimension.range_min_field is None or dimension.range_max_field is None:
-                    raise ValueError(f"Dimension {dimension.name} is of type RANGE but no min/max fields are specified.")
-            elif dimension.rule_type == RuleType.WILDCARD:
-                pass
-            elif dimension.rule_type == RuleType.EXACT:
-                pass
-            else:
-                raise ValueError(f"Dimension {dimension.name} has an invalid rule type: {dimension.rule_type}")
-
-        #validate names are unique:
-        dimension_names = [dimension.name for dimension in rule_metadata.dimensions]
-        if len(dimension_names) != len(set(dimension_names)):
-            raise ValueError("Dimension names must be unique.")
-
-        #If we get this far, set up the dimensions lookup!
-        self.lookup_rule_metadata: Optional[Dict[str, DimensionMetadata]] = {dimension.name: dimension for dimension in rule_metadata.dimensions}
-
-
-
-    def _is_context_type_supported(self, context_value: Any) -> bool:
-        """
-        Check if the column and literal value have compatible types.
-        """
-        try:
-            if isinstance(ibis.literal(context_value), self.ALLOWED_CONTEXT_TYPES):
-                return True
-            else:
-                return False
-        except Exception as e:
-            return False
-
-
-
-    def _initialize_rule_flags(self, rules: BaseDataFrame) -> BaseDataFrame:
-        """
-        Initialize the rule flags for the rules table.
-        """
-        rules = rules.mutate(
-            dimension_count=            ibis.literal(0),    
-            rule_softmatch_count=       ibis.literal(0),
-            context_softmatch_count=    ibis.literal(0),
-            dual_softmatch_count =      ibis.literal(0),
-            any_softmatch_count =       ibis.literal(0),
-            match_softmatch_count =     ibis.literal(0),
-            hard_match_count=           ibis.literal(0),
-            dropped=                    ibis.null(),
-            dropped_by=                 ibis.null(),
-            filter_all_false=           ibis.literal(False),
-            filter_all_true=            ibis.literal(True)
-        )
-
-        return rules
-
-
-
-    def _apply_filter_rule_wildcard(self, 
+    def _apply_filter_rule_unknown(self, 
                                     rules: BaseDataFrame,  
-                                    dimension: DimensionMetadata) -> BaseDataFrame:
+                                    dimension_name: str) -> BaseDataFrame:
         """
         Apply a filter rule to the rules table to check for a wildcard value.
         """
+
+        rule_type = self.get_dimension_rule_type(dimension_name=dimension_name)
+
+        if rule_type == RuleType.RANGE:
+            dimension_rule_fieldname: str = self.get_dimension_rule_range_min_field(dimension_name=dimension_name)
+        else:
+            dimension_rule_fieldname: str = self.get_dimension_rule_fieldname(dimension_name=dimension_name)
+
+
+
         rules = rules.mutate(
 
-            filter1 = ibis.ifelse(condition=ibis._[dimension.name] == ibis.literal(self.UNKNOWN), 
+            filter_rule_unknown = ibis.ifelse(condition=ibis._[dimension_rule_fieldname].cast('string') == ibis.literal(self.UNKNOWN), 
                                 true_expr=ibis.literal(self.PRIME_TRUE), 
                                 false_expr=ibis.literal(self.PRIME_UNKNOWN) ),
         )
@@ -203,154 +303,290 @@ class RulesEngine:
         return rules
 
 
-    def _apply_filter_context_wildcard(self, 
+    def _apply_filter_context_unknown(self, 
                                         rules: BaseDataFrame,  
                                         context_value: Any) -> BaseDataFrame:
         """
         Apply a filter rule to the rules table to check for a wildcard value.
         """
+
+        #cast the context value to aplain python string
+        context_value = str(context_value)            
+
         if context_value == self.UNKNOWN:
             rules = rules.mutate(
-                filter2 = ibis.literal(self.PRIME_TRUE)
+                filter_context_unknown = ibis.literal(self.PRIME_TRUE)
             )
         else:
             rules = rules.mutate(
-                filter2 = ibis.literal(self.PRIME_UNKNOWN)
+                filter_context_unknown = ibis.literal(self.PRIME_UNKNOWN)
             )
 
         return rules
 
 
 
-    def _apply_filter_simple_match(self, 
+    def _apply_filter_exact_match(self, 
                                    rules: BaseDataFrame,  
-                                   dimension: DimensionMetadata,  
-                                   context_value: Any, 
-                                   strict_context_types:bool) -> BaseDataFrame:
+                                   dimension_name: str,  
+                                   context_value: Any) -> BaseDataFrame:
         """
         Apply a filter rule to the rules table to check for a wildcard value.
         """
 
+        target_type: str = self.get_dimension_data_type(dimension_name=dimension_name)
+        dimension_rule_fieldname: str = self.get_dimension_rule_fieldname(dimension_name=dimension_name)
 
-        context_type_supported = self._is_context_type_supported(context_value)
-        context_type = type(context_value)
+        
+        try:
+            context_value_cast = ibis.literal(context_value).cast(target_type)
+        except (Exception,IbisTypeError):
+            rules = rules.mutate(filter_match = ibis.literal(self.PRIME_FALSE))
+            return rules
+
 
         #Filter 3 is a direct comparison of the context value to the rule value
-        if not context_type_supported:
 
-            if strict_context_types is False:
-                rules = rules.mutate(filter3 = ibis.literal(self.PRIME_UNKNOWN))
-            else:
-                rules = rules.mutate(filter3 = ibis.literal(self.PRIME_FALSE))
+        try:
+            rules = rules.mutate(
+                filter_match = ibis.ifelse(condition= ibis._[dimension_rule_fieldname].cast(target_type) == context_value_cast, 
+                                    true_expr=ibis.literal(self.PRIME_TRUE), 
+                                    false_expr=ibis.literal(self.PRIME_FALSE) )
+            )
 
-        else:
+            return rules
 
-            if strict_context_types is False:
-                rules = rules.mutate(
-                    filter3 = ibis.ifelse(condition= ibis._[dimension.name].cast(context_type) == ibis.literal(context_value), 
-                                        true_expr=ibis.literal(self.PRIME_TRUE), 
-                                        false_expr=ibis.literal(self.PRIME_FALSE) )
-                )
-            else:
-                rules = rules.mutate(
-                    filter3 = ibis.ifelse(condition= ibis._[dimension.name] == ibis.literal(context_value), 
-                                        true_expr=ibis.literal(self.PRIME_TRUE), 
-                                        false_expr=ibis.literal(self.PRIME_FALSE) )
-                )
+        except (Exception,IbisTypeError):
+            raise ValueError(f"Could not cast rule field {dimension_rule_fieldname} to {target_type} in _apply_filter_exact_match() for dimension {dimension_name}")            
+        
 
-        return rules
+    # def _apply_filter_fuzzy_match(self, 
+    #                                rules: BaseDataFrame,  
+    #                                dimension_name: str,  
+    #                                context_value: Any) -> BaseDataFrame:
+    #     """
+    #     Apply a filter rule to the rules table to check for a wildcard value.
+    #     """
+
+    #     target_type: str = self.get_dimension_data_type(dimension_name=dimension_name)
+    #     dimension_rule_fieldname: str = self.get_dimension_rule_fieldname(dimension_name=dimension_name)
+
+        
+    #     try:
+    #         context_value_cast = ibis.literal(context_value).cast(target_type)
+    #     except Exception:
+    #         rules = rules.mutate(filter_match = ibis.literal(self.PRIME_FALSE))
+    #         return rules
 
 
+    #     #Filter 3 is a direct comparison of the context value to the rule value
 
-    @classmethod
-    def _apply_filter_regex_match(cls, rules: BaseDataFrame,  dimension: DimensionMetadata,  context_value: Any) -> BaseDataFrame:
+    #     try:
+    #         rules = rules.mutate(
+    #             filter_match = ibis.ifelse(condition= ibis._[dimension_rule_fieldname].cast(target_type) == context_value_cast, 
+    #                                 true_expr=ibis.literal(self.PRIME_TRUE), 
+    #                                 false_expr=ibis.literal(self.PRIME_FALSE) )
+    #         )
+
+    #         return rules
+
+    #     except Exception:
+    #         raise ValueError(f"Could not cast rule field {dimension_rule_fieldname} to {target_type} in _apply_filter_exact_match() for dimension {dimension_name}")            
+        
+
+
+    # def _convert_wildcard_string_to_regex(self, pattern: str) -> str:
+    #     """Convert a wildcard pattern to a regex pattern."""
+    #     regex =  '^' + re.escape(pattern).replace(r'\*', '.*').replace(r'\?', '.') + '$'
+    #     return regex
+
+
+    # def _apply_filter_wildcard_match(self, rules: BaseDataFrame,  dimension_name: str,  context_value: Any) -> BaseDataFrame:
+    #     """
+    #     Apply a filter rule to the rules table to check for a wildcard value.
+    #     """
+
+    #     # def wildcard_to_regex(pattern):
+    #     #     return '^' + re.escape(pattern).replace(r'\*', '.*').replace(r'\?', '.') + '$'
+        
+
+    #     try:           
+    #         # context_value_cast = ibis.literal(self._convert_wildcard_string_to_regex(context_value)).cast(target_type='string')
+    #         context_value_cast = ibis.literal(context_value).cast('string')
+    #     except (Exception,IbisTypeError):
+    #         print(f"Error in context_value {context_value} casting for {dimension_name}")
+
+    #         rules = rules.mutate(filter_match = ibis.literal(self.PRIME_FALSE))
+    #         return rules
+
+
+    #     try:
+    #         dimension_rule_fieldname: str = self.get_dimension_rule_fieldname(dimension_name=dimension_name)
+
+    #         rules = rules.mutate(
+    #             context_value = context_value_cast,
+    #             rule_regex = ibis._[dimension_rule_fieldname].re_replace(r'\*', '.*').re_replace(r'\?', '.')
+    #         ).mutate(                
+    #             filter_match = ibis.ifelse(
+    #                 condition= ibis._.context_value.re_search( ibis.literal('^') + ibis._.rule_regex  + ibis.literal('$') ),
+    #                 true_expr=ibis.literal(value=self.PRIME_TRUE),
+    #                 false_expr=ibis.literal(value=self.PRIME_FALSE)
+    #             )
+    #         )
+
+    #         # rule_check = rules.mutate(regex= wildcard_to_regex(ibis._[dimension_rule_fieldname]))
+    #         print(rules.select("rule_regex").as_dict())
+
+    #         rules = rules.drop( columns="rule_regex")
+
+    #     except (Exception,IbisTypeError) as e:
+    #         print(f"Error in wildcard match for {dimension_name}: {e}")
+    #         rules = rules.mutate(filter_match = ibis.literal(self.PRIME_FALSE))
+
+    #     return rules
+
+
+    def _apply_filter_regex_match(self, rules: BaseDataFrame,  dimension_name: str,  context_value: Any) -> BaseDataFrame:
         """
         Apply a filter rule to the rules table to check for a wildcard value.
         """
 
 
-        rules = rules.mutate(
-            filter3 = ibis.ifelse(
-                condition=ibis._[dimension.name].re_search(self.wildcard_to_regex(context_value)),
-                true_expr=ibis.literal(self.PRIME_TRUE),
-                false_expr=ibis.literal(self.PRIME_FALSE)
-            )
-        )
+
+        try:
+            context_value_cast = ibis.literal(value=context_value).cast("string")
+        except (Exception,IbisTypeError):
+            rules = rules.mutate(filter_match = ibis.literal(self.PRIME_FALSE))
+            return rules
+
+        try:
+
+            dimension_rule_fieldname: str = self.get_dimension_rule_fieldname(dimension_name=dimension_name)
+
+
+            rules = rules.mutate(
+                context_value = context_value_cast
+            ).mutate(
+                filter_match = ibis.ifelse(
+                    condition= ibis._.context_value.re_search(ibis._[dimension_rule_fieldname]),
+                    true_expr=ibis.literal(self.PRIME_TRUE),
+                    false_expr=ibis.literal(self.PRIME_FALSE)
+                )
+            ).drop( columns="context_value")
+
+        except (Exception,IbisTypeError):
+            rules = rules.mutate(filter_match = ibis.literal(self.PRIME_FALSE))
 
         return rules
 
 
-    @classmethod
-    def _apply_filter_range_match(cls, rules: BaseDataFrame,  dimension: str,  context_value: Any) -> BaseDataFrame:
+    def _apply_filter_range_match(self, rules: BaseDataFrame,  dimension_name: str,  context_value: Any) -> BaseDataFrame:
         """
         Apply a filter rule to the rules table to check for a wildcard value.
         """
 
-        rules = rules.mutate(
+        target_type: str = self.get_dimension_data_type(dimension_name=dimension_name)
+        
+        try:
+            context_value_cast = ibis.literal(context_value).cast(target_type)
+        except (Exception,IbisTypeError):
+            rules = rules.mutate(filter_match = ibis.literal(self.PRIME_FALSE))
+            return rules
 
-            filter3 = ibis.ifelse(
-                condition=(
-                    (ibis._[rules.range_min_value].isnull() | (ibis._[lower_col] <= ibis.literal(context_value))) &
-                    (ibis._[context_value].isnull() | (ibis.literal(context_value) <= ibis._[upper_col]))
-                ),
-                true_expr=ibis.literal(cls.PRIME_TRUE),
-                false_expr=ibis.literal(cls.PRIME_FALSE)
+        try:
+
+            min_field: str = self.get_dimension_rule_range_min_field(dimension_name=dimension_name)
+            max_field: str = self.get_dimension_rule_range_max_field(dimension_name=dimension_name)
+
+            min_inclusive: bool = self.get_dimension_rule_range_min_inclusive(dimension_name=dimension_name)
+            max_inclusive: bool = self.get_dimension_rule_range_max_inclusive(dimension_name=dimension_name)
+
+            #Use the ibis deferred operators
+            min_op = Deferred.__le__ if min_inclusive else Deferred.__lt__
+            max_op = Deferred.__ge__ if max_inclusive else Deferred.__gt__
+
+
+            condition = (
+                (ibis._[min_field].isnull() | min_op(ibis._[min_field], context_value_cast)) &
+                (ibis._[max_field].isnull() | max_op(ibis._[max_field], context_value_cast))
             )
 
-        rules = rules.mutate(
-            filter3 = ibis.ifelse(
-                condition=ibis._[dimension].re_search(self.wildcard_to_regex(context_value)),
-                true_expr=ibis.literal(self.PRIME_TRUE),
-                false_expr=ibis.literal(self.PRIME_FALSE)
+
+            rules = rules.mutate(
+                filter_match = ibis.ifelse(
+                    condition=condition,
+                    true_expr=ibis.literal(self.PRIME_TRUE),
+                    false_expr=ibis.literal(self.PRIME_FALSE)
+                )
             )
+
+
+        except (Exception,IbisTypeError):
+            rules = rules.mutate(filter_match = ibis.literal(self.PRIME_FALSE))
+
+        return rules
+
+    def _initialize_rule_flags(self, rules: BaseDataFrame) -> BaseDataFrame:
+        """
+        Initialize the rule flags for the rules table.
+        """
+        rules = rules.mutate(
+            cumu_dimension_count=            ibis.literal(0),    
+            # rule_softmatch_count=       ibis.literal(0),
+            # context_softmatch_count=    ibis.literal(0),
+            # dual_softmatch_count =      ibis.literal(0),
+            cumu_soft_match_count =          ibis.literal(0),
+            cumu_hard_match_count=           ibis.literal(0),
+            dropped=                    ibis.null(),
+            dropped_by_dimension=                 ibis.null(),
+            # filter_all_false=           ibis.literal(False),
+            # filter_all_true=            ibis.literal(True)
         )
 
         return rules
 
+    def _save_dimension_intermediate_values(self, rules: BaseDataFrame, dimension_name: str) -> None:
+
+        self.intermediate_values[dimension_name] = rules.select([
+            'rule_name',
+            'dimension_filter_product',
+            'dimension_any_false',
+            'dimension_any_true',
+            'cumu_dimension_count',
+            'cumu_soft_match_count',
+            'cumu_hard_match_count',
+            'dropped',
+            'dropped_by_dimension'
+        ])
 
 
-
-    @classmethod
-    def _apply_dimension_filter_flags(cls, rules: BaseDataFrame, dimension: str) -> BaseDataFrame:
+    def _apply_dimension_filter_flags(self, 
+                                      rules: BaseDataFrame, 
+                                      dimension_name: str) -> BaseDataFrame:
         """
         Apply flags to the rules table to indicate the type of match for each dimension.
         """
         rules = rules.mutate(
             # Product of prime filters
-            filter_product = ibis._.filter1 * ibis._.filter2 * ibis._.filter3
+            dimension_filter_product = ibis._.filter_rule_unknown * ibis._.filter_context_unknown * ibis._.filter_match
 
         ).mutate(
-
             #Flag across all 3 filters
-            #How can we have any false when we have all softmatches...
-            any_false = ibis._.filter_product % self.PRIME_FALSE == ibis.literal(0),
-            any_true =  ibis._.filter_product % self.PRIME_TRUE  == ibis.literal(0),
-
+            dimension_any_false =     ibis._.dimension_filter_product % self.PRIME_FALSE == ibis.literal(0),
+            dimension_any_true =      ibis._.dimension_filter_product % self.PRIME_TRUE  == ibis.literal(0),
+        ).mutate(
 
             #Match Flags
-            dimension_count=        ibis._.dimension_count            + ibis.literal(1).cast("int8"),
-            rule_softmatch_count=   ibis._.rule_softmatch_count       + (ibis._.filter1 % self.PRIME_TRUE == 0).cast("int8"),
-            context_softmatch_count=ibis._.context_softmatch_count    + (ibis._.filter2 % self.PRIME_TRUE == 0).cast("int8"),
-            dual_softmatch_count=   ibis._.dual_softmatch_count       + ibis.and_((ibis._.filter1 % self.PRIME_TRUE == 0) & (ibis._.filter2 % self.PRIME_TRUE == 0)).cast("int8"),
-            match_softmatch_count=ibis._.match_softmatch_count        + (ibis._.filter3 % self.PRIME_UNKNOWN == 0).cast("int8"),
-            # dual_softmatch_count=   ibis._.dual_softmatch_count       + (ibis._.filter1 % self.PRIME_TRUE == 0 and ibis._.filter2 % self.PRIME_TRUE == 0).cast("int8"),
-            any_softmatch_count=    ibis._.any_softmatch_count        + ibis.or_((ibis._.filter1 % self.PRIME_TRUE == 0) | (ibis._.filter2 % self.PRIME_TRUE == 0) | (ibis._.filter3 % self.PRIME_UNKNOWN == 0)).cast("int8"),
-            # any_softmatch_count=    ibis._.any_softmatch_count       + (ibis._.filter1 % self.PRIME_TRUE == 0 or ibis._.filter2 % self.PRIME_TRUE == 0).cast("int8"),
-            hard_match_count=       ibis._.hard_match_count           + (ibis._.filter3 % self.PRIME_TRUE == 0).cast("int8"),
+            cumu_dimension_count=     ibis._.cumu_dimension_count   + ibis.literal(1).cast("int8"),
+            cumu_soft_match_count=    ibis._.cumu_soft_match_count  + ibis.or_( ibis._.filter_rule_unknown % self.PRIME_TRUE == 0 , ibis._.filter_context_unknown % self.PRIME_TRUE == 0 ).cast("int8"),
+            cumu_hard_match_count=    ibis._.cumu_hard_match_count  + (ibis._.filter_match % self.PRIME_TRUE == 0).cast("int8"),
 
         ).mutate(
-
-            #Rolling Aggregates
-            # all_false = ibis._.hard_match_count == 0,
-            # all_true = ibis._.hard_match_count == 0,
-            all_softmatch = ibis._.any_softmatch_count == ibis._.dimension_count,
-
-        ).mutate(
-            #Rule Row Drop Flags - This needs to NOT drop rows that have all softmatches
-            dropped_by_dimension=             ibis.ifelse( condition=ibis._.dropped.isnull() & ibis._.any_false, 
-                                                true_expr=ibis.literal(dimension), 
-                                                false_expr=ibis._.dropped_by),
-            dropped=                ibis.ifelse( condition=ibis._.dropped.isnull() & ibis._.any_false, 
+            #Rule Row Drop Flags - The existence of a True gets you through! It is binary at this stage!
+            dropped_by_dimension=   ibis.ifelse( condition=ibis._.dropped.isnull() & ~ibis._.dimension_any_true, 
+                                                true_expr=ibis.literal(dimension_name), 
+                                                false_expr=ibis._.dropped_by_dimension),
+            dropped=                ibis.ifelse( condition=ibis._.dropped.isnull() & ~ibis._.dimension_any_true, 
                                                 true_expr=ibis.literal(True), 
                                                 false_expr=ibis._.dropped)
         )
@@ -358,31 +594,65 @@ class RulesEngine:
         return rules
 
 
+    def _calculate_rule_priority(self, rules: BaseDataFrame) -> BaseDataFrame:
+        """
+        Calculate the priority of rules based on hard_matches, soft_matches, and rule order.
+        """
+        rules = rules.mutate(
+            row_number=ibis.row_number() #.over(ibis.window(order_by=[ibis._.rule_name])),
+        )
+        
+        rules = rules.mutate(
+            priority=ibis.row_number().over(ibis.window(
+                order_by=[
+                    ibis.desc('cumu_hard_match_count'),
+                    ibis.desc('cumu_soft_match_count'),
+                    'row_number'
+                ]
+            ))
+        )
+        
+        return rules.drop('row_number')
+
+    def _validate_context_types(self, context: BaseModel, active_dimensions: List[str]) -> None:
+        """
+        Validate the types of the context fields.
+        """
+
+        context_types = {dimension_name: type(getattr(context, self.get_dimension_context_fieldname(dimension_name=dimension_name))) for dimension_name in active_dimensions}
+
+        for dimension_name, fieldtype in context_types.items():
+            if fieldtype not in self.ALLOWED_CONTEXT_TYPES:
+                raise TypeError(f"Context Field {dimension_name} is of type {fieldtype}, but only {self.ALLOWED_CONTEXT_TYPES} are allowed.")
+
 
     def apply_context_rules_engine(self,
-                                        context: dataclass, 
-                                        dimension_names: List[Any],
-                                        keep_all: bool=True,
-                                        strict_context_types: bool = False
+                                        context: BaseModel, 
+                                        dimension_names: List[str]|str,
+                                        keep_all: bool=True
                                         ) -> BaseDataFrame:
                 
-
-        if not isinstance(self.rules, BaseDataFrame):
-            rules = DataFrameFactory.create_ibis_dataframe_object_from_dataframe(self.rules, ibis_backend_schema = "sqlite")
-
-        if not isinstance(rules, BaseDataFrame):
-            raise ValueError("Rules must be a BaseDataFrame")
-
-        # Convert the rules to a backend that supports window functions        
-        if rules.ibis_backend_schema in ["polars"]:
-            rules = rules.convert_backend_schema("sqlite")
+        #Make a copy of the rules        
+        rules = self.rules
 
 
-        # Validate Rules
-        if rules.count() == int(0):
-            raise ValueError("No rules specified.")
+        # Validate Dimension names
+        if isinstance(dimension_names, str):
+            dimension_names = [dimension_names]
         
-        active_dimensions = self.get_active_dimension_names(context, rules, dimension_names)
+        if len(dimension_names) == 0:
+            raise ValueError("No dimension names specified.")
+
+        # Get the active dimensions - whose fields are in the rules and context
+        active_dimensions = self.get_active_dimension_names(context=context, rules=rules, dimension_names=dimension_names)
+
+        # Validate context
+        # if not isinstance(context, BaseModel):
+        #     raise ValueError("Context must be a Pydantic BaseModel")
+        
+        #get the types of each context field
+
+        self._validate_context_types(context=context, active_dimensions=active_dimensions)
 
 
         # Initialization - add flags and counters to the rules
@@ -391,20 +661,43 @@ class RulesEngine:
         # Apply Rules
         for dimension_name in active_dimensions:
 
-            obj_dimension = self.lookup_rule_metadata[dimension_name]
+            rule_type = self.get_dimension_rule_type(dimension_name=dimension_name)
 
             context_value = getattr(context, self.get_dimension_context_fieldname(dimension_name=dimension_name), self.UNKNOWN)
 
-            rules = self._apply_filter_rule_wildcard(rules=rules, dimension=obj_dimension)
-            rules = self._apply_filter_context_wildcard(rules=rules, context_value=obj_dimension)
-            rules = self._apply_filter_simple_match(rules=rules, dimension=obj_dimension, context_value=context_value, strict_context_types=strict_context_types)
-            rules = self._apply_dimension_filter_flags(rules=rules, dimension=obj_dimension)
+            rules = self._apply_filter_rule_unknown(rules=rules, dimension_name=dimension_name)
+            rules = self._apply_filter_context_unknown(rules=rules, context_value=context_value)
+
+            if rule_type == RuleType.EXACT:
+                rules = self._apply_filter_exact_match(rules=rules, dimension_name=dimension_name, context_value=context_value)
+            # elif rule_type == RuleType.FUZZY:
+            #     rules = self._apply_filter_fuzzy_match(rules=rules, dimension_name=dimension_name, context_value=context_value)
+            elif rule_type == RuleType.REGEX:
+                rules = self._apply_filter_regex_match(rules=rules, dimension_name=dimension_name, context_value=context_value)
+            # elif rule_type == RuleType.WILDCARD:
+            #     rules = self._apply_filter_wildcard_match(rules=rules, dimension_name=dimension_name, context_value=context_value)
+            elif rule_type == RuleType.RANGE:
+                rules = self._apply_filter_range_match(rules=rules, dimension_name=dimension_name, context_value=context_value)
+            else:
+                raise ValueError(f"Invalid rule type for dimension {dimension_name}")
+            
+            
+            rules = self._apply_dimension_filter_flags(rules=rules, dimension_name=dimension_name)
+
+            #Store intermediate state
+            self._save_dimension_intermediate_values(rules=rules, dimension_name=dimension_name)
+
+            #If we have dropped all fields, then we can stop
+            if rules.filter(ibis._.dropped).count() == rules.count():
+                break
+
+        rules = self._calculate_rule_priority(rules)
 
         rules = rules.mutate(keep= ibis._.dropped.isnull())
 
         if keep_all:
-            return rules
+            return rules #.order_by('priority')
         else:
-            return rules.filter(ibis._.keep)
+            return rules.filter(ibis._.keep) #.order_by('priority')
 
 
