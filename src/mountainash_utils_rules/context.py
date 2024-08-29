@@ -12,33 +12,88 @@ from mountainash_data import BaseDataFrame, DataFrameFactory
 import re
 from pydantic import BaseModel
 from enum import Enum
-from mountainash_utils_rules.constants import RuleType, RuleConstants
-from mountainash_utils_rules.metadata import DimensionMetadata
+from mountainash_utils_rules.constants import MatchStrategy, RuleConstants
+from mountainash_utils_rules.dimension import Dimension
 
 
 # import operator 
 
 # Context Manager
-class ContextManager:
-                             
-    def __init__(self):
+class ContextHelper:
 
-        self.ALLOWED_CONTEXT_TYPES: List[Type] = [str, int, float, bool, type(None)]
+    ALLOWED_CONTEXT_TYPES: List[Type] = [str, int, float, bool, type(None)]        
 
 
-    def validate_context(self, context: BaseModel, active_dimensions: List[DimensionMetadata]) -> None:
+    # @classmethod
+    # def validate_context(cls, context: BaseModel, active_dimensions: List[Dimension]) -> None:
+    #     """
+    #     Validate the types of the context fields.
+    #     """
+
+    #     # Validate context
+    #     if not isinstance(context, BaseModel):
+    #         raise ValueError("Context must be a Pydantic BaseModel")
+
+
+    #     context_types = {dimension.dimension_name: type(getattr(context, dimension.get_dimension_context_fieldname())) for dimension in active_dimensions}
+
+    #     for dimension_name, fieldtype in context_types.items():
+    #         if fieldtype not in cls.ALLOWED_CONTEXT_TYPES:
+    #             raise TypeError(f"Context Field {dimension_name} is of type {fieldtype}, but only {cls.ALLOWED_CONTEXT_TYPES} are allowed.")
+
+
+    @classmethod
+    def get_context_value(cls, context, dimension: Dimension) -> str|int|float:
         """
-        Validate the types of the context fields.
+        Get the value of the context field for a given dimension.
+
+        We want to be somewhat flexible and forgiving with the context values, so we will return a string representation of the value if it is not a string, int or float.
+        This is more likely to be defined at runtime, so we will not enforce strict typing here.
+        If the context value is invalid or none, we will set the NOT_SET flag
         """
 
-        # Validate context
-        if not isinstance(context, BaseModel):
-            raise ValueError("Context must be a Pydantic BaseModel")
+        dimension_type: Type = dimension.get_dimension_data_type()
+        context_fieldname = dimension.get_dimension_context_fieldname()
+        context_type = type(getattr(context, context_fieldname))
 
+        if context_type not in cls.ALLOWED_CONTEXT_TYPES:
+            context_value = RuleConstants.NOT_SET
+            print(f"1. Context Field {dimension.dimension_name} is of type {context_type}, but only {cls.ALLOWED_CONTEXT_TYPES} are allowed. Value set to {context_value}")
 
-        context_types = {dimension.dimension_name: type(getattr(context, dimension.get_dimension_context_fieldname())) for dimension in active_dimensions}
+        elif context_type is str:
+            context_value = getattr(context, dimension.get_dimension_context_fieldname(), RuleConstants.NOT_SET)
+            print(f"2. Context Field {dimension.dimension_name} is of type {context_type}, value set to {context_value}")
 
-        for dimension_name, fieldtype in context_types.items():
-            if fieldtype not in self.ALLOWED_CONTEXT_TYPES:
-                raise TypeError(f"Context Field {dimension_name} is of type {fieldtype}, but only {self.ALLOWED_CONTEXT_TYPES} are allowed.")
+        elif context_type in [int, float]:
+            context_value = getattr(context, dimension.get_dimension_context_fieldname(), RuleConstants.NOT_SET_NUMERIC)
+            print(f"3. Context Field {dimension.dimension_name} is of type {context_type}, value set to {context_value}")
 
+        elif context_type in [bool]:
+            context_value = int(getattr(context, dimension.get_dimension_context_fieldname(), RuleConstants.NOT_SET_NUMERIC))
+            print(f"4. Context Field {dimension.dimension_name} is of type {context_type}, value set to {context_value}")
+
+        # Use dimension types otherwise - ie is None
+        elif dimension_type is str:
+            context_value = RuleConstants.NOT_SET
+            print(f"5. Context Field {dimension.dimension_name} is of type {context_type}, value set to {context_value} via dimension type: {dimension_type}")
+        elif dimension_type in [int, float, bool]:
+            context_value = RuleConstants.NOT_SET_NUMERIC
+            print(f"6. Context Field {dimension.dimension_name} is of type {context_type}, value set to {context_value} via dimension type: {dimension_type}")
+        
+        else:
+            context_value = RuleConstants.NOT_SET
+            print(f"7. Context Field {dimension.dimension_name} is of type {context_type}, value set to {context_value} via dimension type: {dimension_type}")
+
+        return context_value
+    
+
+    @classmethod
+    def check_context_and_dimension_types_match(cls, context, dimension: Dimension) -> bool:
+        """
+        Check if the context and dimension types match.
+        """
+
+        dimension_type = dimension.get_dimension_data_type()
+        context_type = type(getattr(context, dimension.get_dimension_context_fieldname()))
+
+        return dimension_type == context_type

@@ -2,7 +2,7 @@ import pytest
 from pytest_check import check
 import polars as pl
 import ibis
-from mountainash_utils_rules import RulesEngine, RuleMetadata, DimensionMetadata, RuleType
+from mountainash_utils_rules import RulesEngine, DimensionsMetadata, Dimension, MatchStrategy
 from mountainash_data import BaseDataFrame, DataFrameFactory
 from dataclasses import dataclass
 from typing import Optional, Any, List
@@ -38,11 +38,11 @@ def df_rules(rules_df):
 
 @pytest.fixture
 def rule_metadata():
-    return RuleMetadata(
+    return DimensionsMetadata(
         dimensions=[
-            DimensionMetadata(dimension_name="DIM_1", rule_type=RuleType.EXACT, data_type="string"),
-            DimensionMetadata(dimension_name="DIM_2", rule_type=RuleType.EXACT, data_type="int"),
-            DimensionMetadata(dimension_name="DIM_3", rule_type=RuleType.EXACT, data_type="string")
+            Dimension(dimension_name="DIM_1", rule_type=MatchStrategy.EXACT, data_type="string"),
+            Dimension(dimension_name="DIM_2", rule_type=MatchStrategy.EXACT, data_type="int"),
+            Dimension(dimension_name="DIM_3", rule_type=MatchStrategy.EXACT, data_type="string")
         ]
     )
 
@@ -58,7 +58,7 @@ def rules_engine(df_rules, rule_metadata) -> RulesEngine:
 def test_rules_engine_initialization(rules_engine):
     assert isinstance(rules_engine, RulesEngine)
     assert isinstance(rules_engine.rule_manager.rules, BaseDataFrame)
-    assert isinstance(rules_engine.metadata_manager.raw_rule_metadata, RuleMetadata)
+    assert isinstance(rules_engine.metadata_manager.raw_rule_metadata, DimensionsMetadata)
 
 def test_apply_context_rules_engine_single_dimension(rules_engine):
     dimension_tests = [
@@ -75,7 +75,7 @@ def test_apply_context_rules_engine_single_dimension(rules_engine):
 def test_apply_context_rules_engine_no_rules_specified():
     empty_rules = pl.DataFrame({})
     df_empty_rules = DataFrameFactory.create_ibis_dataframe_object_from_dataframe(empty_rules, ibis_backend_schema="sqlite")
-    empty_metadata = RuleMetadata(dimensions=[])
+    empty_metadata = DimensionsMetadata(dimensions=[])
 
     with pytest.raises(ValueError):
         empty_engine = RulesEngine(rules=df_empty_rules, rule_metadata=empty_metadata)
@@ -234,11 +234,11 @@ def test_unsupported_type_handling(rules_engine):
     # assert matches.count() > 0, "Should find matches for supported types (DIM_1 and DIM_2)"
 
 def test_rule_type_exact(df_rules):
-    metadata = RuleMetadata(
+    metadata = DimensionsMetadata(
         dimensions=[
-            DimensionMetadata(dimension_name="DIM_1", rule_type=RuleType.EXACT),
-            DimensionMetadata(dimension_name="DIM_2", rule_type=RuleType.EXACT),
-            DimensionMetadata(dimension_name="DIM_3", rule_type=RuleType.EXACT)
+            Dimension(dimension_name="DIM_1", rule_type=MatchStrategy.EXACT),
+            Dimension(dimension_name="DIM_2", rule_type=MatchStrategy.EXACT),
+            Dimension(dimension_name="DIM_3", rule_type=MatchStrategy.EXACT)
         ]
     )
     engine = RulesEngine(rules=df_rules, rule_metadata=metadata)
@@ -257,11 +257,11 @@ def test_rule_type_range():
 
     range_rules = DataFrameFactory.create_ibis_dataframe_object_from_dataframe(range_rules, ibis_backend_schema="sqlite")
 
-    metadata = RuleMetadata(
+    metadata = DimensionsMetadata(
         dimensions=[
-            DimensionMetadata(dimension_name="DIM_1", rule_type=RuleType.EXACT),
-            DimensionMetadata(dimension_name="DIM_2", rule_type=RuleType.RANGE, range_min_field="DIM_2_MIN", range_max_field="DIM_2_MAX", data_type="int"),
-            DimensionMetadata(dimension_name="DIM_3", rule_type=RuleType.EXACT)
+            Dimension(dimension_name="DIM_1", rule_type=MatchStrategy.EXACT),
+            Dimension(dimension_name="DIM_2", rule_type=MatchStrategy.RANGE, range_min_field="DIM_2_MIN", range_max_field="DIM_2_MAX", data_type="int"),
+            Dimension(dimension_name="DIM_3", rule_type=MatchStrategy.EXACT)
         ]
     )
     engine = RulesEngine(rules=range_rules, rule_metadata=metadata)
@@ -284,11 +284,11 @@ def test_rule_type_range():
 #     })
 #     wildcard_rules = DataFrameFactory.create_ibis_dataframe_object_from_dataframe(wildcard_rules, ibis_backend_schema="sqlite")
 
-#     metadata = RuleMetadata(
+#     metadata = DimensionsMetadata(
 #         dimensions=[
-#             DimensionMetadata(name="DIM_1", rule_type=RuleType.WILDCARD),
-#             DimensionMetadata(name="DIM_2", rule_type=RuleType.EXACT),
-#             DimensionMetadata(name="DIM_3", rule_type=RuleType.EXACT)
+#             Dimension(name="DIM_1", rule_type=MatchStrategy.WILDCARD),
+#             Dimension(name="DIM_2", rule_type=MatchStrategy.EXACT),
+#             Dimension(name="DIM_3", rule_type=MatchStrategy.EXACT)
 #         ]
 #     )
 #     engine = RulesEngine(rules=wildcard_rules, rule_metadata=metadata)
@@ -322,11 +322,11 @@ def test_rule_type_regex():
     regex_rules = DataFrameFactory.create_ibis_dataframe_object_from_dataframe(regex_rules, ibis_backend_schema="sqlite")
 
 
-    metadata = RuleMetadata(
+    metadata = DimensionsMetadata(
         dimensions=[
-            DimensionMetadata(dimension_name="DIM_1", rule_type=RuleType.REGEX),
-            DimensionMetadata(dimension_name="DIM_2", rule_type=RuleType.EXACT),
-            DimensionMetadata(dimension_name="DIM_3", rule_type=RuleType.EXACT)
+            Dimension(dimension_name="DIM_1", rule_type=MatchStrategy.REGEX),
+            Dimension(dimension_name="DIM_2", rule_type=MatchStrategy.EXACT),
+            Dimension(dimension_name="DIM_3", rule_type=MatchStrategy.EXACT)
         ]
     )
     engine = RulesEngine(rules=regex_rules, rule_metadata=metadata)
@@ -366,11 +366,11 @@ def test_rule_type_regex():
 
 #     mixed_rules = DataFrameFactory.create_ibis_dataframe_object_from_dataframe(mixed_rules, ibis_backend_schema="sqlite")
 
-#     metadata = RuleMetadata(
+#     metadata = DimensionsMetadata(
 #         dimensions=[
-#             DimensionMetadata(name="DIM_1", rule_type=RuleType.WILDCARD),
-#             DimensionMetadata(name="DIM_2", rule_type=RuleType.RANGE, range_min_field="DIM_2_MIN", range_max_field="DIM_2_MAX", data_type="int"),
-#             DimensionMetadata(name="DIM_3", rule_type=RuleType.EXACT)
+#             Dimension(name="DIM_1", rule_type=MatchStrategy.WILDCARD),
+#             Dimension(name="DIM_2", rule_type=MatchStrategy.RANGE, range_min_field="DIM_2_MIN", range_max_field="DIM_2_MAX", data_type="int"),
+#             Dimension(name="DIM_3", rule_type=MatchStrategy.EXACT)
 #         ]
 #     )
 #     engine = RulesEngine(rules=mixed_rules, rule_metadata=metadata)
@@ -406,11 +406,11 @@ def test_rule_type_regex():
 
 #     priority_rules = DataFrameFactory.create_ibis_dataframe_object_from_dataframe(priority_rules, ibis_backend_schema="sqlite")
 
-#     metadata = RuleMetadata(
+#     metadata = DimensionsMetadata(
 #         dimensions=[
-#             DimensionMetadata(name="DIM_1", rule_type=RuleType.WILDCARD),
-#             DimensionMetadata(name="DIM_2", rule_type=RuleType.EXACT),
-#             DimensionMetadata(name="DIM_3", rule_type=RuleType.EXACT)
+#             Dimension(name="DIM_1", rule_type=MatchStrategy.WILDCARD),
+#             Dimension(name="DIM_2", rule_type=MatchStrategy.EXACT),
+#             Dimension(name="DIM_3", rule_type=MatchStrategy.EXACT)
 #         ]
 #     )
 #     engine = RulesEngine(rules=priority_rules, rule_metadata=metadata)

@@ -14,21 +14,24 @@ from pydantic import BaseModel
 from enum import Enum
 # import operator 
 
-from mountainash_utils_rules.constants import RuleType, RuleConstants
-from mountainash_utils_rules.context import ContextManager
-from mountainash_utils_rules.rule_strategies import ExactMatchStrategy, RangeMatchStrategy, RegexMatchStrategy, RuleTypeFactory, RuleTypeStrategy
-from mountainash_utils_rules.metadata import RuleMetadata, MetadataManager, DimensionMetadata
-from mountainash_utils_rules.observer import TracabilityManager
+from mountainash_utils_rules.constants import MatchStrategy, RuleConstants, RuleTrinaryFlags
+from mountainash_utils_rules.context import ContextHelper
+from mountainash_utils_rules.rule_strategies import ExactMatchStrategy, RangeMatchStrategy, RegexMatchStrategy, MatchStrategyFactory, BaseMatchStrategy
+from mountainash_utils_rules.dimension import DimensionsMetadata, MetadataManager, Dimension
+from mountainash_utils_rules.observer import ObservabilityManager
 from mountainash_utils_rules.rule_manager import RuleManager
 
 
 class RulesEngine:
 
-    def __init__(self, rules: BaseDataFrame, rule_metadata: RuleMetadata):
-        self.rule_manager = RuleManager(rules)
-        self.metadata_manager = MetadataManager(rule_metadata)
-        self.context_manager = ContextManager()
-        self.tracability_manager = TracabilityManager()
+    def __init__(self, 
+                 rules: BaseDataFrame, 
+                 dimension_metadata: Optional[DimensionsMetadata] = None):
+        
+        self.rule_manager = RuleManager(rules=rules)
+        self.metadata_manager = MetadataManager(rules = self.rule_manager.rules,
+                                                dimension_metadata=dimension_metadata)
+        self.observability_manager = ObservabilityManager()
 
     # def apply_context_rules_engine(self, context: BaseModel, dimension_names: List[str]|str, keep_all: bool=True) -> BaseDataFrame:
         # Implementation of apply_context_rules_engine using the other managers
@@ -40,9 +43,9 @@ class RulesEngine:
         Initialize the rule flags for the rules table.
         """
         rules = rules.mutate(
-            cumu_dimension_count=     ibis.literal(0),    
-            cumu_soft_match_count =   ibis.literal(0),
-            cumu_hard_match_count=    ibis.literal(0),
+            cumu_dimension_count=     ibis.literal(value=0),    
+            cumu_soft_match_count =   ibis.literal(value=0),
+            cumu_hard_match_count=    ibis.literal(value=0),
             dropped=                  ibis.null(),
             dropped_by_dimension=     ibis.null(),
         )
@@ -54,7 +57,7 @@ class RulesEngine:
 
     def apply_dimension_filter_flags(self, 
                                       rules: BaseDataFrame, 
-                                      dimension_name: str) -> BaseDataFrame:
+                                      dimension: Dimension) -> BaseDataFrame:
         """
         Apply flags to the rules table to indicate the type of match for each dimension.
         """
@@ -64,22 +67,25 @@ class RulesEngine:
 
         ).mutate(
             #Flag across all 3 filters
-            dimension_any_false =     ibis._.dimension_filter_product % RuleConstants.PRIME_FALSE == ibis.literal(0),
-            dimension_any_true =      ibis._.dimension_filter_product % RuleConstants.PRIME_TRUE  == ibis.literal(0),
+            dimension_any_false =     ibis._.dimension_filter_product % RuleTrinaryFlags.PRIME_FALSE_IBIS() == ibis.literal(value=0),
+            dimension_any_true =      ibis._.dimension_filter_product % RuleTrinaryFlags.PRIME_TRUE_IBIS()  == ibis.literal(value=0),
         ).mutate(
 
             #Match Flags
             cumu_dimension_count=     ibis._.cumu_dimension_count   + ibis.literal(1).cast("int8"),
-            cumu_soft_match_count=    ibis._.cumu_soft_match_count  + ibis.or_( ibis._.filter_rule_unknown % RuleConstants.PRIME_TRUE == 0 , ibis._.filter_context_unknown % RuleConstants.PRIME_TRUE == 0 ).cast("int8"),
-            cumu_hard_match_count=    ibis._.cumu_hard_match_count  + (ibis._.filter_match % RuleConstants.PRIME_TRUE == 0).cast("int8"),
+            cumu_soft_match_count=    ibis._.cumu_soft_match_count  + ibis.or_( ibis._.filter_rule_unknown    % RuleTrinaryFlags.PRIME_TRUE_IBIS() == ibis.literal(value=0), 
+                                                                                ibis._.filter_context_unknown % RuleTrinaryFlags.PRIME_TRUE_IBIS() == ibis.literal(value=0) 
+                                                                              ).cast("int8"),
+            cumu_hard_match_count=    ibis._.cumu_hard_match_count  + (ibis._.filter_match % RuleTrinaryFlags.PRIME_TRUE == 0).cast("int8"),
 
         ).mutate(
             #Rule Row Drop Flags - The existence of a True gets you through! It is binary at this stage!
             dropped_by_dimension=   ibis.ifelse( condition=ibis._.dropped.isnull() & ~ibis._.dimension_any_true, 
-                                                true_expr=ibis.literal(dimension_name), 
+                                                true_expr=ibis.literal(value=dimension.dimension_name), 
                                                 false_expr=ibis._.dropped_by_dimension),
+
             dropped=                ibis.ifelse( condition=ibis._.dropped.isnull() & ~ibis._.dimension_any_true, 
-                                                true_expr=ibis.literal(True), 
+                                                true_expr=ibis.literal(value=True), 
                                                 false_expr=ibis._.dropped)
         )
 
@@ -123,34 +129,35 @@ class RulesEngine:
         if len(dimension_names) == 0:
             raise ValueError("No dimension names specified.")
 
-        # Get the active dimensions - whose fields are in the rules and context
+        # Get the active dimensions - whose fields are in the rules AND context
+        #These aren't getting filtered when missing or NOT_SET.
         active_dimension_names: List[str] = self.metadata_manager.get_active_dimension_names(context=context, rules=rules, dimension_names=dimension_names)
-        active_dimensions: List[DimensionMetadata] = self.metadata_manager.get_dimensions_list(dimension_names=active_dimension_names)
+        active_dimensions: List[Dimension] = self.metadata_manager.get_dimensions_list(dimension_names=active_dimension_names)
 
 
-        # Validate context
-        self.context_manager.validate_context(context=context, active_dimensions=active_dimensions)
+        # Validate context - will raise an exception if it fails
+        # ContextHelper.validate_context(context=context, active_dimensions=active_dimensions)
 
         # Initialization - add flags and counters to the rules
         rules = self.initialize_rule_flags(rules)
 
         # Apply Rules
-        for dimension_name in active_dimension_names:
+        for dimension in active_dimensions:
 
-            obj_dimension = self.metadata_manager.get_dimension(dimension_name=dimension_name)
+            # dimension = self.metadata_manager.get_dimension(dimension_name=dimension_name)
 
-            context_value = getattr(context, obj_dimension.get_dimension_context_fieldname(), RuleConstants.UNKNOWN)
+            # context_value = getattr(context, dimension.get_dimension_context_fieldname(), RuleConstants.UNKNOWN)
 
             #Apply filters
-            obj_rule_strategy: RuleTypeStrategy = RuleTypeFactory.get_rule_strategy_class(rule_type=obj_dimension.get_dimension_rule_type())
+            obj_rule_strategy: BaseMatchStrategy = MatchStrategyFactory.get_rule_strategy_class(match_strategy=dimension.get_dimension_match_strategy())
 
-            rules = obj_rule_strategy.apply_filter_rule_unknown(rules=rules, dimension=obj_dimension)
-            rules = obj_rule_strategy.apply_filter_context_unknown(rules=rules, context_value=context_value)
-            rules = obj_rule_strategy.apply_match_filter(rules=rules, dimension=obj_dimension, context_value=context_value)
-            rules = self.apply_dimension_filter_flags(rules=rules, dimension_name=dimension_name)
+            rules = obj_rule_strategy.apply_filter_rule_unknown(    rules=rules, dimension=dimension)
+            rules = obj_rule_strategy.apply_filter_context_unknown( rules=rules, dimension=dimension, context=context)
+            rules = obj_rule_strategy.apply_match_filter(           rules=rules, dimension=dimension, context=context)
+            rules = self.apply_dimension_filter_flags(              rules=rules, dimension=dimension)
 
             #Store intermediate state
-            self.tracability_manager._save_dimension_intermediate_values(rules=rules, dimension_name=dimension_name)
+            self.observability_manager.save_dimension_intermediate_values(rules=rules, dimension=dimension)
 
             #If we have dropped all fields, then we can stop
             if rules.filter(ibis._.dropped).count() == rules.count():

@@ -16,20 +16,20 @@ from enum import Enum
 
 
 
-class RuleType(Enum):
+class MatchStrategy(Enum):
     EXACT = "EXACT"
     RANGE = "RANGE"
     REGEX = "REGEX"
     # WILDCARD = "WILDCARD"
     # FUZZY = "FUZZY"
 
-class DimensionMetadata(BaseModel):
+class Dimension(BaseModel):
 
     name: str
     context_field: Optional[str] = None
     rule_field: Optional[str] = None
 
-    rule_type: RuleType = RuleType.EXACT
+    rule_type: MatchStrategy = MatchStrategy.EXACT
     data_type: str = "string"  # Default to string, but can be int, float, date, bool etc.
     
     valid_values: List[Any] = []  # List of possible values for the dimension
@@ -40,8 +40,8 @@ class DimensionMetadata(BaseModel):
     range_max_inclusive: bool = True  # Whether the maximum value is inclusive
 
 
-class RuleMetadata(BaseModel):
-    dimensions: List[DimensionMetadata]
+class DimensionsMetadata(BaseModel):
+    dimensions: List[Dimension]
 
 
 class RulesEngine:
@@ -62,7 +62,7 @@ class RulesEngine:
 
     def __init__(self, 
                     rules: BaseDataFrame, 
-                    rule_metadata: RuleMetadata):
+                    rule_metadata: DimensionsMetadata):
 
         #Prepare Rules
         self.rules: BaseDataFrame
@@ -70,8 +70,8 @@ class RulesEngine:
 
 
         #Prepare Metadata
-        self.rule_metadata: RuleMetadata = rule_metadata
-        self.lookup_rule_metadata: Optional[Dict[str, DimensionMetadata]] = None
+        self.rule_metadata: DimensionsMetadata = rule_metadata
+        self.lookup_rule_metadata: Optional[Dict[str, Dimension]] = None
         self._init_rule_metadata(rule_metadata)
 
 
@@ -101,7 +101,7 @@ class RulesEngine:
 
  
 
-    def _init_rule_metadata(self, rule_metadata: Optional[RuleMetadata] = None):
+    def _init_rule_metadata(self, rule_metadata: Optional[DimensionsMetadata] = None):
         """
         Validate the dimensions in the rule metadata.
         """
@@ -111,11 +111,11 @@ class RulesEngine:
             #validate the rule metadata
             for dimension in rule_metadata.dimensions:
 
-                if dimension.rule_type == RuleType.RANGE:
+                if dimension.rule_type == MatchStrategy.RANGE:
                     if dimension.range_min_field is None or dimension.range_max_field is None:
                         raise ValueError(f"Dimension {dimension.name} is of type RANGE but no min/max fields are specified.")
-                elif dimension.rule_type in { #RuleType.WILDCARD, 
-                                             RuleType.REGEX, RuleType.EXACT }:
+                elif dimension.rule_type in { #MatchStrategy.WILDCARD, 
+                                             MatchStrategy.REGEX, MatchStrategy.EXACT }:
                     continue
                 else:
                     raise ValueError(f"Dimension {dimension.name} has an invalid rule type: {dimension.rule_type}")
@@ -126,7 +126,7 @@ class RulesEngine:
                 raise ValueError("Dimension names must be unique.")
 
             #If we get this far, set up the dimensions lookup!
-            self.lookup_rule_metadata: Optional[Dict[str, DimensionMetadata]] = {dimension.name: dimension for dimension in rule_metadata.dimensions}
+            self.lookup_rule_metadata: Optional[Dict[str, Dimension]] = {dimension.name: dimension for dimension in rule_metadata.dimensions}
 
     def get_dimension_attribute(self, 
                                 dimension_name:str, 
@@ -137,7 +137,7 @@ class RulesEngine:
         """
 
         if self.lookup_rule_metadata:
-            dimension: Optional[DimensionMetadata] = self.lookup_rule_metadata.get(dimension_name, None)
+            dimension: Optional[Dimension] = self.lookup_rule_metadata.get(dimension_name, None)
 
             if dimension is not None:
                 value = getattr(dimension, attribute, default_value)
@@ -163,18 +163,18 @@ class RulesEngine:
 
         rule_type = self.get_dimension_rule_type(dimension_name=dimension_name)
 
-        if rule_type == RuleType.RANGE:
+        if rule_type == MatchStrategy.RANGE:
             return self.get_dimension_rule_range_min_field(dimension_name=dimension_name)
         else:
             return self.get_dimension_attribute(dimension_name=dimension_name, attribute="rule_field", default_value=dimension_name)
 
 
-    def get_dimension_rule_type(self, dimension_name:str) -> RuleType:
+    def get_dimension_rule_type(self, dimension_name:str) -> MatchStrategy:
         """
         Get the field name for the rule_type for a given dimension.
         """
 
-        return self.get_dimension_attribute(dimension_name=dimension_name, attribute="rule_type", default_value=RuleType.EXACT)
+        return self.get_dimension_attribute(dimension_name=dimension_name, attribute="rule_type", default_value=MatchStrategy.EXACT)
 
 
     def get_dimension_data_type(self, dimension_name:str) -> str:
@@ -288,7 +288,7 @@ class RulesEngine:
 
         rule_type = self.get_dimension_rule_type(dimension_name=dimension_name)
 
-        if rule_type == RuleType.RANGE:
+        if rule_type == MatchStrategy.RANGE:
             dimension_rule_fieldname: str = self.get_dimension_rule_range_min_field(dimension_name=dimension_name)
         else:
             dimension_rule_fieldname: str = self.get_dimension_rule_fieldname(dimension_name=dimension_name)
@@ -686,15 +686,15 @@ class RulesEngine:
             rules = self._apply_filter_rule_unknown(rules=rules, dimension_name=dimension_name)
             rules = self._apply_filter_context_unknown(rules=rules, context_value=context_value)
 
-            if rule_type == RuleType.EXACT:
+            if rule_type == MatchStrategy.EXACT:
                 rules = self._apply_filter_exact_match(rules=rules, dimension_name=dimension_name, context_value=context_value)
-            # elif rule_type == RuleType.FUZZY:
+            # elif rule_type == MatchStrategy.FUZZY:
             #     rules = self._apply_filter_fuzzy_match(rules=rules, dimension_name=dimension_name, context_value=context_value)
-            elif rule_type == RuleType.REGEX:
+            elif rule_type == MatchStrategy.REGEX:
                 rules = self._apply_filter_regex_match(rules=rules, dimension_name=dimension_name, context_value=context_value)
-            # elif rule_type == RuleType.WILDCARD:
+            # elif rule_type == MatchStrategy.WILDCARD:
             #     rules = self._apply_filter_wildcard_match(rules=rules, dimension_name=dimension_name, context_value=context_value)
-            elif rule_type == RuleType.RANGE:
+            elif rule_type == MatchStrategy.RANGE:
                 rules = self._apply_filter_range_match(rules=rules, dimension_name=dimension_name, context_value=context_value)
             else:
                 raise ValueError(f"Invalid rule type for dimension {dimension_name}")

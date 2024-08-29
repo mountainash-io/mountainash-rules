@@ -1,6 +1,7 @@
 import pytest
 from mountainash_utils_rules.rule_manager import RuleManager
 from mountainash_data import BaseDataFrame, DataFrameFactory
+from mountainash_utils_rules.constants import MatchStrategy, RuleConstants, RuleTrinaryFlags
 import polars as pl
 
 @pytest.fixture
@@ -9,7 +10,7 @@ def sample_rules():
         "rule_name": ["rule_1", "rule_2", "rule_3"],
         "DIM_1": ["A", "B", "C"],
         "DIM_2": ["1", "2", "3"],
-        "DIM_3": ["X", "<NA>", "<NA>"]
+        "DIM_3": ["X", RuleConstants.UNKNOWN, RuleConstants.UNKNOWN]
     })
     return DataFrameFactory.create_ibis_dataframe_object_from_dataframe(rules_df, ibis_backend_schema="sqlite")
 
@@ -47,5 +48,6 @@ def test_init_rules_with_invalid_input():
 
 def test_init_rules_with_empty_dataframe():
     empty_df = DataFrameFactory.create_ibis_dataframe_object_from_dataframe(pl.DataFrame(), ibis_backend_schema="sqlite")
+    print(empty_df.materialise())
     with pytest.raises(ValueError):
         RuleManager(empty_df)

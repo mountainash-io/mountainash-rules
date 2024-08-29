@@ -1,21 +1,16 @@
 
 
-from typing import List, Any,Optional, Dict, Type
-
-import ibis
-import ibis.expr.types as ir
-from ibis.common.deferred import Deferred
-from ibis.common.exceptions import IbisTypeError
+from typing import Any, Dict, Type
 
 
-from mountainash_data import BaseDataFrame, DataFrameFactory
-import re
-from pydantic import BaseModel
-from enum import Enum
-from mountainash_utils_rules.constants import RuleType, RuleConstants
 
-# Tracability Manager
-class TracabilityManager:
+from mountainash_data import BaseDataFrame
+from mountainash_utils_rules.dimension import Dimension
+
+
+
+# Observability Manager
+class ObservabilityManager:
     def __init__(self):
         
         self.intermediate_values = {}
@@ -42,9 +37,11 @@ class TracabilityManager:
 
 
 
-    def _save_dimension_intermediate_values(self, rules: BaseDataFrame, dimension_name: str) -> None:
+    def save_dimension_intermediate_values(self, rules: BaseDataFrame, dimension: Dimension) -> None:
+        
+        
 
-        self.intermediate_values[dimension_name] = rules.select([
+        self.intermediate_values[dimension.dimension_name] = rules.select([
             'rule_name',
             'dimension_filter_product',
             'dimension_any_false',
