@@ -1,24 +1,15 @@
-
-
-from typing import  Any
+from abc import ABC, abstractmethod
 
 import ibis
-import ibis.expr.types as ir
 from ibis.common.deferred import Deferred
 from ibis.common.exceptions import IbisTypeError
 
-
-from mountainash_data import BaseDataFrame, DataFrameFactory
-import re
 from pydantic import BaseModel
-from enum import Enum
-from abc import ABC, abstractmethod
 
+from mountainash_data import BaseDataFrame
 from mountainash_utils_rules.constants import MatchStrategy, RuleConstants, RuleTrinaryFlags
-from mountainash_utils_rules.dimension import DimensionsMetadata, MetadataManager, Dimension
+from mountainash_utils_rules.dimension import Dimension
 from mountainash_utils_rules.context import ContextHelper
-
-# import operator 
 
 
 
@@ -46,8 +37,6 @@ class BaseMatchStrategy(ABC):
         """
         Apply a filter rule to the rules table to check for a wildcard value.
         """
-
-        # match_strategy = self.get_dimension_match_strategy()
 
         if self.match_strategy == MatchStrategy.RANGE:
             dimension_rule_fieldname: str = dimension.get_dimension_rule_range_min_field()
@@ -84,26 +73,17 @@ class BaseMatchStrategy(ABC):
         Apply a filter rule to the rules table to check for a wildcard value.
         """
 
-        # context_value = getattr(context, dimension.get_dimension_context_fieldname(), RuleConstants.UNKNOWN)
-
         try:
             context_value = ContextHelper.get_context_value(context=context, dimension=dimension)
-            print("context_unknown 1: ")
-
-        except (Exception,IbisTypeError) as e:
-            print(f"context_unknown 2: {e}")
+ 
+        except (Exception,IbisTypeError):
             rules = rules.mutate(filter_context_unknown = RuleTrinaryFlags.PRIME_UNKNOWN_IBIS())
-
             return rules
-
-        #cast the context value to aplain python string
-        # context_value = str(context_value)            
 
         if context_value in [RuleConstants.UNKNOWN, RuleConstants.UNKNOWN_NUMERIC]:
             rules = rules.mutate(filter_context_unknown = RuleTrinaryFlags.PRIME_TRUE_IBIS())
         else:
             rules = rules.mutate(filter_context_unknown = RuleTrinaryFlags.PRIME_UNKNOWN_IBIS())
-
 
         return rules
 
@@ -122,22 +102,16 @@ class ExactMatchStrategy(BaseMatchStrategy):
         Apply a filter rule to the rules table to check for a wildcard value.
         """
 
-        # target_type: str = dimension.get_dimension_data_type()
-        dimension_rule_fieldname: str = dimension.get_dimension_rule_fieldname()
-
-
-
         try:
             context_value = ContextHelper.get_context_value(context=context, dimension=dimension)
-            print("EXACT 1: ")
 
-        except (Exception,IbisTypeError) as e:
-            print(f"EXACT 2: {e}")
+        except (Exception,IbisTypeError):
             rules = rules.mutate(filter_match = RuleTrinaryFlags.PRIME_UNKNOWN_IBIS())
-
             return rules
 
         try:
+
+            dimension_rule_fieldname: str = dimension.get_dimension_rule_fieldname()
 
             if dimension.get_dimension_data_type() == str:
 
@@ -154,7 +128,6 @@ class ExactMatchStrategy(BaseMatchStrategy):
                                             false_expr=RuleTrinaryFlags.PRIME_FALSE_IBIS()
                                             ) 
                                     ))
-                print("EXACT 3b: ")
 
             else:
 
@@ -172,10 +145,8 @@ class ExactMatchStrategy(BaseMatchStrategy):
                                             ) 
                                     ))
 
-                print("EXACT 3b: ")
 
-        except (Exception,IbisTypeError) as e:
-            print(f"EXACT 4: {e}")
+        except (Exception,IbisTypeError):
             rules = rules.mutate(filter_match = RuleTrinaryFlags.PRIME_UNKNOWN_IBIS())
         
         return rules
@@ -192,15 +163,10 @@ class RegexMatchStrategy(BaseMatchStrategy):
         Apply a filter rule to the rules table to check for a wildcard value.
         """
 
-
-
         try:
-
             context_value = ContextHelper.get_context_value(context=context, dimension=dimension)
-            print("REGEX 1: ")
 
-        except (Exception,IbisTypeError) as e:
-            print(f"REGEX 2: {e}")
+        except (Exception,IbisTypeError):
             rules = rules.mutate(filter_match = RuleTrinaryFlags.PRIME_UNKNOWN_IBIS())
             return rules
 
@@ -225,7 +191,6 @@ class RegexMatchStrategy(BaseMatchStrategy):
                                         false_expr=RuleTrinaryFlags.PRIME_FALSE_IBIS()
                                     ))
                 ).drop( columns="context_value")
-                print("REGEX 3a: ")
             else:
 
                 rules = rules.mutate(
@@ -243,11 +208,9 @@ class RegexMatchStrategy(BaseMatchStrategy):
                                     ))
                 ).drop( columns="context_value")
 
-                print("REGEX 3b: ")
 
-        except (Exception,IbisTypeError) as e:
+        except (Exception,IbisTypeError):
             rules = rules.mutate(filter_match = RuleTrinaryFlags.PRIME_UNKNOWN_IBIS())
-            print(f"REGEX 4: {e}")
 
         return rules
 
@@ -267,10 +230,8 @@ class RangeMatchStrategy(BaseMatchStrategy):
        
         try:
             context_value = ContextHelper.get_context_value(context=context, dimension=dimension)
-            print("RANGE 1: ")
 
-        except (Exception,IbisTypeError) as e:
-            print(f"RANGE 2: {e}")
+        except (Exception,IbisTypeError):
             rules = rules.mutate(filter_match = RuleTrinaryFlags.PRIME_UNKNOWN_IBIS())
             return rules
 
@@ -308,7 +269,6 @@ class RangeMatchStrategy(BaseMatchStrategy):
                                     false_expr=RuleTrinaryFlags.PRIME_FALSE_IBIS()
                             ))
                 )
-                print("RANGE 3a: ")
 
             else:
                 rules = rules.mutate(
@@ -326,12 +286,8 @@ class RangeMatchStrategy(BaseMatchStrategy):
                             ))
                 )
 
-                print("RANGE 3b: ")
 
-
-        except (Exception,IbisTypeError) as e:
-            print(f"RANGE 4: {e}")
-
+        except (Exception,IbisTypeError):
             rules = rules.mutate(filter_match = RuleTrinaryFlags.PRIME_UNKNOWN_IBIS())
 
         return rules

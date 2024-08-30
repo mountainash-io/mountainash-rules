@@ -2,18 +2,9 @@
 
 from typing import List, Any,Optional, Dict, Type
 
-import ibis
-import ibis.expr.types as ir
-from ibis.common.deferred import Deferred
-from ibis.common.exceptions import IbisTypeError
-
-
-from mountainash_data import BaseDataFrame, DataFrameFactory
-import re
 from pydantic import BaseModel
-from enum import Enum
-# import operator 
 
+from mountainash_data import BaseDataFrame
 from mountainash_utils_rules.constants import MatchStrategy, RuleConstants
 
 

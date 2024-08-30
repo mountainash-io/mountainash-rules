@@ -1,6 +1,3 @@
-
-
-
 from mountainash_data import BaseDataFrame
 
 class RuleManager:

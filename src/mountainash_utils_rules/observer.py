@@ -1,8 +1,4 @@
-
-
 from typing import Any, Dict, Type
-
-
 
 from mountainash_data import BaseDataFrame
 from mountainash_utils_rules.dimension import Dimension

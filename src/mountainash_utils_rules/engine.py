@@ -1,22 +1,13 @@
 
 
-from typing import List, Any,Optional, Dict
+from typing import List,Optional
 
 import ibis
-import ibis.expr.types as ir
-from ibis.common.deferred import Deferred
-from ibis.common.exceptions import IbisTypeError
-
-
-from mountainash_data import BaseDataFrame, DataFrameFactory
-import re
 from pydantic import BaseModel
-from enum import Enum
-# import operator 
 
-from mountainash_utils_rules.constants import MatchStrategy, RuleConstants, RuleTrinaryFlags
-from mountainash_utils_rules.context import ContextHelper
-from mountainash_utils_rules.rule_strategies import ExactMatchStrategy, RangeMatchStrategy, RegexMatchStrategy, MatchStrategyFactory, BaseMatchStrategy
+from mountainash_data import BaseDataFrame
+from mountainash_utils_rules.constants import RuleTrinaryFlags
+from mountainash_utils_rules.rule_strategies import MatchStrategyFactory, BaseMatchStrategy
 from mountainash_utils_rules.dimension import DimensionsMetadata, MetadataManager, Dimension
 from mountainash_utils_rules.observer import ObservabilityManager
 from mountainash_utils_rules.rule_manager import RuleManager
@@ -32,9 +23,6 @@ class RulesEngine:
         self.metadata_manager = MetadataManager(rules = self.rule_manager.rules,
                                                 dimension_metadata=dimension_metadata)
         self.observability_manager = ObservabilityManager()
-
-    # def apply_context_rules_engine(self, context: BaseModel, dimension_names: List[str]|str, keep_all: bool=True) -> BaseDataFrame:
-        # Implementation of apply_context_rules_engine using the other managers
 
 
 
@@ -135,18 +123,11 @@ class RulesEngine:
         active_dimensions: List[Dimension] = self.metadata_manager.get_dimensions_list(dimension_names=active_dimension_names)
 
 
-        # Validate context - will raise an exception if it fails
-        # ContextHelper.validate_context(context=context, active_dimensions=active_dimensions)
-
         # Initialization - add flags and counters to the rules
         rules = self.initialize_rule_flags(rules)
 
         # Apply Rules
         for dimension in active_dimensions:
-
-            # dimension = self.metadata_manager.get_dimension(dimension_name=dimension_name)
-
-            # context_value = getattr(context, dimension.get_dimension_context_fieldname(), RuleConstants.UNKNOWN)
 
             #Apply filters
             obj_rule_strategy: BaseMatchStrategy = MatchStrategyFactory.get_rule_strategy_class(match_strategy=dimension.get_dimension_match_strategy())
