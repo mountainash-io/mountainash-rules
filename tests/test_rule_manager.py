@@ -47,7 +47,6 @@ def test_init_rules_with_invalid_input():
         RuleManager("not a BaseDataFrame")
 
 def test_init_rules_with_empty_dataframe():
-    empty_df = DataFrameFactory.create_ibis_dataframe_object_from_dataframe(pl.DataFrame(), ibis_backend_schema="sqlite")
-    print(empty_df.materialise())
     with pytest.raises(ValueError):
+        empty_df = DataFrameFactory.create_ibis_dataframe_object_from_dataframe(pl.DataFrame(), ibis_backend_schema="sqlite")
         RuleManager(empty_df)
