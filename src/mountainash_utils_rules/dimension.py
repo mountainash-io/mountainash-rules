@@ -243,15 +243,29 @@ class MetadataManager:
 
         actual_context_fields: Dict[str,str] = {dimension_name: fieldname
                                                 for dimension_name, fieldname in expected_context_fields.items() 
-                                                if getattr(context, fieldname, RuleConstants.NOT_SET) is not RuleConstants.NOT_SET}
-        
+                                                if getattr(context, fieldname, RuleConstants.NOT_SET) not in {RuleConstants.NOT_SET, None} }
+
+        print(f"context: {context}")
+        print(f"rules: {rules.get_column_names()}")
+
+        print(f"actual_rule_fields: {actual_rule_fields}")
+        print(f"actual_context_fields: {actual_context_fields}")
+
+        print(f"expected_rule_fields: {expected_rule_fields}")
+        print(f"expected_context_fields: {expected_context_fields}")
+
 
         #find the dimensions that have their fields active in the rules and the context
         active_context_dimensions =    [dimension_name for dimension_name in dimension_names if dimension_name in actual_context_fields.keys()]
         active_rule_dimensions =       [dimension_name for dimension_name in dimension_names if dimension_name in actual_rule_fields.keys()]
 
+        print(f"active_context_dimensions: {active_context_dimensions}")
+        print(f"active_rule_dimensions: {active_rule_dimensions}")
+
         #find the common elements in the context and the rules
         active_dimensions = list(set(active_context_dimensions).intersection(set(active_rule_dimensions)))
+
+        print(f"active_dimensions: {active_dimensions}")
 
         #find the dimensions that are not in all sources:
         missing_dimensions = set(dimension_names) - set(active_dimensions)

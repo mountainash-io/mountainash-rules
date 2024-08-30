@@ -107,18 +107,12 @@ def test_apply_context_rules_engine_invalid_context_type(rules_engine):
         rules_engine.apply_context_rules_engine(invalid_context, ["DIM_1", "DIM_2", "DIM_3"])
 
 def test_apply_context_rules_engine_missing_context_field(rules_engine):
-    class InvalidContext(BaseModel):
+    class TruncatedContext(BaseModel):
         DIM_1: str
         DIM_2: int
     
-    invalid_context = InvalidContext(DIM_1="A", DIM_2=5)
-    result = rules_engine.apply_context_rules_engine(invalid_context, ["DIM_1", "DIM_2", "DIM_3"])
-
-    print(result.materialise())
-    print(f"DIM_1: {rules_engine.observability_manager.intermediate_values['DIM_1'].materialise()}")
-    print(f"DIM_2: {rules_engine.observability_manager.intermediate_values['DIM_2'].materialise()}")
-    print(f"DIM_3: {rules_engine.observability_manager.intermediate_values['DIM_3'].materialise()}")
-    print(result.select("dropped_by_dimension").materialise())
+    truncated_context = TruncatedContext(DIM_1="A", DIM_2=5)
+    result = rules_engine.apply_context_rules_engine(truncated_context, ["DIM_1", "DIM_2", "DIM_3"])
 
     assert result.filter(ibis._.keep == True).count() == 1
     assert result.filter(ibis._.keep == True).get_first_row_as_dict()['rule_name'] == "rule_1"
@@ -145,14 +139,8 @@ def test_rule_priority_calculation(rules_engine):
 def test_apply_context_rules_engine_with_all_unknown_values(rules_engine):
     context = Context(DIM_1=RuleConstants.UNKNOWN, DIM_2=RuleConstants.UNKNOWN_NUMERIC, DIM_3=RuleConstants.UNKNOWN)
     result = rules_engine.apply_context_rules_engine(context, ["DIM_1", "DIM_2", "DIM_3"])
-
-
-
-
     assert result.filter(ibis._.keep == True).count() == 5
     assert set(result.filter(ibis._.keep == True).get_column_as_list("rule_name")) == {"rule_1", "rule_2", "rule_3", "rule_4", "rule_5"}
-
-
 
 
 def test_apply_context_rules_engine_with_mixed_match_strategys(rules_engine):
@@ -178,15 +166,7 @@ def test_apply_context_rules_engine_multiple_matches(rules_engine):
     # Create a context that matches multiple rules
     context = Context(DIM_1=RuleConstants.UNKNOWN, DIM_2=35, DIM_3="WXY")
     result = rules_engine.apply_context_rules_engine(context, ["DIM_1", "DIM_2", "DIM_3"], keep_all=True)
-    # print(result.materialise())
-    # print(f"DIM_1: {rules_engine.tracability_manager.intermediate_values['DIM_1'].materialise()}")
-    # print(f"DIM_2: {rules_engine.tracability_manager.intermediate_values['DIM_2'].materialise()}")
-    # print(f"DIM_3: {rules_engine.tracability_manager.intermediate_values['DIM_3'].materialise()}")
-    # print(result.select("dropped_by_dimension").materialise())
-
     matched_rules = result.filter(ibis._.keep == True)
-
-
     assert matched_rules.count() == 1
     assert set(matched_rules.get_column_as_list("rule_name")) == {"rule_4"}
 
@@ -204,27 +184,19 @@ def test_apply_context_rules_engine_dimension_order(rules_engine):
     context = Context(DIM_1="A", DIM_2=5, DIM_3="XYZ")
     result1 = rules_engine.apply_context_rules_engine(context, ["DIM_1", "DIM_2", "DIM_3"])
     result2 = rules_engine.apply_context_rules_engine(context, ["DIM_3", "DIM_2", "DIM_1"])
-    assert result1.filter(ibis._.keep == True).count() == result2.filter(ibis._.keep == True).count()
-    assert result1.filter(ibis._.keep == True).get_first_row_as_dict() == result2.filter(ibis._.keep == True).get_first_row_as_dict()
+    result3 = rules_engine.apply_context_rules_engine(context, ["DIM_2", "DIM_1", "DIM_3",])
 
-# def test_apply_context_rules_engine_performance(rules_engine, benchmark):
-#     context = Context(DIM_1="A", DIM_2=5, DIM_3="XYZ")
-#     benchmark(rules_engine.apply_context_rules_engine, context, ["DIM_1", "DIM_2", "DIM_3"])
+    assert result1.filter(ibis._.keep == True).count() == result2.filter(ibis._.keep == True).count()
+    assert result1.filter(ibis._.keep == True).count() == result3.filter(ibis._.keep == True).count()
+    assert result1.filter(ibis._.keep == True).select(["rule_name", "priority"]).get_first_row_as_dict() == result2.filter(ibis._.keep == True).select(["rule_name", "priority"]).get_first_row_as_dict()
+    assert result1.filter(ibis._.keep == True).select(["rule_name", "priority"]).get_first_row_as_dict() == result3.filter(ibis._.keep == True).select(["rule_name", "priority"]).get_first_row_as_dict()
+
 
 def test_apply_context_rules_engine_with_empty_rules(dimension_metadata):
-    empty_rules = DataFrameFactory.create_ibis_dataframe_object_from_dataframe(pl.DataFrame(), ibis_backend_schema="sqlite")
 
     with pytest.raises(ValueError):
+        empty_rules = DataFrameFactory.create_ibis_dataframe_object_from_dataframe(pl.DataFrame(), ibis_backend_schema="sqlite")
         RulesEngine(rules=empty_rules, dimension_metadata=dimension_metadata)
         # context = Context(DIM_1="A", DIM_2=5, DIM_3="XYZ")
         # empty_engine.apply_context_rules_engine(context=context, dimension_names=["DIM_1", "DIM_2", "DIM_3"])
 
-# def test_apply_context_rules_engine_with_single_rule(dimension_metadata):
-#     single_rule = pl.DataFrame({
-#         "rule_name": ["rule_1"],
-#         "DIM_1": ["A"],
-#         "DIM_2_MIN": [0],
-#         "DIM_2_MAX": [10],
-#         "DIM_3": ["X.*"]
-#     })
-#     single_rule_df = DataFrame

@@ -144,3 +144,37 @@ def test_regex_match_strategy_with_complex_pattern(regex_match_strategy, sample_
     result = regex_match_strategy.apply_match_filter(complex_rules, dimension, context)
     print( result.materialise())    
     assert result.filter(ibis._.filter_match == RuleTrinaryFlags.PRIME_TRUE_IBIS()).count() == 3  # All should match
+
+
+def test_regex_match_strategy_with_context_all_none(regex_match_strategy, sample_rules):
+    dimension = Dimension(dimension_name="DIM_3", match_strategy=MatchStrategy.REGEX, data_type=str)
+    context = Context(DIM_1=None, DIM_2=None, DIM_3=None)
+
+    result = regex_match_strategy.apply_match_filter(sample_rules, dimension, context)
+    print( result.materialise())    
+    assert result.filter(ibis._.filter_match == RuleTrinaryFlags.PRIME_TRUE_IBIS()).count() == 0  # All should match    
+
+
+def test_exact_match_strategy_with_context_all_none(exact_match_strategy, sample_rules):
+    dimension = Dimension(dimension_name="DIM_1", match_strategy=MatchStrategy.EXACT, data_type=str)
+
+    context = Context(DIM_1=None, DIM_2=None, DIM_3=None)
+
+    result = exact_match_strategy.apply_match_filter(sample_rules, dimension, context)
+    print( result.materialise())    
+    assert result.filter(ibis._.filter_match == RuleTrinaryFlags.PRIME_TRUE_IBIS()).count() == 0  # PRIME_TRUE = 2
+
+def test_range_match_strategy_with_context_all_none(range_match_strategy, sample_rules):
+    dimension = Dimension(
+        dimension_name="DIM_2",
+        match_strategy=MatchStrategy.RANGE,
+        data_type=int,
+        range_min_field="DIM_2_MIN",
+        range_max_field="DIM_2_MAX"
+    )
+
+    context = Context(DIM_1=None, DIM_2=None, DIM_3=None)
+
+    result = range_match_strategy.apply_match_filter(sample_rules, dimension, context)
+    print( result.materialise())    
+    assert result.filter(ibis._.filter_match == RuleTrinaryFlags.PRIME_TRUE).count() == 0  # PRIME_TRUE = 2    
