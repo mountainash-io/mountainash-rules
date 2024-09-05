@@ -25,6 +25,12 @@ class ObservabilityManager:
     def _log_context_cast_warning(self, dimension_name: str, context_value: Any, context_type: Type, target_type: str) -> None:
         """
         Log a warning for a context value that is not of the correct type.
+
+        Args:
+            dimension_name (str): The name of the dimension
+            context_value (Any): The context value
+            context_type (Type): The type of the context value
+            target_type (str): The target type for the context value
         """
         if dimension_name not in self.warnings:
             self.warnings[dimension_name] = {}
@@ -35,7 +41,13 @@ class ObservabilityManager:
 
     def save_dimension_intermediate_values(self, rules: BaseDataFrame, dimension: Dimension) -> None:
         
-        
+        """
+        Save the intermediate values for a dimension.
+
+        Args:
+            rules (BaseDataFrame): The rules table
+            dimension (Dimension): The dimension object
+        """
 
         self.intermediate_values[dimension.dimension_name] = rules.select([
             'rule_name',

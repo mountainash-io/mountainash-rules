@@ -18,6 +18,17 @@ from mountainash_utils_rules.context import ContextHelper
 
 class BaseMatchStrategy(ABC):
 
+    """
+    Base class for rule matching strategies.
+
+    Attributes:
+        match_strategy (MatchStrategy): The match strategy to use
+
+
+    
+    """
+
+
     match_strategy: MatchStrategy
 
     @abstractmethod
@@ -36,6 +47,13 @@ class BaseMatchStrategy(ABC):
                                     dimension: Dimension) -> BaseDataFrame:
         """
         Apply a filter rule to the rules table to check for a wildcard value.
+
+        Args:
+            rules (BaseDataFrame): The rules table
+            dimension (Dimension): The dimension object 
+
+        Returns:
+            BaseDataFrame: The rules table with the filter rule applied
         """
 
         if self.match_strategy == MatchStrategy.RANGE:
@@ -71,6 +89,15 @@ class BaseMatchStrategy(ABC):
                                         context: BaseModel) -> BaseDataFrame:
         """
         Apply a filter rule to the rules table to check for a wildcard value.
+
+        Args:
+            rules (BaseDataFrame): The rules table
+            dimension (Dimension): The dimension object 
+            context (BaseModel): The context object
+
+        Returns:
+            BaseDataFrame: The rules table with the filter rule applied
+
         """
 
         try:
@@ -91,6 +118,11 @@ class BaseMatchStrategy(ABC):
 
 class ExactMatchStrategy(BaseMatchStrategy):
 
+    """
+        Rule Strategy for Exact Matching
+        Will match the context value exactly to the rule value
+    
+    """
 
     match_strategy: MatchStrategy = MatchStrategy.EXACT
 
@@ -100,6 +132,14 @@ class ExactMatchStrategy(BaseMatchStrategy):
                                    context: BaseModel) -> BaseDataFrame:
         """
         Apply a filter rule to the rules table to check for a wildcard value.
+
+        Args:
+            rules (BaseDataFrame): The rules table
+            dimension (Dimension): The dimension object 
+            context (BaseModel): The context object
+        
+        Returns:
+            BaseDataFrame: The rules table with the filter rule applied
         """
 
         try:
@@ -153,6 +193,12 @@ class ExactMatchStrategy(BaseMatchStrategy):
 
 class RegexMatchStrategy(BaseMatchStrategy):
 
+    """
+        Rule Strategy for Regular Expression Matching
+        Will match the context value to the regular expression in the rule value
+    
+    """
+
     match_strategy: MatchStrategy = MatchStrategy.REGEX
 
     def apply_match_filter(self, 
@@ -161,6 +207,14 @@ class RegexMatchStrategy(BaseMatchStrategy):
                            context: BaseModel) -> BaseDataFrame:
         """
         Apply a filter rule to the rules table to check for a wildcard value.
+
+        Args:
+            rules (BaseDataFrame): The rules table
+            dimension (Dimension): The dimension object 
+            context (BaseModel): The context object
+
+        Returns:
+            BaseDataFrame: The rules table with the filter rule applied
         """
 
         try:
@@ -218,6 +272,13 @@ class RegexMatchStrategy(BaseMatchStrategy):
 
 class RangeMatchStrategy(BaseMatchStrategy):
 
+    """
+        Rule Strategy for Range Matching
+        Will match the context value to be within the range specified in the rules
+    
+    """
+
+
     match_strategy: MatchStrategy = MatchStrategy.RANGE
 
     def apply_match_filter(self, 
@@ -226,6 +287,14 @@ class RangeMatchStrategy(BaseMatchStrategy):
                            context: BaseModel) -> BaseDataFrame:
         """
         Apply a filter rule to the rules table to check for a wildcard value.
+
+        Args:
+            rules (BaseDataFrame): The rules table
+            dimension (Dimension): The dimension object 
+            context (BaseModel): The context object
+
+        Returns:
+            BaseDataFrame: The rules table with the filter rule applied
         """
        
         try:
@@ -296,8 +365,25 @@ class RangeMatchStrategy(BaseMatchStrategy):
 # Rule Type Factory
 class MatchStrategyFactory:
     
+    """
+    Factory class for creating rule strategies objects based on the match strategy type.
+    
+    """
+
+
     @staticmethod
     def get_rule_strategy_class(match_strategy: MatchStrategy) -> BaseMatchStrategy:
+
+        """
+        Get the rule strategy class based on the match strategy type.
+
+        Args:
+            match_strategy (MatchStrategy): The match strategy type
+        Returns:
+            BaseMatchStrategy: The rule strategy class
+        
+        """
+
         if match_strategy == MatchStrategy.EXACT:
             return ExactMatchStrategy()
         elif match_strategy == MatchStrategy.REGEX:

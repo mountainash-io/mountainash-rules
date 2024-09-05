@@ -29,6 +29,12 @@ class RulesEngine:
     def initialize_rule_flags(self, rules: BaseDataFrame) -> BaseDataFrame:
         """
         Initialize the rule flags for the rules table.
+
+        Args:
+            rules (BaseDataFrame): The rules table
+
+        Returns:
+            BaseDataFrame: The rules table with the flags initialized
         """
         rules = rules.mutate(
             cumu_dimension_count=     ibis.literal(value=0),    
@@ -48,6 +54,13 @@ class RulesEngine:
                                       dimension: Dimension) -> BaseDataFrame:
         """
         Apply flags to the rules table to indicate the type of match for each dimension.
+
+        Args:
+            rules (BaseDataFrame): The rules table
+            dimension (Dimension): The dimension object
+
+        Returns:
+            BaseDataFrame: The rules table with the flags applied
         """
         rules = rules.mutate(
             # Product of prime filters
@@ -83,6 +96,12 @@ class RulesEngine:
     def calculate_rule_priority(self, rules: BaseDataFrame) -> BaseDataFrame:
         """
         Calculate the priority of rules based on hard_matches, soft_matches, and rule order.
+
+        Args:
+            rules (BaseDataFrame): The rules table
+
+        Returns:
+            BaseDataFrame: The rules table with the priority calculated
         """
         rules = rules.mutate(
             row_number=ibis.row_number() #.over(ibis.window(order_by=[ibis._.rule_name])),
@@ -107,6 +126,18 @@ class RulesEngine:
                                         keep_all: bool=True
                                         ) -> BaseDataFrame:
                 
+        """
+        Apply the rules engine to the context and return the filtered rules.
+
+        Args:
+            context (BaseModel): The context object
+            dimension_names (List[str]|str): The dimension names to apply the rules to
+            keep_all (bool): Flag to keep all rules or only the ones that pass all filters
+
+        Returns:
+            BaseDataFrame: The filtered rules
+        """
+
         #Get a copy of the rules        
         rules = self.rule_manager.get_rules()
 
@@ -122,9 +153,8 @@ class RulesEngine:
         active_dimension_names: List[str] = self.metadata_manager.get_active_dimension_names(context=context, rules=rules, dimension_names=dimension_names)
         active_dimensions: List[Dimension] = self.metadata_manager.get_dimensions_list(dimension_names=active_dimension_names)
 
-
         # Initialization - add flags and counters to the rules
-        rules = self.initialize_rule_flags(rules)
+        rules = self.initialize_rule_flags(rules=rules)
 
         # Apply Rules
         for dimension in active_dimensions:
