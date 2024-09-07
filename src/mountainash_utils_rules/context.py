@@ -17,6 +17,14 @@ class ContextHelper:
         We want to be somewhat flexible and forgiving with the context values, so we will return a string representation of the value if it is not a string, int or float.
         This is more likely to be defined at runtime, so we will not enforce strict typing here.
         If the context value is invalid or none, we will set the NOT_SET flag
+
+        Args:
+            context: The context object
+            dimension (Dimension): The dimension object
+
+        Returns:
+            str|int|float: The value of the context field
+
         """
 
         dimension_type: Type = dimension.get_dimension_data_type()
@@ -58,6 +66,13 @@ class ContextHelper:
     def check_context_and_dimension_types_match(cls, context, dimension: Dimension) -> bool:
         """
         Check if the context and dimension types match.
+
+        Args:
+            context: The context object
+            dimension (Dimension): The dimension object
+
+        Returns:
+            bool: True if the types match, False otherwise
         """
 
         dimension_type = dimension.get_dimension_data_type()

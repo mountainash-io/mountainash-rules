@@ -6,17 +6,39 @@ class RuleManager:
         self.rules: BaseDataFrame = self._init_rules(rules)
 
     def get_rules(self) -> BaseDataFrame:
+        """
+        Get the rules table.
+
+        Returns:
+            BaseDataFrame: The rules table
+        """
         return self.rules
 
     def update_rules(self, 
                      new_rules: BaseDataFrame):
+        
+        """
+        Update the rules table.
+        
+        Args:
+            new_rules (BaseDataFrame): The new rules table
+
+        """
         self.rules = self._init_rules(rules=new_rules)
 
 
     def _init_rules(self, 
                     rules: BaseDataFrame):
         """
-        Validate the dimensions in the rule metadata.
+        Initialises the rules table.
+        Checks that the rules table is not empty and is a BaseDataFrame.
+        Converts the rules to a backend that supports window functions.
+
+        Args:
+            rules (BaseDataFrame): The rules table
+
+        Returns:
+            BaseDataFrame: The rules table 
         """
 
         if rules is None:
