@@ -50,7 +50,7 @@ class ObservabilityManager:
         """
 
         self.intermediate_values[dimension.dimension_name] = rules.select([
-            'rule_name',
+            # 'rule_name',
             'dimension_filter_product',
             'dimension_any_false',
             'dimension_any_true',
