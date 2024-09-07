@@ -45,57 +45,57 @@ def test_rules_engine_initialization(rules_engine):
 
 def test_apply_context_rules_engine_exact_match(rules_engine):
     context = Context(DIM_1="A", DIM_2=5, DIM_3="XYZ")
-    result = rules_engine.apply_context_rules_engine(context, ["DIM_1", "DIM_2", "DIM_3"])
+    result = rules_engine.apply_context_rules_engine(context, dimension_names=["DIM_1", "DIM_2", "DIM_3"])
     assert result.filter(ibis._.keep == True).count() == 1
     assert result.filter(ibis._.keep == True).get_first_row_as_dict()['rule_name'] == "rule_1"
 
 def test_apply_context_rules_engine_no_match(rules_engine):
     context = Context(DIM_1="E", DIM_2=50, DIM_3="ABC")
-    result = rules_engine.apply_context_rules_engine(context, ["DIM_1", "DIM_2", "DIM_3"])
+    result = rules_engine.apply_context_rules_engine(context, dimension_names=["DIM_1", "DIM_2", "DIM_3"])
     assert result.filter(ibis._.keep == True).count() == 0
 
 def test_apply_context_rules_engine_partial_match(rules_engine):
     context = Context(DIM_1="A", DIM_2=15, DIM_3="ABC")
-    result = rules_engine.apply_context_rules_engine(context, ["DIM_1", "DIM_2", "DIM_3"])
+    result = rules_engine.apply_context_rules_engine(context, dimension_names=["DIM_1", "DIM_2", "DIM_3"])
     assert result.filter(ibis._.keep == True).count() == 0
 
 def test_apply_context_rules_engine_unknown_value(rules_engine):
     context = Context(DIM_1=RuleConstants.UNKNOWN, DIM_2=35, DIM_3="WXY")
-    result = rules_engine.apply_context_rules_engine(context, ["DIM_1", "DIM_2", "DIM_3"])
+    result = rules_engine.apply_context_rules_engine(context, dimension_names=["DIM_1", "DIM_2", "DIM_3"])
     assert result.filter(ibis._.keep == True).count() == 1
     assert result.filter(ibis._.keep == True).get_first_row_as_dict()['rule_name'] == "rule_4"
 
 def test_apply_context_rules_engine_unknown_rule(rules_engine):
     context = Context(DIM_1="D", DIM_2=45, DIM_3="ABC")
-    result = rules_engine.apply_context_rules_engine(context, ["DIM_1", "DIM_2", "DIM_3"])
+    result = rules_engine.apply_context_rules_engine(context, dimension_names=["DIM_1", "DIM_2", "DIM_3"])
     assert result.filter(ibis._.keep == True).count() == 1
     assert result.filter(ibis._.keep == True).get_first_row_as_dict()['rule_name'] == "rule_5"
 
 def test_apply_context_rules_engine_subset_dimensions(rules_engine):
     context = Context(DIM_1="A", DIM_2=5, DIM_3="XYZ")
-    result = rules_engine.apply_context_rules_engine(context, ["DIM_1", "DIM_2"])
+    result = rules_engine.apply_context_rules_engine(context, dimension_names=["DIM_1", "DIM_2"])
     assert result.filter(ibis._.keep == True).count() == 1
     assert result.filter(ibis._.keep == True).get_first_row_as_dict()['rule_name'] == "rule_1"
 
 def test_apply_context_rules_engine_invalid_dimension(rules_engine):
     context = Context(DIM_1="A", DIM_2=5, DIM_3="XYZ")
     # with pytest.raises(ValueError):
-    result = rules_engine.apply_context_rules_engine(context, ["DIM_1", "DIM_2", "INVALID_DIM"])
+    result = rules_engine.apply_context_rules_engine(context, dimension_names=["DIM_1", "DIM_2", "INVALID_DIM"])
     assert result.filter(ibis._.keep == True).count() > 0
 
 def test_apply_context_rules_engine_empty_dimensions(rules_engine):
     context = Context(DIM_1="A", DIM_2=5, DIM_3="XYZ")
     with pytest.raises(ValueError):
-        rules_engine.apply_context_rules_engine(context, [])
+        rules_engine.apply_context_rules_engine(context, dimension_names=[])
 
 def test_apply_context_rules_engine_keep_all(rules_engine):
     context = Context(DIM_1="A", DIM_2=5, DIM_3="XYZ")
-    result = rules_engine.apply_context_rules_engine(context, ["DIM_1", "DIM_2", "DIM_3"], keep_all=True)
+    result = rules_engine.apply_context_rules_engine(context, dimension_names=["DIM_1", "DIM_2", "DIM_3"], keep_all=True)
     assert result.count() == 5
 
 def test_apply_context_rules_engine_priority(rules_engine):
     context = Context(DIM_1=RuleConstants.UNKNOWN, DIM_2=RuleConstants.UNKNOWN_NUMERIC, DIM_3=RuleConstants.UNKNOWN)
-    result = rules_engine.apply_context_rules_engine(context, ["DIM_1", "DIM_2", "DIM_3"])
+    result = rules_engine.apply_context_rules_engine(context, dimension_names=["DIM_1", "DIM_2", "DIM_3"])
 
     assert result.filter(ibis._.keep == True).count() == 5
     assert result.filter(ibis._.keep == True).get_first_row_as_dict()['rule_name'] == "rule_4"
@@ -119,33 +119,33 @@ def test_apply_context_rules_engine_missing_context_field(rules_engine):
 
 def test_apply_context_rules_engine_type_mismatch(rules_engine):
     context = Context(DIM_1="A", DIM_2="5", DIM_3="XYZ")  # DIM_2 is a string instead of int
-    result = rules_engine.apply_context_rules_engine(context, ["DIM_1", "DIM_2", "DIM_3"])
+    result = rules_engine.apply_context_rules_engine(context, dimension_names=["DIM_1", "DIM_2", "DIM_3"])
     assert result.filter(ibis._.keep == True).count() == 1
     assert result.filter(ibis._.keep == True).get_first_row_as_dict()['rule_name'] == "rule_1"
 
 def test_tracability(rules_engine):
     context = Context(DIM_1="A", DIM_2=5, DIM_3="XYZ")
-    rules_engine.apply_context_rules_engine(context, ["DIM_1", "DIM_2", "DIM_3"])
+    rules_engine.apply_context_rules_engine(context, dimension_names=["DIM_1", "DIM_2", "DIM_3"])
     assert "DIM_1" in rules_engine.observability_manager.intermediate_values
     assert "DIM_2" in rules_engine.observability_manager.intermediate_values
     assert "DIM_3" in rules_engine.observability_manager.intermediate_values
 
 def test_rule_priority_calculation(rules_engine):
     context = Context(DIM_1=RuleConstants.UNKNOWN, DIM_2=35, DIM_3=RuleConstants.UNKNOWN)
-    result = rules_engine.apply_context_rules_engine(context, ["DIM_1", "DIM_2", "DIM_3"], keep_all=True)
+    result = rules_engine.apply_context_rules_engine(context, dimension_names=["DIM_1", "DIM_2", "DIM_3"], keep_all=True)
     priorities = result.get_column_as_list("priority")
     assert priorities == sorted(priorities)  # Ensure priorities are in ascending order
 
 def test_apply_context_rules_engine_with_all_unknown_values(rules_engine):
     context = Context(DIM_1=RuleConstants.UNKNOWN, DIM_2=RuleConstants.UNKNOWN_NUMERIC, DIM_3=RuleConstants.UNKNOWN)
-    result = rules_engine.apply_context_rules_engine(context, ["DIM_1", "DIM_2", "DIM_3"])
+    result = rules_engine.apply_context_rules_engine(context, dimension_names=["DIM_1", "DIM_2", "DIM_3"])
     assert result.filter(ibis._.keep == True).count() == 5
     assert set(result.filter(ibis._.keep == True).get_column_as_list("rule_name")) == {"rule_1", "rule_2", "rule_3", "rule_4", "rule_5"}
 
 
 def test_apply_context_rules_engine_with_mixed_match_strategys(rules_engine):
     context = Context(DIM_1="B", DIM_2=15, DIM_3="YYY")
-    result = rules_engine.apply_context_rules_engine(context, ["DIM_1", "DIM_2", "DIM_3"])
+    result = rules_engine.apply_context_rules_engine(context, dimension_names=["DIM_1", "DIM_2", "DIM_3"])
     assert result.filter(ibis._.keep == True).count() == 1
     assert result.filter(ibis._.keep == True).get_first_row_as_dict()['rule_name'] == "rule_2"
 
@@ -165,7 +165,7 @@ def test_apply_context_rules_engine_edge_cases(rules_engine):
 def test_apply_context_rules_engine_multiple_matches(rules_engine):
     # Create a context that matches multiple rules
     context = Context(DIM_1=RuleConstants.UNKNOWN, DIM_2=35, DIM_3="WXY")
-    result = rules_engine.apply_context_rules_engine(context, ["DIM_1", "DIM_2", "DIM_3"], keep_all=True)
+    result = rules_engine.apply_context_rules_engine(context, dimension_names=["DIM_1", "DIM_2", "DIM_3"], keep_all=True)
     matched_rules = result.filter(ibis._.keep == True)
     assert matched_rules.count() == 1
     assert set(matched_rules.get_column_as_list("rule_name")) == {"rule_4"}
@@ -174,7 +174,7 @@ def test_apply_context_rules_engine_multiple_matches(rules_engine):
 def test_apply_context_rules_engine_soft_vs_hard_match(rules_engine):
     # Test a case where we have both soft (UNKNOWN) and hard matches
     context = Context(DIM_1="D", DIM_2=45, DIM_3=RuleConstants.UNKNOWN)
-    result = rules_engine.apply_context_rules_engine(context, ["DIM_1", "DIM_2", "DIM_3"], keep_all=True)
+    result = rules_engine.apply_context_rules_engine(context, dimension_names=["DIM_1", "DIM_2", "DIM_3"], keep_all=True)
     matched_rules = result.filter(ibis._.keep == True)
     assert matched_rules.count() == 1
     assert matched_rules.get_first_row_as_dict()['rule_name'] == "rule_5"
@@ -182,9 +182,9 @@ def test_apply_context_rules_engine_soft_vs_hard_match(rules_engine):
 def test_apply_context_rules_engine_dimension_order(rules_engine):
     # Test if changing the order of dimensions affects the result
     context = Context(DIM_1="A", DIM_2=5, DIM_3="XYZ")
-    result1 = rules_engine.apply_context_rules_engine(context, ["DIM_1", "DIM_2", "DIM_3"])
-    result2 = rules_engine.apply_context_rules_engine(context, ["DIM_3", "DIM_2", "DIM_1"])
-    result3 = rules_engine.apply_context_rules_engine(context, ["DIM_2", "DIM_1", "DIM_3",])
+    result1 = rules_engine.apply_context_rules_engine(context, dimension_names=["DIM_1", "DIM_2", "DIM_3"])
+    result2 = rules_engine.apply_context_rules_engine(context, dimension_names=["DIM_3", "DIM_2", "DIM_1"])
+    result3 = rules_engine.apply_context_rules_engine(context, dimension_names=["DIM_2", "DIM_1", "DIM_3",])
 
     assert result1.filter(ibis._.keep == True).count() == result2.filter(ibis._.keep == True).count()
     assert result1.filter(ibis._.keep == True).count() == result3.filter(ibis._.keep == True).count()
