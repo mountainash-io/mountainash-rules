@@ -27,8 +27,6 @@ class BaseMatchStrategy(ABC):
 
     
     """
-
-
     match_strategy: MatchStrategy
 
     @abstractmethod
@@ -117,7 +115,6 @@ class BaseMatchStrategy(ABC):
 
 
 class ExactMatchStrategy(BaseMatchStrategy):
-
     """
         Rule Strategy for Exact Matching
         Will match the context value exactly to the rule value
@@ -271,13 +268,11 @@ class RegexMatchStrategy(BaseMatchStrategy):
 
 
 class RangeMatchStrategy(BaseMatchStrategy):
-
     """
         Rule Strategy for Range Matching
         Will match the context value to be within the range specified in the rules
     
     """
-
 
     match_strategy: MatchStrategy = MatchStrategy.RANGE
 
@@ -365,11 +360,6 @@ class RangeMatchStrategy(BaseMatchStrategy):
 # Rule Type Factory
 class MatchStrategyFactory:
     
-    """
-    Factory class for creating rule strategies objects based on the match strategy type.
-    
-    """
-
 
     @staticmethod
     def get_rule_strategy_class(match_strategy: MatchStrategy) -> BaseMatchStrategy:

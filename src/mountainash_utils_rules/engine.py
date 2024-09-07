@@ -137,7 +137,6 @@ class RulesEngine:
         Returns:
             BaseDataFrame: The filtered rules
         """
-
         #Get a copy of the rules        
         rules = self.rule_manager.get_rules()
 

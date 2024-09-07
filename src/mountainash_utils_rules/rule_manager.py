@@ -6,7 +6,6 @@ class RuleManager:
         self.rules: BaseDataFrame = self._init_rules(rules)
 
     def get_rules(self) -> BaseDataFrame:
-
         """
         Get the rules table.
 

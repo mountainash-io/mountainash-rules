@@ -218,7 +218,7 @@ class MetadataManager:
 
     def _validate_regex_strategy_dimension(self, dimension: Dimension) -> None:
         """
-        Validate the regex strategy dimension.
+        Validate the range strategy dimension.
 
         Args:
             dimension (Dimension): The dimension to validate
