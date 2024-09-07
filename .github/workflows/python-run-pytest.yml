@@ -6,6 +6,15 @@ on:
       - 'src/mountainash_utils_rules/**'              
     
   workflow_dispatch:
+    inputs:
+      fallback_branch:
+        description: 'Fallback branch to use'
+        required: true
+        default: 'develop'
+        type: choice
+        options:
+        - develop
+        - main
 
 jobs:
 
@@ -30,6 +39,17 @@ jobs:
         shell: bash
         run: echo "BRANCH_NAME=$(echo ${GITHUB_HEAD_REF:-${GITHUB_REF#refs/heads/}})" >> $GITHUB_ENV
 
+      # Set fallback branch
+      - name: Set fallback branch
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "FALLBACK_BRANCH=${{ github.event.inputs.fallback_branch }}" >> $GITHUB_ENV
+          elif [ "${{ github.event_name }}" = "pull_request_target" ]; then
+            echo "FALLBACK_BRANCH=${{ github.base_ref }}" >> $GITHUB_ENV
+          else
+            echo "FALLBACK_BRANCH=develop" >> $GITHUB_ENV
+          fi
+
       #Set the ORGNAME
       - name: Set ORGNAME - mountainash-io
         env:
@@ -49,7 +69,7 @@ jobs:
         env:
           TOKEN: ${{ secrets.CLONE_PRIVATE_REPOS_TOKEN }}
           TARGET_BRANCH_NAME: ${{ env.BRANCH_NAME }} # or set your branch name here
-          DEFAULT_BRANCH_NAME: main # or set your branch name here
+          DEFAULT_BRANCH_NAME: ${{ env.FALLBACK_BRANCH }} # or set your branch name here
         run: |
           BRANCH_EXISTS=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: token $TOKEN" -H "Accept: application/vnd.github.v3+json" "https://api.github.com/repos/$ORGNAME/$REPO/branches/$TARGET_BRANCH_NAME")
           echo "BRANCH_TO_USE=$( [ $BRANCH_EXISTS -eq 200 ] && echo $TARGET_BRANCH_NAME || echo $DEFAULT_BRANCH_NAME )" >> $GITHUB_ENV        
@@ -74,7 +94,7 @@ jobs:
         env:
           TOKEN: ${{ secrets.CLONE_PRIVATE_REPOS_TOKEN }}
           TARGET_BRANCH_NAME: ${{ env.BRANCH_NAME }} # or set your branch name here
-          DEFAULT_BRANCH_NAME: main # or set your branch name here
+          DEFAULT_BRANCH_NAME: ${{ env.FALLBACK_BRANCH }} # or set your branch name here
         run: |
           BRANCH_EXISTS=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: token $TOKEN" -H "Accept: application/vnd.github.v3+json" "https://api.github.com/repos/$ORGNAME/$REPO/branches/$TARGET_BRANCH_NAME")
           echo "BRANCH_TO_USE=$( [ $BRANCH_EXISTS -eq 200 ] && echo $TARGET_BRANCH_NAME || echo $DEFAULT_BRANCH_NAME )" >> $GITHUB_ENV        
@@ -99,7 +119,7 @@ jobs:
         env:
           TOKEN: ${{ secrets.CLONE_PRIVATE_REPOS_TOKEN }}
           TARGET_BRANCH_NAME: ${{ env.BRANCH_NAME }} # or set your branch name here
-          DEFAULT_BRANCH_NAME: main # or set your branch name here
+          DEFAULT_BRANCH_NAME: ${{ env.FALLBACK_BRANCH }} # or set your branch name here
         run: |
           BRANCH_EXISTS=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: token $TOKEN" -H "Accept: application/vnd.github.v3+json" "https://api.github.com/repos/$ORGNAME/$REPO/branches/$TARGET_BRANCH_NAME")
           echo "BRANCH_TO_USE=$( [ $BRANCH_EXISTS -eq 200 ] && echo $TARGET_BRANCH_NAME || echo $DEFAULT_BRANCH_NAME )" >> $GITHUB_ENV        
@@ -126,7 +146,7 @@ jobs:
         env:
           TOKEN: ${{ secrets.CLONE_PRIVATE_REPOS_TOKEN }}
           TARGET_BRANCH_NAME: ${{ env.BRANCH_NAME }} # or set your branch name here
-          DEFAULT_BRANCH_NAME: main # or set your branch name here
+          DEFAULT_BRANCH_NAME: ${{ env.FALLBACK_BRANCH }} # or set your branch name here
         run: |
           BRANCH_EXISTS=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: token $TOKEN" -H "Accept: application/vnd.github.v3+json" "https://api.github.com/repos/$ORGNAME/$REPO/branches/$TARGET_BRANCH_NAME")
           echo "BRANCH_TO_USE=$( [ $BRANCH_EXISTS -eq 200 ] && echo $TARGET_BRANCH_NAME || echo $DEFAULT_BRANCH_NAME )" >> $GITHUB_ENV        
@@ -153,7 +173,7 @@ jobs:
         env:
           TOKEN: ${{ secrets.CLONE_PRIVATE_REPOS_TOKEN }}
           TARGET_BRANCH_NAME: ${{ env.BRANCH_NAME }} # or set your branch name here
-          DEFAULT_BRANCH_NAME: main # or set your branch name here
+          DEFAULT_BRANCH_NAME: ${{ env.FALLBACK_BRANCH }} # or set your branch name here
         run: |
           BRANCH_EXISTS=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: token $TOKEN" -H "Accept: application/vnd.github.v3+json" "https://api.github.com/repos/$ORGNAME/$REPO/branches/$TARGET_BRANCH_NAME")
           echo "BRANCH_TO_USE=$( [ $BRANCH_EXISTS -eq 200 ] && echo $TARGET_BRANCH_NAME || echo $DEFAULT_BRANCH_NAME )" >> $GITHUB_ENV        
@@ -177,7 +197,7 @@ jobs:
         env:
           TOKEN: ${{ secrets.CLONE_PRIVATE_REPOS_TOKEN }}
           TARGET_BRANCH_NAME: ${{ env.BRANCH_NAME }} # or set your branch name here
-          DEFAULT_BRANCH_NAME: main # or set your branch name here
+          DEFAULT_BRANCH_NAME: ${{ env.FALLBACK_BRANCH }} # or set your branch name here
         run: |
           BRANCH_EXISTS=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: token $TOKEN" -H "Accept: application/vnd.github.v3+json" "https://api.github.com/repos/$ORGNAME/$REPO/branches/$TARGET_BRANCH_NAME")
           echo "BRANCH_TO_USE=$( [ $BRANCH_EXISTS -eq 200 ] && echo $TARGET_BRANCH_NAME || echo $DEFAULT_BRANCH_NAME )" >> $GITHUB_ENV        
@@ -201,7 +221,7 @@ jobs:
         env:
           TOKEN: ${{ secrets.CLONE_PRIVATE_REPOS_TOKEN }}
           TARGET_BRANCH_NAME: ${{ env.BRANCH_NAME }} # or set your branch name here
-          DEFAULT_BRANCH_NAME: main # or set your branch name here
+          DEFAULT_BRANCH_NAME: ${{ env.FALLBACK_BRANCH }} # or set your branch name here
         run: |
           BRANCH_EXISTS=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: token $TOKEN" -H "Accept: application/vnd.github.v3+json" "https://api.github.com/repos/$ORGNAME/$REPO/branches/$TARGET_BRANCH_NAME")
           echo "BRANCH_TO_USE=$( [ $BRANCH_EXISTS -eq 200 ] && echo $TARGET_BRANCH_NAME || echo $DEFAULT_BRANCH_NAME )" >> $GITHUB_ENV        
