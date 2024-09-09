@@ -48,7 +48,7 @@ class RuleManager:
             raise ValueError("Rules must be a BaseDataFrame")
 
         # Convert the rules to a backend that supports window functions        
-        if rules.ibis_backend_schema in ["polars"]:
+        if rules.ibis_backend_schema not in ["sqlite"]:
             rules = rules.convert_backend_schema(new_backend_schema="sqlite")
 
         if rules.count() == int(0):

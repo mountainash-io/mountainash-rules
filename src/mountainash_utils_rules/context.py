@@ -33,31 +33,24 @@ class ContextHelper:
 
         if context_type not in cls.ALLOWED_CONTEXT_TYPES:
             context_value = RuleConstants.NOT_SET
-            print(f"1. Context Field {dimension.dimension_name} is of type {context_type}, but only {cls.ALLOWED_CONTEXT_TYPES} are allowed. Value set to {context_value}")
 
         elif context_type is str:
             context_value = getattr(context, dimension.get_dimension_context_fieldname(), RuleConstants.NOT_SET)
-            print(f"2. Context Field {dimension.dimension_name} is of type {context_type}, value set to {context_value}")
 
         elif context_type in [int, float]:
             context_value = getattr(context, dimension.get_dimension_context_fieldname(), RuleConstants.NOT_SET_NUMERIC)
-            print(f"3. Context Field {dimension.dimension_name} is of type {context_type}, value set to {context_value}")
 
         elif context_type in [bool]:
             context_value = int(getattr(context, dimension.get_dimension_context_fieldname(), RuleConstants.NOT_SET_NUMERIC))
-            print(f"4. Context Field {dimension.dimension_name} is of type {context_type}, value set to {context_value}")
 
         # Use dimension types otherwise - ie is None
         elif dimension_type is str:
             context_value = RuleConstants.NOT_SET
-            print(f"5. Context Field {dimension.dimension_name} is of type {context_type}, value set to {context_value} via dimension type: {dimension_type}")
         elif dimension_type in [int, float, bool]:
             context_value = RuleConstants.NOT_SET_NUMERIC
-            print(f"6. Context Field {dimension.dimension_name} is of type {context_type}, value set to {context_value} via dimension type: {dimension_type}")
         
         else:
             context_value = RuleConstants.NOT_SET
-            print(f"7. Context Field {dimension.dimension_name} is of type {context_type}, value set to {context_value} via dimension type: {dimension_type}")
 
         return context_value
     
