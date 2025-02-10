@@ -24,8 +24,8 @@ classifiers = [
 ]
 dependencies = [
   "pandas==2.2.2",
-  "polars==0.20.31",
-  "ibis-framework[polars,pandas,sqlite,duckdb] == 9.1.0",
+  "polars==1.16.0",
+  "ibis-framework[polars,pandas,sqlite,duckdb] == 9.5.0",
 ]
 
 
