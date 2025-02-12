@@ -47,7 +47,7 @@ rules_df = pl.DataFrame({
     "DIM_2_MAX": [9, 19, 29],
     "DIM_3": ["X.*", "Y.*", "Z.*"]
 })
-rules = DataFrameFactory.create_ibis_dataframe_object_from_dataframe(rules_df, ibis_backend_schema="sqlite")
+rules = DataFrameFactory.create_ibis_dataframe_object_from_dataframe(rules_df, ibis_backend_schema="polars")
 
 # Define rule metadata
 rule_metadata = RuleMetadata(

@@ -1,7 +1,7 @@
 import pytest
 from mountainash_utils_rules.dimension import MetadataManager, DimensionsMetadata, Dimension
 from mountainash_utils_rules.constants import MatchStrategy
-from mountainash_data import BaseDataFrame, DataFrameFactory
+from mountainash_data import BaseDataFrame, IbisDataFrame
 import polars as pl
 from pydantic import BaseModel
 from typing import Optional
@@ -29,7 +29,7 @@ def sample_rules():
         "DIM_2": ["1", "2", "3"],
         "DIM_3": ["X", "<NA>", "<NA>"]
     })
-    return DataFrameFactory.create_ibis_dataframe_object_from_dataframe(rules_df, ibis_backend_schema="sqlite")
+    return IbisDataFrame(rules_df, ibis_backend_schema="sqlite")
 
 def test_metadata_manager_initialization(sample_rules, sample_rule_metadata):
     metadata_manager = MetadataManager(rules=sample_rules, dimension_metadata=sample_rule_metadata)

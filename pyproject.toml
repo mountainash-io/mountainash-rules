@@ -28,7 +28,7 @@ dependencies = [
   "ibis-framework[polars,pandas,sqlite,duckdb] == 9.5.0",
 ]
 
-
+ 
 [project.urls]
 Documentation = "https://github.com/mountainash-io/mountainash-utils-rules#readme"
 Issues = "https://github.com/mountainash-io/mountainash-utils-rules/issues"

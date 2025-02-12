@@ -1,7 +1,7 @@
 import pytest
 from mountainash_utils_rules.observer import ObservabilityManager
 from mountainash_utils_rules.dimension import Dimension
-from mountainash_data import BaseDataFrame, DataFrameFactory
+from mountainash_data import BaseDataFrame, IbisDataFrame
 
 import polars as pl
 import ibis
@@ -25,7 +25,7 @@ def sample_rules():
         "dropped": [False, True],
         "dropped_by_dimension": [None, "DIM_1"]
     })
-    return DataFrameFactory.create_ibis_dataframe_object_from_dataframe(rules_df, ibis_backend_schema="sqlite")
+    return IbisDataFrame(rules_df, ibis_backend_schema="sqlite")
 
 @pytest.fixture
 def dim_1() -> Dimension:
