@@ -6,11 +6,14 @@ import ibis
 from pydantic import BaseModel
 
 from mountainash_data import BaseDataFrame
+from mountainash_data.dataframes.utils.dataframe_filters import FilterCondition as fc
+
 from mountainash_utils_rules.constants import RuleTrinaryFlags
 from mountainash_utils_rules.rule_strategies import MatchStrategyFactory, BaseMatchStrategy
 from mountainash_utils_rules.dimension import DimensionsMetadata, MetadataManager, Dimension
 from mountainash_utils_rules.observer import ObservabilityManager
 from mountainash_utils_rules.rule_manager import RuleManager
+
 
 
 class RulesEngine:
@@ -64,13 +67,13 @@ class RulesEngine:
         """
         rules = rules.mutate(
             # Product of prime filters
-            dimension_filter_product = ibis._.filter_rule_unknown * ibis._.filter_context_unknown * ibis._.filter_match
+            dimension_filter_product = ibis._.filter_rule_unknown * ibis._.filter_context_unknown * ibis._.filter_match,
 
         ).mutate(
             #Flag across all 3 filters
             dimension_any_false =     ibis._.dimension_filter_product % RuleTrinaryFlags.PRIME_FALSE_IBIS() == ibis.literal(value=0),
             dimension_any_true =      ibis._.dimension_filter_product % RuleTrinaryFlags.PRIME_TRUE_IBIS()  == ibis.literal(value=0),
-        ).mutate(
+        # ).mutate(
 
             #Match Flags
             cumu_dimension_count=     ibis._.cumu_dimension_count   + ibis.literal(1).cast("int8"),
@@ -104,10 +107,8 @@ class RulesEngine:
             BaseDataFrame: The rules table with the priority calculated
         """
         rules = rules.mutate(
-            row_number=ibis.row_number() #.over(ibis.window(order_by=[ibis._.rule_name])),
-        )
-        
-        rules = rules.mutate(
+            row_number=ibis.row_number(), #.over(ibis.window(order_by=[ibis._.rule_name])),
+        ).mutate(
             priority=ibis.row_number().over(ibis.window(
                 order_by=[
                     ibis.desc('cumu_hard_match_count'),
@@ -155,6 +156,9 @@ class RulesEngine:
         # Initialization - add flags and counters to the rules
         rules = self.initialize_rule_flags(rules=rules)
 
+        # dropped_filter = fc.eq("dropped", True)
+        keep_filter = fc.eq("keep", True)
+
         # Apply Rules
         for dimension in active_dimensions:
 
@@ -169,9 +173,9 @@ class RulesEngine:
             #Store intermediate state
             self.observability_manager.save_dimension_intermediate_values(rules=rules, dimension=dimension)
 
-            #If we have dropped all fields, then we can stop
-            if rules.filter(ibis._.dropped).count() == rules.count():
-                break
+            #If we have dropped all fields, then we can stop. This may be slow, as it needs a materialisation!
+            # if rules.filter(filter_condition=dropped_filter).count() == rules.count():
+            #     break
 
         #Rank rules
         rules = self.calculate_rule_priority(rules)
@@ -181,5 +185,5 @@ class RulesEngine:
         if keep_all:
             return rules #.order_by('priority')
         else:
-            return rules.filter(ibis._.keep) #.order_by('priority')
+            return rules.filter(filter_condition=keep_filter) #.order_by('priority')
 

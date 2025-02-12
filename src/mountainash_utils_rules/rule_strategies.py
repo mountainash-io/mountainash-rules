@@ -1,6 +1,7 @@
 from abc import ABC, abstractmethod
 
 import ibis
+import re
 from ibis.common.deferred import Deferred
 from ibis.common.exceptions import IbisTypeError
 
@@ -139,6 +140,8 @@ class ExactMatchStrategy(BaseMatchStrategy):
             BaseDataFrame: The rules table with the filter rule applied
         """
 
+
+
         try:
             context_value = ContextHelper.get_context_value(context=context, dimension=dimension)
 
@@ -153,14 +156,14 @@ class ExactMatchStrategy(BaseMatchStrategy):
             if dimension.get_dimension_data_type() == str:
 
                 rules = rules.mutate(
-                    context_value_ibis = ibis.literal(value=context_value)
+                    context_value_ibis = ibis.literal(value=context_value),
                 ).mutate(
                     filter_match = ibis.ifelse(
                                     condition= ibis._.context_value_ibis == ibis.literal(value=RuleConstants.NOT_SET) ,
                                     true_expr=RuleTrinaryFlags.PRIME_UNKNOWN_IBIS(),
                                     false_expr=    
                                         ibis.ifelse(
-                                            condition= ibis._[dimension_rule_fieldname] == ibis._.context_value_ibis, 
+                                            condition= ibis._[dimension_rule_fieldname] == ibis.literal(value=context_value), 
                                             true_expr=RuleTrinaryFlags.PRIME_TRUE_IBIS(), 
                                             false_expr=RuleTrinaryFlags.PRIME_FALSE_IBIS()
                                             ) 
@@ -169,14 +172,14 @@ class ExactMatchStrategy(BaseMatchStrategy):
             else:
 
                 rules = rules.mutate(
-                    context_value_ibis = ibis.literal(value=context_value)
+                    context_value_ibis = ibis.literal(value=context_value),
                 ).mutate(
                     filter_match = ibis.ifelse(
                                     condition= ibis._.context_value_ibis == ibis.literal(value=RuleConstants.NOT_SET_NUMERIC),
                                     true_expr=RuleTrinaryFlags.PRIME_UNKNOWN_IBIS(),
                                     false_expr=    
                                         ibis.ifelse(
-                                            condition= ibis._[dimension_rule_fieldname] == ibis._.context_value_ibis, 
+                                            condition= ibis._[dimension_rule_fieldname] == ibis.literal(value=context_value), 
                                             true_expr=RuleTrinaryFlags.PRIME_TRUE_IBIS(), 
                                             false_expr=RuleTrinaryFlags.PRIME_FALSE_IBIS()
                                             ) 
@@ -193,7 +196,8 @@ class RegexMatchStrategy(BaseMatchStrategy):
     """
         Rule Strategy for Regular Expression Matching
         Will match the context value to the regular expression in the rule value
-    
+        The rule contains a regular expression, not the context! The context is a real world value.
+
     """
 
     match_strategy: MatchStrategy = MatchStrategy.REGEX
@@ -229,7 +233,7 @@ class RegexMatchStrategy(BaseMatchStrategy):
             if dimension.get_dimension_data_type() == str:
 
                 rules = rules.mutate(
-                    context_value_ibis = ibis.literal(value=context_value)
+                    context_value_ibis = ibis.literal(value=context_value),
                 ).mutate(
                     filter_match = 
                             ibis.ifelse(
@@ -238,6 +242,8 @@ class RegexMatchStrategy(BaseMatchStrategy):
                                 false_expr=                   
                                     ibis.ifelse(
                                         condition= ibis._.context_value_ibis.re_search(ibis._[dimension_rule_fieldname]),
+                                        # condition= ibis._.context_value_ibis.re_match(ibis._[dimension_rule_fieldname]),
+                                        # condition= ibis._[dimension_rule_fieldname].re_match(ibis._.context_value_ibis),
                                         true_expr=RuleTrinaryFlags.PRIME_TRUE_IBIS(),
                                         false_expr=RuleTrinaryFlags.PRIME_FALSE_IBIS()
                                     ))
@@ -245,7 +251,7 @@ class RegexMatchStrategy(BaseMatchStrategy):
             else:
 
                 rules = rules.mutate(
-                    context_value_ibis = ibis.literal(value=context_value)
+                    context_value_ibis = ibis.literal(value=context_value),
                 ).mutate(
                     filter_match = 
                             ibis.ifelse(
@@ -254,6 +260,9 @@ class RegexMatchStrategy(BaseMatchStrategy):
                                 false_expr=                   
                                     ibis.ifelse(
                                         condition= ibis._.context_value_ibis.re_search(ibis._[dimension_rule_fieldname]),
+                                        # condition= ibis._.context_value_ibis.re_match(ibis._[dimension_rule_fieldname]),
+                                        # condition= ibis._[dimension_rule_fieldname].re_match(ibis._.context_value_ibis),
+
                                         true_expr=RuleTrinaryFlags.PRIME_TRUE_IBIS(),
                                         false_expr=RuleTrinaryFlags.PRIME_FALSE_IBIS()
                                     ))
@@ -320,7 +329,7 @@ class RangeMatchStrategy(BaseMatchStrategy):
             if dimension.get_dimension_data_type() == str:
 
                 rules = rules.mutate(
-                    context_value_ibis = ibis.literal(context_value)
+                    context_value_ibis = ibis.literal(context_value),
                 ).mutate(
                     filter_match = 
                         ibis.ifelse(
@@ -336,7 +345,7 @@ class RangeMatchStrategy(BaseMatchStrategy):
 
             else:
                 rules = rules.mutate(
-                    context_value_ibis = ibis.literal(value=context_value)
+                    context_value_ibis = ibis.literal(value=context_value),
                 ).mutate(
                     filter_match = 
                         ibis.ifelse(

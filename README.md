@@ -20,7 +20,7 @@ pip install mountainash_utils_rules
 This package requires Python 3.10 or later. The main dependencies are:
 
 - pandas==2.2.2
-- polars==0.20.31
+- polars==1.16.0
 - ibis-framework[polars,pandas,sqlite,duckdb]==9.1.0
 
 ## Usage
@@ -47,7 +47,7 @@ rules_df = pl.DataFrame({
     "DIM_2_MAX": [9, 19, 29],
     "DIM_3": ["X.*", "Y.*", "Z.*"]
 })
-rules = DataFrameFactory.create_ibis_dataframe_object_from_dataframe(rules_df, ibis_backend_schema="sqlite")
+rules = DataFrameFactory.create_ibis_dataframe_object_from_dataframe(rules_df, ibis_backend_schema="polars")
 
 # Define rule metadata
 rule_metadata = RuleMetadata(

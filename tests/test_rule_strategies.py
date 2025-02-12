@@ -2,7 +2,9 @@ import pytest
 from mountainash_utils_rules.rule_strategies import ExactMatchStrategy, RangeMatchStrategy, RegexMatchStrategy, MatchStrategyFactory
 from mountainash_utils_rules.dimension import Dimension
 from mountainash_utils_rules.constants import MatchStrategy, RuleConstants, RuleTrinaryFlags
-from mountainash_data import BaseDataFrame, DataFrameFactory
+from mountainash_data import BaseDataFrame, IbisDataFrame
+from mountainash_data.dataframes.utils.dataframe_filters import FilterCondition as fc
+
 import polars as pl
 import ibis
 from pydantic import BaseModel
@@ -18,7 +20,7 @@ def sample_rules():
         "DIM_3": ["^X.*","^Y.*", "^Z.*"],
         "DIM_4": [RuleConstants.UNKNOWN, "Y", "Z"]
     })
-    return DataFrameFactory.create_ibis_dataframe_object_from_dataframe(rules_df, ibis_backend_schema="sqlite")
+    return IbisDataFrame(rules_df, ibis_backend_schema="sqlite")
 
 
 class Context(BaseModel):
@@ -47,7 +49,7 @@ def test_exact_match_strategy(exact_match_strategy, sample_rules):
 
     result = exact_match_strategy.apply_match_filter(sample_rules, dimension, context)
     print( result.materialise())    
-    assert result.filter(ibis._.filter_match == RuleTrinaryFlags.PRIME_TRUE_IBIS()).count() == 1  # PRIME_TRUE = 2
+    assert result.filter(filter_condition=fc.eq("filter_match", RuleTrinaryFlags.PRIME_TRUE_IBIS())).count() == 1  # PRIME_TRUE = 2
 
 def test_range_match_strategy(range_match_strategy, sample_rules):
     dimension = Dimension(
@@ -61,16 +63,15 @@ def test_range_match_strategy(range_match_strategy, sample_rules):
     context = Context(DIM_2=15)
 
     result = range_match_strategy.apply_match_filter(sample_rules, dimension, context)
-    print( result.materialise())    
-    assert result.filter(ibis._.filter_match == RuleTrinaryFlags.PRIME_TRUE).count() == 1  # PRIME_TRUE = 2
+    # print( result.materialise())    
+    assert result.filter(filter_condition=fc.eq("filter_match", RuleTrinaryFlags.PRIME_TRUE_IBIS())).count() == 1  # PRIME_TRUE = 2
 
 def test_regex_match_strategy(regex_match_strategy, sample_rules):
     dimension = Dimension(dimension_name="DIM_3", match_strategy=MatchStrategy.REGEX, data_type=str)
     context = Context(DIM_3="XYZ")
 
     result = regex_match_strategy.apply_match_filter(sample_rules, dimension, context)
-    print( result.materialise())    
-    assert result.filter(ibis._.filter_match == RuleTrinaryFlags.PRIME_TRUE_IBIS()).count() == 1  # PRIME_TRUE = 2
+    assert result.filter(filter_condition=fc.eq("filter_match", RuleTrinaryFlags.PRIME_TRUE_IBIS())).count() == 1  # PRIME_TRUE = 2
 
 def test_match_strategy_factory():
     assert isinstance(MatchStrategyFactory.get_rule_strategy_class(MatchStrategy.EXACT), ExactMatchStrategy)
@@ -84,12 +85,12 @@ def test_match_strategy_factory():
 def test_apply_filter_rule_none_unknown(exact_match_strategy, sample_rules):
     dimension = Dimension(dimension_name="DIM_1", match_strategy=MatchStrategy.EXACT, data_type=str)
     result = exact_match_strategy.apply_filter_rule_unknown(sample_rules, dimension)
-    assert result.filter(ibis._.filter_rule_unknown == RuleTrinaryFlags.PRIME_TRUE_IBIS()).count() == 0  # No UNKNOWN values in DIM_1
+    assert result.filter(filter_condition=fc.eq("filter_rule_unknown", RuleTrinaryFlags.PRIME_TRUE_IBIS())).count() == 0  # No UNKNOWN values in DIM_1
 
 def test_apply_filter_rule_one_unknown(exact_match_strategy, sample_rules):
     dimension = Dimension(dimension_name="DIM_4", match_strategy=MatchStrategy.EXACT, data_type=str)
     result = exact_match_strategy.apply_filter_rule_unknown(sample_rules, dimension)
-    assert result.filter(ibis._.filter_rule_unknown == RuleTrinaryFlags.PRIME_TRUE_IBIS()).count() == 1  # One UNKNOWN values in DIM_4. 
+    assert result.filter(filter_condition=fc.eq("filter_rule_unknown", RuleTrinaryFlags.PRIME_TRUE_IBIS())).count() == 1  # One UNKNOWN values in DIM_4. 
 
 
 def test_apply_filter_context_unknown(exact_match_strategy, sample_rules):
@@ -98,8 +99,7 @@ def test_apply_filter_context_unknown(exact_match_strategy, sample_rules):
     context = Context(DIM_1=RuleConstants.UNKNOWN)
 
     result = exact_match_strategy.apply_filter_context_unknown(sample_rules, dimension=dimension, context=context)
-    print( result.materialise())    
-    assert result.filter(ibis._.filter_context_unknown == RuleTrinaryFlags.PRIME_TRUE_IBIS()).count() == 3  # All rows should match UNKNOWN
+    assert result.filter(filter_condition=fc.eq("filter_context_unknown", RuleTrinaryFlags.PRIME_TRUE_IBIS())).count() == 3  # All rows should match UNKNOWN
 
 
 def test_exact_match_strategy_with_invalid_input(exact_match_strategy, sample_rules):
@@ -129,11 +129,9 @@ def test_range_match_strategy_with_edge_cases(range_match_strategy, sample_rules
     context = Context(DIM_2=29)
     result_max = range_match_strategy.apply_match_filter(sample_rules, dimension, context)
 
-    print( result_min.materialise())    
-    print( result_max.materialise())    
 
-    assert result_min.filter(ibis._.filter_match == RuleTrinaryFlags.PRIME_TRUE_IBIS()).count() == 1
-    assert result_max.filter(ibis._.filter_match == RuleTrinaryFlags.PRIME_TRUE_IBIS()).count() == 1
+    assert result_min.filter(filter_condition=fc.eq("filter_match", RuleTrinaryFlags.PRIME_TRUE_IBIS())).count() == 1
+    assert result_max.filter(filter_condition=fc.eq("filter_match", RuleTrinaryFlags.PRIME_TRUE_IBIS())).count() == 1
 
 def test_regex_match_strategy_with_complex_pattern(regex_match_strategy, sample_rules):
     dimension = Dimension(dimension_name="DIM_3", match_strategy=MatchStrategy.REGEX, data_type=str)
@@ -142,8 +140,7 @@ def test_regex_match_strategy_with_complex_pattern(regex_match_strategy, sample_
     context = Context(DIM_3="Hello")
 
     result = regex_match_strategy.apply_match_filter(complex_rules, dimension, context)
-    print( result.materialise())    
-    assert result.filter(ibis._.filter_match == RuleTrinaryFlags.PRIME_TRUE_IBIS()).count() == 3  # All should match
+    assert result.filter(filter_condition=fc.eq("filter_match", RuleTrinaryFlags.PRIME_TRUE_IBIS())).count() == 3  # All should match
 
 
 def test_regex_match_strategy_with_context_all_none(regex_match_strategy, sample_rules):
@@ -151,8 +148,7 @@ def test_regex_match_strategy_with_context_all_none(regex_match_strategy, sample
     context = Context(DIM_1=None, DIM_2=None, DIM_3=None)
 
     result = regex_match_strategy.apply_match_filter(sample_rules, dimension, context)
-    print( result.materialise())    
-    assert result.filter(ibis._.filter_match == RuleTrinaryFlags.PRIME_TRUE_IBIS()).count() == 0  # All should match    
+    assert result.filter(filter_condition=fc.eq("filter_match", RuleTrinaryFlags.PRIME_TRUE_IBIS())).count() == 0  # All should match    
 
 
 def test_exact_match_strategy_with_context_all_none(exact_match_strategy, sample_rules):
@@ -161,8 +157,7 @@ def test_exact_match_strategy_with_context_all_none(exact_match_strategy, sample
     context = Context(DIM_1=None, DIM_2=None, DIM_3=None)
 
     result = exact_match_strategy.apply_match_filter(sample_rules, dimension, context)
-    print( result.materialise())    
-    assert result.filter(ibis._.filter_match == RuleTrinaryFlags.PRIME_TRUE_IBIS()).count() == 0  # PRIME_TRUE = 2
+    assert result.filter(filter_condition=fc.eq("filter_match", RuleTrinaryFlags.PRIME_TRUE_IBIS())).count() == 0  # PRIME_TRUE = 2
 
 def test_range_match_strategy_with_context_all_none(range_match_strategy, sample_rules):
     dimension = Dimension(
@@ -176,5 +171,4 @@ def test_range_match_strategy_with_context_all_none(range_match_strategy, sample
     context = Context(DIM_1=None, DIM_2=None, DIM_3=None)
 
     result = range_match_strategy.apply_match_filter(sample_rules, dimension, context)
-    print( result.materialise())    
-    assert result.filter(ibis._.filter_match == RuleTrinaryFlags.PRIME_TRUE).count() == 0  # PRIME_TRUE = 2    
+    assert result.filter(filter_condition=fc.eq("filter_match", RuleTrinaryFlags.PRIME_TRUE_IBIS())).count() == 0  # PRIME_TRUE = 2    
