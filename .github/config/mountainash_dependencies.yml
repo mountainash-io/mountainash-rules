@@ -16,8 +16,8 @@ dependencies:
     #   org-name: mountainash-io
     # - name: mountainash-utils-files
     #   org-name: mountainash-io
-    - name: mountainash-utils-gpg
-      org-name: mountainash-io
+    # - name: mountainash-utils-gpg
+    #   org-name: mountainash-io
     # - name: mountainash-utils-hamilton
     #   org-name: mountainash-io
     - name: mountainash-utils-os
