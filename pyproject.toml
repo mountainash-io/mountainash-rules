@@ -38,7 +38,7 @@ Source = "https://github.com/mountainash-io/mountainash-utils-rules"
 # Tool: Coverage
 #================
 [tool.coverage.run]
-source_pkgs = ["mountainash_utils_rules", "tests"]
+source_pkgs = ["mountainash_utils_rules", "tests"] 
 branch = true
 parallel = true
 omit = [
