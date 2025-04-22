@@ -19,7 +19,7 @@ pip install mountainash_utils_rules
 
 This package requires Python 3.10 or later. The main dependencies are:
 
-- pandas==2.2.2
+- pandas>=2.2.0
 - polars==1.16.0
 - ibis-framework[polars,pandas,sqlite,duckdb]==9.1.0
 
