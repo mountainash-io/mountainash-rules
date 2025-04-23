@@ -65,18 +65,18 @@ class BaseMatchStrategy(ABC):
 
             rules = rules.mutate(
 
-                filter_rule_unknown = ibis.ifelse(condition=ibis._[dimension_rule_fieldname] == RuleConstants.UNKNOWN_IBIS(), 
-                                    true_expr= RuleTrinaryFlags.PRIME_TRUE_IBIS(), 
-                                    false_expr=RuleTrinaryFlags.PRIME_UNKNOWN_IBIS()),
+                filter_rule_unknown = ibis.ifelse(ibis._[dimension_rule_fieldname] == RuleConstants.UNKNOWN_IBIS(), 
+                                     RuleTrinaryFlags.PRIME_TRUE_IBIS(), 
+                                    RuleTrinaryFlags.PRIME_UNKNOWN_IBIS()),
             )
 
         else:
 
             rules = rules.mutate(
 
-                filter_rule_unknown = ibis.ifelse(condition=ibis._[dimension_rule_fieldname].cast(int) == RuleConstants.UNKNOWN_NUMERIC_IBIS(), 
-                                    true_expr= RuleTrinaryFlags.PRIME_TRUE_IBIS(), 
-                                    false_expr=RuleTrinaryFlags.PRIME_UNKNOWN_IBIS()),
+                filter_rule_unknown = ibis.ifelse(ibis._[dimension_rule_fieldname].cast(int) == RuleConstants.UNKNOWN_NUMERIC_IBIS(), 
+                                     RuleTrinaryFlags.PRIME_TRUE_IBIS(), 
+                                     RuleTrinaryFlags.PRIME_UNKNOWN_IBIS()),
             )
 
         return rules
@@ -159,13 +159,12 @@ class ExactMatchStrategy(BaseMatchStrategy):
                     context_value_ibis = ibis.literal(value=context_value),
                 ).mutate(
                     filter_match = ibis.ifelse(
-                                    condition= ibis._.context_value_ibis == ibis.literal(value=RuleConstants.NOT_SET) ,
-                                    true_expr=RuleTrinaryFlags.PRIME_UNKNOWN_IBIS(),
-                                    false_expr=    
+                                        ibis._.context_value_ibis == ibis.literal(value=RuleConstants.NOT_SET) ,
+                                        RuleTrinaryFlags.PRIME_UNKNOWN_IBIS(),
                                         ibis.ifelse(
-                                            condition= ibis._[dimension_rule_fieldname] == ibis.literal(value=context_value), 
-                                            true_expr=RuleTrinaryFlags.PRIME_TRUE_IBIS(), 
-                                            false_expr=RuleTrinaryFlags.PRIME_FALSE_IBIS()
+                                            ibis._[dimension_rule_fieldname] == ibis.literal(value=context_value), 
+                                            RuleTrinaryFlags.PRIME_TRUE_IBIS(), 
+                                            RuleTrinaryFlags.PRIME_FALSE_IBIS()
                                             ) 
                                     ))
 
@@ -175,13 +174,12 @@ class ExactMatchStrategy(BaseMatchStrategy):
                     context_value_ibis = ibis.literal(value=context_value),
                 ).mutate(
                     filter_match = ibis.ifelse(
-                                    condition= ibis._.context_value_ibis == ibis.literal(value=RuleConstants.NOT_SET_NUMERIC),
-                                    true_expr=RuleTrinaryFlags.PRIME_UNKNOWN_IBIS(),
-                                    false_expr=    
+                                        ibis._.context_value_ibis == ibis.literal(value=RuleConstants.NOT_SET_NUMERIC),
+                                        RuleTrinaryFlags.PRIME_UNKNOWN_IBIS(),
                                         ibis.ifelse(
-                                            condition= ibis._[dimension_rule_fieldname] == ibis.literal(value=context_value), 
-                                            true_expr=RuleTrinaryFlags.PRIME_TRUE_IBIS(), 
-                                            false_expr=RuleTrinaryFlags.PRIME_FALSE_IBIS()
+                                            ibis._[dimension_rule_fieldname] == ibis.literal(value=context_value), 
+                                            RuleTrinaryFlags.PRIME_TRUE_IBIS(), 
+                                            RuleTrinaryFlags.PRIME_FALSE_IBIS()
                                             ) 
                                     ))
 
@@ -237,15 +235,12 @@ class RegexMatchStrategy(BaseMatchStrategy):
                 ).mutate(
                     filter_match = 
                             ibis.ifelse(
-                                condition= ibis._.context_value_ibis == ibis.literal(value=RuleConstants.NOT_SET) ,
-                                true_expr=RuleTrinaryFlags.PRIME_UNKNOWN_IBIS(),
-                                false_expr=                   
+                                    ibis._.context_value_ibis == ibis.literal(value=RuleConstants.NOT_SET) ,
+                                    RuleTrinaryFlags.PRIME_UNKNOWN_IBIS(),
                                     ibis.ifelse(
-                                        condition= ibis._.context_value_ibis.re_search(ibis._[dimension_rule_fieldname]),
-                                        # condition= ibis._.context_value_ibis.re_match(ibis._[dimension_rule_fieldname]),
-                                        # condition= ibis._[dimension_rule_fieldname].re_match(ibis._.context_value_ibis),
-                                        true_expr=RuleTrinaryFlags.PRIME_TRUE_IBIS(),
-                                        false_expr=RuleTrinaryFlags.PRIME_FALSE_IBIS()
+                                        ibis._.context_value_ibis.re_search(ibis._[dimension_rule_fieldname]),
+                                        RuleTrinaryFlags.PRIME_TRUE_IBIS(),
+                                        RuleTrinaryFlags.PRIME_FALSE_IBIS()
                                     ))
                 ).drop( columns="context_value")
             else:
@@ -255,16 +250,12 @@ class RegexMatchStrategy(BaseMatchStrategy):
                 ).mutate(
                     filter_match = 
                             ibis.ifelse(
-                                condition= ibis._.context_value_ibis == ibis.literal(value=RuleConstants.NOT_SET_NUMERIC) ,
-                                true_expr=RuleTrinaryFlags.PRIME_UNKNOWN_IBIS(),
-                                false_expr=                   
+                                    ibis._.context_value_ibis == ibis.literal(value=RuleConstants.NOT_SET_NUMERIC) ,
+                                    RuleTrinaryFlags.PRIME_UNKNOWN_IBIS(),
                                     ibis.ifelse(
-                                        condition= ibis._.context_value_ibis.re_search(ibis._[dimension_rule_fieldname]),
-                                        # condition= ibis._.context_value_ibis.re_match(ibis._[dimension_rule_fieldname]),
-                                        # condition= ibis._[dimension_rule_fieldname].re_match(ibis._.context_value_ibis),
-
-                                        true_expr=RuleTrinaryFlags.PRIME_TRUE_IBIS(),
-                                        false_expr=RuleTrinaryFlags.PRIME_FALSE_IBIS()
+                                        ibis._.context_value_ibis.re_search(ibis._[dimension_rule_fieldname]),
+                                        RuleTrinaryFlags.PRIME_TRUE_IBIS(),
+                                        RuleTrinaryFlags.PRIME_FALSE_IBIS()
                                     ))
                 ).drop( columns="context_value")
 
@@ -333,13 +324,12 @@ class RangeMatchStrategy(BaseMatchStrategy):
                 ).mutate(
                     filter_match = 
                         ibis.ifelse(
-                            condition= ibis._.context_value_ibis == ibis.literal(value=RuleConstants.NOT_SET),
-                            true_expr=RuleTrinaryFlags.PRIME_UNKNOWN_IBIS(),
-                            false_expr=
+                                ibis._.context_value_ibis == ibis.literal(value=RuleConstants.NOT_SET),
+                                RuleTrinaryFlags.PRIME_UNKNOWN_IBIS(),
                                 ibis.ifelse(
-                                    condition=condition,
-                                    true_expr=RuleTrinaryFlags.PRIME_TRUE_IBIS(),
-                                    false_expr=RuleTrinaryFlags.PRIME_FALSE_IBIS()
+                                    condition,
+                                    RuleTrinaryFlags.PRIME_TRUE_IBIS(),
+                                    RuleTrinaryFlags.PRIME_FALSE_IBIS()
                             ))
                 )
 
@@ -349,13 +339,12 @@ class RangeMatchStrategy(BaseMatchStrategy):
                 ).mutate(
                     filter_match = 
                         ibis.ifelse(
-                            condition= ibis._.context_value_ibis == ibis.literal(value=RuleConstants.NOT_SET_NUMERIC),
-                            true_expr=RuleTrinaryFlags.PRIME_UNKNOWN_IBIS(),
-                            false_expr=
+                                ibis._.context_value_ibis == ibis.literal(value=RuleConstants.NOT_SET_NUMERIC),
+                                RuleTrinaryFlags.PRIME_UNKNOWN_IBIS(),
                                 ibis.ifelse(
-                                    condition=condition,
-                                    true_expr=RuleTrinaryFlags.PRIME_TRUE_IBIS(),
-                                    false_expr=RuleTrinaryFlags.PRIME_FALSE_IBIS()
+                                    condition,
+                                    RuleTrinaryFlags.PRIME_TRUE_IBIS(),
+                                    RuleTrinaryFlags.PRIME_FALSE_IBIS()
                             ))
                 )
 

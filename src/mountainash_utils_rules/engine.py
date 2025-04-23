@@ -73,8 +73,7 @@ class RulesEngine:
             #Flag across all 3 filters
             dimension_any_false =     ibis._.dimension_filter_product % RuleTrinaryFlags.PRIME_FALSE_IBIS() == ibis.literal(value=0),
             dimension_any_true =      ibis._.dimension_filter_product % RuleTrinaryFlags.PRIME_TRUE_IBIS()  == ibis.literal(value=0),
-        # ).mutate(
-
+            
             #Match Flags
             cumu_dimension_count=     ibis._.cumu_dimension_count   + ibis.literal(1).cast("int8"),
             cumu_soft_match_count=    ibis._.cumu_soft_match_count  + ibis.or_( ibis._.filter_rule_unknown    % RuleTrinaryFlags.PRIME_TRUE_IBIS() == ibis.literal(value=0), 
@@ -84,13 +83,13 @@ class RulesEngine:
 
         ).mutate(
             #Rule Row Drop Flags - The existence of a True gets you through! It is binary at this stage!
-            dropped_by_dimension=   ibis.ifelse( condition=ibis._.dropped.isnull() & ~ibis._.dimension_any_true, 
-                                                true_expr=ibis.literal(value=dimension.dimension_name), 
-                                                false_expr=ibis._.dropped_by_dimension),
+            dropped_by_dimension=   ibis.ifelse( ibis._.dropped.isnull() & ~ibis._.dimension_any_true, 
+                                                 ibis.literal(value=dimension.dimension_name), 
+                                                 ibis._.dropped_by_dimension),
 
-            dropped=                ibis.ifelse( condition=ibis._.dropped.isnull() & ~ibis._.dimension_any_true, 
-                                                true_expr=ibis.literal(value=True), 
-                                                false_expr=ibis._.dropped)
+            dropped=                ibis.ifelse( ibis._.dropped.isnull() & ~ibis._.dimension_any_true, 
+                                                 ibis.literal(value=True), 
+                                                 ibis._.dropped)
         )
 
         return rules
