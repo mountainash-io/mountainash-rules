@@ -1,7 +1,6 @@
 from abc import ABC, abstractmethod
 
 import ibis
-import re
 from ibis.common.deferred import Deferred
 from ibis.common.exceptions import IbisTypeError
 
