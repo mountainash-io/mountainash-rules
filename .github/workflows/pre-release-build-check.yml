@@ -58,12 +58,11 @@ jobs:
         uses: ./.github/actions/checkout-dependencies
         with:
           dependencies: ${{ steps.deps.outputs.dependencies }}
-          # target-branch: ${{ env.TARGET_BRANCH }}
-          # target is develop by default, so as not to cause a blocking dependency issue when upgrading 3rd party package versions
-          target-branch: develop
+          target-branch: ${{ env.TARGET_BRANCH }}
+          fallback-branch: develop
           default-branch: main
           token: ${{ secrets.CLONE_PRIVATE_REPOS_TOKEN }}
-          org-name: ${{ env.ORGNAME }}          
+          org-name: ${{ env.ORGNAME }}        
 
       # ======================================================
       # BUILD ARTIFACTS

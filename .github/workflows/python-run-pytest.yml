@@ -33,15 +33,27 @@ jobs:
         run: echo "BRANCH_NAME=$(echo ${GITHUB_HEAD_REF:-${GITHUB_REF#refs/heads/}})" >> $GITHUB_ENV
 
       # Set fallback branch
+      # - name: Set fallback branch
+      #   run: |
+      #     if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+      #       echo "FALLBACK_BRANCH=${{ github.event.inputs.fallback_branch }}" >> $GITHUB_ENV
+      #     elif [ "${{ github.event_name }}" = "pull_request_target" ]; then
+      #       echo "FALLBACK_BRANCH=${{ github.base_ref }}" >> $GITHUB_ENV
+      #     else
+      #       echo "FALLBACK_BRANCH=develop" >> $GITHUB_ENV
+      #     fi
+
       - name: Set fallback branch
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             echo "FALLBACK_BRANCH=${{ github.event.inputs.fallback_branch }}" >> $GITHUB_ENV
           elif [ "${{ github.event_name }}" = "pull_request_target" ]; then
-            echo "FALLBACK_BRANCH=${{ github.base_ref }}" >> $GITHUB_ENV
+            echo "FALLBACK_BRANCH=develop" >> $GITHUB_ENV  # Default to develop for PRs
           else
             echo "FALLBACK_BRANCH=develop" >> $GITHUB_ENV
           fi
+
+
       - uses: actions/checkout@v4
         with:
           ref: ${{ env.BRANCH_NAME }}
@@ -67,15 +79,25 @@ jobs:
         with:
           config-path: .github/config/mountainash_dependencies.yml
 
+      # - name: Checkout Dependencies
+      #   uses: ./.github/actions/checkout-dependencies
+      #   with:
+      #     dependencies: ${{ steps.deps.outputs.dependencies }}
+      #     target-branch: ${{ env.BRANCH_NAME }}
+      #     default-branch: ${{ env.FALLBACK_BRANCH }}
+      #     token: ${{ secrets.CLONE_PRIVATE_REPOS_TOKEN }}
+      #     org-name: ${{ env.ORGNAME }}
+  
       - name: Checkout Dependencies
         uses: ./.github/actions/checkout-dependencies
         with:
           dependencies: ${{ steps.deps.outputs.dependencies }}
           target-branch: ${{ env.BRANCH_NAME }}
-          default-branch: ${{ env.FALLBACK_BRANCH }}
+          fallback-branch: ${{ env.FALLBACK_BRANCH }}
+          default-branch: main
           token: ${{ secrets.CLONE_PRIVATE_REPOS_TOKEN }}
           org-name: ${{ env.ORGNAME }}
-  
+
 
       # Install Hatch
       - name: Install Hatch
