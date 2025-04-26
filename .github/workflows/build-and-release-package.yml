@@ -84,14 +84,14 @@ jobs:
             echo "FALLBACK_BRANCH=develop" >> $GITHUB_ENV
           fi
 
-          - name: Checkout Dependencies
-          uses: ./.github/actions/checkout-dependencies
-          with:
-            dependencies: ${{ steps.deps.outputs.dependencies }}
-            target-branch: ${{ env.TARGET_BRANCH }}
-            default-branch: ${{ env.FALLBACK_BRANCH }}
-            token: ${{ secrets.CLONE_PRIVATE_REPOS_TOKEN }}
-            org-name: ${{ env.ORGNAME }}
+      - name: Checkout Dependencies
+        uses: ./.github/actions/checkout-dependencies
+        with:
+          dependencies: ${{ steps.deps.outputs.dependencies }}
+          target-branch: ${{ env.TARGET_BRANCH }}
+          default-branch: ${{ env.FALLBACK_BRANCH }}
+          token: ${{ secrets.CLONE_PRIVATE_REPOS_TOKEN }}
+          org-name: ${{ env.ORGNAME }}
 
       # ======================================================
       # CONFIGURE RELEASE
