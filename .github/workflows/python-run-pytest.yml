@@ -33,26 +33,15 @@ jobs:
         run: echo "BRANCH_NAME=$(echo ${GITHUB_HEAD_REF:-${GITHUB_REF#refs/heads/}})" >> $GITHUB_ENV
 
       # Set fallback branch
-      # - name: Set fallback branch
-      #   run: |
-      #     if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-      #       echo "FALLBACK_BRANCH=${{ github.event.inputs.fallback_branch }}" >> $GITHUB_ENV
-      #     elif [ "${{ github.event_name }}" = "pull_request_target" ]; then
-      #       echo "FALLBACK_BRANCH=${{ github.base_ref }}" >> $GITHUB_ENV
-      #     else
-      #       echo "FALLBACK_BRANCH=develop" >> $GITHUB_ENV
-      #     fi
-
       - name: Set fallback branch
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             echo "FALLBACK_BRANCH=${{ github.event.inputs.fallback_branch }}" >> $GITHUB_ENV
           elif [ "${{ github.event_name }}" = "pull_request_target" ]; then
-            echo "FALLBACK_BRANCH=develop" >> $GITHUB_ENV  # Default to develop for PRs
+            echo "FALLBACK_BRANCH=${{ github.base_ref }}" >> $GITHUB_ENV
           else
             echo "FALLBACK_BRANCH=develop" >> $GITHUB_ENV
           fi
-
 
       - uses: actions/checkout@v4
         with:
@@ -66,35 +55,19 @@ jobs:
           python-version: ${{ matrix.python-version }}
           check-latest: true
 
-      #Set the ORGNAME
-      - name: Set ORGNAME - mountainash-io
-        env:
-          ORGNAME: mountainash-io
-        run: echo "ORGNAME=$ORGNAME" >> $GITHUB_ENV
-
       # Checkout Mountain Ash Dependencies
       - name: Load Dependencies
         id: deps
         uses: ./.github/actions/load-dependencies
         with:
           config-path: .github/config/mountainash_dependencies.yml
-
-      # - name: Checkout Dependencies
-      #   uses: ./.github/actions/checkout-dependencies
-      #   with:
-      #     dependencies: ${{ steps.deps.outputs.dependencies }}
-      #     target-branch: ${{ env.BRANCH_NAME }}
-      #     default-branch: ${{ env.FALLBACK_BRANCH }}
-      #     token: ${{ secrets.CLONE_PRIVATE_REPOS_TOKEN }}
-      #     org-name: ${{ env.ORGNAME }}
   
       - name: Checkout Dependencies
         uses: ./.github/actions/checkout-dependencies
         with:
           dependencies: ${{ steps.deps.outputs.dependencies }}
           target-branch: ${{ env.BRANCH_NAME }}
-          fallback-branch: ${{ env.FALLBACK_BRANCH }}
-          default-branch: main
+          default-branch: ${{ env.FALLBACK_BRANCH }}
           token: ${{ secrets.CLONE_PRIVATE_REPOS_TOKEN }}
           org-name: ${{ env.ORGNAME }}
 
@@ -107,21 +80,21 @@ jobs:
         run: hatch env create test_github
 
       #Run Pytest
-      - name: Run tests
-        run: hatch run test_github:test
+      # - name: Run tests
+      #   run: hatch run test_github:test
 
-      # Run Coverage
+      # Run Pytest with Coverage
       - name: Run Coverage Tests
-        run: hatch run test_github:cov
+        run: hatch run test_github:test-cov
 
       - name: Upload coverage reports to Codecov
-        uses: codecov/codecov-action@v4.5.0
+        uses: codecov/codecov-action@v5
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
-          slug: mountainash-io/mountainash-utils-rules
+          verbose: true
 
-      # Sonarcloud analysis          
-      # - name: SonarCloud Scan
-      #   uses: SonarSource/sonarcloud-github-action@master
-      #   env:
-      #     SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}                
+      - name: Upload test results to Codecov
+        if: ${{ !cancelled() }}
+        uses: codecov/test-results-action@v1
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}      

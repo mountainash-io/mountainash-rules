@@ -1,5 +1,5 @@
 # Pre-merge validation workflow
-name: Validate Pre-Release PR
+name: Validate Main Release PR - Build Dependencies 
 
 on:
   pull_request:
@@ -7,7 +7,7 @@ on:
       - 'main'
 
 jobs:
-  pre-release-build-check:
+  main-release-build-dependencies:
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -59,10 +59,9 @@ jobs:
         with:
           dependencies: ${{ steps.deps.outputs.dependencies }}
           target-branch: ${{ env.TARGET_BRANCH }}
-          fallback-branch: develop
           default-branch: main
           token: ${{ secrets.CLONE_PRIVATE_REPOS_TOKEN }}
-          org-name: ${{ env.ORGNAME }}        
+          org-name: ${{ env.ORGNAME }}          
 
       # ======================================================
       # BUILD ARTIFACTS
@@ -70,3 +69,4 @@ jobs:
       - name: Setup Build Environment
         run: |
           hatch env create ${{ env.BUILD_ENV }}
+          

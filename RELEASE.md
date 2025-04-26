@@ -24,11 +24,45 @@ Our release process is **pull request driven**. Different types of releases are 
 | any branch | `develop` | Release Candidate | `rcN` | `25.04.0rc1` |
 | `feature/*` or `bugfix/*` | any branch | Beta | `beta.feature-name.N` | `25.04.0beta.auth-fix.1` |
 
+## Multi-Repository Coordination
+
+### Best Practices for Dependency Management
+
+For reliable builds across multiple repositories, follow these coordination practices:
+
+1. **Create consistent branch names across repositories**:
+   - When starting a release, create branches with the same name (e.g., `release/25.04.0`) across all related repositories.
+   - This ensures the CI system can find matching branches in dependency repositories.
+
+2. **Branch creation order**:
+   - Start with the deepest dependencies in your dependency tree and work toward the dependent packages.
+   - This allows each repository to find the correct dependencies as you create branches.
+
+3. **Version compatibility**:
+   - Ensure versions are compatible across your ecosystem before merging PRs.
+   - Test integration points between repositories when updating versions.
+
+4. **Dependency resolution logic**:
+   - Our CI uses the following branch selection logic for dependencies:
+     1. First tries to use a branch with the same name as your current branch
+     2. Falls back to `develop` if a matching branch doesn't exist
+     3. Only uses `main` as a last resort
+
+### Handling Dependency Conflicts
+
+If you encounter dependency conflicts during CI builds:
+
+1. Check which dependencies are being pulled from `main` instead of matching branches or `develop`
+2. Create matching branches in those dependency repositories
+3. Update versions in those branches to be compatible with your release
+4. Re-run the CI build
+
 ## Creating a Production Release
 
 1. **Create a Release Branch**
    - Create a branch named `release/YY.MM.MICRO` from the `develop` branch
    - Example: `release/25.04.0`
+   - **Important**: Create matching release branches in all dependency repositories first
 
 2. **Update Version**
    - In the release branch, update the version in `src/mountainash_utils_rules/__version__.py`
@@ -58,6 +92,7 @@ If you need to create a hotfix for a production release:
 1. **Create a Hotfix Branch**
    - Create a branch named `hotfix/YY.MM.MICRO` from the `main` branch
    - Example: `hotfix/25.04.1`
+   - **Important**: Create matching hotfix branches in all dependency repositories that need fixes
 
 2. **Update Version**
    - Update the version in `src/mountainash_utils_rules/__version__.py`
@@ -87,6 +122,7 @@ If you need to create a hotfix for a production release:
 
 1. **Create a Feature or Bugfix Branch**
    - Create a branch with the naming convention `feature/feature-name` or `bugfix/bug-name`
+   - For complex features that affect multiple repositories, create matching feature branches in related repositories
 
 2. **Create Pull Request**
    - Create a pull request to any branch other than `main` or `develop`
@@ -101,13 +137,32 @@ If you need to create a hotfix for a production release:
 
 Each release generates the following artifacts:
 
-- **Wheel file**: `mountainash_{package}-{version}-py3-none-any.whl`
-- **Full SBOM**: `mountainash-{package}-{version}-sbom-full.xml`
-- **Direct dependencies SBOM**: `mountainash-{package}-{version}-sbom-direct.xml`
+- **Wheel file**: `mountainash_utils_rules-{version}-py3-none-any.whl`
+- **Full SBOM**: `mountainash-utils-rules-{version}-sbom-full.xml`
+- **Direct dependencies SBOM**: `mountainash-utils-rules-{version}-sbom-direct.xml`
+
+## CI Workflow and Dependency Resolution
+
+Our CI workflows use the following process for resolving dependencies:
+
+1. Each workflow attempts to check out dependencies from branches in this order:
+   - First: The same branch name as the current branch (e.g., `release/25.04.0`)
+   - Second: The `develop` branch (integration branch with latest features)
+   - Last resort: The `main` branch (stable production code)
+
+2. For the pytest workflow, you can manually override the fallback branch when triggering the workflow.
 
 ## Notes and Troubleshooting
 
 - The workflow checks for existing tags and releases. If a tag or release already exists for the version you're trying to release, the workflow will fail.
+
+- **Common dependency issues**:
+  - If you see errors like `No solution found when resolving dependencies`, it typically means your dependencies are being pulled from incompatible branches.
+  - Check which dependency repositories need matching branches created.
+  - Verify version compatibility across your repositories.
+
 - If the release workflow fails, check the workflow logs for any error messages.
+
 - Ensure that all necessary secrets and permissions are correctly set up in the repository settings.
+
 - For any other issues, please contact the maintainers or create an issue in the repository.
