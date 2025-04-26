@@ -1,4 +1,3 @@
-
 [metadata]
 allow-direct-references = true
 
@@ -9,20 +8,53 @@ path = "src/mountainash_utils_rules/__version__.py"
 packages = ["src/mountainash_utils_rules"]
 
 #================
+# Env: build_github
+#================
+[envs.build_github]
+installer = "uv"
+dependencies = [
+  "cyclonedx-bom==4.5.0",
+
+  "mountainash_constants @      {root:uri}/temp/mountainash-constants",
+  "mountainash_data @           {root:uri}/temp/mountainash-data",
+  "mountainash_settings @       {root:uri}/temp/mountainash-settings",
+
+  "mountainash_utils_dataclasses @  {root:uri}/temp/mountainash-utils-dataclasses",
+  "mountainash_utils_os @           {root:uri}/temp/mountainash-utils-os",
+  "mountainash_utils_ssh @          {root:uri}/temp/mountainash-utils-ssh",
+
+]
+[envs.build_github.scripts]
+sbom-all = "cyclonedx-py environment > ./sbom-full.xml"
+sbom-direct = "cyclonedx-py requirements > ./sbom-direct.xml"
+export-requirements = "hatch dep show requirements > ./requirements.txt"       
+
+
+#================
 # Env: default
 #================
 [envs.default]
 installer = "uv"
 dependencies = [
-  "mountainash_auth_settings @  {root:uri}/../mountainash-auth-settings",
-  "mountainash_constants @      {root:uri}/../mountainash-constants",
-  "mountainash_data @           {root:uri}/../mountainash-data",
-  "mountainash_settings @       {root:uri}/../mountainash-settings",
+  # "ipykernel",
+  # "pip",
 
-  "mountainash_utils_dataclasses @  {root:uri}/../mountainash-utils-dataclasses",
-  "mountainash_utils_os @           {root:uri}/../mountainash-utils-os",
-  "mountainash_utils_ssh @          {root:uri}/../mountainash-utils-ssh",
+  # "mountainash_constants @      {root:uri}/../mountainash-constants",
+  # "mountainash_data @           {root:uri}/../mountainash-data",
+  # "mountainash_settings @       {root:uri}/../mountainash-settings",
+
+  # "mountainash_utils_dataclasses @  {root:uri}/../mountainash-utils-dataclasses",
+  # "mountainash_utils_os @           {root:uri}/../mountainash-utils-os",
+  # "mountainash_utils_ssh @          {root:uri}/../mountainash-utils-ssh",
 ]
+
+#================
+# Env: tower
+#================
+[envs.tower]
+installer = "uv"
+
+dependencies = []
 
 
 #================
@@ -34,11 +66,11 @@ python = ["3.12"] #,"3.11", "3.10", # "3.8", "3.9","3.9",
 [envs.test_github]
 installer = "uv"
 dependencies = [
-  "coverage[toml]>=6.5",
-  "pytest==8.1.1",
-  "pytest-check==2.3.1",
+  # "coverage[toml]>=6.5",
+  "pytest==8.3.5",
+  "pytest-check==2.5.3",
+  "pytest-cov==6.1.1",
 
-  "mountainash_auth_settings @  {root:uri}/temp/mountainash-auth-settings",
   "mountainash_constants @      {root:uri}/temp/mountainash-constants",
   "mountainash_data @           {root:uri}/temp/mountainash-data",
   "mountainash_settings @       {root:uri}/temp/mountainash-settings",
@@ -50,20 +82,7 @@ dependencies = [
 ]
 [envs.test_github.scripts]
 test = "pytest"
-test-cov = "coverage run -m pytest"
-test-xml = "coverage xml"
-cov-report = [
-  "- coverage combine",
-  "coverage report",
-]
-cov = [
-  "test-cov",
-  "cov-report",
-  "test-xml",
-]
-cov-html = [
-  "coverage html",
-]
+test-cov = "pytest --cov --junitxml=junit.xml -o junit_family=legacy  --cov-report=xml"
 
 #================
 # Env: test
@@ -75,10 +94,17 @@ python = [ "3.12"] #,  "3.11",, "3.10" ] # "3.8", "3.9","3.9",
 installer = "uv"
 dependencies = [
   "coverage[toml]>=6.5",
-  "pytest==8.1.1",
-  "pytest-check==2.3.1",
+  "pytest==8.3.5",
+  "pytest-check==2.5.3",
+  "pytest-mock==3.12.0",
+  "pytest-json-report>=1.5.0",    # Structured JSON output
+  "pytest-metadata>=2.0.0",       # Additional test metadata
+  "pytest-benchmark>=4.0.0",      # Performance benchmarking
+  "pytest-cov>=4.1.0",           # Better coverage integration
+  "pytest-clarity>=1.0.1",       # Better test output diff
+  "pytest-timeout>=2.1.0",       # Test timing control
+  "pytest-picked>=0.5.0",         # Changed files testing 
   
-  "mountainash_auth_settings @      {root:uri}/../mountainash-auth-settings",
   "mountainash_constants @          {root:uri}/../mountainash-constants",
   "mountainash_data @               {root:uri}/../mountainash-data",
   "mountainash_settings @           {root:uri}/../mountainash-settings",
@@ -87,22 +113,39 @@ dependencies = [
   "mountainash_utils_os @           {root:uri}/../mountainash-utils-os",
   "mountainash_utils_ssh @          {root:uri}/../mountainash-utils-ssh",
 ]
-
 [envs.test.scripts]
+# Basic test commands
 test = "pytest"
-test-cov = "coverage run -m pytest"
-test-xml = "coverage xml"
-cov-report = [
-  "- coverage combine",
-  "coverage report",
+test-file = "pytest {args}"  # For specific file targeting
+test-changed = "pytest --picked"  # Only changed files
+
+# Coverage commands
+test-cov = [
+    "coverage run -m pytest",
+    "coverage json --pretty-print",  # JSON output for agent consumption
+    "coverage xml",                  # XML for CI tools
+    "coverage html"                  # HTML for human review
 ]
-cov = [
-  "test-cov",
-  "cov-report",
-  "test-xml", 
+
+# Targeted testing with coverage
+test-cov-file = [
+    "coverage run -m pytest {args}",
+    "coverage json --pretty-print"
 ]
-cov-html = [
-  "coverage html",
+
+# Performance testing
+test-perf = "pytest --benchmark-only"
+test-perf-file = "pytest --benchmark-only {args}"
+
+# Combined report generation
+test-full-report = [
+    "pytest --json-report --json-report-file=pytest_report.json",
+    "coverage run -m pytest",
+    "coverage json --pretty-print",
+    "coverage xml"
+]
+test-cov-junit = [
+ "pytest --cov --junitxml=junit.xml"
 ]
 
 
@@ -146,37 +189,5 @@ dependencies = [
 ]
 [envs.mypy.scripts]
 check = "mypy --install-types --non-interactive {args:src/mountainash_utils_rules tests}"
-
-# Downstream package testing
-# [envs.test_downstream]
-# dependencies = [  
-#   "pytest",
-#   "pytest_check",
-#   "mountainash_auth_utils_rules @ {root:uri}/../mountainash-auth-utils-rules",
-#   "mountainash_acrds_utils_rules @ {root:uri}/../mountainash-acrds-utils-rules",
-#   "mountainash_constants @ {root:uri}/../mountainash-constants",
-#   "mountainash_acrds_constants @ {root:uri}/../mountainash-acrds-constants",
-#   "mountainash_utils_rules @ {root:uri}/../mountainash-utils-rules"
-#   ]
-
-# [envs.test_downstream.scripts]
-# test = [#"pytest {args:tests}", 
-#         "pytest ../mountainash-auth-utils-rules"
-# ]
-
-# # Downstream ACRDS package testing
-# [envs.test_downstream_acrds]
-# dependencies = [  
-#   "pytest",
-#   "pytest_check",
-#   "mountainash_constants @ {root:uri}/../mountainash-constants",
-#   "mountainash_acrds_utils_rules @ {root:uri}/../mountainash-acrds-utils-rules",
-#   "mountainash_acrds_constants @ {root:uri}/../mountainash-acrds-constants",
-#   "mountainash_utils_rules @ {root:uri}/../mountainash-utils-rules",
-#   "mountainash_utils @ {root:uri}/../mountainash-utils"
-#   ]
-
-# [envs.test_downstream_acrds.scripts]
-# test = ["pytest ../mountainash-acrds-utils-rules"]
 
 

@@ -8,7 +8,7 @@ dynamic = ["version"]
 description = 'Mountain Ash - Utils - Rules'
 readme = "README.md"
 requires-python = ">=3.10"
-license = "MIT"
+license = "MIT" 
 keywords = []
 authors = [
   { name = "Nathaniel Ramm", email = "nathaniel.ramm@discretedatascience.com" },
@@ -23,12 +23,12 @@ classifiers = [
   "Programming Language :: Python :: Implementation :: PyPy",
 ]
 dependencies = [
-  "pandas==2.2.2",
-  "polars==0.20.31",
-  "ibis-framework[polars,pandas,sqlite,duckdb] == 9.1.0",
+  "pandas>=2.2.0",
+  "polars==1.16.0",
+  "ibis-framework[polars,pandas,sqlite,duckdb] == 10.4.0",
 ]
 
-
+   
 [project.urls]
 Documentation = "https://github.com/mountainash-io/mountainash-utils-rules#readme"
 Issues = "https://github.com/mountainash-io/mountainash-utils-rules/issues"
@@ -38,7 +38,7 @@ Source = "https://github.com/mountainash-io/mountainash-utils-rules"
 # Tool: Coverage
 #================
 [tool.coverage.run]
-source_pkgs = ["mountainash_utils_rules", "tests"]
+source_pkgs = ["mountainash_utils_rules", "tests"] 
 branch = true
 parallel = true
 omit = [

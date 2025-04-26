@@ -160,3 +160,11 @@ cython_debug/
 
 #Mac artifacts
 .DS_Store
+
+#Hatch dirs
+.hatch/
+htmlcov/
+
+#Sonarlint settings
+.vscode/
+.sonarlint/
