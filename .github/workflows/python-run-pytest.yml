@@ -42,6 +42,7 @@ jobs:
           else
             echo "FALLBACK_BRANCH=develop" >> $GITHUB_ENV
           fi
+
       - uses: actions/checkout@v4
         with:
           ref: ${{ env.BRANCH_NAME }}
@@ -54,19 +55,13 @@ jobs:
           python-version: ${{ matrix.python-version }}
           check-latest: true
 
-      #Set the ORGNAME
-      - name: Set ORGNAME - mountainash-io
-        env:
-          ORGNAME: mountainash-io
-        run: echo "ORGNAME=$ORGNAME" >> $GITHUB_ENV
-
       # Checkout Mountain Ash Dependencies
       - name: Load Dependencies
         id: deps
         uses: ./.github/actions/load-dependencies
         with:
           config-path: .github/config/mountainash_dependencies.yml
-
+  
       - name: Checkout Dependencies
         uses: ./.github/actions/checkout-dependencies
         with:
@@ -75,7 +70,7 @@ jobs:
           default-branch: ${{ env.FALLBACK_BRANCH }}
           token: ${{ secrets.CLONE_PRIVATE_REPOS_TOKEN }}
           org-name: ${{ env.ORGNAME }}
-  
+
 
       # Install Hatch
       - name: Install Hatch
@@ -85,21 +80,21 @@ jobs:
         run: hatch env create test_github
 
       #Run Pytest
-      - name: Run tests
-        run: hatch run test_github:test
+      # - name: Run tests
+      #   run: hatch run test_github:test
 
-      # Run Coverage
+      # Run Pytest with Coverage
       - name: Run Coverage Tests
-        run: hatch run test_github:cov
+        run: hatch run test_github:test-cov
 
       - name: Upload coverage reports to Codecov
-        uses: codecov/codecov-action@v4.5.0
+        uses: codecov/codecov-action@v5
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
-          slug: mountainash-io/mountainash-utils-rules
+          verbose: true
 
-      # Sonarcloud analysis          
-      # - name: SonarCloud Scan
-      #   uses: SonarSource/sonarcloud-github-action@master
-      #   env:
-      #     SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}                
+      - name: Upload test results to Codecov
+        if: ${{ !cancelled() }}
+        uses: codecov/test-results-action@v1
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}      

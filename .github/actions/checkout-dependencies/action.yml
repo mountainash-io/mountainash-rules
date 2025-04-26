@@ -46,6 +46,7 @@ runs:
           default_branch=${{ inputs.default-branch }}
           
           echo "Processing dependency: $org_name/$repo"
+          echo "Target branch: $target_branch"
           echo "Default branch: $default_branch"
           
           # Determine Branch

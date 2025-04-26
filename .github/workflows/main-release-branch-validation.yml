@@ -1,5 +1,5 @@
 # Pre-merge validation workflow
-name: Validate Pre-Release PR
+name: Validate Main Release PR - Source Branch
 
 on:
   pull_request:

@@ -1,5 +1,5 @@
 # Pre-merge validation workflow
-name: Validate Pre-Release PR
+name: Validate Main Release PR - Build Dependencies 
 
 on:
   pull_request:
@@ -7,7 +7,7 @@ on:
       - 'main'
 
 jobs:
-  pre-release-build-check:
+  main-release-build-dependencies:
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -58,9 +58,7 @@ jobs:
         uses: ./.github/actions/checkout-dependencies
         with:
           dependencies: ${{ steps.deps.outputs.dependencies }}
-          # target-branch: ${{ env.TARGET_BRANCH }}
-          # target is develop by default, so as not to cause a blocking dependency issue when upgrading 3rd party package versions
-          target-branch: develop
+          target-branch: ${{ env.TARGET_BRANCH }}
           default-branch: main
           token: ${{ secrets.CLONE_PRIVATE_REPOS_TOKEN }}
           org-name: ${{ env.ORGNAME }}          
@@ -71,3 +69,4 @@ jobs:
       - name: Setup Build Environment
         run: |
           hatch env create ${{ env.BUILD_ENV }}
+          
