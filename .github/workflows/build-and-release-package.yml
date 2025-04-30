@@ -14,10 +14,27 @@ on:
   # Add manual workflow dispatch with fallback branch selection
   workflow_dispatch:
     inputs:
+
+      release_type:
+        description: 'Type of release to create'
+        required: true
+        default: 'production'
+        type: 'choice'
+        options:
+          - production
+          - rc
+          - beta      
+
+      source_branch:
+        description: 'Branch containing code to release'
+        required: true
+        default: 'main'
+        type: 'string'
+
       fallback_branch:
         description: 'Fallback branch to use for dependencies'
         required: true
-        default: 'develop'
+        default: 'main'
         type: choice
         options:
         - develop
@@ -42,21 +59,50 @@ jobs:
       # ======================================================
       # INITIALIZE
 
+      - name: Setup Environment Variables
+        run: |
+          echo "PACKAGE_SRCDIR=mountainash_utils_rules" >> $GITHUB_ENV
+          echo "PACKAGE_NAME=mountainash-utils-rules" >> $GITHUB_ENV
+          echo "ORGNAME=mountainash-io" >> $GITHUB_ENV
+
       - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
 
-      - name: Checkout Repository
+
+      - name: Checkout Repository (PR)
+        if: github.event_name == 'pull_request'
         uses: actions/checkout@v4
         with:
           ref: ${{ github.event.pull_request.merge_commit_sha }}
-          fetch-depth: 0      # Get the target branch name (branch PR was merged into)
+          fetch-depth: 0
+      
+      - name: Checkout Repository (Manual)
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.source_branch }}
+          fetch-depth: 0
+
 
       - name: Set Branch Vars
         run: |
-          echo "SOURCE_BRANCH=${{ github.head_ref }}" >> $GITHUB_ENV
-          echo "TARGET_BRANCH=${{ github.base_ref }}" >> $GITHUB_ENV
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            # For manual runs, use the specified source branch
+            echo "SOURCE_BRANCH=${{ github.event.inputs.source_branch }}" >> $GITHUB_ENV
+            echo "TARGET_BRANCH=${{ github.event.inputs.source_branch }}" >> $GITHUB_ENV
+            echo "FALLBACK_BRANCH=${{ github.event.inputs.fallback_branch }}" >> $GITHUB_ENV
+            echo "MANUAL_RELEASE_TYPE=${{ github.event.inputs.release_type }}" >> $GITHUB_ENV
+          else
+            # Normal PR merge behavior
+            echo "SOURCE_BRANCH=${{ github.head_ref }}" >> $GITHUB_ENV
+            echo "TARGET_BRANCH=${{ github.base_ref }}" >> $GITHUB_ENV
+            echo "FALLBACK_BRANCH=main" >> $GITHUB_ENV
+            echo "MANUAL_RELEASE_TYPE=" >> $GITHUB_ENV
+          fi
+
+
 
       # ======================================================
       # DEPENDENCIES
@@ -73,34 +119,20 @@ jobs:
         with:
           config-path: .github/config/mountainash_dependencies.yml
 
-      # Set fallback branch
-      - name: Set fallback branch
-        run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "FALLBACK_BRANCH=${{ github.event.inputs.fallback_branch }}" >> $GITHUB_ENV
-          elif [ "${{ github.event_name }}" = "pull_request_target" ]; then
-            echo "FALLBACK_BRANCH=${{ env.TARGET_BRANCH }}" >> $GITHUB_ENV
-          else
-            echo "FALLBACK_BRANCH=develop" >> $GITHUB_ENV
-          fi
 
-          - name: Checkout Dependencies
-          uses: ./.github/actions/checkout-dependencies
-          with:
-            dependencies: ${{ steps.deps.outputs.dependencies }}
-            target-branch: ${{ env.TARGET_BRANCH }}
-            default-branch: ${{ env.FALLBACK_BRANCH }}
-            token: ${{ secrets.CLONE_PRIVATE_REPOS_TOKEN }}
-            org-name: ${{ env.ORGNAME }}
+
+      - name: Checkout Dependencies
+        uses: ./.github/actions/checkout-dependencies
+        with:
+          dependencies: ${{ steps.deps.outputs.dependencies }}
+          target-branch: ${{ env.TARGET_BRANCH }}
+          default-branch: ${{ env.FALLBACK_BRANCH }}
+          token: ${{ secrets.CLONE_PRIVATE_REPOS_TOKEN }}
+          org-name: ${{ env.ORGNAME }}
 
       # ======================================================
       # CONFIGURE RELEASE
 
-      - name: Setup Environment Variables
-        run: |
-          echo "PACKAGE_SRCDIR=mountainash_utils_rules" >> $GITHUB_ENV
-          echo "PACKAGE_NAME=mountainash-utils-rules" >> $GITHUB_ENV
-          echo "ORGNAME=mountainash-io" >> $GITHUB_ENV
 
       - name: Get Base Version
         id: base_version
@@ -135,45 +167,81 @@ jobs:
               "map(select(.tag_name | startswith(\$prefix) and contains(\$suffix))) | .[0].tag_name" || echo ""
           }
           
-          # Determine release type and version suffix
-          case "${{ env.TARGET_BRANCH }}" in
-            "main")
-              if [[ "${{ env.SOURCE_BRANCH }}" =~ ^(release|hotfix)/ ]]; then
+          # Check for manual workflow run
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "Using manual release type: ${{ env.MANUAL_RELEASE_TYPE }}"
+            
+            case "${{ env.MANUAL_RELEASE_TYPE }}" in
+              "production")
                 RELEASE_TYPE="production"
                 VERSION_SUFFIX=""
                 IS_PRERELEASE="false"
                 RELEASE_TITLE="Production Release"
-                RELEASE_DESCRIPTION="Full production release from release branch"
-              else
-                echo "Error: Only release branches can target main"
-                exit 1
-              fi
-              ;;
-              
-            "develop")
-              RELEASE_TYPE="rc"
-              # Get latest RC number for this version
-              LATEST_RC=$(get_latest_version "v${BASE_VERSION}" "rc")
-              RC_NUM=$(echo "$LATEST_RC" | grep -oP 'rc\K\d+' || echo "0")
-              VERSION_SUFFIX="rc$((RC_NUM + 1))"
-              RELEASE_TITLE="Release Candidate"
-              RELEASE_DESCRIPTION="Release candidate for testing and validation"
-              ;;
-              
-            *)
-              if [[ "{{ env.SOURCE_BRANCH }}" == feature/* || "$SOURCE_BRANCH" == bugfix/* ]]; then
+                RELEASE_DESCRIPTION="Production release from ${SOURCE_BRANCH} branch"
+                ;;
+              "rc")
+                RELEASE_TYPE="rc"
+                # Get latest RC number for this version
+                LATEST_RC=$(get_latest_version "v${BASE_VERSION}" "rc")
+                RC_NUM=$(echo "$LATEST_RC" | grep -oP 'rc\K\d+' || echo "0")
+                VERSION_SUFFIX="rc$((RC_NUM + 1))"
+                RELEASE_TITLE="Release Candidate"
+                RELEASE_DESCRIPTION="Release candidate from ${SOURCE_BRANCH} branch"
+                ;;
+              "beta")
                 RELEASE_TYPE="beta"
-                # Extract feature/bugfix name from branch
-                FEATURE_NAME=$(echo {{ env.SOURCE_BRANCH }} | cut -d'/' -f2)
+                # Extract feature name from branch if possible
+                FEATURE_NAME=$(echo ${SOURCE_BRANCH} | grep -oP '(feature|bugfix|hotfix)/\K[^/]+' || echo "manual")
                 # Get latest beta number for this feature
                 LATEST_BETA=$(get_latest_version "v${BASE_VERSION}" "beta.${FEATURE_NAME}")
                 BETA_NUM=$(echo "$LATEST_BETA" | grep -oP 'beta\.[^.]+\.\K\d+' || echo "0")
                 VERSION_SUFFIX="beta.${FEATURE_NAME}.$((BETA_NUM + 1))"
                 RELEASE_TITLE="Beta Release"
-                RELEASE_DESCRIPTION="Beta release for feature testing: ${FEATURE_NAME}"
-              fi
-              ;;
-          esac
+                RELEASE_DESCRIPTION="Beta release from ${SOURCE_BRANCH} branch"
+                ;;
+            esac
+          else
+
+            # Determine release type and version suffix
+            case "${{ env.TARGET_BRANCH }}" in
+              "main")
+                if [[ "${{ env.SOURCE_BRANCH }}" =~ ^(release|hotfix)/ ]]; then
+                  RELEASE_TYPE="production"
+                  VERSION_SUFFIX=""
+                  IS_PRERELEASE="false"
+                  RELEASE_TITLE="Production Release"
+                  RELEASE_DESCRIPTION="Full production release from release branch"
+                else
+                  echo "Error: Only release branches can target main"
+                  exit 1
+                fi
+                ;;
+                
+              "develop")
+                RELEASE_TYPE="rc"
+                # Get latest RC number for this version
+                LATEST_RC=$(get_latest_version "v${BASE_VERSION}" "rc")
+                RC_NUM=$(echo "$LATEST_RC" | grep -oP 'rc\K\d+' || echo "0")
+                VERSION_SUFFIX="rc$((RC_NUM + 1))"
+                RELEASE_TITLE="Release Candidate"
+                RELEASE_DESCRIPTION="Release candidate for testing and validation"
+                ;;
+                
+              *)
+                if [[ "{{ env.SOURCE_BRANCH }}" == feature/* || "$SOURCE_BRANCH" == bugfix/* ]]; then
+                  RELEASE_TYPE="beta"
+                  # Extract feature/bugfix name from branch
+                  FEATURE_NAME=$(echo {{ env.SOURCE_BRANCH }} | cut -d'/' -f2)
+                  # Get latest beta number for this feature
+                  LATEST_BETA=$(get_latest_version "v${BASE_VERSION}" "beta.${FEATURE_NAME}")
+                  BETA_NUM=$(echo "$LATEST_BETA" | grep -oP 'beta\.[^.]+\.\K\d+' || echo "0")
+                  VERSION_SUFFIX="beta.${FEATURE_NAME}.$((BETA_NUM + 1))"
+                  RELEASE_TITLE="Beta Release"
+                  RELEASE_DESCRIPTION="Beta release for feature testing: ${FEATURE_NAME}"
+                fi
+                ;;
+            esac
+          fi
           
           # Set full version
           FULL_VERSION="${BASE_VERSION}${VERSION_SUFFIX:+$VERSION_SUFFIX}"
@@ -242,7 +310,7 @@ jobs:
         run: |
           hatch -e ${{ env.BUILD_ENV }} build
           echo "WHEEL_FILE=$(ls dist/*.whl)" >> $GITHUB_OUTPUT
-
+          echo "WHEEL_FILENAME=$(basename $(ls dist/*.whl))" >> $GITHUB_OUTPUT
 
       - name: Restore Original Version
         if: steps.release_config.outputs.VERSION_SUFFIX != ''
@@ -299,7 +367,7 @@ jobs:
         with:
           upload_url: ${{ steps.create_release.outputs.upload_url }}
           asset_path: ${{ steps.build.outputs.WHEEL_FILE }}
-          asset_name: ${{ steps.build.outputs.WHEEL_FILE }}
+          asset_name: ${{ steps.build.outputs.WHEEL_FILENAME }}
           asset_content_type: application/octet-stream
 
       - name: Upload SBOM (Full)
