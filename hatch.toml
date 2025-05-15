@@ -25,8 +25,8 @@ dependencies = [
 
 ]
 [envs.build_github.scripts]
-sbom-all = "cyclonedx-py environment > ./sbom-full.xml"
-sbom-direct = "cyclonedx-py requirements > ./sbom-direct.xml"
+sbom-all = "cyclonedx-py environment > ./sbom-full.json"
+sbom-direct = "cyclonedx-py requirements > ./sbom-direct.json"
 export-requirements = "hatch dep show requirements > ./requirements.txt"       
 
 
