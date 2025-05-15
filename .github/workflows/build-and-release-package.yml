@@ -322,8 +322,8 @@ jobs:
           hatch run ${{ env.BUILD_ENV }}:sbom-all
           hatch run ${{ env.BUILD_ENV }}:export-requirements
           hatch run ${{ env.BUILD_ENV }}:sbom-direct
-          mv ./sbom-full.xml ./${{ env.PACKAGE_NAME }}-${{ env.VERSION }}-sbom-full.xml
-          mv ./sbom-direct.xml ./${{ env.PACKAGE_NAME }}-${{ env.VERSION }}-sbom-direct.xml
+          mv ./sbom-full.json ./${{ env.PACKAGE_NAME }}-${{ env.VERSION }}-sbom-full.json
+          mv ./sbom-direct.json ./${{ env.PACKAGE_NAME }}-${{ env.VERSION }}-sbom-direct.json
 
       # ======================================================
       # PUBLISH
@@ -376,8 +376,8 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: ${{ env.PACKAGE_NAME }}-${{ env.VERSION }}-sbom-full.xml
-          asset_name: ${{ env.PACKAGE_NAME }}-${{ env.VERSION }}-sbom-full.xml
+          asset_path: ${{ env.PACKAGE_NAME }}-${{ env.VERSION }}-sbom-full.json
+          asset_name: ${{ env.PACKAGE_NAME }}-${{ env.VERSION }}-sbom-full.json
           asset_content_type: application/xml
 
       - name: Upload SBOM (Direct)
@@ -386,6 +386,88 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: ${{ env.PACKAGE_NAME }}-${{ env.VERSION }}-sbom-direct.xml
-          asset_name: ${{ env.PACKAGE_NAME }}-${{ env.VERSION }}-sbom-direct.xml
+          asset_path: ${{ env.PACKAGE_NAME }}-${{ env.VERSION }}-sbom-direct.json
+          asset_name: ${{ env.PACKAGE_NAME }}-${{ env.VERSION }}-sbom-direct.json
           asset_content_type: application/xml
+
+
+      - name: Setup Wheels Repository
+        run: |
+          # Configure git
+          git config --global user.name "GitHub Actions"
+          git config --global user.email "actions@github.com"
+          
+          # Clone the wheels repository
+          git clone https://x-access-token:${{ secrets.CLONE_PRIVATE_REPOS_TOKEN }}@github.com/${{ env.ORGNAME }}/mountainash-wheels.git wheels-repo
+          
+          # Go to the wheels repository
+          cd wheels-repo
+          
+          # Generate a unique branch name using a timestamp
+          TIMESTAMP=$(date +%Y%m%d%H%M%S)
+          BRANCH_NAME="release/${{ env.PACKAGE_NAME }}-${{ env.VERSION }}-${TIMESTAMP}"
+          
+          # Create a new branch for this release
+          git checkout -b $BRANCH_NAME
+          
+          # Create package directory if it doesn't exist
+          mkdir -p ${{ env.PACKAGE_NAME }}
+          
+          # Copy the newly built wheel to the repository
+          cp ../${{ steps.build.outputs.WHEEL_FILE }} ${{ env.PACKAGE_NAME }}/
+          
+          # Add the new wheel file
+          git add .
+          
+          # Commit the changes
+          git commit -m "Add ${{ steps.build.outputs.WHEEL_FILENAME }} to wheels repository"
+          
+          # Push the branch to the repository
+          git push -u origin $BRANCH_NAME
+          
+          # Export the branch name for later steps
+          echo "WHEELS_BRANCH=${BRANCH_NAME}" >> $GITHUB_ENV
+
+      - name: Create Pull Request
+        run: |
+          # Create a simpler PR body
+          PR_BODY="This PR adds the following wheel file to the wheels repository:\n- ${{ steps.build.outputs.WHEEL_FILENAME }}\n\nThis was automatically generated from the release workflow of ${{ github.repository }}."
+          
+          # Properly escape the PR body for JSON
+          PR_BODY_ESCAPED=$(echo "$PR_BODY" | jq -Rs .)
+          
+          # Create the PR
+          PR_RESPONSE=$(curl -X POST \
+            -H "Authorization: token ${{ secrets.CLONE_PRIVATE_REPOS_TOKEN }}" \
+            -H "Accept: application/vnd.github.v3+json" \
+            https://api.github.com/repos/${{ env.ORGNAME }}/mountainash-wheels/pulls \
+            -d "{
+              \"title\": \"Add ${{ env.PACKAGE_NAME }} v${{ env.VERSION }} to wheels repository\",
+              \"body\": ${PR_BODY_ESCAPED},
+              \"head\": \"${WHEELS_BRANCH}\",
+              \"base\": \"main\"
+            }")
+            
+            echo "API Response: $PR_RESPONSE"
+            
+            # Extract PR URL and number
+            PR_URL=$(echo "$PR_RESPONSE" | jq -r '.html_url')
+            PR_NUMBER=$(echo "$PR_RESPONSE" | jq -r '.number')
+            
+            # Add labels to the PR
+            if [ "$PR_NUMBER" != "null" ]; then
+              curl -X POST \
+                -H "Authorization: token ${{ secrets.CLONE_PRIVATE_REPOS_TOKEN }}" \
+                -H "Accept: application/vnd.github.v3+json" \
+                https://api.github.com/repos/${{ env.ORGNAME }}/mountainash-wheels/issues/$PR_NUMBER/labels \
+                -d '{
+                  "labels": ["automated", "wheel"]
+                }'
+              
+              echo "PR_URL=${PR_URL}" >> $GITHUB_ENV
+              echo "::notice::Pull Request created: ${PR_URL}"
+            else
+              echo "::error::Failed to create Pull Request"
+              echo "$PR_RESPONSE"
+              exit 1
+          fi                    
