@@ -8,27 +8,27 @@ dynamic = ["version"]
 description = 'Mountain Ash - Utils - Rules'
 readme = "README.md"
 requires-python = ">=3.10"
-license = "MIT" 
+# license = "Proprietary"
 keywords = []
 authors = [
-  { name = "Nathaniel Ramm", email = "nathaniel.ramm@discretedatascience.com" },
+    { name = "Nathaniel Ramm", email = "nathaniel.ramm@discretedatascience.com" },
 ]
 classifiers = [
-  "Development Status :: 4 - Beta",
-  "Programming Language :: Python",
-  "Programming Language :: Python :: 3.10",
-  "Programming Language :: Python :: 3.11",
-  "Programming Language :: Python :: 3.12",
-  "Programming Language :: Python :: Implementation :: CPython",
-  "Programming Language :: Python :: Implementation :: PyPy",
+    "Development Status :: 4 - Beta",
+    "Programming Language :: Python",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: Implementation :: CPython",
+    "Programming Language :: Python :: Implementation :: PyPy",
 ]
 dependencies = [
-  "pandas>=2.2.0",
-  "polars==1.16.0",
-  "ibis-framework[polars,pandas,sqlite,duckdb] == 10.4.0",
+    "pandas>=2.2.0",
+    "polars==1.16.0",
+    "ibis-framework[polars,pandas,sqlite,duckdb] == 10.4.0",
 ]
 
-   
+
 [project.urls]
 Documentation = "https://github.com/mountainash-io/mountainash-utils-rules#readme"
 Issues = "https://github.com/mountainash-io/mountainash-utils-rules/issues"
@@ -38,21 +38,17 @@ Source = "https://github.com/mountainash-io/mountainash-utils-rules"
 # Tool: Coverage
 #================
 [tool.coverage.run]
-source_pkgs = ["mountainash_utils_rules", "tests"] 
+source_pkgs = ["mountainash_utils_rules", "tests"]
 branch = true
 parallel = true
-omit = [
-  "src/mountainash_utils_rules/__version__.py",
-]
+omit = ["src/mountainash_utils_rules/__version__.py"]
 
 [tool.coverage.paths]
-mountainash_utils_rules = ["src/mountainash_utils_rules", "*/mountainash-utils-rules/src/mountainash_utils_rules"]
+mountainash_utils_rules = [
+    "src/mountainash_utils_rules",
+    "*/mountainash-utils-rules/src/mountainash_utils_rules",
+]
 tests = ["tests", "*/mountainash-utils-rules/tests"]
 
 [tool.coverage.report]
-exclude_lines = [
-  "no cov",
-  "if __name__ == .__main__:",
-  "if TYPE_CHECKING:",
-]
-
+exclude_lines = ["no cov", "if __name__ == .__main__:", "if TYPE_CHECKING:"]
