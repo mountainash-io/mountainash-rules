@@ -10,9 +10,9 @@ class TestMatchStrategy:
 
     def test_match_strategy_enum_values(self):
         """Test that all MatchStrategy enum values are correct."""
-        assert MatchStrategy.EXACT.value == "EXACT"
-        assert MatchStrategy.RANGE.value == "RANGE"
-        assert MatchStrategy.REGEX.value == "REGEX"
+        assert MatchStrategy.EXACT == "EXACT"
+        assert MatchStrategy.RANGE == "RANGE"
+        assert MatchStrategy.REGEX == "REGEX"
 
     def test_match_strategy_enum_membership(self):
         """Test MatchStrategy enum membership."""
@@ -231,10 +231,10 @@ class TestConstantsIntegration:
     def test_string_constants_are_distinct(self):
         """Test that string constants are distinct and meaningful."""
         string_constants = [RuleConstants.UNKNOWN, RuleConstants.NOT_SET]
-        
+
         # All should be different
         assert len(set(string_constants)) == len(string_constants)
-        
+
         # All should be non-empty strings
         for constant in string_constants:
             assert isinstance(constant, str)
