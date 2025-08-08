@@ -5,8 +5,8 @@ from typing import List,Optional
 import ibis
 from pydantic import BaseModel
 
-from mountainash_data import BaseDataFrame
-from mountainash_data.dataframes.utils.dataframe_filters import FilterCondition as fc
+from mountainash_dataframes import BaseDataFrame
+from mountainash_dataframes.utils.dataframe_filters import FilterCondition as fc
 
 from mountainash_utils_rules.constants import RuleTrinaryFlags
 from mountainash_utils_rules.rule_strategies import MatchStrategyFactory, BaseMatchStrategy
@@ -18,10 +18,10 @@ from mountainash_utils_rules.rule_manager import RuleManager
 
 class RulesEngine:
 
-    def __init__(self, 
-                 rules: BaseDataFrame, 
+    def __init__(self,
+                 rules: BaseDataFrame,
                  dimension_metadata: Optional[DimensionsMetadata] = None):
-        
+
         self.rule_manager = RuleManager(rules=rules)
         self.metadata_manager = MetadataManager(rules = self.rule_manager.rules,
                                                 dimension_metadata=dimension_metadata)
@@ -40,7 +40,7 @@ class RulesEngine:
             BaseDataFrame: The rules table with the flags initialized
         """
         rules = rules.mutate(
-            cumu_dimension_count=     ibis.literal(value=0),    
+            cumu_dimension_count=     ibis.literal(value=0),
             cumu_soft_match_count =   ibis.literal(value=0),
             cumu_hard_match_count=    ibis.literal(value=0),
             dropped=                  ibis.null(),
@@ -52,8 +52,8 @@ class RulesEngine:
 
 
 
-    def apply_dimension_filter_flags(self, 
-                                      rules: BaseDataFrame, 
+    def apply_dimension_filter_flags(self,
+                                      rules: BaseDataFrame,
                                       dimension: Dimension) -> BaseDataFrame:
         """
         Apply flags to the rules table to indicate the type of match for each dimension.
@@ -73,22 +73,22 @@ class RulesEngine:
             #Flag across all 3 filters
             dimension_any_false =     ibis._.dimension_filter_product % RuleTrinaryFlags.PRIME_FALSE_IBIS() == ibis.literal(value=0),
             dimension_any_true =      ibis._.dimension_filter_product % RuleTrinaryFlags.PRIME_TRUE_IBIS()  == ibis.literal(value=0),
-            
+
             #Match Flags
             cumu_dimension_count=     ibis._.cumu_dimension_count   + ibis.literal(1).cast("int8"),
-            cumu_soft_match_count=    ibis._.cumu_soft_match_count  + ibis.or_( ibis._.filter_rule_unknown    % RuleTrinaryFlags.PRIME_TRUE_IBIS() == ibis.literal(value=0), 
-                                                                                ibis._.filter_context_unknown % RuleTrinaryFlags.PRIME_TRUE_IBIS() == ibis.literal(value=0) 
+            cumu_soft_match_count=    ibis._.cumu_soft_match_count  + ibis.or_( ibis._.filter_rule_unknown    % RuleTrinaryFlags.PRIME_TRUE_IBIS() == ibis.literal(value=0),
+                                                                                ibis._.filter_context_unknown % RuleTrinaryFlags.PRIME_TRUE_IBIS() == ibis.literal(value=0)
                                                                               ).cast("int8"),
             cumu_hard_match_count=    ibis._.cumu_hard_match_count  + (ibis._.filter_match % RuleTrinaryFlags.PRIME_TRUE == 0).cast("int8"),
 
         ).mutate(
             #Rule Row Drop Flags - The existence of a True gets you through! It is binary at this stage!
-            dropped_by_dimension=   ibis.ifelse( ibis._.dropped.isnull() & ~ibis._.dimension_any_true, 
-                                                 ibis.literal(value=dimension.dimension_name), 
+            dropped_by_dimension=   ibis.ifelse( ibis._.dropped.isnull() & ~ibis._.dimension_any_true,
+                                                 ibis.literal(value=dimension.dimension_name),
                                                  ibis._.dropped_by_dimension),
 
-            dropped=                ibis.ifelse( ibis._.dropped.isnull() & ~ibis._.dimension_any_true, 
-                                                 ibis.literal(value=True), 
+            dropped=                ibis.ifelse( ibis._.dropped.isnull() & ~ibis._.dimension_any_true,
+                                                 ibis.literal(value=True),
                                                  ibis._.dropped)
         )
 
@@ -116,16 +116,16 @@ class RulesEngine:
                 ]
             ))
         )
-        
+
         return rules.drop('row_number')
 
 
     def apply_context_rules_engine(self,
-                                        context: BaseModel, 
+                                        context: BaseModel,
                                         dimension_names: List[str]|str,
                                         keep_all: bool=True
                                         ) -> BaseDataFrame:
-                
+
         """
         Apply the rules engine to the context and return the filtered rules.
 
@@ -137,13 +137,13 @@ class RulesEngine:
         Returns:
             BaseDataFrame: The filtered rules
         """
-        #Get a copy of the rules        
+        #Get a copy of the rules
         rules = self.rule_manager.get_rules()
 
         # Validate Dimension names
         if isinstance(dimension_names, str):
             dimension_names = [dimension_names]
-        
+
         if len(dimension_names) == 0:
             raise ValueError("No dimension names specified.")
 
@@ -185,4 +185,3 @@ class RulesEngine:
             return rules #.order_by('priority')
         else:
             return rules.filter(filter_condition=keep_filter) #.order_by('priority')
-

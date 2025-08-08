@@ -6,7 +6,7 @@ from ibis.common.exceptions import IbisTypeError
 
 from pydantic import BaseModel
 
-from mountainash_data import BaseDataFrame
+from mountainash_dataframes import BaseDataFrame
 from mountainash_utils_rules.constants import MatchStrategy, RuleConstants, RuleTrinaryFlags
 from mountainash_utils_rules.dimension import Dimension
 from mountainash_utils_rules.context import ContextHelper
@@ -25,14 +25,14 @@ class BaseMatchStrategy(ABC):
         match_strategy (MatchStrategy): The match strategy to use
 
 
-    
+
     """
     match_strategy: MatchStrategy
 
     @abstractmethod
-    def apply_match_filter(self, 
-                           rules: BaseDataFrame, 
-                           dimension: Dimension, 
+    def apply_match_filter(self,
+                           rules: BaseDataFrame,
+                           dimension: Dimension,
                            context: BaseModel) -> BaseDataFrame:
         pass
 
@@ -40,15 +40,15 @@ class BaseMatchStrategy(ABC):
 
 
 
-    def apply_filter_rule_unknown(self, 
-                                    rules: BaseDataFrame,  
+    def apply_filter_rule_unknown(self,
+                                    rules: BaseDataFrame,
                                     dimension: Dimension) -> BaseDataFrame:
         """
         Apply a filter rule to the rules table to check for a wildcard value.
 
         Args:
             rules (BaseDataFrame): The rules table
-            dimension (Dimension): The dimension object 
+            dimension (Dimension): The dimension object
 
         Returns:
             BaseDataFrame: The rules table with the filter rule applied
@@ -64,8 +64,8 @@ class BaseMatchStrategy(ABC):
 
             rules = rules.mutate(
 
-                filter_rule_unknown = ibis.ifelse(ibis._[dimension_rule_fieldname] == RuleConstants.UNKNOWN_IBIS(), 
-                                     RuleTrinaryFlags.PRIME_TRUE_IBIS(), 
+                filter_rule_unknown = ibis.ifelse(ibis._[dimension_rule_fieldname] == RuleConstants.UNKNOWN_IBIS(),
+                                     RuleTrinaryFlags.PRIME_TRUE_IBIS(),
                                     RuleTrinaryFlags.PRIME_UNKNOWN_IBIS()),
             )
 
@@ -73,24 +73,24 @@ class BaseMatchStrategy(ABC):
 
             rules = rules.mutate(
 
-                filter_rule_unknown = ibis.ifelse(ibis._[dimension_rule_fieldname].cast(int) == RuleConstants.UNKNOWN_NUMERIC_IBIS(), 
-                                     RuleTrinaryFlags.PRIME_TRUE_IBIS(), 
+                filter_rule_unknown = ibis.ifelse(ibis._[dimension_rule_fieldname].cast(int) == RuleConstants.UNKNOWN_NUMERIC_IBIS(),
+                                     RuleTrinaryFlags.PRIME_TRUE_IBIS(),
                                      RuleTrinaryFlags.PRIME_UNKNOWN_IBIS()),
             )
 
         return rules
 
 
-    def apply_filter_context_unknown(self, 
+    def apply_filter_context_unknown(self,
                                         rules: BaseDataFrame,
-                                        dimension: Dimension,   
+                                        dimension: Dimension,
                                         context: BaseModel) -> BaseDataFrame:
         """
         Apply a filter rule to the rules table to check for a wildcard value.
 
         Args:
             rules (BaseDataFrame): The rules table
-            dimension (Dimension): The dimension object 
+            dimension (Dimension): The dimension object
             context (BaseModel): The context object
 
         Returns:
@@ -100,7 +100,7 @@ class BaseMatchStrategy(ABC):
 
         try:
             context_value = ContextHelper.get_context_value(context=context, dimension=dimension)
- 
+
         except (Exception,IbisTypeError):
             rules = rules.mutate(filter_context_unknown = RuleTrinaryFlags.PRIME_UNKNOWN_IBIS())
             return rules
@@ -118,23 +118,23 @@ class ExactMatchStrategy(BaseMatchStrategy):
     """
         Rule Strategy for Exact Matching
         Will match the context value exactly to the rule value
-    
+
     """
 
     match_strategy: MatchStrategy = MatchStrategy.EXACT
 
-    def apply_match_filter(self, 
-                                   rules: BaseDataFrame,  
-                                   dimension: Dimension,  
+    def apply_match_filter(self,
+                                   rules: BaseDataFrame,
+                                   dimension: Dimension,
                                    context: BaseModel) -> BaseDataFrame:
         """
         Apply a filter rule to the rules table to check for a wildcard value.
 
         Args:
             rules (BaseDataFrame): The rules table
-            dimension (Dimension): The dimension object 
+            dimension (Dimension): The dimension object
             context (BaseModel): The context object
-        
+
         Returns:
             BaseDataFrame: The rules table with the filter rule applied
         """
@@ -161,10 +161,10 @@ class ExactMatchStrategy(BaseMatchStrategy):
                                         ibis._.context_value_ibis == ibis.literal(value=RuleConstants.NOT_SET) ,
                                         RuleTrinaryFlags.PRIME_UNKNOWN_IBIS(),
                                         ibis.ifelse(
-                                            ibis._[dimension_rule_fieldname] == ibis.literal(value=context_value), 
-                                            RuleTrinaryFlags.PRIME_TRUE_IBIS(), 
+                                            ibis._[dimension_rule_fieldname] == ibis.literal(value=context_value),
+                                            RuleTrinaryFlags.PRIME_TRUE_IBIS(),
                                             RuleTrinaryFlags.PRIME_FALSE_IBIS()
-                                            ) 
+                                            )
                                     ))
 
             else:
@@ -176,16 +176,16 @@ class ExactMatchStrategy(BaseMatchStrategy):
                                         ibis._.context_value_ibis == ibis.literal(value=RuleConstants.NOT_SET_NUMERIC),
                                         RuleTrinaryFlags.PRIME_UNKNOWN_IBIS(),
                                         ibis.ifelse(
-                                            ibis._[dimension_rule_fieldname] == ibis.literal(value=context_value), 
-                                            RuleTrinaryFlags.PRIME_TRUE_IBIS(), 
+                                            ibis._[dimension_rule_fieldname] == ibis.literal(value=context_value),
+                                            RuleTrinaryFlags.PRIME_TRUE_IBIS(),
                                             RuleTrinaryFlags.PRIME_FALSE_IBIS()
-                                            ) 
+                                            )
                                     ))
 
 
         except (Exception,IbisTypeError):
             rules = rules.mutate(filter_match = RuleTrinaryFlags.PRIME_UNKNOWN_IBIS())
-        
+
         return rules
 
 class RegexMatchStrategy(BaseMatchStrategy):
@@ -199,16 +199,16 @@ class RegexMatchStrategy(BaseMatchStrategy):
 
     match_strategy: MatchStrategy = MatchStrategy.REGEX
 
-    def apply_match_filter(self, 
-                           rules: BaseDataFrame,  
-                           dimension: Dimension,  
+    def apply_match_filter(self,
+                           rules: BaseDataFrame,
+                           dimension: Dimension,
                            context: BaseModel) -> BaseDataFrame:
         """
         Apply a filter rule to the rules table to check for a wildcard value.
 
         Args:
             rules (BaseDataFrame): The rules table
-            dimension (Dimension): The dimension object 
+            dimension (Dimension): The dimension object
             context (BaseModel): The context object
 
         Returns:
@@ -232,7 +232,7 @@ class RegexMatchStrategy(BaseMatchStrategy):
                 rules = rules.mutate(
                     context_value_ibis = ibis.literal(value=context_value),
                 ).mutate(
-                    filter_match = 
+                    filter_match =
                             ibis.ifelse(
                                     ibis._.context_value_ibis == ibis.literal(value=RuleConstants.NOT_SET) ,
                                     RuleTrinaryFlags.PRIME_UNKNOWN_IBIS(),
@@ -247,7 +247,7 @@ class RegexMatchStrategy(BaseMatchStrategy):
                 rules = rules.mutate(
                     context_value_ibis = ibis.literal(value=context_value),
                 ).mutate(
-                    filter_match = 
+                    filter_match =
                             ibis.ifelse(
                                     ibis._.context_value_ibis == ibis.literal(value=RuleConstants.NOT_SET_NUMERIC) ,
                                     RuleTrinaryFlags.PRIME_UNKNOWN_IBIS(),
@@ -270,27 +270,27 @@ class RangeMatchStrategy(BaseMatchStrategy):
     """
         Rule Strategy for Range Matching
         Will match the context value to be within the range specified in the rules
-    
+
     """
 
     match_strategy: MatchStrategy = MatchStrategy.RANGE
 
-    def apply_match_filter(self, 
-                           rules: BaseDataFrame,  
-                           dimension: Dimension,  
+    def apply_match_filter(self,
+                           rules: BaseDataFrame,
+                           dimension: Dimension,
                            context: BaseModel) -> BaseDataFrame:
         """
         Apply a filter rule to the rules table to check for a wildcard value.
 
         Args:
             rules (BaseDataFrame): The rules table
-            dimension (Dimension): The dimension object 
+            dimension (Dimension): The dimension object
             context (BaseModel): The context object
 
         Returns:
             BaseDataFrame: The rules table with the filter rule applied
         """
-       
+
         try:
             context_value = ContextHelper.get_context_value(context=context, dimension=dimension)
 
@@ -321,7 +321,7 @@ class RangeMatchStrategy(BaseMatchStrategy):
                 rules = rules.mutate(
                     context_value_ibis = ibis.literal(context_value),
                 ).mutate(
-                    filter_match = 
+                    filter_match =
                         ibis.ifelse(
                                 ibis._.context_value_ibis == ibis.literal(value=RuleConstants.NOT_SET),
                                 RuleTrinaryFlags.PRIME_UNKNOWN_IBIS(),
@@ -336,7 +336,7 @@ class RangeMatchStrategy(BaseMatchStrategy):
                 rules = rules.mutate(
                     context_value_ibis = ibis.literal(value=context_value),
                 ).mutate(
-                    filter_match = 
+                    filter_match =
                         ibis.ifelse(
                                 ibis._.context_value_ibis == ibis.literal(value=RuleConstants.NOT_SET_NUMERIC),
                                 RuleTrinaryFlags.PRIME_UNKNOWN_IBIS(),
@@ -356,7 +356,7 @@ class RangeMatchStrategy(BaseMatchStrategy):
 
 # Rule Type Factory
 class MatchStrategyFactory:
-    
+
 
     @staticmethod
     def get_rule_strategy_class(match_strategy: MatchStrategy) -> BaseMatchStrategy:
@@ -368,7 +368,7 @@ class MatchStrategyFactory:
             match_strategy (MatchStrategy): The match strategy type
         Returns:
             BaseMatchStrategy: The rule strategy class
-        
+
         """
 
         if match_strategy == MatchStrategy.EXACT:

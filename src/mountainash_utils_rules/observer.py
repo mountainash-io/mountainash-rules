@@ -1,6 +1,6 @@
 from typing import Any, Dict, Type
 
-from mountainash_data import BaseDataFrame
+from mountainash_dataframes import BaseDataFrame
 from mountainash_utils_rules.dimension import Dimension
 
 
@@ -8,7 +8,7 @@ from mountainash_utils_rules.dimension import Dimension
 # Observability Manager
 class ObservabilityManager:
     def __init__(self):
-        
+
         self.intermediate_values = {}
         self.warnings = {}
 
@@ -40,7 +40,7 @@ class ObservabilityManager:
 
 
     def save_dimension_intermediate_values(self, rules: BaseDataFrame, dimension: Dimension) -> None:
-        
+
         """
         Save the intermediate values for a dimension.
 
@@ -59,4 +59,4 @@ class ObservabilityManager:
             'cumu_hard_match_count',
             'dropped',
             'dropped_by_dimension'
-        ])        
+        ])

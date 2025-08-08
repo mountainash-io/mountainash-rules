@@ -4,7 +4,7 @@ from typing import List, Any,Optional, Dict, Type
 
 from pydantic import BaseModel
 
-from mountainash_data import BaseDataFrame
+from mountainash_dataframes import BaseDataFrame
 from mountainash_utils_rules.constants import MatchStrategy, RuleConstants
 
 
@@ -16,17 +16,17 @@ class Dimension(BaseModel):
 
     match_strategy: MatchStrategy = MatchStrategy.EXACT
     data_type: Type = str  # Default to string, but can be int, float, date, bool etc.
-    
+
     valid_values: List[Any] = []  # List of possible values for the dimension
-    
+
     range_min_field: Optional[str] = None  # Minimum value for the dimension
     range_max_field: Optional[str] = None   # Maximum value for the dimension
     range_min_inclusive: bool = True  # Whether the minimum value is inclusive
     range_max_inclusive: bool = True  # Whether the maximum value is inclusive
 
 
-    def get_dimension_attribute(self, 
-                                attribute: str, 
+    def get_dimension_attribute(self,
+                                attribute: str,
                                 default_value: Any) -> Any:
         """
         Get the field name for the context for a given dimension.
@@ -41,7 +41,7 @@ class Dimension(BaseModel):
         value = getattr(self, attribute, default_value)
         if value is not None:
             return value
-                
+
         return default_value
 
     def get_dimension_context_fieldname(self) -> str:
@@ -104,7 +104,7 @@ class Dimension(BaseModel):
         """
         Get the field name for the range_max_field for a given dimension.
 
-        Returns:   
+        Returns:
             str: The field name for the range_max_field
         """
         range_max_field = self.get_dimension_attribute(attribute="range_max_field", default_value=None)
@@ -145,7 +145,7 @@ class DimensionsMetadata(BaseModel):
 # Metadata Manager
 class MetadataManager:
 
-    def __init__(self, 
+    def __init__(self,
                  rules: BaseDataFrame,
                  dimension_metadata: Optional[DimensionsMetadata] = None):
 
@@ -155,7 +155,7 @@ class MetadataManager:
                                                                                                        dimension_metadata=dimension_metadata)
 
 
-    def _init_dimension_metadata(self, 
+    def _init_dimension_metadata(self,
                                  rules: BaseDataFrame,
                                  dimension_metadata: Optional[DimensionsMetadata] = None) -> Optional[Dict[str, Dimension]]:
         """
@@ -173,7 +173,7 @@ class MetadataManager:
 
             self._validate_unique_dimension_names(dimension_metadata=dimension_metadata)
 
-            # Loop through 
+            # Loop through
 
             #validate the rule metadata
             for dimension in dimension_metadata.dimensions:
@@ -233,9 +233,9 @@ class MetadataManager:
 
 
 
-    def _validate_unique_dimension_names(self, 
+    def _validate_unique_dimension_names(self,
                                          dimension_metadata: DimensionsMetadata) -> None:
-            
+
         """
         Validate the dimension names are unique.
 
@@ -253,10 +253,10 @@ class MetadataManager:
 
 
     ### Getters
-    def get_dimension(self, 
+    def get_dimension(self,
                       dimension_name: str) -> Dimension:
-        
-        """ 
+
+        """
         Get the dimension object for a given dimension name.
 
         Args:
@@ -271,12 +271,12 @@ class MetadataManager:
             return Dimension(dimension_name=dimension_name)
 
 
-    def get_dimensions_list(self, 
+    def get_dimensions_list(self,
                             dimension_names: List[str]) -> List[Dimension]:
         """
-        
+
         Get the dimension objects for a list of dimension names.
-        
+
         Args:
             dimension_names (List[str]): The dimension names
         Returns:
@@ -288,29 +288,29 @@ class MetadataManager:
             return [self.get_dimension(dimension_name=dimension_name) for dimension_name in dimension_names]
         else:
             return [Dimension(dimension_name=dimension_name) for dimension_name in dimension_names]
-        
 
 
-    def get_active_dimension_names(self, 
-                                   context: BaseModel, 
+
+    def get_active_dimension_names(self,
+                                   context: BaseModel,
                                    rules:   BaseDataFrame,
                                    dimension_names: List[str]
                                    ) -> List[str]:
 
         """
         Get the active dimension names for a given context and rules.
-        
+
         Args:
             context (BaseModel): The context object
             rules (BaseDataFrame): The rules dataframe
-            
+
         Returns:
             List[str]: The active dimension names
         """
 
         if dimension_names == []:
-            raise ValueError("No dimension names specified") 
-        
+            raise ValueError("No dimension names specified")
+
 
         #The fields the rule metadata asks for:
         expected_rule_fields:    Dict[str,str] = {dimension_name: self.get_dimension(dimension_name=dimension_name).get_dimension_rule_fieldname() for dimension_name in dimension_names}
@@ -318,11 +318,11 @@ class MetadataManager:
 
         #The fields that actually exist
         actual_rule_fields:    Dict[str,str] = {dimension_name: fieldname
-                                                for dimension_name, fieldname in expected_rule_fields.items() 
+                                                for dimension_name, fieldname in expected_rule_fields.items()
                                                 if fieldname in rules.get_column_names()}
 
         actual_context_fields: Dict[str,str] = {dimension_name: fieldname
-                                                for dimension_name, fieldname in expected_context_fields.items() 
+                                                for dimension_name, fieldname in expected_context_fields.items()
                                                 if getattr(context, fieldname, RuleConstants.NOT_SET) not in {RuleConstants.NOT_SET, None} }
 
 
@@ -340,8 +340,8 @@ class MetadataManager:
 
         if missing_dimensions:
             print(f"Warning: Dimensons requested in rules_meatadata, but are missing in rules or context: {missing_dimensions}")
-    
+
         if active_dimensions == []:
-            raise ValueError("No active dimensions found in rules or context")        
+            raise ValueError("No active dimensions found in rules or context")
 
         return active_dimensions
