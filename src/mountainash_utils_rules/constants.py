@@ -1,15 +1,29 @@
-from enum import Enum
+from enum import auto
 import ibis
+from mountainash_constants import BaseIdentityConstant
 
-class MatchStrategy(Enum):
-    EXACT = "EXACT"
-    RANGE = "RANGE"
-    REGEX = "REGEX"
+class MatchStrategy(BaseIdentityConstant):
+    EXACT = auto()
+    RANGE = auto()
+    REGEX = auto()
     # WILDCARD = "WILDCARD"
     # FUZZY = "FUZZY"
 
+    # @classmethod
+    # def EXACT(cls) -> str:
+    #     return cls.EXACT
 
-class RuleConstants:
+    # @classmethod
+    # def RANGE(cls) -> str:
+    #     return str(cls.RANGE)
+
+    # @classmethod
+    # def REGEX(cls) -> str:
+    #     return str(cls.REGEX)
+
+
+
+class RuleConstants():
 
     UNKNOWN = "<NA>"
     NOT_SET = "<NOT_SET>"
