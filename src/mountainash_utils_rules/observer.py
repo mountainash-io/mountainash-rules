@@ -49,11 +49,11 @@ class ObservabilityManager:
             dimension (Dimension): The dimension object
         """
 
+        # PHASE 1 OPTIMIZATION: Updated to reflect simplified boolean flag structure
         self.intermediate_values[dimension.dimension_name] = rules.select([
             # 'rule_name',
-            'dimension_filter_product',
             'dimension_any_false',
-            'dimension_any_true',
+            'dimension_any_true', 
             'cumu_dimension_count',
             'cumu_soft_match_count',
             'cumu_hard_match_count',

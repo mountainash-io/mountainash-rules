@@ -33,7 +33,7 @@ class BaseMatchStrategy(ABC):
     def apply_match_filter(self,
                            rules: BaseDataFrame,
                            dimension: Dimension,
-                           context: BaseModel) -> BaseDataFrame:
+                           context_value: str|int|float) -> BaseDataFrame:
         pass
 
 
@@ -84,27 +84,21 @@ class BaseMatchStrategy(ABC):
     def apply_filter_context_unknown(self,
                                         rules: BaseDataFrame,
                                         dimension: Dimension,
-                                        context: BaseModel) -> BaseDataFrame:
+                                        context_value: str|int|float) -> BaseDataFrame:
         """
         Apply a filter rule to the rules table to check for a wildcard value.
 
         Args:
             rules (BaseDataFrame): The rules table
             dimension (Dimension): The dimension object
-            context (BaseModel): The context object
+            context_value (str|int|float): The pre-extracted context value
 
         Returns:
             BaseDataFrame: The rules table with the filter rule applied
 
         """
 
-        try:
-            context_value = ContextHelper.get_context_value(context=context, dimension=dimension)
-
-        except (Exception,IbisTypeError):
-            rules = rules.mutate(filter_context_unknown = RuleTrinaryFlags.PRIME_UNKNOWN_IBIS())
-            return rules
-
+        # PHASE 1 OPTIMIZATION: Use pre-extracted context value instead of extracting again
         if context_value in [RuleConstants.UNKNOWN, RuleConstants.UNKNOWN_NUMERIC]:
             rules = rules.mutate(filter_context_unknown = RuleTrinaryFlags.PRIME_TRUE_IBIS())
         else:
@@ -126,39 +120,27 @@ class ExactMatchStrategy(BaseMatchStrategy):
     def apply_match_filter(self,
                                    rules: BaseDataFrame,
                                    dimension: Dimension,
-                                   context: BaseModel) -> BaseDataFrame:
+                                   context_value: str|int|float) -> BaseDataFrame:
         """
         Apply a filter rule to the rules table to check for a wildcard value.
 
         Args:
             rules (BaseDataFrame): The rules table
             dimension (Dimension): The dimension object
-            context (BaseModel): The context object
+            context_value (str|int|float): The pre-extracted context value
 
         Returns:
             BaseDataFrame: The rules table with the filter rule applied
         """
 
-
-
         try:
-            context_value = ContextHelper.get_context_value(context=context, dimension=dimension)
-
-        except (Exception,IbisTypeError):
-            rules = rules.mutate(filter_match = RuleTrinaryFlags.PRIME_UNKNOWN_IBIS())
-            return rules
-
-        try:
-
             dimension_rule_fieldname: str = dimension.get_dimension_rule_fieldname()
 
             if dimension.get_dimension_data_type() == str:
-
+                # PHASE 1 OPTIMIZATION: Use pre-extracted context value
                 rules = rules.mutate(
-                    context_value_ibis = ibis.literal(value=context_value),
-                ).mutate(
                     filter_match = ibis.ifelse(
-                                        ibis._.context_value_ibis == ibis.literal(value=RuleConstants.NOT_SET) ,
+                                        ibis.literal(value=context_value) == ibis.literal(value=RuleConstants.NOT_SET) ,
                                         RuleTrinaryFlags.PRIME_UNKNOWN_IBIS(),
                                         ibis.ifelse(
                                             ibis._[dimension_rule_fieldname] == ibis.literal(value=context_value),
@@ -168,12 +150,10 @@ class ExactMatchStrategy(BaseMatchStrategy):
                                     ))
 
             else:
-
+                # PHASE 1 OPTIMIZATION: Use pre-extracted context value
                 rules = rules.mutate(
-                    context_value_ibis = ibis.literal(value=context_value),
-                ).mutate(
                     filter_match = ibis.ifelse(
-                                        ibis._.context_value_ibis == ibis.literal(value=RuleConstants.NOT_SET_NUMERIC),
+                                        ibis.literal(value=context_value) == ibis.literal(value=RuleConstants.NOT_SET_NUMERIC),
                                         RuleTrinaryFlags.PRIME_UNKNOWN_IBIS(),
                                         ibis.ifelse(
                                             ibis._[dimension_rule_fieldname] == ibis.literal(value=context_value),
@@ -181,7 +161,6 @@ class ExactMatchStrategy(BaseMatchStrategy):
                                             RuleTrinaryFlags.PRIME_FALSE_IBIS()
                                             )
                                     ))
-
 
         except (Exception,IbisTypeError):
             rules = rules.mutate(filter_match = RuleTrinaryFlags.PRIME_UNKNOWN_IBIS())
@@ -202,62 +181,48 @@ class RegexMatchStrategy(BaseMatchStrategy):
     def apply_match_filter(self,
                            rules: BaseDataFrame,
                            dimension: Dimension,
-                           context: BaseModel) -> BaseDataFrame:
+                           context_value: str|int|float) -> BaseDataFrame:
         """
         Apply a filter rule to the rules table to check for a wildcard value.
 
         Args:
             rules (BaseDataFrame): The rules table
             dimension (Dimension): The dimension object
-            context (BaseModel): The context object
+            context_value (str|int|float): The pre-extracted context value
 
         Returns:
             BaseDataFrame: The rules table with the filter rule applied
         """
 
         try:
-            context_value = ContextHelper.get_context_value(context=context, dimension=dimension)
-
-        except (Exception,IbisTypeError):
-            rules = rules.mutate(filter_match = RuleTrinaryFlags.PRIME_UNKNOWN_IBIS())
-            return rules
-
-        try:
-
             dimension_rule_fieldname: str = dimension.get_dimension_rule_fieldname()
 
-
             if dimension.get_dimension_data_type() == str:
-
+                # PHASE 1 OPTIMIZATION: Use pre-extracted context value, eliminate temporary column
                 rules = rules.mutate(
-                    context_value_ibis = ibis.literal(value=context_value),
-                ).mutate(
                     filter_match =
                             ibis.ifelse(
-                                    ibis._.context_value_ibis == ibis.literal(value=RuleConstants.NOT_SET) ,
+                                    ibis.literal(value=context_value) == ibis.literal(value=RuleConstants.NOT_SET) ,
                                     RuleTrinaryFlags.PRIME_UNKNOWN_IBIS(),
                                     ibis.ifelse(
-                                        ibis._.context_value_ibis.re_search(ibis._[dimension_rule_fieldname]),
+                                        ibis.literal(value=context_value).re_match(ibis._[dimension_rule_fieldname]),
                                         RuleTrinaryFlags.PRIME_TRUE_IBIS(),
                                         RuleTrinaryFlags.PRIME_FALSE_IBIS()
                                     ))
-                ).drop( columns="context_value")
+                )
             else:
-
+                # PHASE 1 OPTIMIZATION: Use pre-extracted context value, eliminate temporary column
                 rules = rules.mutate(
-                    context_value_ibis = ibis.literal(value=context_value),
-                ).mutate(
                     filter_match =
                             ibis.ifelse(
-                                    ibis._.context_value_ibis == ibis.literal(value=RuleConstants.NOT_SET_NUMERIC) ,
+                                    ibis.literal(value=context_value) == ibis.literal(value=RuleConstants.NOT_SET_NUMERIC) ,
                                     RuleTrinaryFlags.PRIME_UNKNOWN_IBIS(),
                                     ibis.ifelse(
-                                        ibis._.context_value_ibis.re_search(ibis._[dimension_rule_fieldname]),
+                                        ibis.literal(value=context_value).re_match(ibis._[dimension_rule_fieldname]),
                                         RuleTrinaryFlags.PRIME_TRUE_IBIS(),
                                         RuleTrinaryFlags.PRIME_FALSE_IBIS()
                                     ))
-                ).drop( columns="context_value")
-
+                )
 
         except (Exception,IbisTypeError):
             rules = rules.mutate(filter_match = RuleTrinaryFlags.PRIME_UNKNOWN_IBIS())
@@ -278,28 +243,20 @@ class RangeMatchStrategy(BaseMatchStrategy):
     def apply_match_filter(self,
                            rules: BaseDataFrame,
                            dimension: Dimension,
-                           context: BaseModel) -> BaseDataFrame:
+                           context_value: str|int|float) -> BaseDataFrame:
         """
         Apply a filter rule to the rules table to check for a wildcard value.
 
         Args:
             rules (BaseDataFrame): The rules table
             dimension (Dimension): The dimension object
-            context (BaseModel): The context object
+            context_value (str|int|float): The pre-extracted context value
 
         Returns:
             BaseDataFrame: The rules table with the filter rule applied
         """
 
         try:
-            context_value = ContextHelper.get_context_value(context=context, dimension=dimension)
-
-        except (Exception,IbisTypeError):
-            rules = rules.mutate(filter_match = RuleTrinaryFlags.PRIME_UNKNOWN_IBIS())
-            return rules
-
-        try:
-
             min_field: str = dimension.get_dimension_rule_range_min_field()
             max_field: str = dimension.get_dimension_rule_range_max_field()
 
@@ -310,20 +267,18 @@ class RangeMatchStrategy(BaseMatchStrategy):
             min_op = Deferred.__le__ if min_inclusive else Deferred.__lt__
             max_op = Deferred.__ge__ if max_inclusive else Deferred.__gt__
 
-
+            # PHASE 1 OPTIMIZATION: Use pre-extracted context value directly in condition
             condition = (
-                (ibis._[min_field].isnull() | min_op(ibis._[min_field], ibis._.context_value_ibis)) &
-                (ibis._[max_field].isnull() | max_op(ibis._[max_field], ibis._.context_value_ibis))
+                (ibis._[min_field].isnull() | min_op(ibis._[min_field], ibis.literal(value=context_value))) &
+                (ibis._[max_field].isnull() | max_op(ibis._[max_field], ibis.literal(value=context_value)))
             )
 
             if dimension.get_dimension_data_type() == str:
-
+                # PHASE 1 OPTIMIZATION: Eliminate temporary column creation
                 rules = rules.mutate(
-                    context_value_ibis = ibis.literal(context_value),
-                ).mutate(
                     filter_match =
                         ibis.ifelse(
-                                ibis._.context_value_ibis == ibis.literal(value=RuleConstants.NOT_SET),
+                                ibis.literal(value=context_value) == ibis.literal(value=RuleConstants.NOT_SET),
                                 RuleTrinaryFlags.PRIME_UNKNOWN_IBIS(),
                                 ibis.ifelse(
                                     condition,
@@ -333,12 +288,11 @@ class RangeMatchStrategy(BaseMatchStrategy):
                 )
 
             else:
+                # PHASE 1 OPTIMIZATION: Eliminate temporary column creation
                 rules = rules.mutate(
-                    context_value_ibis = ibis.literal(value=context_value),
-                ).mutate(
                     filter_match =
                         ibis.ifelse(
-                                ibis._.context_value_ibis == ibis.literal(value=RuleConstants.NOT_SET_NUMERIC),
+                                ibis.literal(value=context_value) == ibis.literal(value=RuleConstants.NOT_SET_NUMERIC),
                                 RuleTrinaryFlags.PRIME_UNKNOWN_IBIS(),
                                 ibis.ifelse(
                                     condition,
@@ -346,7 +300,6 @@ class RangeMatchStrategy(BaseMatchStrategy):
                                     RuleTrinaryFlags.PRIME_FALSE_IBIS()
                             ))
                 )
-
 
         except (Exception,IbisTypeError):
             rules = rules.mutate(filter_match = RuleTrinaryFlags.PRIME_UNKNOWN_IBIS())

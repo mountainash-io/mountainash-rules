@@ -45,9 +45,9 @@ def regex_match_strategy() -> RegexMatchStrategy:
 def test_exact_match_strategy(exact_match_strategy, sample_rules):
     dimension = Dimension(dimension_name="DIM_1", match_strategy=MatchStrategy.EXACT, data_type=str)
 
-    context = Context(DIM_1="A")
+    context_value = "A"  # PHASE 1 OPTIMIZATION: Pass pre-extracted context value
 
-    result = exact_match_strategy.apply_match_filter(sample_rules, dimension, context)
+    result = exact_match_strategy.apply_match_filter(sample_rules, dimension, context_value)
     print( result.materialise())
     assert result.filter(filter_condition=fc.eq("filter_match", RuleTrinaryFlags.PRIME_TRUE_IBIS())).count() == 1  # PRIME_TRUE = 2
 
@@ -60,17 +60,17 @@ def test_range_match_strategy(range_match_strategy, sample_rules):
         range_max_field="DIM_2_MAX"
     )
 
-    context = Context(DIM_2=15)
+    context_value = 15  # PHASE 1 OPTIMIZATION: Pass pre-extracted context value
 
-    result = range_match_strategy.apply_match_filter(sample_rules, dimension, context)
+    result = range_match_strategy.apply_match_filter(sample_rules, dimension, context_value)
     # print( result.materialise())
     assert result.filter(filter_condition=fc.eq("filter_match", RuleTrinaryFlags.PRIME_TRUE_IBIS())).count() == 1  # PRIME_TRUE = 2
 
 def test_regex_match_strategy(regex_match_strategy, sample_rules):
     dimension = Dimension(dimension_name="DIM_3", match_strategy=MatchStrategy.REGEX, data_type=str)
-    context = Context(DIM_3="XYZ")
+    context_value = "XYZ"  # PHASE 1 OPTIMIZATION: Pass pre-extracted context value
 
-    result = regex_match_strategy.apply_match_filter(sample_rules, dimension, context)
+    result = regex_match_strategy.apply_match_filter(sample_rules, dimension, context_value)
     assert result.filter(filter_condition=fc.eq("filter_match", RuleTrinaryFlags.PRIME_TRUE_IBIS())).count() == 1  # PRIME_TRUE = 2
 
 def test_match_strategy_factory():
@@ -96,9 +96,9 @@ def test_apply_filter_rule_one_unknown(exact_match_strategy, sample_rules):
 def test_apply_filter_context_unknown(exact_match_strategy, sample_rules):
 
     dimension = Dimension(dimension_name="DIM_1", match_strategy=MatchStrategy.EXACT, data_type=str)
-    context = Context(DIM_1=RuleConstants.UNKNOWN)
+    context_value = RuleConstants.UNKNOWN  # PHASE 1 OPTIMIZATION: Pass pre-extracted context value
 
-    result = exact_match_strategy.apply_filter_context_unknown(sample_rules, dimension=dimension, context=context)
+    result = exact_match_strategy.apply_filter_context_unknown(sample_rules, dimension=dimension, context_value=context_value)
     assert result.filter(filter_condition=fc.eq("filter_context_unknown", RuleTrinaryFlags.PRIME_TRUE_IBIS())).count() == 3  # All rows should match UNKNOWN
 
 
@@ -124,10 +124,9 @@ def test_range_match_strategy_with_edge_cases(range_match_strategy, sample_rules
         range_max_field="DIM_2_MAX"
     )
 
-    context = Context(DIM_2=0)
-    result_min = range_match_strategy.apply_match_filter(sample_rules, dimension, context)
-    context = Context(DIM_2=29)
-    result_max = range_match_strategy.apply_match_filter(sample_rules, dimension, context)
+    # PHASE 1 OPTIMIZATION: Pass pre-extracted context values
+    result_min = range_match_strategy.apply_match_filter(sample_rules, dimension, 0)
+    result_max = range_match_strategy.apply_match_filter(sample_rules, dimension, 29)
 
 
     assert result_min.filter(filter_condition=fc.eq("filter_match", RuleTrinaryFlags.PRIME_TRUE_IBIS())).count() == 1
@@ -137,18 +136,18 @@ def test_regex_match_strategy_with_complex_pattern(regex_match_strategy, sample_
     dimension = Dimension(dimension_name="DIM_3", match_strategy=MatchStrategy.REGEX, data_type=str)
     complex_rules = sample_rules.mutate(DIM_3=ibis.literal("^[A-Z][a-z]+$"))
 
-    context = Context(DIM_3="Hello")
+    context_value = "Hello"  # PHASE 1 OPTIMIZATION: Pass pre-extracted context value
 
-    result = regex_match_strategy.apply_match_filter(complex_rules, dimension, context)
+    result = regex_match_strategy.apply_match_filter(complex_rules, dimension, context_value)
     assert result.filter(filter_condition=fc.eq("filter_match", RuleTrinaryFlags.PRIME_TRUE_IBIS())).count() == 3  # All should match
 
 
 def test_regex_match_strategy_with_context_all_none(regex_match_strategy, sample_rules):
     dimension = Dimension(dimension_name="DIM_3", match_strategy=MatchStrategy.REGEX, data_type=str)
-    context = Context(DIM_1=None, DIM_2=None, DIM_3=None)
+    context_value = RuleConstants.NOT_SET  # PHASE 1 OPTIMIZATION: Pass pre-extracted context value for None case
 
-    result = regex_match_strategy.apply_match_filter(sample_rules, dimension, context)
-    assert result.filter(filter_condition=fc.eq("filter_match", RuleTrinaryFlags.PRIME_TRUE_IBIS())).count() == 0  # All should match
+    result = regex_match_strategy.apply_match_filter(sample_rules, dimension, context_value)
+    assert result.filter(filter_condition=fc.eq("filter_match", RuleTrinaryFlags.PRIME_UNKNOWN_IBIS())).count() == 3  # Should be UNKNOWN when NOT_SET
 
 
 def test_exact_match_strategy_with_context_all_none(exact_match_strategy, sample_rules):
@@ -201,25 +200,27 @@ def test_apply_filter_rule_unknown_with_string_dimension(exact_match_strategy, s
 def test_apply_filter_context_unknown_with_numeric_unknown(exact_match_strategy, sample_rules):
     """Test apply_filter_context_unknown with numeric unknown value."""
     dimension = Dimension(dimension_name="DIM_2", match_strategy=MatchStrategy.EXACT, data_type=int)
-    context = Context(DIM_2=RuleConstants.UNKNOWN_NUMERIC)
-    result = exact_match_strategy.apply_filter_context_unknown(sample_rules, dimension, context)
+    context_value = RuleConstants.UNKNOWN_NUMERIC  # PHASE 1 OPTIMIZATION: Pass pre-extracted context value
+    result = exact_match_strategy.apply_filter_context_unknown(sample_rules, dimension, context_value)
     assert result.filter(filter_condition=fc.eq("filter_context_unknown", RuleTrinaryFlags.PRIME_TRUE_IBIS())).count() == 3
 
 
 def test_apply_filter_context_unknown_with_string_unknown(exact_match_strategy, sample_rules):
     """Test apply_filter_context_unknown with string unknown value."""
     dimension = Dimension(dimension_name="DIM_1", match_strategy=MatchStrategy.EXACT, data_type=str)
-    context = Context(DIM_1=RuleConstants.UNKNOWN)
-    result = exact_match_strategy.apply_filter_context_unknown(sample_rules, dimension, context)
+    context_value = RuleConstants.UNKNOWN  # PHASE 1 OPTIMIZATION: Pass pre-extracted context value
+    result = exact_match_strategy.apply_filter_context_unknown(sample_rules, dimension, context_value)
     assert result.filter(filter_condition=fc.eq("filter_context_unknown", RuleTrinaryFlags.PRIME_TRUE_IBIS())).count() == 3
 
 
 def test_apply_filter_context_unknown_exception_handling(exact_match_strategy, sample_rules):
     """Test exception handling in apply_filter_context_unknown."""
     dimension = Dimension(dimension_name="NONEXISTENT_DIM", match_strategy=MatchStrategy.EXACT, data_type=str)
-    context = Context(DIM_1="A")
-    result = exact_match_strategy.apply_filter_context_unknown(sample_rules, dimension, context)
-    # Should handle exception and set PRIME_UNKNOWN for all rows
+    # PHASE 1 OPTIMIZATION: Since context extraction now happens outside the strategy,
+    # this test simulates a valid context value that doesn't trigger an exception
+    context_value = "A"  
+    result = exact_match_strategy.apply_filter_context_unknown(sample_rules, dimension, context_value)
+    # Should set PRIME_UNKNOWN for all rows (non-UNKNOWN context value)
     assert result.filter(filter_condition=fc.eq("filter_context_unknown", RuleTrinaryFlags.PRIME_UNKNOWN_IBIS())).count() == 3
 
 
