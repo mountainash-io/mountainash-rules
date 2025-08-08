@@ -1,6 +1,6 @@
 import pytest
 from mountainash_utils_rules.rule_manager import RuleManager
-from mountainash_data import BaseDataFrame, IbisDataFrame
+from mountainash_dataframes import BaseDataFrame, IbisDataFrame
 from mountainash_utils_rules.constants import MatchStrategy, RuleConstants, RuleTrinaryFlags
 import polars as pl
 import sqlite3
@@ -28,7 +28,7 @@ def test_get_rules(sample_rules):
 
 def test_update_rules(sample_rules):
     rule_manager = RuleManager(sample_rules)
-    
+
     new_rules_df = pl.DataFrame({
         "rule_name": ["rule_4", "rule_5"],
         "DIM_1": ["D", "E"],
@@ -36,14 +36,14 @@ def test_update_rules(sample_rules):
         "DIM_3": ["Y", "Z"]
     })
     new_rules = IbisDataFrame(new_rules_df, ibis_backend_schema="sqlite")
-    
+
     rule_manager.update_rules(new_rules)
     assert rule_manager.rules.count() == 2
 
 def test_init_rules_with_invalid_input():
     with pytest.raises(ValueError):
         RuleManager(None)
-    
+
     with pytest.raises(ValueError):
         RuleManager("not a BaseDataFrame")
 

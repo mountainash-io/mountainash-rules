@@ -1,8 +1,8 @@
 import pytest
 from mountainash_utils_rules import RulesEngine, DimensionsMetadata, Dimension, MatchStrategy
 from mountainash_utils_rules.constants import RuleConstants, RuleTrinaryFlags
-from mountainash_data import BaseDataFrame, IbisDataFrame
-from mountainash_data.dataframes.utils.dataframe_filters import FilterCondition as fc
+from mountainash_dataframes import BaseDataFrame, IbisDataFrame
+from mountainash_dataframes.utils.dataframe_filters import FilterCondition as fc
 import sqlite3
 import polars as pl
 import ibis
@@ -111,7 +111,7 @@ def test_apply_context_rules_engine_missing_context_field(rules_engine):
     class TruncatedContext(BaseModel):
         DIM_1: str
         DIM_2: int
-    
+
     truncated_context = TruncatedContext(DIM_1="A", DIM_2=5)
     result = rules_engine.apply_context_rules_engine(truncated_context, ["DIM_1", "DIM_2", "DIM_3"])
 
@@ -200,4 +200,3 @@ def test_apply_context_rules_engine_with_empty_rules(dimension_metadata):
         RulesEngine(rules=empty_rules, dimension_metadata=dimension_metadata)
         # context = Context(DIM_1="A", DIM_2=5, DIM_3="XYZ")
         # empty_engine.apply_context_rules_engine(context=context, dimension_names=["DIM_1", "DIM_2", "DIM_3"])
-

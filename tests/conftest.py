@@ -3,7 +3,7 @@
 import pytest
 from mountainash_utils_rules import RulesEngine, DimensionsMetadata, Dimension, MatchStrategy
 from mountainash_utils_rules.constants import RuleConstants, RuleTrinaryFlags
-from mountainash_data import BaseDataFrame, IbisDataFrame
+from mountainash_dataframes import BaseDataFrame, IbisDataFrame
 import polars as pl
 import ibis
 from pydantic import BaseModel
@@ -70,7 +70,7 @@ def basic_dimension_metadata():
     return DimensionsMetadata(
         dimensions=[
             Dimension(dimension_name="DIM_1", match_strategy=MatchStrategy.EXACT, data_type=str),
-            Dimension(dimension_name="DIM_2", match_strategy=MatchStrategy.RANGE, data_type=int, 
+            Dimension(dimension_name="DIM_2", match_strategy=MatchStrategy.RANGE, data_type=int,
                      range_min_field="DIM_2_MIN", range_max_field="DIM_2_MAX"),
             Dimension(dimension_name="DIM_3", match_strategy=MatchStrategy.REGEX, data_type=str)
         ]

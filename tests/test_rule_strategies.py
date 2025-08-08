@@ -2,8 +2,8 @@ import pytest
 from mountainash_utils_rules.rule_strategies import ExactMatchStrategy, RangeMatchStrategy, RegexMatchStrategy, MatchStrategyFactory
 from mountainash_utils_rules.dimension import Dimension
 from mountainash_utils_rules.constants import MatchStrategy, RuleConstants, RuleTrinaryFlags
-from mountainash_data import BaseDataFrame, IbisDataFrame
-from mountainash_data.dataframes.utils.dataframe_filters import FilterCondition as fc
+from mountainash_dataframes import BaseDataFrame, IbisDataFrame
+from mountainash_dataframes.utils.dataframe_filters import FilterCondition as fc
 
 import polars as pl
 import ibis
@@ -48,7 +48,7 @@ def test_exact_match_strategy(exact_match_strategy, sample_rules):
     context = Context(DIM_1="A")
 
     result = exact_match_strategy.apply_match_filter(sample_rules, dimension, context)
-    print( result.materialise())    
+    print( result.materialise())
     assert result.filter(filter_condition=fc.eq("filter_match", RuleTrinaryFlags.PRIME_TRUE_IBIS())).count() == 1  # PRIME_TRUE = 2
 
 def test_range_match_strategy(range_match_strategy, sample_rules):
@@ -63,7 +63,7 @@ def test_range_match_strategy(range_match_strategy, sample_rules):
     context = Context(DIM_2=15)
 
     result = range_match_strategy.apply_match_filter(sample_rules, dimension, context)
-    # print( result.materialise())    
+    # print( result.materialise())
     assert result.filter(filter_condition=fc.eq("filter_match", RuleTrinaryFlags.PRIME_TRUE_IBIS())).count() == 1  # PRIME_TRUE = 2
 
 def test_regex_match_strategy(regex_match_strategy, sample_rules):
@@ -90,7 +90,7 @@ def test_apply_filter_rule_none_unknown(exact_match_strategy, sample_rules):
 def test_apply_filter_rule_one_unknown(exact_match_strategy, sample_rules):
     dimension = Dimension(dimension_name="DIM_4", match_strategy=MatchStrategy.EXACT, data_type=str)
     result = exact_match_strategy.apply_filter_rule_unknown(sample_rules, dimension)
-    assert result.filter(filter_condition=fc.eq("filter_rule_unknown", RuleTrinaryFlags.PRIME_TRUE_IBIS())).count() == 1  # One UNKNOWN values in DIM_4. 
+    assert result.filter(filter_condition=fc.eq("filter_rule_unknown", RuleTrinaryFlags.PRIME_TRUE_IBIS())).count() == 1  # One UNKNOWN values in DIM_4.
 
 
 def test_apply_filter_context_unknown(exact_match_strategy, sample_rules):
@@ -148,7 +148,7 @@ def test_regex_match_strategy_with_context_all_none(regex_match_strategy, sample
     context = Context(DIM_1=None, DIM_2=None, DIM_3=None)
 
     result = regex_match_strategy.apply_match_filter(sample_rules, dimension, context)
-    assert result.filter(filter_condition=fc.eq("filter_match", RuleTrinaryFlags.PRIME_TRUE_IBIS())).count() == 0  # All should match    
+    assert result.filter(filter_condition=fc.eq("filter_match", RuleTrinaryFlags.PRIME_TRUE_IBIS())).count() == 0  # All should match
 
 
 def test_exact_match_strategy_with_context_all_none(exact_match_strategy, sample_rules):
@@ -180,8 +180,8 @@ def test_apply_filter_rule_unknown_with_numeric_dimension(range_match_strategy, 
     """Test apply_filter_rule_unknown with numeric dimension type."""
     numeric_rules = sample_rules.mutate(DIM_2_MIN_UNKNOWN=ibis.literal(RuleConstants.UNKNOWN_NUMERIC))
     dimension = Dimension(
-        dimension_name="DIM_2_MIN_UNKNOWN", 
-        match_strategy=MatchStrategy.RANGE, 
+        dimension_name="DIM_2_MIN_UNKNOWN",
+        match_strategy=MatchStrategy.RANGE,
         data_type=int,
         range_min_field="DIM_2_MIN_UNKNOWN",
         range_max_field="DIM_2_MAX"
@@ -207,7 +207,7 @@ def test_apply_filter_context_unknown_with_numeric_unknown(exact_match_strategy,
 
 
 def test_apply_filter_context_unknown_with_string_unknown(exact_match_strategy, sample_rules):
-    """Test apply_filter_context_unknown with string unknown value.""" 
+    """Test apply_filter_context_unknown with string unknown value."""
     dimension = Dimension(dimension_name="DIM_1", match_strategy=MatchStrategy.EXACT, data_type=str)
     context = Context(DIM_1=RuleConstants.UNKNOWN)
     result = exact_match_strategy.apply_filter_context_unknown(sample_rules, dimension, context)
@@ -240,7 +240,7 @@ def test_exact_match_strategy_exception_handling_match_logic(exact_match_strateg
         "DIM_1": [None],  # This might cause issues
     })
     rules = IbisDataFrame(problematic_rules, ibis_backend_schema="sqlite")
-    
+
     dimension = Dimension(dimension_name="DIM_1", match_strategy=MatchStrategy.EXACT, data_type=str)
     context = Context(DIM_1="A")
     result = exact_match_strategy.apply_match_filter(rules, dimension, context)
@@ -265,7 +265,7 @@ def test_regex_match_strategy_exception_handling_match_logic(regex_match_strateg
         "DIM_3": [None],  # This might cause issues with regex
     })
     rules = IbisDataFrame(problematic_rules, ibis_backend_schema="sqlite")
-    
+
     dimension = Dimension(dimension_name="DIM_3", match_strategy=MatchStrategy.REGEX, data_type=str)
     context = Context(DIM_3="test")
     result = regex_match_strategy.apply_match_filter(rules, dimension, context)
@@ -279,7 +279,7 @@ def test_regex_match_strategy_with_numeric_type_handling(regex_match_strategy, s
     numeric_regex_rules = sample_rules.mutate(DIM_NUMERIC=ibis.literal("\\d+"))
     dimension = Dimension(dimension_name="DIM_NUMERIC", match_strategy=MatchStrategy.REGEX, data_type=int)
     context = Context(DIM_1="123")  # This will be processed as numeric context
-    
+
     result = regex_match_strategy.apply_match_filter(numeric_regex_rules, dimension, context)
     # Should execute without error and handle numeric type appropriately
     assert result.count() >= 0
@@ -288,8 +288,8 @@ def test_regex_match_strategy_with_numeric_type_handling(regex_match_strategy, s
 def test_range_match_strategy_exception_handling_context_value(range_match_strategy, sample_rules):
     """Test exception handling in RangeMatchStrategy apply_match_filter for context value."""
     dimension = Dimension(
-        dimension_name="NONEXISTENT_DIM", 
-        match_strategy=MatchStrategy.RANGE, 
+        dimension_name="NONEXISTENT_DIM",
+        match_strategy=MatchStrategy.RANGE,
         data_type=int,
         range_min_field="DIM_2_MIN",
         range_max_field="DIM_2_MAX"
@@ -309,7 +309,7 @@ def test_range_match_strategy_exception_handling_match_logic(range_match_strateg
         "DIM_2_MAX": [None]
     })
     rules = IbisDataFrame(problematic_rules, ibis_backend_schema="sqlite")
-    
+
     dimension = Dimension(
         dimension_name="DIM_2",
         match_strategy=MatchStrategy.RANGE,
@@ -324,21 +324,21 @@ def test_range_match_strategy_exception_handling_match_logic(range_match_strateg
 
 
 def test_range_match_strategy_with_string_type_handling(range_match_strategy, sample_rules):
-    """Test RangeMatchStrategy with string data type (should use NOT_SET).""" 
+    """Test RangeMatchStrategy with string data type (should use NOT_SET)."""
     # Add string range fields to rules
     string_range_rules = sample_rules.mutate(
-        DIM_STR_MIN=ibis.literal("A"), 
+        DIM_STR_MIN=ibis.literal("A"),
         DIM_STR_MAX=ibis.literal("Z")
     )
     dimension = Dimension(
         dimension_name="DIM_STR",
         match_strategy=MatchStrategy.RANGE,
         data_type=str,
-        range_min_field="DIM_STR_MIN", 
+        range_min_field="DIM_STR_MIN",
         range_max_field="DIM_STR_MAX"
     )
     context = Context(DIM_1="M")  # This will be processed as string context
-    
+
     result = range_match_strategy.apply_match_filter(string_range_rules, dimension, context)
     # Should execute without error and handle string type appropriately
     assert result.count() >= 0
@@ -352,7 +352,7 @@ def test_range_match_strategy_with_inclusive_exclusive_boundaries():
         "DIM_MAX": [15, 25]
     })
     rules = IbisDataFrame(rules_df, ibis_backend_schema="sqlite")
-    
+
     # Test with exclusive boundaries
     dimension_exclusive = Dimension(
         dimension_name="DIM_TEST",
@@ -363,7 +363,7 @@ def test_range_match_strategy_with_inclusive_exclusive_boundaries():
         range_min_inclusive=False,
         range_max_inclusive=False
     )
-    
+
     context = Context(DIM_2=10)  # Should not match with exclusive boundary
     strategy = RangeMatchStrategy()
     result = strategy.apply_match_filter(rules, dimension_exclusive, context)
@@ -375,7 +375,7 @@ def test_match_strategy_factory_with_invalid_strategy():
     """Test MatchStrategyFactory with completely invalid strategy."""
     class InvalidStrategy:
         pass
-    
+
     invalid_strategy = InvalidStrategy()
     with pytest.raises(ValueError, match="Invalid rule type"):
         MatchStrategyFactory.get_rule_strategy_class(invalid_strategy)
@@ -384,7 +384,7 @@ def test_match_strategy_factory_with_invalid_strategy():
 def test_base_match_strategy_abstract_method():
     """Test that BaseMatchStrategy cannot be instantiated directly."""
     from mountainash_utils_rules.rule_strategies import BaseMatchStrategy
-    
+
     # BaseMatchStrategy is abstract and should not be instantiable
     with pytest.raises(TypeError):
-        BaseMatchStrategy()    
+        BaseMatchStrategy()

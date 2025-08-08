@@ -1,7 +1,7 @@
 import pytest
 from mountainash_utils_rules.dimension import MetadataManager, DimensionsMetadata, Dimension
 from mountainash_utils_rules.constants import MatchStrategy
-from mountainash_data import BaseDataFrame, IbisDataFrame
+from mountainash_dataframes import BaseDataFrame, IbisDataFrame
 import polars as pl
 from pydantic import BaseModel
 from typing import Optional
@@ -60,7 +60,7 @@ def test_get_active_dimension_names_with_truncated_context(sample_rule_metadata,
     class TruncatedContext(BaseModel):
         DIM_1: str
         DIM_3: str
-    
+
     truncated_context = TruncatedContext(DIM_1="A", DIM_3="X")
 
     metadata_manager = MetadataManager(rules=sample_rules, dimension_metadata=sample_rule_metadata)
@@ -71,7 +71,7 @@ def test_get_active_dimension_names_with_truncated_context(sample_rule_metadata,
 
 
 def test_get_active_dimension_names_with_early_truncated_rules(sample_rule_metadata, sample_rules):
-    
+
     context = Context(DIM_1="A", DIM_2="B", DIM_3="X")
 
     rules_without_dim3 = sample_rules.drop(columns=["DIM_3"])
@@ -97,7 +97,7 @@ def test_get_active_dimension_names_with_truncated_rules_and_context(sample_rule
     class TruncatedContext(BaseModel):
         DIM_1: str
         DIM_3: str
-    
+
     truncated_context = TruncatedContext(DIM_1="A", DIM_3="X")
 
     rules_without_dim3 = sample_rules.drop(columns=["DIM_3"])
@@ -110,19 +110,19 @@ def test_get_active_dimension_names_with_truncated_rules_and_context(sample_rule
 def test_get_active_dimension_names_with_none_context_value(sample_rule_metadata, sample_rules):
     metadata_manager = MetadataManager(rules=sample_rules, dimension_metadata=sample_rule_metadata)
 
-    context = Context(DIM_1="A", DIM_2=None, DIM_3="X")    
+    context = Context(DIM_1="A", DIM_2=None, DIM_3="X")
     active_dimensions = metadata_manager.get_active_dimension_names(context=context, rules=sample_rules, dimension_names=["DIM_1", "DIM_2", "DIM_3"])
     assert set(active_dimensions) == {"DIM_1", "DIM_3"}
 
-    context = Context(DIM_1="A", DIM_2=None, DIM_3=None)    
+    context = Context(DIM_1="A", DIM_2=None, DIM_3=None)
     active_dimensions = metadata_manager.get_active_dimension_names(context=context, rules=sample_rules, dimension_names=["DIM_1", "DIM_2", "DIM_3"])
     assert set(active_dimensions) == {"DIM_1"}
 
 
 def test_validate_unique_dimension_names(sample_rules):
     with pytest.raises(ValueError):
-        MetadataManager(rules=sample_rules, 
-                        
+        MetadataManager(rules=sample_rules,
+
             dimension_metadata=DimensionsMetadata(dimensions=[
                 Dimension(dimension_name="DIM_1"),
                 Dimension(dimension_name="DIM_1")

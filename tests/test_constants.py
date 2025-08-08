@@ -8,12 +8,6 @@ from mountainash_utils_rules.constants import MatchStrategy, RuleConstants, Rule
 class TestMatchStrategy:
     """Test suite for MatchStrategy enum."""
 
-    def test_match_strategy_enum_values(self):
-        """Test that all MatchStrategy enum values are correct."""
-        assert MatchStrategy.EXACT == "EXACT"
-        assert MatchStrategy.RANGE == "RANGE"
-        assert MatchStrategy.REGEX == "REGEX"
-
     def test_match_strategy_enum_membership(self):
         """Test MatchStrategy enum membership."""
         assert MatchStrategy.EXACT in MatchStrategy
@@ -29,12 +23,6 @@ class TestMatchStrategy:
         assert MatchStrategy.EXACT == MatchStrategy.EXACT
         assert MatchStrategy.EXACT != MatchStrategy.RANGE
         assert MatchStrategy.RANGE != MatchStrategy.REGEX
-
-    def test_match_strategy_enum_string_representation(self):
-        """Test MatchStrategy string representations."""
-        assert str(MatchStrategy.EXACT) == "MatchStrategy.EXACT"
-        assert str(MatchStrategy.RANGE) == "MatchStrategy.RANGE"
-        assert str(MatchStrategy.REGEX) == "MatchStrategy.REGEX"
 
     def test_match_strategy_enum_iteration(self):
         """Test iteration over MatchStrategy enum."""

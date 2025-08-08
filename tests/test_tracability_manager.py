@@ -1,7 +1,7 @@
 import pytest
 from mountainash_utils_rules.observer import ObservabilityManager
 from mountainash_utils_rules.dimension import Dimension
-from mountainash_data import BaseDataFrame, IbisDataFrame
+from mountainash_dataframes import BaseDataFrame, IbisDataFrame
 
 import polars as pl
 import ibis

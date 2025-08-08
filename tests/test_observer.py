@@ -4,7 +4,7 @@ import pytest
 from mountainash_utils_rules.observer import ObservabilityManager
 from mountainash_utils_rules.dimension import Dimension
 from mountainash_utils_rules.constants import MatchStrategy
-from mountainash_data import IbisDataFrame
+from mountainash_dataframes import IbisDataFrame
 import polars as pl
 
 
@@ -51,9 +51,9 @@ class TestObservabilityManager:
         """Test logging intermediate values."""
         dimension_name = "test_dimension"
         values = {"key1": "value1", "key2": "value2"}
-        
+
         observability_manager.log_intermediate_values(dimension_name, values)
-        
+
         assert dimension_name in observability_manager.intermediate_values
         assert observability_manager.intermediate_values[dimension_name] == values
 
@@ -63,10 +63,10 @@ class TestObservabilityManager:
         dim1_values = {"key1": "value1"}
         dim2_name = "dimension_2"
         dim2_values = {"key2": "value2"}
-        
+
         observability_manager.log_intermediate_values(dim1_name, dim1_values)
         observability_manager.log_intermediate_values(dim2_name, dim2_values)
-        
+
         assert len(observability_manager.intermediate_values) == 2
         assert observability_manager.intermediate_values[dim1_name] == dim1_values
         assert observability_manager.intermediate_values[dim2_name] == dim2_values
@@ -76,10 +76,10 @@ class TestObservabilityManager:
         dimension_name = "test_dimension"
         original_values = {"key1": "original"}
         new_values = {"key1": "updated"}
-        
+
         observability_manager.log_intermediate_values(dimension_name, original_values)
         observability_manager.log_intermediate_values(dimension_name, new_values)
-        
+
         assert observability_manager.intermediate_values[dimension_name] == new_values
 
     def test_log_warning_new_dimension(self, observability_manager):
@@ -87,9 +87,9 @@ class TestObservabilityManager:
         dimension_name = "test_dimension"
         warning_type = "validation_error"
         message = "Test warning message"
-        
+
         observability_manager.log_warning(dimension_name, warning_type, message)
-        
+
         assert dimension_name in observability_manager.warnings
         assert warning_type in observability_manager.warnings[dimension_name]
         assert observability_manager.warnings[dimension_name][warning_type] == message
@@ -101,10 +101,10 @@ class TestObservabilityManager:
         warning_type2 = "type_mismatch"
         message1 = "First warning"
         message2 = "Second warning"
-        
+
         observability_manager.log_warning(dimension_name, warning_type1, message1)
         observability_manager.log_warning(dimension_name, warning_type2, message2)
-        
+
         assert dimension_name in observability_manager.warnings
         assert len(observability_manager.warnings[dimension_name]) == 2
         assert observability_manager.warnings[dimension_name][warning_type1] == message1
@@ -116,10 +116,10 @@ class TestObservabilityManager:
         warning_type = "validation_error"
         original_message = "Original warning"
         new_message = "Updated warning"
-        
+
         observability_manager.log_warning(dimension_name, warning_type, original_message)
         observability_manager.log_warning(dimension_name, warning_type, new_message)
-        
+
         assert observability_manager.warnings[dimension_name][warning_type] == new_message
 
     def test_log_context_cast_warning_new_dimension(self, observability_manager):
@@ -128,13 +128,13 @@ class TestObservabilityManager:
         context_value = "123"
         context_type = str
         target_type = "int"
-        
+
         observability_manager._log_context_cast_warning(
             dimension_name, context_value, context_type, target_type
         )
-        
+
         expected_message = f"Context value {context_value} of type {context_type} has been cast to {target_type} for dimension {dimension_name}"
-        
+
         assert dimension_name in observability_manager.warnings
         assert "context_cast" in observability_manager.warnings[dimension_name]
         assert observability_manager.warnings[dimension_name]["context_cast"] == expected_message
@@ -142,49 +142,49 @@ class TestObservabilityManager:
     def test_log_context_cast_warning_existing_dimension(self, observability_manager):
         """Test logging context cast warning for an existing dimension with warnings."""
         dimension_name = "test_dimension"
-        
+
         # First add a regular warning
         observability_manager.log_warning(dimension_name, "validation_error", "Test warning")
-        
+
         # Then add context cast warning
         context_value = 123
         context_type = int
         target_type = "str"
-        
+
         observability_manager._log_context_cast_warning(
             dimension_name, context_value, context_type, target_type
         )
-        
+
         expected_message = f"Context value {context_value} of type {context_type} has been cast to {target_type} for dimension {dimension_name}"
-        
+
         assert len(observability_manager.warnings[dimension_name]) == 2
         assert observability_manager.warnings[dimension_name]["context_cast"] == expected_message
         assert observability_manager.warnings[dimension_name]["validation_error"] == "Test warning"
 
     def test_save_dimension_intermediate_values(
-        self, 
-        observability_manager, 
-        sample_dimension, 
+        self,
+        observability_manager,
+        sample_dimension,
         sample_rules_with_intermediate_cols
     ):
         """Test saving dimension intermediate values from rules."""
         observability_manager.save_dimension_intermediate_values(
-            sample_rules_with_intermediate_cols, 
+            sample_rules_with_intermediate_cols,
             sample_dimension
         )
-        
+
         assert sample_dimension.dimension_name in observability_manager.intermediate_values
-        
+
         # Verify that the intermediate values contain the expected columns
         intermediate_data = observability_manager.intermediate_values[sample_dimension.dimension_name]
-        
+
         # Check that it's a BaseDataFrame-like object with the expected columns
         assert hasattr(intermediate_data, 'select')
-        
+
         # The intermediate values should be the selected dataframe
         expected_columns = [
             'dimension_filter_product',
-            'dimension_any_false', 
+            'dimension_any_false',
             'dimension_any_true',
             'cumu_dimension_count',
             'cumu_soft_match_count',
@@ -192,22 +192,22 @@ class TestObservabilityManager:
             'dropped',
             'dropped_by_dimension'
         ]
-        
+
         # Verify the selection worked by checking the intermediate data is not None
         assert intermediate_data is not None
 
     def test_save_dimension_intermediate_values_multiple_dimensions(
-        self, 
-        observability_manager, 
+        self,
+        observability_manager,
         sample_rules_with_intermediate_cols
     ):
         """Test saving intermediate values for multiple dimensions."""
         dim1 = Dimension(dimension_name="dim1", match_strategy=MatchStrategy.EXACT, data_type=str)
         dim2 = Dimension(dimension_name="dim2", match_strategy=MatchStrategy.RANGE, data_type=int)
-        
+
         observability_manager.save_dimension_intermediate_values(sample_rules_with_intermediate_cols, dim1)
         observability_manager.save_dimension_intermediate_values(sample_rules_with_intermediate_cols, dim2)
-        
+
         assert len(observability_manager.intermediate_values) == 2
         assert dim1.dimension_name in observability_manager.intermediate_values
         assert dim2.dimension_name in observability_manager.intermediate_values
@@ -221,24 +221,24 @@ class TestObservabilityManager:
             ("test_dim_4", True, bool, "str"),
             ("test_dim_5", [1, 2, 3], list, "str")
         ]
-        
+
         for dimension_name, context_value, context_type, target_type in test_cases:
             observability_manager._log_context_cast_warning(
                 dimension_name, context_value, context_type, target_type
             )
-            
+
             expected_message = f"Context value {context_value} of type {context_type} has been cast to {target_type} for dimension {dimension_name}"
             assert observability_manager.warnings[dimension_name]["context_cast"] == expected_message
 
     def test_multiple_warning_types_per_dimension(self, observability_manager):
         """Test logging multiple warning types for the same dimension."""
         dimension_name = "test_dimension"
-        
+
         # Add different types of warnings
         observability_manager.log_warning(dimension_name, "validation_error", "Validation failed")
         observability_manager.log_warning(dimension_name, "type_mismatch", "Type doesn't match")
         observability_manager._log_context_cast_warning(dimension_name, "123", str, "int")
-        
+
         warnings = observability_manager.warnings[dimension_name]
         assert len(warnings) == 3
         assert "validation_error" in warnings
