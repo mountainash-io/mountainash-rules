@@ -48,8 +48,8 @@ class RuleManager:
             raise ValueError("Rules must be a BaseDataFrame")
 
         # Convert the rules to a backend that supports window functions
-        if rules.ibis_backend_schema not in ["polars"]:
-            rules = rules.convert_backend_schema(new_backend_schema="polars")
+        if rules.ibis_backend_schema not in ["duckdb"]:
+            rules = rules.convert_backend_schema(new_backend_schema="duckdb")
 
         if rules.count() == int(0):
             raise ValueError("No rules specified.")
