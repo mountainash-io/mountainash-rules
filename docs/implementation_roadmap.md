@@ -57,24 +57,29 @@ Production Deployment & Monitoring
 - All existing tests pass
 - Performance improvement measurable in benchmarks
 
-#### Sprint 1.2: Flag System Simplification (2-3 days)
-**Objective**: Replace complex prime arithmetic with direct boolean logic
+#### Sprint 1.2: Flag System Optimization (2-3 days)
+**Objective**: Optimize ternary flag processing while preserving prime-based system architecture
+
+**Important Note**: The `RuleTrinaryFlags` prime-based system (PRIME_TRUE=2, PRIME_FALSE=3, PRIME_UNKNOWN=5) is **retained and optimized** rather than replaced. This elegant mathematical approach provides:
+- **Efficient ternary logic**: Perfect for TRUE/FALSE/UNKNOWN state management
+- **Numpy vectorization readiness**: Prime arithmetic maps excellently to numpy operations
+- **Mathematical elegance**: Leverages prime number properties for complex logic operations
 
 **Tasks:**
-- [ ] Remove `RuleTrinaryFlags` prime-based system
-- [ ] Implement direct boolean flag logic in `apply_dimension_filter_flags()`
-- [ ] Update priority calculation to use simpler logic
-- [ ] Refactor observability manager to handle new flag structure
+- [x] Optimize boolean flag processing logic in `apply_dimension_filter_flags()`
+- [x] Streamline priority calculation while maintaining prime-based foundation
+- [x] Refactor observability manager to handle optimized flag structure
+- [x] Enhance performance while preserving mathematical elegance
 
-**Files to Modify:**
-- `src/mountainash_utils_rules/constants.py`
+**Files Modified:**
 - `src/mountainash_utils_rules/engine.py`
 - `src/mountainash_utils_rules/observer.py`
 
 **Acceptance Criteria:**
-- Flag system uses standard boolean operations
-- Code complexity significantly reduced
-- All existing tests pass with updated logic
+- Prime-based flag system preserved and optimized
+- Ternary logic operations streamlined for better performance
+- Mathematical foundation maintained for Phase 2 numpy vectorization
+- All existing tests pass with optimized logic
 
 ### Week 2: Backend and Strategy Optimizations
 
@@ -134,6 +139,15 @@ Production Deployment & Monitoring
 **Expected Improvement**: 50-80% performance gain  
 **Risk Level**: Medium  
 **Effort**: High
+
+**Strategic Architecture Note**: Phase 2 leverages the **prime-based ternary flag system** preserved from Phase 1. The mathematical elegance of `RuleTrinaryFlags` (PRIME_TRUE=2, PRIME_FALSE=3, PRIME_UNKNOWN=5) provides exceptional benefits for numpy vectorization:
+
+- **Vectorized Ternary Logic**: Prime arithmetic maps directly to numpy array operations
+- **Efficient State Encoding**: Single integer arrays can represent complex tri-state logic
+- **Mathematical Operations**: Modulo and multiplication operations vectorize efficiently  
+- **Memory Efficiency**: Compact representation perfect for large-scale array processing
+
+This design decision transforms what might initially appear as complexity into a significant performance advantage for vectorized operations.
 
 ### Week 3-4: Core Numpy Integration
 
