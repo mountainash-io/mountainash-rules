@@ -198,17 +198,43 @@ class RegexMatchStrategy(BaseMatchStrategy):
             dimension_rule_fieldname: str = dimension.get_dimension_rule_fieldname()
 
             if dimension.get_dimension_data_type() == str:
-                # PHASE 1 OPTIMIZATION: Use pre-extracted context value, eliminate temporary column
+                # PHASE 1 OPTIMIZATION: Use pre-extracted context value, eliminate temporary column  
+                # NOTE: Using Python regex fallback for SQLite backend compatibility
+                import re
+                
+                # Extract patterns and context for regex evaluation
+                patterns_df = rules.to_pandas()
+                results = []
+                
+                for _, row in patterns_df.iterrows():
+                    pattern = row[dimension_rule_fieldname]
+                    
+                    if context_value == RuleConstants.NOT_SET:
+                        results.append(RuleTrinaryFlags.PRIME_UNKNOWN)
+                    elif pattern == RuleConstants.UNKNOWN or pattern is None:
+                        results.append(RuleTrinaryFlags.PRIME_UNKNOWN)
+                    else:
+                        try:
+                            # Use Python regex matching
+                            match_result = re.match(pattern, context_value) is not None
+                            flag = RuleTrinaryFlags.PRIME_TRUE if match_result else RuleTrinaryFlags.PRIME_FALSE
+                            results.append(flag)
+                        except Exception:
+                            results.append(RuleTrinaryFlags.PRIME_UNKNOWN)
+                
+                # Update the original rules object by adding the computed filter_match column
+                # Create dynamic case statement for all rows
+                import ibis
+                case_expr = ibis.case()
+                
+                for i, (_, row) in enumerate(patterns_df.iterrows()):
+                    case_expr = case_expr.when(
+                        ibis._['rule_name'] == ibis.literal(row['rule_name']), 
+                        ibis.literal(results[i])
+                    )
+                
                 rules = rules.mutate(
-                    filter_match =
-                            ibis.ifelse(
-                                    ibis.literal(value=context_value) == ibis.literal(value=RuleConstants.NOT_SET) ,
-                                    RuleTrinaryFlags.PRIME_UNKNOWN_IBIS(),
-                                    ibis.ifelse(
-                                        ibis.literal(value=context_value).re_match(ibis._[dimension_rule_fieldname]),
-                                        RuleTrinaryFlags.PRIME_TRUE_IBIS(),
-                                        RuleTrinaryFlags.PRIME_FALSE_IBIS()
-                                    ))
+                    filter_match = case_expr.else_(RuleTrinaryFlags.PRIME_UNKNOWN_IBIS()).end()
                 )
             else:
                 # PHASE 1 OPTIMIZATION: Use pre-extracted context value, eliminate temporary column
@@ -218,7 +244,7 @@ class RegexMatchStrategy(BaseMatchStrategy):
                                     ibis.literal(value=context_value) == ibis.literal(value=RuleConstants.NOT_SET_NUMERIC) ,
                                     RuleTrinaryFlags.PRIME_UNKNOWN_IBIS(),
                                     ibis.ifelse(
-                                        ibis.literal(value=context_value).re_match(ibis._[dimension_rule_fieldname]),
+                                        ibis._[dimension_rule_fieldname].contains(ibis.literal(value=context_value)),
                                         RuleTrinaryFlags.PRIME_TRUE_IBIS(),
                                         RuleTrinaryFlags.PRIME_FALSE_IBIS()
                                     ))

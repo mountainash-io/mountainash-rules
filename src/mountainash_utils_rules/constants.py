@@ -54,8 +54,8 @@ class RuleConstants():
 class RuleTrinaryFlags:
 
     # Flags for Prime Filtering
-    PRIME_TRUE = 2
-    PRIME_FALSE = 3
+    PRIME_FALSE = 2
+    PRIME_TRUE = 3
     PRIME_UNKNOWN = 5
 
     @classmethod

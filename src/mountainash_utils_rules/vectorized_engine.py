@@ -144,12 +144,16 @@ class PolarsExpressionBuilder:
         cache_key = f"regex_{dimension_name}_{hash(context_value)}"
         
         if cache_key not in self._expression_cache:
-            # Note: Polars regex matching - we'll handle this with a custom function
+            # BUG FIX 2.1: Enhanced null handling with strict type enforcement
             self._expression_cache[cache_key] = (
-                pl.col(dimension_name)
-                .map_elements(
-                    lambda pattern: self._evaluate_regex(pattern, context_value),
-                    return_dtype=pl.Int32
+                pl.when(pl.col(dimension_name).is_null())
+                .then(pl.lit(int(RuleTrinaryFlags.PRIME_UNKNOWN)))
+                .otherwise(
+                    pl.col(dimension_name)
+                    .map_elements(
+                        lambda pattern: self._evaluate_regex(pattern, context_value),
+                        return_dtype=pl.Int32
+                    )
                 )
                 .alias(f"{dimension_name}_match")
             )
@@ -158,17 +162,18 @@ class PolarsExpressionBuilder:
     
     def _evaluate_regex(self, pattern: Any, context_value: str) -> int:
         """Evaluate regex pattern with caching and error handling."""
-        if pattern is None or pattern == "":
-            return RuleTrinaryFlags.PRIME_UNKNOWN
+        # BUG FIX 2.1: Ensure we always return int values, never None
+        if pattern is None or pattern == "" or str(pattern).lower() == 'none':
+            return int(RuleTrinaryFlags.PRIME_UNKNOWN)  # Explicitly cast to int
         
         try:
             compiled_pattern = self._compile_regex(str(pattern))
             if compiled_pattern.match(context_value):
-                return RuleTrinaryFlags.PRIME_TRUE
+                return int(RuleTrinaryFlags.PRIME_TRUE)  # Explicitly cast to int
             else:
-                return RuleTrinaryFlags.PRIME_FALSE
+                return int(RuleTrinaryFlags.PRIME_FALSE)  # Explicitly cast to int
         except Exception:
-            return RuleTrinaryFlags.PRIME_UNKNOWN
+            return int(RuleTrinaryFlags.PRIME_UNKNOWN)  # Explicitly cast to int
     
     def build_combined_expression(self, match_expressions: List[pl.Expr]) -> pl.Expr:
         """Combine multiple dimension matches using prime-based ternary logic."""
@@ -197,7 +202,7 @@ class PolarsExpressionBuilder:
                 pl.lit(RuleTrinaryFlags.PRIME_TRUE)
             )
         
-        return combined.alias("combined_match_result")
+        return combined.alias("final_match")  # BUG FIX 2.2: Match test expectations
 
 
 class QueryPlanOptimizer:
