@@ -19,7 +19,7 @@ import logging
 
 import polars as pl
 import ibis
-from mountainash_dataframes.utils.dataframe_filters import FilterNode, FilterVisitor, ColumnCondition, LogicalCondition
+from mountainash_dataframes.utils.expression_builders import TernaryExpressionNode, TernaryExpressionVisitor, ColumnExpression, LogicalExpression
 
 from mountainash_utils_rules.constants import RuleTrinaryFlags, MatchStrategy
 from mountainash_utils_rules.dimension import Dimension
@@ -39,7 +39,7 @@ class TernaryLogicType:
     STRICT_OR = "strict_or"         # Prime-based OR with mathematical precision
 
 
-class TernaryCondition(FilterNode):
+class TernaryCondition(TernaryExpressionNode):
     """
     Mathematical ternary condition using prime-based logic for vectorized operations.
 
@@ -81,7 +81,7 @@ class TernaryCondition(FilterNode):
         else:
             # Fallback for non-ternary aware visitors
             logger.warning("Visitor does not support ternary conditions, using logical fallback")
-            return visitor.visit_logical_condition(
+            return visitor.visit_logical_expression(
                 LogicalCondition(operator="and", operands=self.conditions)
             )
 
@@ -127,7 +127,7 @@ class RuleMatchCondition(FilterNode):
         else:
             # Fallback to basic column condition
             logger.warning("Visitor does not support rule match conditions, using basic fallback")
-            return visitor.visit_column_condition(
+            return visitor.visit_column_expression(
                 ColumnCondition(self.dimension.dimension_name, "==", self.context_value)
             )
 
@@ -252,21 +252,21 @@ class RuleTrinaryFilterVisitor(FilterVisitor):
 
         return result_expr
 
-    def visit_column_condition(self, condition: ColumnCondition) -> Callable:
+    def visit_column_expression(self, condition: ColumnCondition) -> Callable:
         """Visit standard column condition with ternary logic support."""
         if self.backend == 'polars':
-            return self._visit_column_condition_polars(condition)
+            return self._visit_column_expression_polars(condition)
         elif self.backend == 'ibis':
-            return self._visit_column_condition_ibis(condition)
+            return self._visit_column_expression_ibis(condition)
         else:
             raise ValueError(f"Unsupported backend: {self.backend}")
 
-    def visit_logical_condition(self, condition: LogicalCondition) -> Callable:
+    def visit_logical_expression(self, condition: LogicalCondition) -> Callable:
         """Visit logical condition with ternary logic enhancements."""
         if self.backend == 'polars':
-            return self._visit_logical_condition_polars(condition)
+            return self._visit_logical_expression_polars(condition)
         elif self.backend == 'ibis':
-            return self._visit_logical_condition_ibis(condition)
+            return self._visit_logical_expression_ibis(condition)
         else:
             raise ValueError(f"Unsupported backend: {self.backend}")
 
@@ -452,7 +452,7 @@ class RuleTrinaryFilterVisitor(FilterVisitor):
     # Backend-Specific Implementations
     # ============================================================================
 
-    def _visit_column_condition_polars(self, condition: ColumnCondition) -> pl.Expr:
+    def _visit_column_expression_polars(self, condition: ColumnCondition) -> pl.Expr:
         """Visit column condition for polars backend with ternary logic."""
         col = pl.col(condition.column)
 
@@ -484,7 +484,7 @@ class RuleTrinaryFilterVisitor(FilterVisitor):
         logger.warning(f"Unsupported operator in ternary logic: {condition.operator}")
         return pl.lit(RuleTrinaryFlags.PRIME_UNKNOWN)
 
-    def _visit_logical_condition_polars(self, condition: LogicalCondition) -> pl.Expr:
+    def _visit_logical_expression_polars(self, condition: LogicalCondition) -> pl.Expr:
         """Visit logical condition for polars backend with ternary logic."""
         if condition.operator == LogicalCondition.ALWAYS_TRUE_OP:
             return pl.lit(RuleTrinaryFlags.PRIME_TRUE)
@@ -514,11 +514,11 @@ class RuleTrinaryFilterVisitor(FilterVisitor):
         logger.warning(f"Unsupported logical operator: {condition.operator}")
         return pl.lit(RuleTrinaryFlags.PRIME_UNKNOWN)
 
-    def _visit_column_condition_ibis(self, condition: ColumnCondition) -> Any:
+    def _visit_column_expression_ibis(self, condition: ColumnCondition) -> Any:
         """Visit column condition for ibis backend - implementation placeholder."""
         raise NotImplementedError("Ibis backend ternary logic not yet implemented")
 
-    def _visit_logical_condition_ibis(self, condition: LogicalCondition) -> Any:
+    def _visit_logical_expression_ibis(self, condition: LogicalCondition) -> Any:
         """Visit logical condition for ibis backend - implementation placeholder."""
         raise NotImplementedError("Ibis backend ternary logic not yet implemented")
 

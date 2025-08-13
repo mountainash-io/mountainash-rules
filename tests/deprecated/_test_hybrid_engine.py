@@ -83,10 +83,10 @@ class TestHybridEngineInitialization:
         
         mock_df = Mock()
         
-        # Create large dataset (200 rules)
+        # Create large dataset (200 rules) 
         pandas_data = pd.DataFrame({
             'rule_name': [f'rule_{i}' for i in range(200)],
-            'DIM_1': ['A', 'B', 'C'] * 67 + ['A'],  # 200 total
+            'DIM_1': (['A', 'B', 'C'] * 66) + ['A', 'B'],  # 66*3 + 2 = 200 total
             'DIM_2_MIN': list(range(0, 200)),
             'DIM_2_MAX': list(range(10, 210)),
             'DIM_3': [f'pattern_{i % 10}.*' for i in range(200)]

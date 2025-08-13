@@ -6,7 +6,7 @@ import ibis
 from pydantic import BaseModel
 
 from mountainash_dataframes import BaseDataFrame
-from mountainash_dataframes.utils.dataframe_filters import FilterCondition as fc
+from mountainash_dataframes.utils.expression_builders import TernaryExpressionBuilder as fc
 
 from mountainash_utils_rules.constants import RuleTrinaryFlags
 from mountainash_utils_rules.rule_strategies import MatchStrategyFactory, BaseMatchStrategy
@@ -72,10 +72,10 @@ class RulesEngine:
             # Check if any filter indicates TRUE (rule unknown, context unknown, or direct match)
             dimension_any_true = ibis.or_(
                 ibis._.filter_rule_unknown == RuleTrinaryFlags.PRIME_TRUE_IBIS(),
-                ibis._.filter_context_unknown == RuleTrinaryFlags.PRIME_TRUE_IBIS(), 
+                ibis._.filter_context_unknown == RuleTrinaryFlags.PRIME_TRUE_IBIS(),
                 ibis._.filter_match == RuleTrinaryFlags.PRIME_TRUE_IBIS()
             ),
-            
+
             # Check if any filter indicates FALSE (explicit mismatch)
             dimension_any_false = ibis.or_(
                 ibis._.filter_rule_unknown == RuleTrinaryFlags.PRIME_FALSE_IBIS(),
@@ -179,7 +179,7 @@ class RulesEngine:
 
             # PHASE 1 OPTIMIZATION: Pass pre-extracted context value to eliminate redundant extraction
             context_value = context_values[dimension.dimension_name]
-            
+
             rules = obj_rule_strategy.apply_filter_rule_unknown(    rules=rules, dimension=dimension)
             rules = obj_rule_strategy.apply_filter_context_unknown( rules=rules, dimension=dimension, context_value=context_value)
             rules = obj_rule_strategy.apply_match_filter(           rules=rules, dimension=dimension, context_value=context_value)
