@@ -6,7 +6,7 @@ import ibis
 from pydantic import BaseModel
 
 from mountainash_dataframes import BaseDataFrame
-from mountainash_dataframes.utils.expression_builders import TernaryExpressionBuilder as fc
+from mountainash_dataframes.utils.expressions import TernaryExpressionBuilder as fc
 
 from mountainash_utils_rules.constants import RuleTrinaryFlags
 from mountainash_utils_rules.rule_strategies import MatchStrategyFactory, BaseMatchStrategy

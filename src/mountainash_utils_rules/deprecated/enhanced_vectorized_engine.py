@@ -14,7 +14,7 @@ from typing import List, Optional, Any, Dict, Union
 from pydantic import BaseModel
 
 from mountainash_dataframes import BaseDataFrame
-from mountainash_dataframes.utils.expression_builders import TernaryExpressionBuilder as fc
+from mountainash_dataframes.utils.expressions import TernaryExpressionBuilder as fc
 
 from mountainash_utils_rules.dimension import DimensionsMetadata, MetadataManager, Dimension
 from mountainash_utils_rules.rule_manager import RuleManager

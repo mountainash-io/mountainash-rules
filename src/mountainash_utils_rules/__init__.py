@@ -45,7 +45,7 @@ from mountainash_utils_rules.vectorized_engine import (
 # )
 
 # Phase 4: DataFrameVectorizedRulesEngine - Now uses mountainash-dataframes ternary system
-# Old dataframe_ternary_filters module replaced by mountainash-dataframes.utils.expression_builders.ternary
+# Old dataframe_ternary_filters module replaced by mountainash-dataframes.utils.expressions.ternary
 # Use mountainash-dataframes ternary expressions instead:
 #   - TernaryColumnExpression, TernaryLogicalExpression
 #   - PolarsTernaryExpressionVisitor
@@ -118,7 +118,7 @@ __all__ = (
     # "create_balanced_config",
 
     # # Ternary logic extensions - now provided by mountainash-dataframes
-    # # Use: from mountainash_dataframes.utils.expression_builders.ternary import ...
+    # # Use: from mountainash_dataframes.utils.expressions.ternary import ...
 
     # # Performance benchmarking
     # "DataFrameBenchmarkRunner",
