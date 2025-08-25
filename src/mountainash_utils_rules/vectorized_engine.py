@@ -26,14 +26,14 @@ from collections import defaultdict
 import logging
 
 from mountainash_dataframes import BaseDataFrame
-from mountainash_dataframes.utils.expression_builders.ternary import (
+from mountainash_dataframes.utils.expressions.ternary import (
     TernaryColumnExpression,
     TernaryLogicalExpression,
     PolarsTernaryExpressionVisitor,
     TernaryExpressionBuilder
 )
-from mountainash_dataframes.utils.expression_builders.ternary.constants import TernaryLogicValues
-from mountainash_dataframes.utils.expression_builders.ternary.value_mappings import TernaryValueMapper, configure_ternary_mappings
+from mountainash_dataframes.utils.expressions.ternary.constants import TernaryLogicValues
+from mountainash_dataframes.utils.expressions.ternary.value_mappings import TernaryValueMapper, configure_ternary_mappings
 from mountainash_utils_rules.constants import RuleTrinaryFlags, MatchStrategy
 from mountainash_utils_rules.dimension import Dimension
 # from mountainash_utils_rules.hybrid_engine import HybridEngineConfig, ProcessingMode

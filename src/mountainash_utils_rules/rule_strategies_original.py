@@ -7,7 +7,7 @@ from ibis.common.exceptions import IbisTypeError
 from pydantic import BaseModel
 
 from mountainash_dataframes import BaseDataFrame
-from mountainash_dataframes.utils.expression_builders import TernaryExpressionBuilder
+from mountainash_dataframes.utils.expressions import TernaryExpressionBuilder
 from mountainash_utils_rules.constants import MatchStrategy, RuleConstants, RuleTrinaryFlags
 from mountainash_utils_rules.dimension import Dimension
 from mountainash_utils_rules.context import ContextHelper
