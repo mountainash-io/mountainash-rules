@@ -1,7 +1,7 @@
 import pytest
 from mountainash_utils_rules import RulesEngine, DimensionsMetadata, Dimension, MatchStrategy
 from mountainash_utils_rules.constants import RuleConstants, RuleTrinaryFlags
-from mountainash_dataframes import BaseDataFrame, IbisDataFrame
+# from mountainash_dataframes import BaseDataFrame, IbisDataFrame
 from mountainash_dataframes.utils.dataframe_filters import FilterCondition as fc
 import sqlite3
 import polars as pl

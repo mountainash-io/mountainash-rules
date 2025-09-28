@@ -24,7 +24,7 @@ from functools import lru_cache
 import re
 
 import polars as pl
-from mountainash_dataframes import BaseDataFrame
+# from mountainash_dataframes import BaseDataFrame
 from mountainash_dataframes.utils.expressions.ternary import (
     TernaryColumnExpression,
     TernaryLogicalExpression,

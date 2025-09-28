@@ -5,7 +5,7 @@ from typing import List,Optional
 import ibis
 from pydantic import BaseModel
 
-from mountainash_dataframes import BaseDataFrame
+# from mountainash_dataframes import BaseDataFrame
 from mountainash_dataframes.utils.expressions import TernaryExpressionBuilder as fc
 
 from mountainash_utils_rules.constants import RuleTrinaryFlags

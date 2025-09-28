@@ -4,7 +4,7 @@ from typing import List, Any,Optional, Dict, Type
 
 from pydantic import BaseModel
 
-from mountainash_dataframes import BaseDataFrame
+# from mountainash_dataframes import BaseDataFrame
 from mountainash_utils_rules.constants import MatchStrategy, RuleConstants
 
 

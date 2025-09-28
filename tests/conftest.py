@@ -3,7 +3,7 @@
 import pytest
 from mountainash_utils_rules import RulesEngine, DimensionsMetadata, Dimension, MatchStrategy
 from mountainash_utils_rules.constants import RuleConstants, RuleTrinaryFlags
-from mountainash_dataframes import BaseDataFrame, IbisDataFrame
+# from mountainash_dataframes import BaseDataFrame, IbisDataFrame
 import polars as pl
 import ibis
 from pydantic import BaseModel

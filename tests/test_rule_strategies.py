@@ -2,7 +2,7 @@ import pytest
 from mountainash_utils_rules.rule_strategies import ExactMatchStrategy, RangeMatchStrategy, RegexMatchStrategy, MatchStrategyFactory
 from mountainash_utils_rules.dimension import Dimension
 from mountainash_utils_rules.constants import MatchStrategy, RuleConstants, RuleTrinaryFlags
-from mountainash_dataframes import BaseDataFrame, IbisDataFrame
+# from mountainash_dataframes import BaseDataFrame, IbisDataFrame
 from mountainash_dataframes.utils.dataframe_filters import FilterCondition as fc
 
 import polars as pl
@@ -218,7 +218,7 @@ def test_apply_filter_context_unknown_exception_handling(exact_match_strategy, s
     dimension = Dimension(dimension_name="NONEXISTENT_DIM", match_strategy=MatchStrategy.EXACT, data_type=str)
     # PHASE 1 OPTIMIZATION: Since context extraction now happens outside the strategy,
     # this test simulates a valid context value that doesn't trigger an exception
-    context_value = "A"  
+    context_value = "A"
     result = exact_match_strategy.apply_filter_context_unknown(sample_rules, dimension, context_value)
     # Should set PRIME_UNKNOWN for all rows (non-UNKNOWN context value)
     assert result.filter(filter_condition=fc.eq("filter_context_unknown", RuleTrinaryFlags.PRIME_UNKNOWN_IBIS())).count() == 3

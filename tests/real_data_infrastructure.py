@@ -1,7 +1,7 @@
 """
 Real Data Infrastructure for Phase 4 Testing
 
-This module provides real-world business rule datasets and context models 
+This module provides real-world business rule datasets and context models
 for comprehensive production-ready testing. All datasets represent genuine
 business scenarios without mock objects or artificial data.
 
@@ -15,24 +15,24 @@ Key Innovation: 100% Real Data Testing
 import polars as pl
 from pydantic import BaseModel
 from typing import List, Dict, Any, Optional
-from mountainash_dataframes import BaseDataFrame, IbisDataFrame
+# from mountainash_dataframes import BaseDataFrame, IbisDataFrame
 
 
 class RealRuleDatasets:
     """Real-world rule datasets for comprehensive testing."""
-    
+
     @staticmethod
     def create_customer_segmentation_rules() -> pl.DataFrame:
         """
         Real customer segmentation business rules.
-        
+
         Based on actual customer tier classification scenarios
         used in e-commerce and financial services.
         """
         return pl.DataFrame({
             'rule_name': [
                 'premium_customer_high_value',
-                'standard_customer_medium_value', 
+                'standard_customer_medium_value',
                 'basic_customer_low_value',
                 'vip_customer_exclusive',
                 'enterprise_customer_b2b',
@@ -41,22 +41,22 @@ class RealRuleDatasets:
                 'new_customer_onboarding'
             ],
             'customer_tier': [
-                'PREMIUM', 'STANDARD', 'BASIC', 'VIP', 
+                'PREMIUM', 'STANDARD', 'BASIC', 'VIP',
                 'ENTERPRISE', 'STUDENT', 'GOLD', 'NEW'
             ],
             'annual_spend_min': [10000, 5000, 1000, 50000, 100000, 500, 15000, 0],
             'annual_spend_max': [50000, 10000, 5000, 1000000, 5000000, 2000, 75000, 1000],
             'region_pattern': [
-                r'US-.*', r'EU-.*', r'APAC-.*', r'.*', 
+                r'US-.*', r'EU-.*', r'APAC-.*', r'.*',
                 r'ENTERPRISE-.*', r'EDU-.*', r'US-GOLD-.*', r'ONBOARD-.*'
             ]
         })
-    
+
     @staticmethod
     def create_product_pricing_rules() -> pl.DataFrame:
         """
         Real product pricing business rules.
-        
+
         Based on actual retail pricing strategies across
         different product categories and market segments.
         """
@@ -82,12 +82,12 @@ class RealRuleDatasets:
                 r'HOME-.*', r'AUTO-.*', r'SPORT-.*', r'HEALTH-.*'
             ]
         })
-    
+
     @staticmethod
     def create_financial_risk_rules() -> pl.DataFrame:
         """
         Real financial risk assessment rules.
-        
+
         Based on actual risk management frameworks used in
         banking, fintech, and payment processing systems.
         """
@@ -113,12 +113,12 @@ class RealRuleDatasets:
                 r'INTL_.*', r'CASH_.*', r'CRYPTO_.*', r'PAYROLL_.*'
             ]
         })
-    
+
     @staticmethod
     def create_inventory_management_rules() -> pl.DataFrame:
         """
         Real inventory management business rules.
-        
+
         Based on actual warehouse and supply chain management
         systems for inventory optimization and alert triggering.
         """
@@ -146,7 +146,7 @@ class RealRuleDatasets:
 
 class RealContextModels:
     """Real-world context models matching genuine business scenarios."""
-    
+
     class CustomerContext(BaseModel):
         """Real customer context for segmentation rules."""
         customer_tier: str
@@ -154,7 +154,7 @@ class RealContextModels:
         region: str
         customer_id: Optional[str] = None
         account_type: Optional[str] = None
-        
+
     class ProductContext(BaseModel):
         """Real product context for pricing rules."""
         category: str
@@ -162,7 +162,7 @@ class RealContextModels:
         supplier: str
         product_id: Optional[str] = None
         brand: Optional[str] = None
-        
+
     class FinancialContext(BaseModel):
         """Real financial transaction context."""
         risk_category: str
@@ -170,7 +170,7 @@ class RealContextModels:
         country: str
         transaction_id: Optional[str] = None
         account_id: Optional[str] = None
-        
+
     class InventoryContext(BaseModel):
         """Real inventory management context."""
         item_category: str
@@ -182,12 +182,12 @@ class RealContextModels:
 
 class RealBusinessDataGenerator:
     """Generate realistic business rule scenarios for comprehensive testing."""
-    
+
     @staticmethod
     def generate_customer_scenarios(count: int = 20) -> List[RealContextModels.CustomerContext]:
         """Generate realistic customer scenarios for testing."""
         scenarios = []
-        
+
         # High-value premium customers
         for i in range(count // 4):
             scenarios.append(RealContextModels.CustomerContext(
@@ -197,7 +197,7 @@ class RealBusinessDataGenerator:
                 customer_id=f'CUST_PREMIUM_{i:03d}',
                 account_type='PREMIUM'
             ))
-        
+
         # Standard tier customers
         for i in range(count // 4):
             scenarios.append(RealContextModels.CustomerContext(
@@ -207,7 +207,7 @@ class RealBusinessDataGenerator:
                 customer_id=f'CUST_STANDARD_{i:03d}',
                 account_type='STANDARD'
             ))
-        
+
         # VIP exclusive customers
         for i in range(count // 4):
             scenarios.append(RealContextModels.CustomerContext(
@@ -217,7 +217,7 @@ class RealBusinessDataGenerator:
                 customer_id=f'CUST_VIP_{i:03d}',
                 account_type='VIP'
             ))
-        
+
         # Enterprise B2B customers
         for i in range(count - (3 * count // 4)):
             scenarios.append(RealContextModels.CustomerContext(
@@ -227,14 +227,14 @@ class RealBusinessDataGenerator:
                 customer_id=f'CUST_ENTERPRISE_{i:03d}',
                 account_type='B2B'
             ))
-            
+
         return scenarios
-    
-    @staticmethod  
+
+    @staticmethod
     def generate_product_scenarios(count: int = 15) -> List[RealContextModels.ProductContext]:
         """Generate realistic product scenarios for testing."""
         scenarios = []
-        
+
         # Electronics premium products
         for i in range(count // 3):
             scenarios.append(RealContextModels.ProductContext(
@@ -244,7 +244,7 @@ class RealBusinessDataGenerator:
                 product_id=f'ELEC_{i:04d}',
                 brand=f'TechBrand_{i}'
             ))
-        
+
         # Fashion/Clothing products
         for i in range(count // 3):
             scenarios.append(RealContextModels.ProductContext(
@@ -254,7 +254,7 @@ class RealBusinessDataGenerator:
                 product_id=f'CLOTH_{i:04d}',
                 brand=f'Fashion_{i}'
             ))
-        
+
         # Software enterprise licenses
         for i in range(count - (2 * count // 3)):
             scenarios.append(RealContextModels.ProductContext(
@@ -264,14 +264,14 @@ class RealBusinessDataGenerator:
                 product_id=f'SW_{i:04d}',
                 brand=f'Enterprise_{i}'
             ))
-            
+
         return scenarios
-    
+
     @staticmethod
     def generate_financial_scenarios(count: int = 18) -> List[RealContextModels.FinancialContext]:
         """Generate realistic financial transaction scenarios."""
         scenarios = []
-        
+
         # High-risk large transactions
         for i in range(count // 3):
             scenarios.append(RealContextModels.FinancialContext(
@@ -281,7 +281,7 @@ class RealBusinessDataGenerator:
                 transaction_id=f'TXN_HIGH_{i:06d}',
                 account_id=f'ACC_HIGH_{i:04d}'
             ))
-        
+
         # Medium-risk review transactions
         for i in range(count // 3):
             scenarios.append(RealContextModels.FinancialContext(
@@ -291,7 +291,7 @@ class RealBusinessDataGenerator:
                 transaction_id=f'TXN_MED_{i:06d}',
                 account_id=f'ACC_MED_{i:04d}'
             ))
-        
+
         # International transfer scenarios
         for i in range(count - (2 * count // 3)):
             scenarios.append(RealContextModels.FinancialContext(
@@ -301,52 +301,52 @@ class RealBusinessDataGenerator:
                 transaction_id=f'TXN_INTL_{i:06d}',
                 account_id=f'ACC_INTL_{i:04d}'
             ))
-            
+
         return scenarios
 
 
 class RealDataFrameFactory:
     """Factory for creating real BaseDataFrame objects for testing."""
-    
+
     @staticmethod
     def create_real_rules_dataframe(
-        polars_data: pl.DataFrame, 
+        polars_data: pl.DataFrame,
         backend: str = "duckdb"
     ) -> BaseDataFrame:
         """
         Create real BaseDataFrame objects for testing.
-        
+
         This method creates genuine BaseDataFrame objects using the actual
         IbisDataFrame, ensuring tests use real data structures identical
         to production usage.
-        
+
         Args:
             polars_data: Real polars DataFrame with business rule data
             backend: Backend type (duckdb, sqlite, polars)
-            
+
         Returns:
             Real BaseDataFrame object ready for engine testing
         """
         return IbisDataFrame(polars_data, ibis_backend_schema=backend)
-    
+
     @staticmethod
     def create_customer_rules_dataframe(backend: str = "duckdb") -> BaseDataFrame:
         """Create real customer segmentation rules dataframe."""
         rules_data = RealRuleDatasets.create_customer_segmentation_rules()
         return RealDataFrameFactory.create_real_rules_dataframe(rules_data, backend)
-    
+
     @staticmethod
     def create_product_rules_dataframe(backend: str = "duckdb") -> BaseDataFrame:
         """Create real product pricing rules dataframe."""
         rules_data = RealRuleDatasets.create_product_pricing_rules()
         return RealDataFrameFactory.create_real_rules_dataframe(rules_data, backend)
-    
+
     @staticmethod
     def create_financial_rules_dataframe(backend: str = "duckdb") -> BaseDataFrame:
         """Create real financial risk rules dataframe."""
         rules_data = RealRuleDatasets.create_financial_risk_rules()
         return RealDataFrameFactory.create_real_rules_dataframe(rules_data, backend)
-    
+
     @staticmethod
     def create_inventory_rules_dataframe(backend: str = "duckdb") -> BaseDataFrame:
         """Create real inventory management rules dataframe."""
@@ -356,34 +356,34 @@ class RealDataFrameFactory:
 
 class RealMathematicalValidator:
     """Validate mathematical correctness with real computations."""
-    
+
     @staticmethod
     def validate_prime_ternary_logic(flags: List[int]) -> bool:
         """
         Validate prime-based ternary logic with real mathematical verification.
-        
+
         Ensures that all ternary flags are valid prime numbers and that
         combinations follow mathematical principles.
         """
         from mountainash_utils_rules.constants import RuleTrinaryFlags
-        
+
         valid_primes = {
             RuleTrinaryFlags.PRIME_TRUE,    # 2
-            RuleTrinaryFlags.PRIME_FALSE,   # 3  
+            RuleTrinaryFlags.PRIME_FALSE,   # 3
             RuleTrinaryFlags.PRIME_UNKNOWN  # 5
         }
-        
+
         return all(flag in valid_primes for flag in flags)
-    
+
     @staticmethod
     def validate_rule_matches(
-        context: BaseModel, 
-        result: BaseDataFrame, 
+        context: BaseModel,
+        result: BaseDataFrame,
         expected_rule_names: List[str]
     ) -> bool:
         """
         Mathematically validate rule matching correctness.
-        
+
         Performs mathematical verification of rule evaluation results
         using actual computations rather than mock assertions.
         """
@@ -392,26 +392,26 @@ class RealMathematicalValidator:
             from mountainash_dataframes.utils.dataframe_filters import FilterCondition as fc
             matching_rules = result.filter(filter_condition=fc.eq("keep", True))
             actual_rule_names = matching_rules.get_column_as_list('rule_name')
-            
+
             # Mathematical set comparison
             expected_set = set(expected_rule_names)
             actual_set = set(actual_rule_names)
-            
+
             return expected_set == actual_set
-            
+
         except Exception as e:
             print(f"Mathematical validation error: {e}")
             return False
-    
+
     @staticmethod
     def validate_performance_improvement(
-        baseline_time: float, 
-        optimized_time: float, 
+        baseline_time: float,
+        optimized_time: float,
         expected_improvement: float = 0.5
     ) -> Dict[str, Any]:
         """
         Validate performance improvement claims with real statistical analysis.
-        
+
         Performs mathematical validation of performance characteristics
         using actual timing measurements and statistical rigor.
         """
@@ -420,14 +420,14 @@ class RealMathematicalValidator:
                 'valid': False,
                 'error': 'Invalid timing measurements'
             }
-        
+
         # Calculate actual improvement
         improvement_ratio = (baseline_time - optimized_time) / baseline_time
         speedup_factor = baseline_time / optimized_time
-        
+
         # Statistical validation
         meets_expectation = improvement_ratio >= expected_improvement
-        
+
         return {
             'valid': meets_expectation,
             'improvement_ratio': improvement_ratio,
@@ -442,7 +442,7 @@ class RealMathematicalValidator:
 # Export key classes for easy testing imports
 __all__ = [
     'RealRuleDatasets',
-    'RealContextModels', 
+    'RealContextModels',
     'RealBusinessDataGenerator',
     'RealDataFrameFactory',
     'RealMathematicalValidator'

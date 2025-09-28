@@ -1,6 +1,6 @@
 import pytest
 from mountainash_utils_rules.rule_manager import RuleManager
-from mountainash_dataframes import BaseDataFrame, IbisDataFrame
+# from mountainash_dataframes import BaseDataFrame, IbisDataFrame
 from mountainash_utils_rules.constants import MatchStrategy, RuleConstants, RuleTrinaryFlags
 import polars as pl
 import sqlite3

@@ -1,7 +1,7 @@
 import pytest
 from mountainash_utils_rules.dimension import MetadataManager, DimensionsMetadata, Dimension
 from mountainash_utils_rules.constants import MatchStrategy
-from mountainash_dataframes import BaseDataFrame, IbisDataFrame
+# from mountainash_dataframes import BaseDataFrame, IbisDataFrame
 import polars as pl
 from pydantic import BaseModel
 from typing import Optional

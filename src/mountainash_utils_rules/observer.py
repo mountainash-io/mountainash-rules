@@ -1,6 +1,6 @@
 from typing import Any, Dict, Type
 
-from mountainash_dataframes import BaseDataFrame
+# from mountainash_dataframes import BaseDataFrame
 from mountainash_utils_rules.dimension import Dimension
 
 
@@ -53,7 +53,7 @@ class ObservabilityManager:
         self.intermediate_values[dimension.dimension_name] = rules.select([
             # 'rule_name',
             'dimension_any_false',
-            'dimension_any_true', 
+            'dimension_any_true',
             'cumu_dimension_count',
             'cumu_soft_match_count',
             'cumu_hard_match_count',

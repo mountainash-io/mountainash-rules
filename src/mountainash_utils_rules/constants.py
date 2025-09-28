@@ -1,8 +1,9 @@
 from enum import auto
 import ibis
-from mountainash_constants import BaseIdentityConstant
 
-class MatchStrategy(BaseIdentityConstant):
+from enum import Enum, StrEnum, IntEnum
+
+class MatchStrategy(Enum):
     EXACT = auto()
     RANGE = auto()
     REGEX = auto()
