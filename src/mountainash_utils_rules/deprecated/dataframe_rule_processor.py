@@ -418,7 +418,7 @@ class DataFrameRuleProcessor:
             if isinstance(self.rules, IbisDataFrame):
                 # Maintain same backend schema and configuration
                 return IbisDataFrame(
-                    df=polars_df,
+                    polars_df,
                     ibis_backend_schema='polars'  # Use polars backend for performance
                 )
             else:

@@ -22,8 +22,8 @@ dependencies:
   #   org-name: mountainash-io
   # - name: mountainash-utils-hamilton
   #   org-name: mountainash-io
-  - name: mountainash-utils-os
-    org-name: mountainash-io
+  # - name: mountainash-utils-os
+  #   org-name: mountainash-io
   # - name: mountainash-utils-rules
   #   org-name: mountainash-io
   - name: mountainash-utils-ssh
