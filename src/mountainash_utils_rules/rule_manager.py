@@ -1,4 +1,4 @@
-from mountainash_data import BaseDataFrame
+# from mountainash_dataframes import BaseDataFrame
 
 class RuleManager:
 
@@ -14,12 +14,12 @@ class RuleManager:
         """
         return self.rules
 
-    def update_rules(self, 
+    def update_rules(self,
                      new_rules: BaseDataFrame):
-        
+
         """
         Update the rules table.
-        
+
         Args:
             new_rules (BaseDataFrame): The new rules table
 
@@ -27,7 +27,7 @@ class RuleManager:
         self.rules = self._init_rules(rules=new_rules)
 
 
-    def _init_rules(self, 
+    def _init_rules(self,
                     rules: BaseDataFrame):
         """
         Initialises the rules table.
@@ -38,7 +38,7 @@ class RuleManager:
             rules (BaseDataFrame): The rules table
 
         Returns:
-            BaseDataFrame: The rules table 
+            BaseDataFrame: The rules table
         """
 
         if rules is None:
@@ -47,9 +47,9 @@ class RuleManager:
         if not isinstance(rules, BaseDataFrame):
             raise ValueError("Rules must be a BaseDataFrame")
 
-        # Convert the rules to a backend that supports window functions        
-        if rules.ibis_backend_schema not in ["sqlite"]:
-            rules = rules.convert_backend_schema(new_backend_schema="sqlite")
+        # Convert the rules to a backend that supports window functions
+        if rules.ibis_backend_schema not in ["duckdb"]:
+            rules = rules.convert_backend_schema(new_backend_schema="duckdb")
 
         if rules.count() == int(0):
             raise ValueError("No rules specified.")

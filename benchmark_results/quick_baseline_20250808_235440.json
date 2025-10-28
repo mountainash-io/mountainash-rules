@@ -1,0 +1,196 @@
+{
+  "sqlite": {
+    "init_sqlite": {
+      "execution_time_ms": 573.4652319952147,
+      "peak_memory_mb": 9.185478210449219,
+      "cpu_percent": 0.0,
+      "timestamp": "2025-08-08T23:53:44.862479",
+      "iterations": 1,
+      "statistics": {}
+    },
+    "eval_high_selectivity_sqlite": {
+      "execution_time_ms": 1839.090909998049,
+      "peak_memory_mb": 3.7731285095214844,
+      "cpu_percent": 100.3,
+      "timestamp": "2025-08-08T23:53:46.707586",
+      "iterations": 1,
+      "statistics": {}
+    },
+    "eval_medium_selectivity_sqlite": {
+      "execution_time_ms": 1741.0712620039703,
+      "peak_memory_mb": 3.371103286743164,
+      "cpu_percent": 99.6,
+      "timestamp": "2025-08-08T23:53:48.455267",
+      "iterations": 1,
+      "statistics": {}
+    },
+    "eval_low_selectivity_sqlite": {
+      "execution_time_ms": 1720.4720479930984,
+      "peak_memory_mb": 3.686854362487793,
+      "cpu_percent": 100.2,
+      "timestamp": "2025-08-08T23:53:50.182303",
+      "iterations": 1,
+      "statistics": {}
+    },
+    "eval_filtered_high_selectivity_sqlite": {
+      "execution_time_ms": 1864.134132003528,
+      "peak_memory_mb": 3.376885414123535,
+      "cpu_percent": 99.4,
+      "timestamp": "2025-08-08T23:53:52.052946",
+      "iterations": 1,
+      "statistics": {}
+    },
+    "eval_filtered_medium_selectivity_sqlite": {
+      "execution_time_ms": 1712.1235380036524,
+      "peak_memory_mb": 3.7226648330688477,
+      "cpu_percent": 100.1,
+      "timestamp": "2025-08-08T23:53:53.771891",
+      "iterations": 1,
+      "statistics": {}
+    },
+    "eval_filtered_low_selectivity_sqlite": {
+      "execution_time_ms": 1835.4309949936578,
+      "peak_memory_mb": 3.5256757736206055,
+      "cpu_percent": 99.9,
+      "timestamp": "2025-08-08T23:53:55.613458",
+      "iterations": 1,
+      "statistics": {}
+    },
+    "multi_eval_sqlite_run_0": {
+      "execution_time_ms": 5364.735358001781,
+      "peak_memory_mb": 5.9266510009765625,
+      "cpu_percent": 99.5,
+      "timestamp": "2025-08-08T23:54:00.992965",
+      "iterations": 1,
+      "statistics": {}
+    },
+    "multi_eval_sqlite_run_1": {
+      "execution_time_ms": 5585.507199997664,
+      "peak_memory_mb": 6.10515022277832,
+      "cpu_percent": 99.6,
+      "timestamp": "2025-08-08T23:54:06.594696",
+      "iterations": 1,
+      "statistics": {}
+    },
+    "multi_eval_sqlite_run_2": {
+      "execution_time_ms": 5419.729314002325,
+      "peak_memory_mb": 7.094329833984375,
+      "cpu_percent": 99.5,
+      "timestamp": "2025-08-08T23:54:12.022533",
+      "iterations": 1,
+      "statistics": {}
+    },
+    "multi_eval_sqlite": {
+      "execution_time_ms": 5456.657290667256,
+      "peak_memory_mb": 6.375377019246419,
+      "cpu_percent": 0,
+      "timestamp": "2025-08-08T23:54:12.022659",
+      "iterations": 3,
+      "statistics": {
+        "mean_ms": 5456.657290667256,
+        "median_ms": 5419.729314002325,
+        "stdev_ms": 114.92522851832045,
+        "min_ms": 5364.735358001781,
+        "max_ms": 5585.507199997664,
+        "count": 3
+      }
+    }
+  },
+  "duckdb": {
+    "init_duckdb": {
+      "execution_time_ms": 141.536213006475,
+      "peak_memory_mb": 1.2282428741455078,
+      "cpu_percent": 0.0,
+      "timestamp": "2025-08-08T23:54:12.180603",
+      "iterations": 1,
+      "statistics": {}
+    },
+    "eval_high_selectivity_duckdb": {
+      "execution_time_ms": 1723.8893109897617,
+      "peak_memory_mb": 3.784412384033203,
+      "cpu_percent": 100.4,
+      "timestamp": "2025-08-08T23:54:13.913969",
+      "iterations": 1,
+      "statistics": {}
+    },
+    "eval_medium_selectivity_duckdb": {
+      "execution_time_ms": 1797.8287259902572,
+      "peak_memory_mb": 3.500861167907715,
+      "cpu_percent": 99.7,
+      "timestamp": "2025-08-08T23:54:15.719056",
+      "iterations": 1,
+      "statistics": {}
+    },
+    "eval_low_selectivity_duckdb": {
+      "execution_time_ms": 1816.2875809939578,
+      "peak_memory_mb": 3.847658157348633,
+      "cpu_percent": 100.7,
+      "timestamp": "2025-08-08T23:54:17.545606",
+      "iterations": 1,
+      "statistics": {}
+    },
+    "eval_filtered_high_selectivity_duckdb": {
+      "execution_time_ms": 1826.2426360015525,
+      "peak_memory_mb": 3.4297924041748047,
+      "cpu_percent": 99.8,
+      "timestamp": "2025-08-08T23:54:19.378689",
+      "iterations": 1,
+      "statistics": {}
+    },
+    "eval_filtered_medium_selectivity_duckdb": {
+      "execution_time_ms": 1735.7406029914273,
+      "peak_memory_mb": 3.8418807983398438,
+      "cpu_percent": 100.7,
+      "timestamp": "2025-08-08T23:54:21.126096",
+      "iterations": 1,
+      "statistics": {}
+    },
+    "eval_filtered_low_selectivity_duckdb": {
+      "execution_time_ms": 2412.418964988319,
+      "peak_memory_mb": 3.5441818237304688,
+      "cpu_percent": 97.5,
+      "timestamp": "2025-08-08T23:54:23.546225",
+      "iterations": 1,
+      "statistics": {}
+    },
+    "multi_eval_duckdb_run_0": {
+      "execution_time_ms": 5486.42466799356,
+      "peak_memory_mb": 6.734514236450195,
+      "cpu_percent": 100.0,
+      "timestamp": "2025-08-08T23:54:29.047383",
+      "iterations": 1,
+      "statistics": {}
+    },
+    "multi_eval_duckdb_run_1": {
+      "execution_time_ms": 5769.0810119966045,
+      "peak_memory_mb": 6.046546936035156,
+      "cpu_percent": 98.0,
+      "timestamp": "2025-08-08T23:54:34.834395",
+      "iterations": 1,
+      "statistics": {}
+    },
+    "multi_eval_duckdb_run_2": {
+      "execution_time_ms": 5507.907544000773,
+      "peak_memory_mb": 6.449823379516602,
+      "cpu_percent": 100.1,
+      "timestamp": "2025-08-08T23:54:40.349886",
+      "iterations": 1,
+      "statistics": {}
+    },
+    "multi_eval_duckdb": {
+      "execution_time_ms": 5587.8044079969795,
+      "peak_memory_mb": 6.410294850667317,
+      "cpu_percent": 0,
+      "timestamp": "2025-08-08T23:54:40.349981",
+      "iterations": 3,
+      "statistics": {
+        "mean_ms": 5587.8044079969795,
+        "median_ms": 5507.907544000773,
+        "stdev_ms": 157.35718559574275,
+        "min_ms": 5486.42466799356,
+        "max_ms": 5769.0810119966045,
+        "count": 3
+      }
+    }
+  }
+}

@@ -1,4 +1,4 @@
-from typing import List,Type
+from typing import List,Type,Dict
 
 from mountainash_utils_rules.constants import RuleConstants
 from mountainash_utils_rules.dimension import Dimension
@@ -7,7 +7,36 @@ class ContextHelper:
 
     ALLOWED_CONTEXT_TYPES: List[Type] = [str, int, float, bool, type(None)]        
 
+    @classmethod
+    def get_all_context_values(cls, context, dimensions: List[Dimension]) -> Dict[str, str|int|float]:
+        """
+        Extract all context values for the given dimensions in a single batch operation.
+        This eliminates redundant context value extraction across multiple strategy calls.
 
+        Args:
+            context: The context object
+            dimensions (List[Dimension]): List of dimension objects
+
+        Returns:
+            Dict[str, str|int|float]: Dictionary mapping dimension names to their context values
+        """
+        context_values = {}
+        
+        for dimension in dimensions:
+            try:
+                context_value = cls.get_context_value(context=context, dimension=dimension)
+                context_values[dimension.dimension_name] = context_value
+            except Exception:
+                # If extraction fails for any dimension, use appropriate default
+                dimension_type = dimension.get_dimension_data_type()
+                if dimension_type is str:
+                    context_values[dimension.dimension_name] = RuleConstants.NOT_SET
+                elif dimension_type in [int, float, bool]:
+                    context_values[dimension.dimension_name] = RuleConstants.NOT_SET_NUMERIC
+                else:
+                    context_values[dimension.dimension_name] = RuleConstants.NOT_SET
+        
+        return context_values
 
     @classmethod
     def get_context_value(cls, context, dimension: Dimension) -> str|int|float:

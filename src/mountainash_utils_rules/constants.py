@@ -1,15 +1,30 @@
-from enum import Enum
+from enum import auto
 import ibis
 
+from enum import Enum, StrEnum, IntEnum
+
 class MatchStrategy(Enum):
-    EXACT = "EXACT"
-    RANGE = "RANGE"
-    REGEX = "REGEX"
+    EXACT = auto()
+    RANGE = auto()
+    REGEX = auto()
     # WILDCARD = "WILDCARD"
     # FUZZY = "FUZZY"
 
+    # @classmethod
+    # def EXACT(cls) -> str:
+    #     return cls.EXACT
 
-class RuleConstants:
+    # @classmethod
+    # def RANGE(cls) -> str:
+    #     return str(cls.RANGE)
+
+    # @classmethod
+    # def REGEX(cls) -> str:
+    #     return str(cls.REGEX)
+
+
+
+class RuleConstants():
 
     UNKNOWN = "<NA>"
     NOT_SET = "<NOT_SET>"
@@ -40,8 +55,8 @@ class RuleConstants:
 class RuleTrinaryFlags:
 
     # Flags for Prime Filtering
-    PRIME_TRUE = 2
-    PRIME_FALSE = 3
+    PRIME_FALSE = 2
+    PRIME_TRUE = 3
     PRIME_UNKNOWN = 5
 
     @classmethod
