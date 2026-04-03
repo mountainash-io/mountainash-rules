@@ -1,1 +1,0 @@
-# Benchmarking framework for Mountain Ash Rules Engine
