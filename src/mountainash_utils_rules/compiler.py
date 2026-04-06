@@ -12,9 +12,7 @@ from mountainash.expressions import BaseExpressionAPI
 from mountainash_utils_rules.constants import (
     CTX_PREFIX,
     UNKNOWN,
-    UNKNOWN_NUMERIC,
     NOT_SET,
-    NOT_SET_NUMERIC,
     STRING_SENTINELS,
     NUMERIC_SENTINELS,
     MatchStrategy,
