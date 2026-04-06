@@ -1,9 +1,10 @@
 """Tests for ExpressionRulesEngine."""
 
+import mountainash.expressions as ma
 import polars as pl
 import pytest
 
-from mountainash_utils_rules.constants import UNKNOWN, UNKNOWN_NUMERIC, MatchStrategy
+from mountainash_utils_rules.constants import CTX_PREFIX, UNKNOWN, UNKNOWN_NUMERIC, MatchStrategy
 from mountainash_utils_rules.dimension import Dimension, DimensionsMetadata
 from mountainash_utils_rules.engine import ExpressionRulesEngine
 from mountainash_utils_rules.result import RuleResult
@@ -97,3 +98,111 @@ class TestEmptyResult:
         engine = ExpressionRulesEngine(rules=rules_df, dimension_metadata=metadata)
         result = engine.evaluate(context={"region": "AU"})
         assert result.count == 0
+
+
+class TestTopN:
+    def test_top_n_limits_results(self, engine):
+        result = engine.evaluate(
+            context={"region": "AU", "amount": 50, "code": "PRE-001"},
+            top_n=2,
+        )
+        assert result.count == 2
+        # Should be the top 2 by specificity
+        assert result.survivors["rule_name"][0] == "specific"
+
+    def test_top_n_larger_than_survivors(self, engine):
+        result = engine.evaluate(
+            context={"region": "AU", "amount": 50, "code": "PRE-001"},
+            top_n=100,
+        )
+        assert result.count == 3  # only 3 survivors exist
+
+
+class TestMinSpecificity:
+    def test_min_specificity_filters(self, engine):
+        result = engine.evaluate(
+            context={"region": "AU", "amount": 50, "code": "PRE-001"},
+            min_specificity=2,
+        )
+        names = result.survivors["rule_name"].to_list()
+        assert "specific" in names
+        assert "mid" in names
+        assert "general" not in names  # specificity=0
+
+
+class TestDimensionsSubset:
+    def test_subset_dimensions(self, engine):
+        result = engine.evaluate(
+            context={"region": "AU", "amount": 50, "code": "PRE-001"},
+            dimensions=["region"],
+        )
+        # Only evaluating region: specific(AU), general(unknown), mid(AU) survive
+        # no_match(US) eliminated
+        assert result.count == 3
+        assert "no_match" not in result.survivors["rule_name"].to_list()
+
+    def test_invalid_dimension_raises(self, engine):
+        with pytest.raises(KeyError, match="nonexistent"):
+            engine.evaluate(
+                context={"region": "AU"},
+                dimensions=["nonexistent"],
+            )
+
+
+class TestObservability:
+    def test_observability_columns_present_by_default(self, engine):
+        result = engine.evaluate(context={"region": "AU", "amount": 50, "code": "PRE-001"})
+        cols = result.survivors.columns
+        assert "__t_region" in cols
+        assert "__t_amount" in cols
+        assert "__t_code" in cols
+
+    def test_observability_columns_absent_when_disabled(self, engine):
+        result = engine.evaluate(
+            context={"region": "AU", "amount": 50, "code": "PRE-001"},
+            include_observability=False,
+        )
+        cols = result.survivors.columns
+        assert "__t_region" not in cols
+        assert "__t_amount" not in cols
+        assert "__t_code" not in cols
+        # __specificity and __rank should still be present
+        assert "__specificity" in cols
+        assert "__rank" in cols
+
+
+class TestCustomExpressions:
+    def test_custom_expression_exact(self):
+        rules_df = pl.DataFrame({
+            "rule_name": ["r1", "r2"],
+            "region": ["AU", "US"],
+        })
+
+        engine = ExpressionRulesEngine(
+            rules=rules_df,
+            dimension_expressions={
+                "region": ma.t_col("region", unknown={UNKNOWN}).t_eq(
+                    ma.t_col(f"{CTX_PREFIX}region", unknown={UNKNOWN})
+                ),
+            },
+        )
+
+        result = engine.evaluate(context={"region": "AU"})
+        assert result.count == 1
+        assert result.best_match["rule_name"][0] == "r1"
+
+    def test_cannot_provide_both_metadata_and_expressions(self):
+        with pytest.raises(ValueError, match="not both"):
+            ExpressionRulesEngine(
+                rules=pl.DataFrame({"rule_name": ["r1"]}),
+                dimension_metadata=DimensionsMetadata(dimensions=[
+                    Dimension(dimension_name="x", match_strategy=MatchStrategy.EXACT, data_type=str),
+                ]),
+                dimension_expressions={"x": ma.col("x")},
+            )
+
+    def test_must_provide_one_of_metadata_or_expressions(self):
+        with pytest.raises(ValueError, match="Must provide"):
+            ExpressionRulesEngine(
+                rules=pl.DataFrame({"rule_name": ["r1"]}),
+            )
