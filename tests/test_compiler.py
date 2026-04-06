@@ -67,3 +67,129 @@ class TestExactCompilation:
         assert values[0] == 1   # match
         assert values[1] == -1  # non-match
         assert values[2] == 0   # unknown
+
+
+class TestRangeCompilation:
+    def test_range_within_bounds_produces_true(self, compiler):
+        dim = Dimension(
+            dimension_name="amount",
+            match_strategy=MatchStrategy.RANGE,
+            data_type=float,
+            range_min_field="amount_min",
+            range_max_field="amount_max",
+        )
+        expr = compiler.compile_dimension(dim)
+
+        df = pl.DataFrame({
+            "amount_min": [0.0, 100.0, 200.0],
+            "amount_max": [99.0, 199.0, 299.0],
+            f"{CTX_PREFIX}amount": [50.0, 50.0, 50.0],
+        })
+        result = df.with_columns(expr.name.alias("__t_amount").compile(df, booleanizer=None))
+        values = result["__t_amount"].to_list()
+        assert values == [1, -1, -1]
+
+    def test_range_boundary_inclusive(self, compiler):
+        dim = Dimension(
+            dimension_name="amount",
+            match_strategy=MatchStrategy.RANGE,
+            data_type=int,
+            range_min_field="amount_min",
+            range_max_field="amount_max",
+            range_min_inclusive=True,
+            range_max_inclusive=True,
+        )
+        expr = compiler.compile_dimension(dim)
+
+        df = pl.DataFrame({
+            "amount_min": [10, 10],
+            "amount_max": [20, 20],
+            f"{CTX_PREFIX}amount": [10, 20],
+        })
+        result = df.with_columns(expr.name.alias("__t_amount").compile(df, booleanizer=None))
+        values = result["__t_amount"].to_list()
+        assert values == [1, 1]  # both boundaries inclusive
+
+    def test_range_boundary_exclusive(self, compiler):
+        dim = Dimension(
+            dimension_name="amount",
+            match_strategy=MatchStrategy.RANGE,
+            data_type=int,
+            range_min_field="amount_min",
+            range_max_field="amount_max",
+            range_min_inclusive=False,
+            range_max_inclusive=False,
+        )
+        expr = compiler.compile_dimension(dim)
+
+        df = pl.DataFrame({
+            "amount_min": [10, 10],
+            "amount_max": [20, 20],
+            f"{CTX_PREFIX}amount": [10, 20],
+        })
+        result = df.with_columns(expr.name.alias("__t_amount").compile(df, booleanizer=None))
+        values = result["__t_amount"].to_list()
+        assert values == [-1, -1]  # both boundaries exclusive
+
+    def test_range_unknown_min_produces_unknown(self, compiler):
+        dim = Dimension(
+            dimension_name="amount",
+            match_strategy=MatchStrategy.RANGE,
+            data_type=int,
+            range_min_field="amount_min",
+            range_max_field="amount_max",
+        )
+        expr = compiler.compile_dimension(dim)
+
+        df = pl.DataFrame({
+            "amount_min": [0, UNKNOWN_NUMERIC],
+            "amount_max": [100, 100],
+            f"{CTX_PREFIX}amount": [50, 50],
+        })
+        result = df.with_columns(expr.name.alias("__t_amount").compile(df, booleanizer=None))
+        values = result["__t_amount"].to_list()
+        assert values[0] == 1  # known range, match
+        assert values[1] == 0  # unknown min → unknown result
+
+
+class TestRegexCompilation:
+    def test_regex_match_produces_true(self, compiler):
+        dim = Dimension(dimension_name="pattern", match_strategy=MatchStrategy.REGEX, data_type=str)
+        expr = compiler.compile_dimension(dim)
+
+        df = pl.DataFrame({
+            "pattern": ["^AU.*", "^US.*", "^UK.*"],
+            f"{CTX_PREFIX}pattern": ["AU-123", "AU-123", "AU-123"],
+        })
+        result = df.with_columns(expr.name.alias("__t_pattern").compile(df, booleanizer=None))
+        values = result["__t_pattern"].to_list()
+        assert values[0] == 1   # match
+        assert values[1] == -1  # no match
+        assert values[2] == -1  # no match
+
+    def test_regex_search_semantics(self, compiler):
+        """regex_contains uses search semantics (match anywhere, not anchored)."""
+        dim = Dimension(dimension_name="code", match_strategy=MatchStrategy.REGEX, data_type=str)
+        expr = compiler.compile_dimension(dim)
+
+        df = pl.DataFrame({
+            "code": ["123", "xyz"],
+            f"{CTX_PREFIX}code": ["abc-123-def", "abc-123-def"],
+        })
+        result = df.with_columns(expr.name.alias("__t_code").compile(df, booleanizer=None))
+        values = result["__t_code"].to_list()
+        assert values[0] == 1   # "123" found within "abc-123-def"
+        assert values[1] == -1  # "xyz" not found
+
+    def test_regex_unknown_pattern_produces_unknown(self, compiler):
+        dim = Dimension(dimension_name="pattern", match_strategy=MatchStrategy.REGEX, data_type=str)
+        expr = compiler.compile_dimension(dim)
+
+        df = pl.DataFrame({
+            "pattern": ["^AU.*", UNKNOWN],
+            f"{CTX_PREFIX}pattern": ["AU-123", "AU-123"],
+        })
+        result = df.with_columns(expr.name.alias("__t_pattern").compile(df, booleanizer=None))
+        values = result["__t_pattern"].to_list()
+        assert values[0] == 1  # match
+        assert values[1] == 0  # unknown pattern → unknown result
