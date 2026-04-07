@@ -194,6 +194,17 @@ class TestRegexCompilation:
         assert values[0] == 1  # match
         assert values[1] == 0  # unknown pattern → unknown result
 
+    def test_regex_per_row_different_patterns(self, compiler):
+        """Each row uses its own regex pattern — proves backend-agnostic per-row support."""
+        dim = Dimension(dimension_name="pattern", match_strategy=MatchStrategy.REGEX, data_type=str)
+        expr = compiler.compile_dimension(dim)
+        df = pl.DataFrame({
+            "pattern": ["^AU.*", "^US.*", "^UK.*"],
+            f"{CTX_PREFIX}pattern": ["AU-123", "US-456", "UK-789"],
+        })
+        result = df.with_columns(expr.name.alias("__t_pattern").compile(df, booleanizer=None))
+        assert result["__t_pattern"].to_list() == [1, 1, 1]
+
 
 class TestNotEqualCompilation:
     def test_not_equal_mismatch_produces_true(self, compiler):
