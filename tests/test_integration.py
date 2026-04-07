@@ -148,3 +148,89 @@ class TestExplainIntegration:
 
         assert result.explain("specific") == {"region": 1, "product": 1}
         assert result.explain("general") == {"region": 0, "product": 0}
+
+
+class TestMixedStrategyFraudDetection:
+    """Exercises EXACT, SET_MEMBERSHIP, GREATER_THAN, and PREFIX together."""
+
+    @pytest.fixture
+    def fraud_engine(self):
+        rules_df = pl.DataFrame({
+            "rule_name": ["catch_all", "high_value", "blacklist_merchant", "specific_txn"],
+            "action": ["allow", "review", "block", "block"],
+            "merchant_type": [UNKNOWN, UNKNOWN, "CASINO", "RETAIL"],
+            "allowed_countries": pl.Series(
+                "allowed_countries",
+                [
+                    ["AU", "NZ", "US", "UK"],
+                    ["AU", "NZ", "US", "UK"],
+                    ["AU", "NZ", "US", "UK"],
+                    ["AU"],
+                ],
+                dtype=pl.List(pl.Utf8),
+            ),
+            "amount_threshold": [UNKNOWN_NUMERIC, 10000, UNKNOWN_NUMERIC, 500],
+            "code_prefix": [UNKNOWN, UNKNOWN, UNKNOWN, "TXN-"],
+        })
+        metadata = DimensionsMetadata(dimensions=[
+            Dimension(
+                dimension_name="merchant_type",
+                match_strategy=MatchStrategy.EXACT,
+                data_type=str,
+            ),
+            Dimension(
+                dimension_name="country",
+                context_field="country",
+                rule_field="allowed_countries",
+                match_strategy=MatchStrategy.SET_MEMBERSHIP,
+                data_type=str,
+            ),
+            Dimension(
+                dimension_name="amount",
+                context_field="amount",
+                rule_field="amount_threshold",
+                match_strategy=MatchStrategy.GREATER_THAN,
+                data_type=int,
+            ),
+            Dimension(
+                dimension_name="code",
+                context_field="code",
+                rule_field="code_prefix",
+                match_strategy=MatchStrategy.PREFIX,
+                data_type=str,
+            ),
+        ])
+        return ExpressionRulesEngine(rules=rules_df, dimension_metadata=metadata)
+
+    def test_high_value_review(self, fraud_engine):
+        """High-value US transaction → high_value rule triggers review."""
+        result = fraud_engine.evaluate(context={
+            "merchant_type": "RETAIL",
+            "country": "US",
+            "amount": 15000,
+            "code": "TXN-999",
+        })
+        assert result.best_match["rule_name"][0] == "high_value"
+        assert result.best_match["action"][0] == "review"
+
+    def test_blacklist_merchant_blocks(self, fraud_engine):
+        """Casino merchant in allowed country → blacklist blocks."""
+        result = fraud_engine.evaluate(context={
+            "merchant_type": "CASINO",
+            "country": "AU",
+            "amount": 100,
+            "code": "TXN-001",
+        })
+        assert result.best_match["rule_name"][0] == "blacklist_merchant"
+        assert result.best_match["action"][0] == "block"
+
+    def test_specific_txn_most_specific(self, fraud_engine):
+        """Retail, AU, 1000, TXN-001 matches specific_txn (highest specificity)."""
+        result = fraud_engine.evaluate(context={
+            "merchant_type": "RETAIL",
+            "country": "AU",
+            "amount": 1000,
+            "code": "TXN-001",
+        })
+        assert result.best_match["rule_name"][0] == "specific_txn"
+        assert result.best_match["__specificity"][0] == 4
