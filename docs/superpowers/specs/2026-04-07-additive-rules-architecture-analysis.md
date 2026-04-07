@@ -1,14 +1,30 @@
 # Additive Rules Engine — Architecture Analysis
 
 **Status:** Analysis only. Not an implementation spec.
-**Date:** 2026-04-07
+**Date:** 2026-04-07 (revised after PMX_DB review)
 **Author:** Nathaniel Ramm (with Claude)
+
+---
+
+## 0. Framing
+
+**This document describes the algorithmic core of a production rules-engine pattern from a 2016 Big 4 Australian mortgage pricing engine (the PMX_DB codebase: 245 SQL files in `~/git/PMX_DB`), currently being ported to Python. It is not a proposal for a new pattern.** The accumulator engine ran a Big 4 mortgage book in production for approximately two years, representing ~200 products as ~2,000 logical rules — compared to the FICO-based replacement system, which required ~500 million enumerated rules to cover the same pricing space. That production system is the *source material* for the analysis below.
+
+The doc takes **deliberate architectural distance** from the original SQL implementation. PMX_DB is an all-in-one-layer T-SQL application; the Python rebuild separates concerns into three layers:
+
+1. **Data preparation layer** (`mountainash-data` / `mountainash-dataframes`) — entity-to-group resolution, banding, joins, experimental-arm assignment, snapshot extraction. The rules engine never sees raw entity IDs or joined dimensions — only fully-resolved dimension values.
+2. **Rules engine layer** (`mountainash-utils-rules`) — the filter and accumulator engines, operating on flat, fully-resolved dimension values. No joins, no lookups, no entity→group navigation.
+3. **Governance / lifecycle layer** — versioning, approvals, change-control sets, validity dates, audit trails. Sits *above* the engine and feeds it snapshots. The engine itself is stateless against any given rule-set version and does not manage rule lifecycles.
+
+The SQL had to collapse all three concerns into one database because that was the only layer it had. The Python framework separates them at the package level, and the algorithmic core — the accumulator engine — is deliberately confined to layer 2. Quirks from PMX_DB that belong in layer 1 or layer 3 (group dimensions like `segmentgroup`/`competitorgroup`, authority-level inheritance across Banker/Desk floors, change-control sets, randomised-control-group infrastructure, the all-products-in-one-pass execution model) are mentioned only where the reader needs to understand what the SQL was doing, not carried forward as engine features.
+
+With that framing explicit, the rest of the document proceeds to describe the algorithmic core.
 
 ---
 
 ## 1. Purpose & scope
 
-This document analyses a second rules-engine pattern that the codebase needs but does not yet have, by reverse-engineering the SQL function `pmx.sp_productpricingmatrix_discretion_combos` (`sp_productpricingmatrix_discretion_combos.sql`, 1105 lines) and comparing its execution model against the existing engine family.
+This document describes the algorithmic core of the accumulator rules-engine pattern, as implemented in production in PMX_DB and as intended for the Python rebuild. It reverse-engineers the central SQL function `pmx.sp_productpricingmatrix_discretion_combos` (1,105 lines) together with its supporting tables and views, and compares the execution model against the existing filter-engine family already shipped in `mountainash-utils-rules`. Both the accumulator pattern (via `sp_productpricingmatrix_discretion_combos`) and the filter pattern (via `sp_productpricingmatrix_tier`, which flat-returns tier rules without recursion or combination) coexisted in the original system; the two-engine pipeline is itself inherited from PMX_DB, not invented during this analysis.
 
 The output of this document is **understanding**, not code:
 
@@ -48,7 +64,14 @@ The CTE has three structural parts: an **anchor member** (lines 269–516), a **
 
 ### 3.1 Anchor member — rules as singleton rulesets
 
-Each row from the discretion-rule source becomes a level-0 ruleset of itself. The anchor SELECT does three things:
+**Rules are two-tier in the source system.** Before describing the anchor mechanics, note that the PMX_DB schema factors rules into two tables:
+
+- **`pricingmarginshape`** — the *constraint signature*, carrying ~30 dimensional constraint columns plus NA flags, a name, a description, and an authority level. This is the rule *template*.
+- **`pricingmarginshapecell`** — the *banded leaf*, FK-belonging to a shape, carrying only the banded dimensions (LVR, agg-limit, net-util, risk-weight, loan-amount, loan-LVR, RCG) and the `margin_value` / `margin_value_desk` payload fields.
+
+A single shape can own many cells — one per band combination — sharing the same structural constraints. This is a deliberate compression: structural constraints are factored out from value-carrying leaves, and the recursive engine treats each *cell* as the combination unit while joining to its parent shape for the structural constraints. For the Python rebuild, the two-tier model can be preserved as a compression optimisation or flattened into single-row rules at the data preparation layer; the algorithmic core of the accumulator is indifferent to the choice, but the PMX_DB production system saw significant storage and maintenance benefits from the two-tier form (a shape update propagates to all its cells). Note also that the payload fields are not inherently limited to margin tracks: the Python rebuild generalises this as *rules carry zero-or-more named numerics that the build phase sums monoidally*, per the principle `per-dimension-operation-set.md`. The PMX_DB `margin_value` / `margin_value_desk` pair was a specific instance of this pattern, tied to a Banker/Desk floors requirement that is not inherited by the Python rebuild.
+
+With that structural note in place: each row from the discretion-rule source (the `(shape, cell)` join exposed via `v_productpricingmatrix_discretion`) becomes a level-0 ruleset of itself. The anchor SELECT does three things:
 
 1. **Bootstraps the coalesced state** by aliasing each rule attribute as its `co_*` ("coalesced") counterpart (lines 397–420). At level 0, a singleton ruleset's coalesced state is identical to the rule's own state.
 2. **Computes the initial fingerprint hashes** (lines 423–482) — three of them: `ruleset_nonbanded`, `ruleset_banded`, `ruleset_bandingsystem`. Only `ruleset_nonbanded` is used downstream by the superset filter (line 1070); the others exist for the SQL's binning subsystem and are addressed in section 3.4.
@@ -129,7 +152,16 @@ Formally, this is a **Pareto frontier under prime-factor dominance**: each row i
 >
 > Whether the new engine needs multiset support is **open** (see section 7, Q1). If empirical analysis confirms the lattice produces only true sets, a bitset DNA (`(super & sub) == sub` instead of modulo) becomes a viable optimisation. Until that analysis is done, primes are the only safe representation.
 >
-> **Independent of multiset semantics, the SQL's choice of *globally static* primes is an artefact of its execution model.** The SQL must allocate primes once across the entire rule registry because it materialises one big lattice per `@floor_type`. The Python engine, by contrast, can build *per partition* (see section 3.5) and allocate primes **locally per build**, starting from 2. This keeps the smallest primes on the rules most likely to combine deeply, dramatically improves overflow headroom, and means the same prime `2` is reused for unrelated rules across parallel builds. Rules need a stable identity for deduplication and provenance; the prime is a build-phase concern, not a rule registry concern.
+> **Prime allocation is already build-scoped per partition in PMX_DB.** An earlier draft of this document claimed the SQL allocated primes globally and that the Python engine could improve on this. That claim was wrong. The actual SQL mechanism in `v_productpricingmatrix_discretion.sql:306` uses:
+>
+> ```sql
+> ROW_NUMBER() over (
+>     partition by pms.authoritylevel_id, pir.product_id, pir.indrate_loanpurpose_id
+>     order by pms.pricingmarginshapecell_id
+> ) as cellrownumber
+> ```
+>
+> …and then joins `cellrownumber` against a `prime_id → primevalue` lookup table at line 384. Primes are allocated **per `(authoritylevel, product, loanpurpose)` partition** via `ROW_NUMBER`, exactly as the principles directory's `c.identity-and-representation/stable-identity-build-scoped-primes.md` recommends. The Python engine **inherits** this pattern from PMX_DB rather than introducing it: rules carry a stable identity for deduplication and provenance, and the build phase assigns local primes per partition starting from the smallest available value. The same prime `2` is reused for unrelated rules across parallel builds because the SQL precedent already does exactly that.
 
 **Note on the prime-vs-ternary terminology.** The combination DNA's prime arithmetic is unrelated to any "prime ternary" encoding mentioned in older planning documents. The actual per-dimension match encoding in this codebase is the signed-integer ternary scheme (`1` match, `0` unknown, `−1` non-match) defined in `constants.py` and used throughout `compiler.py` and `result.py`. Any reference to `PRIME_TRUE=2 / PRIME_FALSE=3 / PRIME_UNKNOWN=5` in the historical docs is a deprecated design that was never implemented. The accumulator engine's primes identify *combinations of rules*, not match outcomes — they are two completely separate uses of the word "prime".
 
@@ -329,7 +361,7 @@ The Apply phase of the accumulator matches contexts against fingerprints, which 
 
 1. **Are multiset combinations possible in the lattice?** The SQL's `cell_id < cell_id` ordering prevents the same cell from being added twice within one recursive step, but it is not obvious whether different recursive paths through the lattice can converge on a state where the same rule contributes more than once. Resolving this empirically against a real production rule corpus determines whether the bitset DNA optimisation (section 3.3) is available. Until resolved, primes are the only safe representation.
 
-2. **Prime overflow strategy and the fallback ladder.** The combination prime product can grow large for deep combinations. The implementation phase should adopt a tiered representation:
+2. **Prime overflow strategy and the fallback ladder.** The combination prime product can grow large for deep combinations. **Empirical bound from PMX_DB:** the production Big 4 system supported a maximum combination depth of 20 rules (confirmed by `sp_product_rule_profile`, which explodes provenance trails into Rule1…Rule20 columns). The smallest 20 primes (2..71) multiply to approximately 5.6 × 10¹⁷, which fits comfortably in int64 (max 9.2 × 10¹⁸). **In practice, the int64 backend will be sufficient for normal operation; the int128 and Python-object tiers exist as safety nets, not expected operating modes.** With that empirical bound in mind, the tiered representation the implementation phase should adopt is:
     - **Tier 1 — int64 backend.** If the build-phase pre-estimate `sum(log2(p_i) × max_multiplicity_i)` over surviving rules is < 62 bits, stay in polars/ibis with `Int64`. Vectorised, fast.
     - **Tier 2 — int128 backend.** If 62–126 bits, use DuckDB's `HUGEINT` via ibis. Still vectorised, larger headroom.
     - **Tier 3 — Python arbitrary precision.** Numpy `object` dtype arrays hold native Python ints, which are unbounded. Slower per-element dispatch but correct for any rule count. The escape hatch when even int128 is insufficient.
