@@ -389,3 +389,91 @@ class TestPrefixCompilation:
         })
         result = df.with_columns(expr.name.alias("__t_code").compile(df, booleanizer=None))
         assert result["__t_code"].to_list() == [1, 1, 1]
+
+
+class TestSuffixCompilation:
+    def test_suffix_match(self, compiler):
+        dim = Dimension(dimension_name="code", match_strategy=MatchStrategy.SUFFIX, data_type=str)
+        expr = compiler.compile_dimension(dim)
+        df = pl.DataFrame({
+            "code": ["-AUD", "-USD", "-EUR"],
+            f"{CTX_PREFIX}code": ["TXN-AUD", "TXN-AUD", "TXN-AUD"],
+        })
+        result = df.with_columns(expr.name.alias("__t_code").compile(df, booleanizer=None))
+        assert result["__t_code"].to_list() == [1, -1, -1]
+
+    def test_suffix_no_match(self, compiler):
+        dim = Dimension(dimension_name="code", match_strategy=MatchStrategy.SUFFIX, data_type=str)
+        expr = compiler.compile_dimension(dim)
+        df = pl.DataFrame({
+            "code": ["-AUD"],
+            f"{CTX_PREFIX}code": ["TXN-USD"],
+        })
+        result = df.with_columns(expr.name.alias("__t_code").compile(df, booleanizer=None))
+        assert result["__t_code"].to_list() == [-1]
+
+    def test_suffix_unknown_rule_produces_unknown(self, compiler):
+        dim = Dimension(dimension_name="code", match_strategy=MatchStrategy.SUFFIX, data_type=str)
+        expr = compiler.compile_dimension(dim)
+        df = pl.DataFrame({
+            "code": ["-AUD", UNKNOWN],
+            f"{CTX_PREFIX}code": ["TXN-AUD", "TXN-AUD"],
+        })
+        result = df.with_columns(expr.name.alias("__t_code").compile(df, booleanizer=None))
+        values = result["__t_code"].to_list()
+        assert values[0] == 1
+        assert values[1] == 0
+
+    def test_suffix_per_row_different_patterns(self, compiler):
+        dim = Dimension(dimension_name="code", match_strategy=MatchStrategy.SUFFIX, data_type=str)
+        expr = compiler.compile_dimension(dim)
+        df = pl.DataFrame({
+            "code": ["-AUD", "-USD", "-EUR"],
+            f"{CTX_PREFIX}code": ["TXN-AUD", "TXN-USD", "TXN-EUR"],
+        })
+        result = df.with_columns(expr.name.alias("__t_code").compile(df, booleanizer=None))
+        assert result["__t_code"].to_list() == [1, 1, 1]
+
+
+class TestContainsCompilation:
+    def test_contains_match(self, compiler):
+        dim = Dimension(dimension_name="tier", match_strategy=MatchStrategy.CONTAINS, data_type=str)
+        expr = compiler.compile_dimension(dim)
+        df = pl.DataFrame({
+            "tier": ["gold", "silver", "bronze"],
+            f"{CTX_PREFIX}tier": ["gold_tier", "gold_tier", "gold_tier"],
+        })
+        result = df.with_columns(expr.name.alias("__t_tier").compile(df, booleanizer=None))
+        assert result["__t_tier"].to_list() == [1, -1, -1]
+
+    def test_contains_no_match(self, compiler):
+        dim = Dimension(dimension_name="tier", match_strategy=MatchStrategy.CONTAINS, data_type=str)
+        expr = compiler.compile_dimension(dim)
+        df = pl.DataFrame({
+            "tier": ["gold"],
+            f"{CTX_PREFIX}tier": ["platinum_tier"],
+        })
+        result = df.with_columns(expr.name.alias("__t_tier").compile(df, booleanizer=None))
+        assert result["__t_tier"].to_list() == [-1]
+
+    def test_contains_unknown_rule_produces_unknown(self, compiler):
+        dim = Dimension(dimension_name="tier", match_strategy=MatchStrategy.CONTAINS, data_type=str)
+        expr = compiler.compile_dimension(dim)
+        df = pl.DataFrame({
+            "tier": ["gold", UNKNOWN],
+            f"{CTX_PREFIX}tier": ["gold_tier", "gold_tier"],
+        })
+        result = df.with_columns(expr.name.alias("__t_tier").compile(df, booleanizer=None))
+        values = result["__t_tier"].to_list()
+        assert values[0] == 1
+        assert values[1] == 0
+
+    def test_contains_per_row_different_patterns(self, compiler):
+        dim = Dimension(dimension_name="tier", match_strategy=MatchStrategy.CONTAINS, data_type=str)
+        expr = compiler.compile_dimension(dim)
+        df = pl.DataFrame({
+            "tier": ["gold", "silver", "bronze"],
+            f"{CTX_PREFIX}tier": ["gold_tier", "silver_tier", "bronze_tier"],
+        })
+        result = df.with_columns(expr.name.alias("__t_tier").compile(df, booleanizer=None))
+        assert result["__t_tier"].to_list() == [1, 1, 1]

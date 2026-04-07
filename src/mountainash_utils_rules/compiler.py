@@ -51,6 +51,10 @@ class DimensionCompiler:
                 return self._compile_less_than(dim)
             case MatchStrategy.PREFIX:
                 return self._compile_prefix(dim)
+            case MatchStrategy.SUFFIX:
+                return self._compile_suffix(dim)
+            case MatchStrategy.CONTAINS:
+                return self._compile_contains(dim)
             case _:
                 raise ValueError(f"Unknown match strategy: {dim.match_strategy}")
 
@@ -118,6 +122,24 @@ class DimensionCompiler:
 
     def _compile_prefix(self, dim: Dimension) -> BaseExpressionAPI:
         return self._compile_string_match(dim, "starts_with")
+
+    def _compile_suffix(self, dim: Dimension) -> BaseExpressionAPI:
+        return self._compile_string_match(dim, "ends_with")
+
+    def _compile_contains(self, dim: Dimension) -> BaseExpressionAPI:
+        """CONTAINS: true when rule value appears as a substring of context value.
+
+        Uses count_substring instead of contains to support per-row column
+        references, as the polars str.contains backend treats its argument
+        as a regex pattern string rather than a column expression.
+        """
+        rule_col = ma.col(dim.resolved_rule_field)
+        ctx_col = ma.col(CTX_PREFIX + dim.dimension_name)
+        rule_is_sentinel = (
+            rule_col.__eq__(ma.lit(UNKNOWN)) | rule_col.__eq__(ma.lit(NOT_SET))
+        )
+        count_expr = ctx_col.str.count_substring(rule_col)
+        return ma.when(rule_is_sentinel).then(0).when(count_expr.__gt__(ma.lit(0))).then(1).otherwise(-1)
 
     def _compile_regex(self, dim: Dimension) -> BaseExpressionAPI:
         rule_field = dim.resolved_rule_field
