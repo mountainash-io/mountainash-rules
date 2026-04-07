@@ -7,8 +7,16 @@ class MatchStrategy(Enum):
     """How a dimension matches context values against rule values."""
 
     EXACT = auto()
+    NOT_EQUAL = auto()
     RANGE = auto()
+    GREATER_THAN = auto()
+    LESS_THAN = auto()
+    PREFIX = auto()
+    SUFFIX = auto()
+    CONTAINS = auto()
     REGEX = auto()
+    SET_MEMBERSHIP = auto()
+    SET_EXCLUSION = auto()
 
 
 # Sentinel values for unknown/unset rule and context fields.
