@@ -488,3 +488,89 @@ class TestContainsCompilation:
         })
         result = df.with_columns(expr.name.alias("__t_tier").compile(df, booleanizer=None))
         assert result["__t_tier"].to_list() == [1, 1, 1]
+
+
+class TestSetMembershipCompilation:
+    def test_set_membership_match(self, compiler):
+        dim = Dimension(
+            dimension_name="region",
+            match_strategy=MatchStrategy.SET_MEMBERSHIP,
+            data_type=str,
+        )
+        expr = compiler.compile_dimension(dim)
+
+        df = pl.DataFrame({
+            "region": pl.Series(
+                "region",
+                [["AU", "NZ", "UK"], ["US", "CA"], ["DE", "FR"]],
+                dtype=pl.List(pl.Utf8),
+            ),
+            f"{CTX_PREFIX}region": ["AU", "AU", "AU"],
+        })
+        result = df.with_columns(expr.name.alias("__t_region").compile(df, booleanizer=None))
+        values = result["__t_region"].to_list()
+        # AU in [AU,NZ,UK] → 1; AU in [US,CA] → -1; AU in [DE,FR] → -1
+        assert values == [1, -1, -1]
+
+    def test_set_membership_unknown_context(self, compiler):
+        dim = Dimension(
+            dimension_name="region",
+            match_strategy=MatchStrategy.SET_MEMBERSHIP,
+            data_type=str,
+        )
+        expr = compiler.compile_dimension(dim)
+
+        df = pl.DataFrame({
+            "region": pl.Series(
+                "region",
+                [["AU", "NZ"]],
+                dtype=pl.List(pl.Utf8),
+            ),
+            f"{CTX_PREFIX}region": [UNKNOWN],
+        })
+        result = df.with_columns(expr.name.alias("__t_region").compile(df, booleanizer=None))
+        values = result["__t_region"].to_list()
+        assert values == [0]
+
+
+class TestSetExclusionCompilation:
+    def test_set_exclusion_match(self, compiler):
+        dim = Dimension(
+            dimension_name="region",
+            match_strategy=MatchStrategy.SET_EXCLUSION,
+            data_type=str,
+        )
+        expr = compiler.compile_dimension(dim)
+
+        df = pl.DataFrame({
+            "region": pl.Series(
+                "region",
+                [["AU", "NZ", "UK"], ["US", "CA"], ["DE", "FR"]],
+                dtype=pl.List(pl.Utf8),
+            ),
+            f"{CTX_PREFIX}region": ["AU", "AU", "AU"],
+        })
+        result = df.with_columns(expr.name.alias("__t_region").compile(df, booleanizer=None))
+        values = result["__t_region"].to_list()
+        # AU not in [AU,NZ,UK] → -1; AU not in [US,CA] → 1; AU not in [DE,FR] → 1
+        assert values == [-1, 1, 1]
+
+    def test_set_exclusion_unknown_context(self, compiler):
+        dim = Dimension(
+            dimension_name="region",
+            match_strategy=MatchStrategy.SET_EXCLUSION,
+            data_type=str,
+        )
+        expr = compiler.compile_dimension(dim)
+
+        df = pl.DataFrame({
+            "region": pl.Series(
+                "region",
+                [["AU", "NZ"]],
+                dtype=pl.List(pl.Utf8),
+            ),
+            f"{CTX_PREFIX}region": [UNKNOWN],
+        })
+        result = df.with_columns(expr.name.alias("__t_region").compile(df, booleanizer=None))
+        values = result["__t_region"].to_list()
+        assert values == [0]

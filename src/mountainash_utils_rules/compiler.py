@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import polars as pl
+
 import mountainash.expressions as ma
 from mountainash.expressions import BaseExpressionAPI
 
@@ -51,6 +53,10 @@ class DimensionCompiler:
                 return self._compile_suffix(dim)
             case MatchStrategy.CONTAINS:
                 return self._compile_contains(dim)
+            case MatchStrategy.SET_MEMBERSHIP:
+                return self._compile_set_membership(dim)
+            case MatchStrategy.SET_EXCLUSION:
+                return self._compile_set_exclusion(dim)
             case _:
                 raise ValueError(f"Unknown match strategy: {dim.match_strategy}")
 
@@ -127,3 +133,25 @@ class DimensionCompiler:
 
     def _compile_regex(self, dim: Dimension) -> BaseExpressionAPI:
         return self._compile_string_match(dim, "regex_contains")
+
+    def _compile_set_membership(self, dim: Dimension) -> BaseExpressionAPI:
+        """Compile SET_MEMBERSHIP: context value is in the rule's list column."""
+        ctx_field = CTX_PREFIX + dim.dimension_name
+        rule_field = dim.resolved_rule_field
+        ctx_is_sentinel = (
+            ma.col(ctx_field).__eq__(ma.lit(UNKNOWN))
+            | ma.col(ctx_field).__eq__(ma.lit(NOT_SET))
+        )
+        match = ma.native(pl.col(rule_field).list.contains(pl.col(ctx_field)))
+        return ma.when(ctx_is_sentinel).then(0).when(match).then(1).otherwise(-1)
+
+    def _compile_set_exclusion(self, dim: Dimension) -> BaseExpressionAPI:
+        """Compile SET_EXCLUSION: context value is NOT in the rule's list column."""
+        ctx_field = CTX_PREFIX + dim.dimension_name
+        rule_field = dim.resolved_rule_field
+        ctx_is_sentinel = (
+            ma.col(ctx_field).__eq__(ma.lit(UNKNOWN))
+            | ma.col(ctx_field).__eq__(ma.lit(NOT_SET))
+        )
+        not_in = ma.native(~pl.col(rule_field).list.contains(pl.col(ctx_field)))
+        return ma.when(ctx_is_sentinel).then(0).when(not_in).then(1).otherwise(-1)
