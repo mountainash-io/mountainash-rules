@@ -344,3 +344,48 @@ class TestLessThanCompilation:
         result = df.with_columns(expr.name.alias("__t_amount").compile(df, booleanizer=None))
         values = result["__t_amount"].to_list()
         assert values == [0]
+
+
+class TestPrefixCompilation:
+    def test_prefix_match(self, compiler):
+        dim = Dimension(dimension_name="code", match_strategy=MatchStrategy.PREFIX, data_type=str)
+        expr = compiler.compile_dimension(dim)
+        df = pl.DataFrame({
+            "code": ["PRE-", "POST-", "MID-"],
+            f"{CTX_PREFIX}code": ["PRE-001", "PRE-001", "PRE-001"],
+        })
+        result = df.with_columns(expr.name.alias("__t_code").compile(df, booleanizer=None))
+        values = result["__t_code"].to_list()
+        assert values == [1, -1, -1]
+
+    def test_prefix_no_match(self, compiler):
+        dim = Dimension(dimension_name="code", match_strategy=MatchStrategy.PREFIX, data_type=str)
+        expr = compiler.compile_dimension(dim)
+        df = pl.DataFrame({
+            "code": ["PRE-"],
+            f"{CTX_PREFIX}code": ["XYZ-001"],
+        })
+        result = df.with_columns(expr.name.alias("__t_code").compile(df, booleanizer=None))
+        assert result["__t_code"].to_list() == [-1]
+
+    def test_prefix_unknown_rule_produces_unknown(self, compiler):
+        dim = Dimension(dimension_name="code", match_strategy=MatchStrategy.PREFIX, data_type=str)
+        expr = compiler.compile_dimension(dim)
+        df = pl.DataFrame({
+            "code": ["PRE-", UNKNOWN],
+            f"{CTX_PREFIX}code": ["PRE-001", "PRE-001"],
+        })
+        result = df.with_columns(expr.name.alias("__t_code").compile(df, booleanizer=None))
+        values = result["__t_code"].to_list()
+        assert values[0] == 1
+        assert values[1] == 0
+
+    def test_prefix_per_row_different_patterns(self, compiler):
+        dim = Dimension(dimension_name="code", match_strategy=MatchStrategy.PREFIX, data_type=str)
+        expr = compiler.compile_dimension(dim)
+        df = pl.DataFrame({
+            "code": ["PRE-", "POST-", "MID-"],
+            f"{CTX_PREFIX}code": ["PRE-001", "POST-002", "MID-003"],
+        })
+        result = df.with_columns(expr.name.alias("__t_code").compile(df, booleanizer=None))
+        assert result["__t_code"].to_list() == [1, 1, 1]
