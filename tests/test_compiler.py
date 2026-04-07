@@ -1,5 +1,6 @@
 """Tests for DimensionCompiler."""
 
+import ibis
 import polars as pl
 import pytest
 
@@ -574,3 +575,53 @@ class TestSetExclusionCompilation:
         result = df.with_columns(expr.name.alias("__t_region").compile(df, booleanizer=None))
         values = result["__t_region"].to_list()
         assert values == [0]
+
+
+class TestBackendAgnosticism:
+    """Smoke tests: each strategy compiles against multiple backends.
+
+    SET_MEMBERSHIP and SET_EXCLUSION are excluded because they use a
+    Polars-native workaround pending upstream t_is_in list-column support.
+    """
+
+    def _sample_polars(self):
+        return pl.DataFrame({
+            "str_col": ["A", "B"],
+            "num_col": [10, 20],
+            "min_col": [0, 0],
+            "max_col": [100, 100],
+            f"{CTX_PREFIX}str_col": ["A", "A"],
+            f"{CTX_PREFIX}num_col": [15, 15],
+        })
+
+    def _sample_ibis(self):
+        return ibis.memtable(self._sample_polars().to_pandas())
+
+    @pytest.mark.parametrize("backend_name", ["polars", "ibis"])
+    @pytest.mark.parametrize("strategy,field,data_type,extras", [
+        (MatchStrategy.EXACT, "str_col", str, {}),
+        (MatchStrategy.NOT_EQUAL, "str_col", str, {}),
+        (MatchStrategy.RANGE, "num_col", int, {"range_min_field": "min_col", "range_max_field": "max_col"}),
+        (MatchStrategy.GREATER_THAN, "num_col", int, {}),
+        (MatchStrategy.LESS_THAN, "num_col", int, {}),
+        (MatchStrategy.PREFIX, "str_col", str, {}),
+        (MatchStrategy.SUFFIX, "str_col", str, {}),
+        (MatchStrategy.CONTAINS, "str_col", str, {}),
+        (MatchStrategy.REGEX, "str_col", str, {}),
+    ])
+    def test_strategy_compiles_on_backend(self, compiler, backend_name, strategy, field, data_type, extras):
+        dim = Dimension(
+            dimension_name=field,
+            match_strategy=strategy,
+            data_type=data_type,
+            **extras,
+        )
+        expr = compiler.compile_dimension(dim)
+
+        if backend_name == "polars":
+            df = self._sample_polars()
+        else:
+            df = self._sample_ibis()
+
+        compiled = expr.compile(df, booleanizer=None)
+        assert compiled is not None
