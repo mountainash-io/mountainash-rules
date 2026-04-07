@@ -2,10 +2,6 @@
 
 from __future__ import annotations
 
-import re
-
-import polars as pl
-
 import mountainash.expressions as ma
 from mountainash.expressions import BaseExpressionAPI
 
@@ -127,45 +123,7 @@ class DimensionCompiler:
         return self._compile_string_match(dim, "ends_with")
 
     def _compile_contains(self, dim: Dimension) -> BaseExpressionAPI:
-        """CONTAINS: true when rule value appears as a substring of context value.
-
-        Uses count_substring instead of contains to support per-row column
-        references, as the polars str.contains backend treats its argument
-        as a regex pattern string rather than a column expression.
-        """
-        rule_col = ma.col(dim.resolved_rule_field)
-        ctx_col = ma.col(CTX_PREFIX + dim.dimension_name)
-        rule_is_sentinel = (
-            rule_col.__eq__(ma.lit(UNKNOWN)) | rule_col.__eq__(ma.lit(NOT_SET))
-        )
-        count_expr = ctx_col.str.count_substring(rule_col)
-        return ma.when(rule_is_sentinel).then(0).when(count_expr.__gt__(ma.lit(0))).then(1).otherwise(-1)
+        return self._compile_string_match(dim, "contains")
 
     def _compile_regex(self, dim: Dimension) -> BaseExpressionAPI:
-        rule_field = dim.resolved_rule_field
-        ctx_field = CTX_PREFIX + dim.dimension_name
-        _sentinels = frozenset(STRING_SENTINELS)
-
-        rule_is_sentinel = (
-            ma.col(rule_field).__eq__(ma.lit(UNKNOWN))
-            | ma.col(rule_field).__eq__(ma.lit(NOT_SET))
-        )
-
-        native_match = ma.native(
-            pl.struct([ctx_field, rule_field]).map_elements(
-                lambda row, _s=_sentinels: (
-                    bool(re.search(row[rule_field], row[ctx_field]))
-                    if row[rule_field] not in _s and row[rule_field] is not None
-                    else None
-                ),
-                return_dtype=pl.Boolean,
-            )
-        )
-
-        return (
-            ma.when(rule_is_sentinel)
-            .then(0)
-            .when(native_match)
-            .then(1)
-            .otherwise(-1)
-        )
+        return self._compile_string_match(dim, "regex_contains")
