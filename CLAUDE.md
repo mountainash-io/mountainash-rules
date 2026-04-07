@@ -30,6 +30,32 @@ Mountain Ash Utils Rules is a high-performance Python package that provides revo
 - Defined and consumed in `constants.py`, `compiler.py`, and `result.py` (search for "ternary")
 - Enables vectorized arithmetic combination of dimension match results across rules
 
+## Match Strategies
+
+The rules engine supports 11 match strategies via the `MatchStrategy` enum, compiled in `src/mountainash_utils_rules/compiler.py`:
+
+| Strategy | Rule Column Format | Data Type | Description |
+|----------|-------------------|-----------|-------------|
+| `EXACT` | Scalar value | any | Rule value equals context value |
+| `NOT_EQUAL` | Scalar value | any | Rule value does not equal context value |
+| `RANGE` | Two columns (min/max) | int, float | Context value within [min, max] |
+| `GREATER_THAN` | Threshold value | int, float | Context value > rule threshold |
+| `LESS_THAN` | Threshold value | int, float | Context value < rule threshold |
+| `PREFIX` | Prefix string | str | Context value starts with rule |
+| `SUFFIX` | Suffix string | str | Context value ends with rule |
+| `CONTAINS` | Substring | str | Context value contains rule |
+| `REGEX` | Regex pattern | str | Context value matches rule pattern (search semantics) |
+| `SET_MEMBERSHIP` | List column | any | Context value is in rule's list |
+| `SET_EXCLUSION` | List column | any | Context value is not in rule's list |
+
+**Backend support:**
+- 9 strategies (EXACT, NOT_EQUAL, RANGE, GREATER_THAN, LESS_THAN, PREFIX, SUFFIX, CONTAINS, REGEX) compile cleanly on Polars, Ibis, and Narwhals backends — all support per-row patterns/thresholds via column references
+- `SET_MEMBERSHIP` and `SET_EXCLUSION` currently use a Polars-native workaround (`ma.native(pl.col(...).list.contains(...))`) pending upstream `t_is_in`/`t_is_not_in` support for list-column references in mountainash-expressions
+
+**Unknown handling:** Sentinel values (`<NA>` for strings, `-999999999` for numerics) in either rule or context columns produce UNKNOWN (0) ternary results, which count as wildcards in ranking but do not eliminate the rule.
+
+**Adding strategies:** The process is documented in `docs/superpowers/specs/2026-04-07-extended-match-strategies-design.md`. Pattern: add enum value, add validation rule in `dimension.py`, add `_compile_<strategy>` method in `compiler.py`, add test class in `tests/test_compiler.py`.
+
 ### Package Structure
 
 ```
