@@ -48,12 +48,29 @@ class Dimension(BaseModel):
                     f"Dimension '{self.dimension_name}' uses RANGE strategy "
                     f"but data_type is {self.data_type.__name__}, expected int or float"
                 )
-        if self.match_strategy == MatchStrategy.REGEX:
+
+        if self.match_strategy in (
+            MatchStrategy.REGEX,
+            MatchStrategy.PREFIX,
+            MatchStrategy.SUFFIX,
+            MatchStrategy.CONTAINS,
+        ):
             if self.data_type is not str:
                 raise ValueError(
-                    f"Dimension '{self.dimension_name}' uses REGEX strategy "
+                    f"Dimension '{self.dimension_name}' uses {self.match_strategy.name} "
                     f"but data_type is {self.data_type.__name__}, expected str"
                 )
+
+        if self.match_strategy in (
+            MatchStrategy.GREATER_THAN,
+            MatchStrategy.LESS_THAN,
+        ):
+            if self.data_type not in (int, float):
+                raise ValueError(
+                    f"Dimension '{self.dimension_name}' uses {self.match_strategy.name} "
+                    f"but data_type is {self.data_type.__name__}, expected int or float"
+                )
+
         return self
 
 
