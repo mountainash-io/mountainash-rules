@@ -193,3 +193,154 @@ class TestRegexCompilation:
         values = result["__t_pattern"].to_list()
         assert values[0] == 1  # match
         assert values[1] == 0  # unknown pattern → unknown result
+
+
+class TestNotEqualCompilation:
+    def test_not_equal_mismatch_produces_true(self, compiler):
+        dim = Dimension(dimension_name="region", match_strategy=MatchStrategy.NOT_EQUAL, data_type=str)
+        expr = compiler.compile_dimension(dim)
+
+        df = pl.DataFrame({
+            "region": ["AU", "US", "UK"],
+            f"{CTX_PREFIX}region": ["AU", "AU", "AU"],
+        })
+        result = df.with_columns(expr.name.alias("__t_region").compile(df, booleanizer=None))
+        values = result["__t_region"].to_list()
+        assert values == [-1, 1, 1]
+
+    def test_not_equal_unknown_rule_produces_unknown(self, compiler):
+        dim = Dimension(dimension_name="region", match_strategy=MatchStrategy.NOT_EQUAL, data_type=str)
+        expr = compiler.compile_dimension(dim)
+
+        df = pl.DataFrame({
+            "region": [UNKNOWN, "US"],
+            f"{CTX_PREFIX}region": ["AU", "AU"],
+        })
+        result = df.with_columns(expr.name.alias("__t_region").compile(df, booleanizer=None))
+        values = result["__t_region"].to_list()
+        assert values[0] == 0
+        assert values[1] == 1
+
+
+class TestGreaterThanCompilation:
+    def test_greater_than_true(self, compiler):
+        dim = Dimension(
+            dimension_name="amount",
+            match_strategy=MatchStrategy.GREATER_THAN,
+            data_type=int,
+        )
+        expr = compiler.compile_dimension(dim)
+        df = pl.DataFrame({
+            "amount": [100, 500, 1000],
+            f"{CTX_PREFIX}amount": [1500, 1500, 1500],
+        })
+        result = df.with_columns(expr.name.alias("__t_amount").compile(df, booleanizer=None))
+        values = result["__t_amount"].to_list()
+        assert values == [1, 1, 1]
+
+    def test_greater_than_false(self, compiler):
+        dim = Dimension(
+            dimension_name="amount",
+            match_strategy=MatchStrategy.GREATER_THAN,
+            data_type=int,
+        )
+        expr = compiler.compile_dimension(dim)
+        df = pl.DataFrame({
+            "amount": [100, 500, 1000],
+            f"{CTX_PREFIX}amount": [50, 50, 50],
+        })
+        result = df.with_columns(expr.name.alias("__t_amount").compile(df, booleanizer=None))
+        values = result["__t_amount"].to_list()
+        assert values == [-1, -1, -1]
+
+    def test_greater_than_equal_is_false(self, compiler):
+        dim = Dimension(
+            dimension_name="amount",
+            match_strategy=MatchStrategy.GREATER_THAN,
+            data_type=int,
+        )
+        expr = compiler.compile_dimension(dim)
+        df = pl.DataFrame({
+            "amount": [100],
+            f"{CTX_PREFIX}amount": [100],
+        })
+        result = df.with_columns(expr.name.alias("__t_amount").compile(df, booleanizer=None))
+        values = result["__t_amount"].to_list()
+        assert values == [-1]
+
+    def test_greater_than_unknown_rule(self, compiler):
+        dim = Dimension(
+            dimension_name="amount",
+            match_strategy=MatchStrategy.GREATER_THAN,
+            data_type=int,
+        )
+        expr = compiler.compile_dimension(dim)
+        df = pl.DataFrame({
+            "amount": [UNKNOWN_NUMERIC],
+            f"{CTX_PREFIX}amount": [100],
+        })
+        result = df.with_columns(expr.name.alias("__t_amount").compile(df, booleanizer=None))
+        values = result["__t_amount"].to_list()
+        assert values == [0]
+
+
+class TestLessThanCompilation:
+    def test_less_than_true(self, compiler):
+        dim = Dimension(
+            dimension_name="amount",
+            match_strategy=MatchStrategy.LESS_THAN,
+            data_type=int,
+        )
+        expr = compiler.compile_dimension(dim)
+        df = pl.DataFrame({
+            "amount": [100, 500, 1000],
+            f"{CTX_PREFIX}amount": [50, 50, 50],
+        })
+        result = df.with_columns(expr.name.alias("__t_amount").compile(df, booleanizer=None))
+        values = result["__t_amount"].to_list()
+        assert values == [1, 1, 1]
+
+    def test_less_than_false(self, compiler):
+        dim = Dimension(
+            dimension_name="amount",
+            match_strategy=MatchStrategy.LESS_THAN,
+            data_type=int,
+        )
+        expr = compiler.compile_dimension(dim)
+        df = pl.DataFrame({
+            "amount": [100, 500],
+            f"{CTX_PREFIX}amount": [1500, 1500],
+        })
+        result = df.with_columns(expr.name.alias("__t_amount").compile(df, booleanizer=None))
+        values = result["__t_amount"].to_list()
+        assert values == [-1, -1]
+
+    def test_less_than_equal_is_false(self, compiler):
+        dim = Dimension(
+            dimension_name="amount",
+            match_strategy=MatchStrategy.LESS_THAN,
+            data_type=int,
+        )
+        expr = compiler.compile_dimension(dim)
+        df = pl.DataFrame({
+            "amount": [100],
+            f"{CTX_PREFIX}amount": [100],
+        })
+        result = df.with_columns(expr.name.alias("__t_amount").compile(df, booleanizer=None))
+        values = result["__t_amount"].to_list()
+        assert values == [-1]
+
+    def test_less_than_unknown_rule(self, compiler):
+        dim = Dimension(
+            dimension_name="amount",
+            match_strategy=MatchStrategy.LESS_THAN,
+            data_type=int,
+        )
+        expr = compiler.compile_dimension(dim)
+        df = pl.DataFrame({
+            "amount": [UNKNOWN_NUMERIC],
+            f"{CTX_PREFIX}amount": [100],
+        })
+        result = df.with_columns(expr.name.alias("__t_amount").compile(df, booleanizer=None))
+        values = result["__t_amount"].to_list()
+        assert values == [0]

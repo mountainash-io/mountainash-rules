@@ -43,6 +43,12 @@ class DimensionCompiler:
                 return self._compile_range(dim)
             case MatchStrategy.REGEX:
                 return self._compile_regex(dim)
+            case MatchStrategy.NOT_EQUAL:
+                return self._compile_not_equal(dim)
+            case MatchStrategy.GREATER_THAN:
+                return self._compile_greater_than(dim)
+            case MatchStrategy.LESS_THAN:
+                return self._compile_less_than(dim)
             case _:
                 raise ValueError(f"Unknown match strategy: {dim.match_strategy}")
 
@@ -57,6 +63,24 @@ class DimensionCompiler:
         rule_col = ma.t_col(dim.resolved_rule_field, unknown=sentinels)
         ctx_col = ma.t_col(CTX_PREFIX + dim.dimension_name, unknown=sentinels)
         return rule_col.t_eq(ctx_col)
+
+    def _compile_not_equal(self, dim: Dimension) -> BaseExpressionAPI:
+        sentinels = self._sentinels_for_type(dim.data_type)
+        rule_col = ma.t_col(dim.resolved_rule_field, unknown=sentinels)
+        ctx_col = ma.t_col(CTX_PREFIX + dim.dimension_name, unknown=sentinels)
+        return rule_col.t_ne(ctx_col)
+
+    def _compile_greater_than(self, dim: Dimension) -> BaseExpressionAPI:
+        sentinels = self._sentinels_for_type(dim.data_type)
+        rule_col = ma.t_col(dim.resolved_rule_field, unknown=sentinels)
+        ctx_col = ma.t_col(CTX_PREFIX + dim.dimension_name, unknown=sentinels)
+        return ctx_col.t_gt(rule_col)
+
+    def _compile_less_than(self, dim: Dimension) -> BaseExpressionAPI:
+        sentinels = self._sentinels_for_type(dim.data_type)
+        rule_col = ma.t_col(dim.resolved_rule_field, unknown=sentinels)
+        ctx_col = ma.t_col(CTX_PREFIX + dim.dimension_name, unknown=sentinels)
+        return ctx_col.t_lt(rule_col)
 
     def _compile_range(self, dim: Dimension) -> BaseExpressionAPI:
         sentinels = self._sentinels_for_type(dim.data_type)
