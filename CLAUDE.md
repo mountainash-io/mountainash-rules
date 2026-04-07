@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Mountain Ash Utils Rules is a high-performance Python package that provides revolutionary rule-based systems with multiple engine architectures. It features prime-based ternary logic, vectorized processing, and multiple performance-optimized engines including hybrid numpy/ibis processing and pure vectorized polars processing. The system achieves up to 93.9% performance improvements (16.40x speedup) through advanced mathematical optimization.
+Mountain Ash Utils Rules is a high-performance Python package that provides revolutionary rule-based systems with multiple engine architectures. It features signed-integer ternary logic (-1/0/1), vectorized processing, and multiple performance-optimized engines including hybrid numpy/ibis processing and pure vectorized polars processing. The system achieves up to 93.9% performance improvements (16.40x speedup) through advanced mathematical optimization.
 
 ## Architecture
 
@@ -25,9 +25,10 @@ Mountain Ash Utils Rules is a high-performance Python package that provides revo
 - **VectorizedRulesEngine**: Revolutionary polars-based engine achieving 93.9% performance improvement
 - **PolarsRuleProcessor**: Pure vectorized polars processor with lazy evaluation
 
-#### Prime-Based Ternary Logic System
-- **RuleTrinaryFlags**: Mathematical prime-based flags (PRIME_TRUE=2, PRIME_FALSE=3, PRIME_UNKNOWN=5)
-- Enables mathematical precision and vectorization optimization
+#### Ternary Logic Encoding
+- Per-dimension match values use signed-integer ternary encoding: **1 = match, 0 = unknown, −1 = non-match**
+- Defined and consumed in `constants.py`, `compiler.py`, and `result.py` (search for "ternary")
+- Enables vectorized arithmetic combination of dimension match results across rules
 
 ### Package Structure
 
@@ -35,7 +36,7 @@ Mountain Ash Utils Rules is a high-performance Python package that provides revo
 src/mountainash_utils_rules/
 ├── __init__.py              # Package exports and public API
 ├── __version__.py           # Version information
-├── constants.py             # Constants, enums, and prime-based ternary flags
+├── constants.py             # Constants, enums, and ternary value definitions
 ├── context.py               # Context handling utilities with batch optimization
 ├── dimension.py             # Dimension metadata and management
 ├── engine.py                # Original RulesEngine implementation
@@ -153,7 +154,7 @@ docs/
 - **Organization**: Follow modular design with clear separation of concerns
 - **Testing**: Create unit tests with appropriate markers (unit, integration, performance, benchmark)
 - **Performance**: Maintain mathematical precision while optimizing for speed
-- **Prime-based logic**: Use RuleTrinaryFlags (2, 3, 5) for ternary operations
+- **Ternary logic**: Use the signed-integer encoding (1 match, 0 unknown, −1 non-match) for per-dimension match values
 
 ## Development Environments
 
@@ -250,18 +251,19 @@ benchmarker.test_backend_initialization()
 benchmarker.test_performance_comparison()
 ```
 
-## Key Innovation: Prime-Based Ternary Logic
+## Key Innovation: Ternary Match Logic
 
-The system uses mathematical prime numbers for ternary logic operations:
-- **PRIME_TRUE = 2**: Condition matches
-- **PRIME_FALSE = 3**: Condition doesn't match  
-- **PRIME_UNKNOWN = 5**: Condition unknown/unset
+The system encodes per-dimension match results using a signed-integer ternary scheme:
+- **1**: Condition matches
+- **0**: Condition unknown / dimension absent from rule
+- **−1**: Condition does not match
 
 This enables:
-- Mathematical precision in rule combinations
-- Vectorization optimization
-- Perfect audit trails through prime factorization
-- Up to 16.40x performance improvements
+- Vectorized arithmetic combination of dimension results across rules
+- Cheap aggregation (sum/min) for whole-rule match decisions
+- Up to 16.40x performance improvements via the polars/ibis backends
+
+> **Historical note:** earlier planning documents describe a prime-based encoding (PRIME_TRUE=2, PRIME_FALSE=3, PRIME_UNKNOWN=5). That scheme was never implemented in the source — the actual encoding is the signed-integer one above. A separate prime-product mechanism is proposed for the *additive/accumulator* engine described in `docs/superpowers/specs/`, but it is unrelated to per-dimension ternary values: it identifies *combinations of rules*, not match outcomes.
 
 ## Performance Architecture Evolution
 
