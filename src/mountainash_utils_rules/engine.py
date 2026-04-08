@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import functools
 import typing as t
 
-import polars as pl
 from pydantic import BaseModel
 
+import mountainash.expressions as ma
 from mountainash.expressions import BaseExpressionAPI
+from mountainash.relations import relation
 
 from mountainash_utils_rules.compiler import DimensionCompiler
 from mountainash_utils_rules.constants import CTX_PREFIX
@@ -22,6 +24,11 @@ class ExpressionRulesEngine:
     Compiles dimension metadata into expression templates at construction time,
     then evaluates contexts against the rules DataFrame in a single-pass
     vectorized operation.
+
+    The engine is backend-agnostic. The DataFrame backend (Polars, Ibis,
+    Narwhals-wrapped Pandas/PyArrow) is determined by the type of `rules`
+    passed to the constructor. The `RuleResult.survivors` accessor returns
+    a DataFrame in the same backend as the input.
 
     Two construction paths:
     - Convenience: provide dimension_metadata (auto-compiled to expressions)
@@ -69,76 +76,81 @@ class ExpressionRulesEngine:
         Returns:
             RuleResult with ranked surviving rules.
         """
-        # Determine which dimensions to evaluate
-        all_dim_names = list(self._expressions.keys())
+        all_dim_names = list(self._expressions.keys()) if self._expressions else []
         active_dims = dimensions if dimensions else all_dim_names
 
-        # Validate requested dimensions exist
         for dim_name in active_dims:
-            if dim_name not in self._expressions:
+            if dim_name not in all_dim_names:
                 raise KeyError(f"Dimension '{dim_name}' not found in expressions")
 
-        # Extract context values
         context_values = extract_context_values(context, active_dims)
-
-        # Bind context values as literal columns
-        augmented = self._bind_context(self._rules, context_values)
-
-        # Evaluate all dimensions in a single pass
-        result_df = self._evaluate(augmented, active_dims)
-
-        # Apply filters
-        if min_specificity is not None:
-            result_df = result_df.filter(pl.col("__specificity") >= min_specificity)
-
-        if top_n is not None:
-            result_df = result_df.head(top_n)
-
-        # Optionally strip observability columns
-        if not include_observability:
-            t_cols = [f"__t_{d}" for d in active_dims]
-            result_df = result_df.drop([c for c in t_cols if c in result_df.columns])
-
+        result_df = self._evaluate(
+            active_dims=active_dims,
+            context_values=context_values,
+            top_n=top_n,
+            min_specificity=min_specificity,
+            include_observability=include_observability,
+        )
         return RuleResult(dataframe=result_df, active_dimensions=active_dims)
 
-    def _bind_context(self, rules: t.Any, context_values: dict[str, t.Any]) -> t.Any:
-        """Add context values as literal columns to the rules DataFrame."""
+    def _evaluate(
+        self,
+        active_dims: list[str],
+        context_values: dict[str, t.Any],
+        top_n: int | None,
+        min_specificity: int | None,
+        include_observability: bool,
+    ) -> t.Any:
+        """Run the single-pass evaluation pipeline via mountainash.relations.Relation."""
+        rel = relation(self._rules)
+
+        # Step 1: Bind context values as literal columns
         ctx_columns = [
-            pl.lit(value).alias(f"{CTX_PREFIX}{name}")
+            ma.lit(value).alias(f"{CTX_PREFIX}{name}")
             for name, value in context_values.items()
         ]
-        return rules.with_columns(ctx_columns)
+        rel = rel.with_columns(*ctx_columns)
 
-    def _evaluate(self, augmented_df: t.Any, active_dims: list[str]) -> t.Any:
-        """Run the single-pass evaluation pipeline."""
-        # Step 1: Compile each dimension expression into a named ternary column
+        # Step 2: Apply each dimension expression as a named ternary column
         dim_columns = [
-            self._expressions[dim_name]
-                .name.alias(f"__t_{dim_name}")
-                .compile(augmented_df, booleanizer=None)
+            self._expressions[dim_name].name.alias(f"__t_{dim_name}")
             for dim_name in active_dims
         ]
+        rel = rel.with_columns(*dim_columns)
 
-        # Step 2: Apply all ternary columns at once
-        result = augmented_df.with_columns(dim_columns)
+        # Step 3: Compute survival and specificity via mountainash expressions
+        t_cols = [ma.col(f"__t_{d}") for d in active_dims]
+        if len(t_cols) == 1:
+            survived_inner = t_cols[0]
+        else:
+            survived_inner = ma.least(*t_cols)
+        survived = survived_inner.ge(ma.lit(0)).alias("__survived")
 
-        # Step 3: Compute survival and specificity
-        t_col_refs = [pl.col(f"__t_{d}") for d in active_dims]
+        specificity = functools.reduce(
+            lambda a, b: a.add(b),
+            [c.eq(ma.lit(1)) for c in t_cols],
+        ).alias("__specificity")
+        rel = rel.with_columns(survived, specificity)
 
-        result = result.with_columns(
-            pl.min_horizontal(*t_col_refs).ge(0).alias("__survived"),
-            pl.sum_horizontal(*[c.eq(1).cast(pl.Int32) for c in t_col_refs]).alias("__specificity"),
-        )
-
-        # Step 4: Filter survivors, rank, clean up
-        ctx_columns = [f"{CTX_PREFIX}{d}" for d in active_dims]
-
-        result = (
-            result
-            .filter(pl.col("__survived"))
+        # Step 4: Filter survivors, sort by specificity, add 1-based rank
+        rel = (
+            rel
+            .filter(ma.col("__survived"))
             .sort("__specificity", descending=True)
-            .with_row_index("__rank", offset=1)
-            .drop(["__survived"] + ctx_columns)
+            .with_row_index(name="__rank")
+            .with_columns(ma.col("__rank").add(ma.lit(1)).alias("__rank"))
         )
 
-        return result
+        # Step 5: Apply optional filters (after ranking, so __rank reflects pre-filter position)
+        if min_specificity is not None:
+            rel = rel.filter(ma.col("__specificity").ge(ma.lit(min_specificity)))
+        if top_n is not None:
+            rel = rel.head(top_n)
+
+        # Step 6: Drop temporary and observability columns
+        drop_cols = ["__survived"] + [f"{CTX_PREFIX}{d}" for d in active_dims]
+        if not include_observability:
+            drop_cols += [f"__t_{d}" for d in active_dims]
+        rel = rel.drop(*drop_cols)
+
+        return rel.collect().collect()
