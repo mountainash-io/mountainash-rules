@@ -1,8 +1,11 @@
-"""RuleResult: wrapper for evaluated rule results with observability."""
+"""RuleResult: wrapper for evaluated rule results with backend-agnostic accessors."""
 
 from __future__ import annotations
 
 import typing as t
+
+import mountainash.expressions as ma
+from mountainash.relations import relation
 
 
 class RuleResult:
@@ -13,6 +16,10 @@ class RuleResult:
     - __t_{dim_name} columns: ternary values (1=match, 0=unknown, -1=non-match)
     - __specificity: count of hard matches (TRUE=1 values)
     - __rank: 1-based ranking by specificity descending
+
+    All accessors are backend-agnostic — they reach the DataFrame only through
+    mountainash.relations.Relation. The `survivors` property returns the native
+    input backend so users can chain backend-specific operations on the result.
     """
 
     def __init__(self, dataframe: t.Any, active_dimensions: list[str]) -> None:
@@ -21,18 +28,21 @@ class RuleResult:
 
     @property
     def survivors(self) -> t.Any:
-        """All surviving rules, ranked by specificity descending."""
+        """All surviving rules, ranked by specificity descending.
+
+        Returns the native DataFrame in the same backend as the input.
+        """
         return self._df
 
     @property
     def best_match(self) -> t.Any:
         """The single most specific surviving rule."""
-        return self._df.head(1)
+        return relation(self._df).head(1).collect().collect()
 
     @property
     def count(self) -> int:
         """Number of surviving rules."""
-        return self._df.shape[0]
+        return relation(self._df).count_rows()
 
     @property
     def active_dimensions(self) -> list[str]:
@@ -51,13 +61,15 @@ class RuleResult:
         Raises:
             KeyError: If the rule_name is not found in survivors.
         """
-        filtered = self._df.filter(self._df["rule_name"] == rule_name)
-        if filtered.shape[0] == 0:
+        rel = (
+            relation(self._df)
+            .filter(ma.col("rule_name").eq(ma.lit(rule_name)))
+            .head(1)
+        )
+        if rel.count_rows() == 0:
             raise KeyError(f"Rule '{rule_name}' not found in survivors")
-
-        row = filtered.head(1)
         return {
-            dim: row[f"__t_{dim}"][0]
+            dim: rel.item(f"__t_{dim}")
             for dim in self._active_dimensions
         }
 
@@ -68,6 +80,10 @@ class RuleResult:
             n: Minimum number of hard matches required.
 
         Returns:
-            Filtered DataFrame.
+            Filtered DataFrame in the same backend as the input.
         """
-        return self._df.filter(self._df["__specificity"] >= n)
+        return (
+            relation(self._df)
+            .filter(ma.col("__specificity").ge(ma.lit(n)))
+            .collect().collect()
+        )
