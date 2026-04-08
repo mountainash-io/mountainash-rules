@@ -37,7 +37,7 @@ class RuleResult:
     @property
     def best_match(self) -> t.Any:
         """The single most specific surviving rule."""
-        return relation(self._df).head(1).collect().collect()
+        return relation(self._df).head(1).collect()
 
     @property
     def count(self) -> int:
@@ -85,5 +85,5 @@ class RuleResult:
         return (
             relation(self._df)
             .filter(ma.col("__specificity").ge(ma.lit(n)))
-            .collect().collect()
+            .collect()
         )

@@ -132,7 +132,15 @@ class DimensionCompiler:
         return self._compile_string_match(dim, "contains")
 
     def _compile_regex(self, dim: Dimension) -> BaseExpressionAPI:
-        return self._compile_string_match(dim, "regex_contains")
+        """REGEX dimensions use a literal pattern from metadata.
+
+        All rules in the engine share the same ternary outcome for a REGEX
+        dimension — it acts as a global context validator. There is no
+        unknown state because the pattern is fixed at metadata time.
+        """
+        ctx_col = ma.col(CTX_PREFIX + dim.dimension_name)
+        match = ctx_col.str.regex_contains(dim.regex_pattern)
+        return ma.when(match).then(1).otherwise(-1)
 
     def _compile_set_membership(self, dim: Dimension) -> BaseExpressionAPI:
         """Compile SET_MEMBERSHIP: context value is in the rule's list column."""

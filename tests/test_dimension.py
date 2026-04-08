@@ -82,6 +82,43 @@ class TestStringStrategyValidation:
             )
 
 
+class TestRegexPatternValidation:
+    def test_regex_with_pattern_ok(self):
+        d = Dimension(
+            dimension_name="code",
+            match_strategy=MatchStrategy.REGEX,
+            data_type=str,
+            regex_pattern="^foo",
+        )
+        assert d.regex_pattern == "^foo"
+
+    def test_regex_without_pattern_raises(self):
+        with pytest.raises(ValueError, match="regex_pattern"):
+            Dimension(
+                dimension_name="code",
+                match_strategy=MatchStrategy.REGEX,
+                data_type=str,
+            )
+
+    def test_regex_empty_pattern_raises(self):
+        with pytest.raises(ValueError, match="regex_pattern"):
+            Dimension(
+                dimension_name="code",
+                match_strategy=MatchStrategy.REGEX,
+                data_type=str,
+                regex_pattern="",
+            )
+
+    def test_regex_pattern_forbidden_on_non_regex(self):
+        with pytest.raises(ValueError, match="regex_pattern"):
+            Dimension(
+                dimension_name="x",
+                match_strategy=MatchStrategy.EXACT,
+                data_type=str,
+                regex_pattern="^foo",
+            )
+
+
 class TestSetStrategyValidation:
     def test_set_membership_accepts_any_type(self):
         d = Dimension(

@@ -115,7 +115,7 @@ class ExpressionRulesEngine:
         dim_columns = [
             self._expressions[dim_name].name.alias(f"__t_{dim_name}")
             for dim_name in active_dims
-        ]
+        ] if self._expressions else []
         rel = rel.with_columns(*dim_columns)
 
         # Step 3: Compute survival and specificity via mountainash expressions
@@ -128,7 +128,7 @@ class ExpressionRulesEngine:
 
         specificity = functools.reduce(
             lambda a, b: a.add(b),
-            [c.eq(ma.lit(1)) for c in t_cols],
+            [c.eq(ma.lit(1)).cast(int) for c in t_cols],
         ).alias("__specificity")
         rel = rel.with_columns(survived, specificity)
 
@@ -153,4 +153,4 @@ class ExpressionRulesEngine:
             drop_cols += [f"__t_{d}" for d in active_dims]
         rel = rel.drop(*drop_cols)
 
-        return rel.collect().collect()
+        return rel.collect()

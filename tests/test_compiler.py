@@ -154,57 +154,59 @@ class TestRangeCompilation:
 
 
 class TestRegexCompilation:
-    def test_regex_match_produces_true(self, compiler):
-        dim = Dimension(dimension_name="pattern", match_strategy=MatchStrategy.REGEX, data_type=str)
+    """REGEX uses a literal pattern from Dimension metadata (not a rule column).
+
+    The ternary outcome is purely context-driven: every rule in the engine
+    shares the same +1 / -1 outcome for a REGEX dimension.
+    """
+
+    def test_regex_context_matches_pattern(self, compiler):
+        dim = Dimension(
+            dimension_name="code",
+            match_strategy=MatchStrategy.REGEX,
+            data_type=str,
+            regex_pattern="^PRE.*",
+        )
         expr = compiler.compile_dimension(dim)
 
         df = pl.DataFrame({
-            "pattern": ["^AU.*", "^US.*", "^UK.*"],
-            f"{CTX_PREFIX}pattern": ["AU-123", "AU-123", "AU-123"],
+            f"{CTX_PREFIX}code": ["PRE-001", "PRE-999", "POST-001"],
         })
-        result = df.with_columns(expr.name.alias("__t_pattern").compile(df, booleanizer=None))
-        values = result["__t_pattern"].to_list()
-        assert values[0] == 1   # match
-        assert values[1] == -1  # no match
-        assert values[2] == -1  # no match
+        result = df.with_columns(expr.name.alias("__t_code").compile(df, booleanizer=None))
+        assert result["__t_code"].to_list() == [1, 1, -1]
 
     def test_regex_search_semantics(self, compiler):
         """regex_contains uses search semantics (match anywhere, not anchored)."""
-        dim = Dimension(dimension_name="code", match_strategy=MatchStrategy.REGEX, data_type=str)
+        dim = Dimension(
+            dimension_name="code",
+            match_strategy=MatchStrategy.REGEX,
+            data_type=str,
+            regex_pattern="123",
+        )
         expr = compiler.compile_dimension(dim)
 
         df = pl.DataFrame({
-            "code": ["123", "xyz"],
-            f"{CTX_PREFIX}code": ["abc-123-def", "abc-123-def"],
+            f"{CTX_PREFIX}code": ["abc-123-def", "xyz"],
         })
         result = df.with_columns(expr.name.alias("__t_code").compile(df, booleanizer=None))
-        values = result["__t_code"].to_list()
-        assert values[0] == 1   # "123" found within "abc-123-def"
-        assert values[1] == -1  # "xyz" not found
+        assert result["__t_code"].to_list() == [1, -1]
 
-    def test_regex_unknown_pattern_produces_unknown(self, compiler):
-        dim = Dimension(dimension_name="pattern", match_strategy=MatchStrategy.REGEX, data_type=str)
+    def test_regex_no_unknown_state(self, compiler):
+        """REGEX has no unknown/0 state — pattern is fixed at metadata time."""
+        dim = Dimension(
+            dimension_name="code",
+            match_strategy=MatchStrategy.REGEX,
+            data_type=str,
+            regex_pattern="^AU.*",
+        )
         expr = compiler.compile_dimension(dim)
 
         df = pl.DataFrame({
-            "pattern": ["^AU.*", UNKNOWN],
-            f"{CTX_PREFIX}pattern": ["AU-123", "AU-123"],
+            f"{CTX_PREFIX}code": ["AU-1", "NZ-1"],
         })
-        result = df.with_columns(expr.name.alias("__t_pattern").compile(df, booleanizer=None))
-        values = result["__t_pattern"].to_list()
-        assert values[0] == 1  # match
-        assert values[1] == 0  # unknown pattern → unknown result
-
-    def test_regex_per_row_different_patterns(self, compiler):
-        """Each row uses its own regex pattern — proves backend-agnostic per-row support."""
-        dim = Dimension(dimension_name="pattern", match_strategy=MatchStrategy.REGEX, data_type=str)
-        expr = compiler.compile_dimension(dim)
-        df = pl.DataFrame({
-            "pattern": ["^AU.*", "^US.*", "^UK.*"],
-            f"{CTX_PREFIX}pattern": ["AU-123", "US-456", "UK-789"],
-        })
-        result = df.with_columns(expr.name.alias("__t_pattern").compile(df, booleanizer=None))
-        assert result["__t_pattern"].to_list() == [1, 1, 1]
+        result = df.with_columns(expr.name.alias("__t_code").compile(df, booleanizer=None))
+        # only 1 and -1; never 0
+        assert set(result["__t_code"].to_list()) <= {1, -1}
 
 
 class TestNotEqualCompilation:

@@ -60,7 +60,6 @@ class TestEntityPool:
             "region": [UNKNOWN, UNKNOWN, "AU"],
             "value_min": [UNKNOWN_NUMERIC, 1000, 5000],
             "value_max": [UNKNOWN_NUMERIC, 9999, 99999],
-            "code_pattern": [UNKNOWN, "^T.*", "^T.*"],
         })
         metadata = DimensionsMetadata(dimensions=[
             Dimension(dimension_name="region", match_strategy=MatchStrategy.EXACT, data_type=str),
@@ -71,21 +70,32 @@ class TestEntityPool:
                 range_min_field="value_min",
                 range_max_field="value_max",
             ),
-            Dimension(dimension_name="code_pattern", match_strategy=MatchStrategy.REGEX, data_type=str),
+            Dimension(
+                dimension_name="code_pattern",
+                match_strategy=MatchStrategy.REGEX,
+                data_type=str,
+                regex_pattern="^T.*",
+            ),
         ])
         return ExpressionRulesEngine(rules=rules_df, dimension_metadata=metadata)
 
     def test_most_specific_wins(self, pool_engine):
+        # code_pattern "TXN-001" matches ^T.* → +1 for all rules
+        # catch_all: 0+0+1=1, mid_tier: 0+1+1=2, high_value_au: 1+1+1=3
         result = pool_engine.evaluate(context={"region": "AU", "value": 7500, "code_pattern": "TXN-001"})
         assert result.best_match["rule_name"][0] == "high_value_au"
+        assert result.best_match["__specificity"][0] == 3
 
     def test_mid_tier_fallback(self, pool_engine):
+        # high_value_au eliminated on region; mid_tier survives with specificity 2
         result = pool_engine.evaluate(context={"region": "UK", "value": 5000, "code_pattern": "TXN-001"})
         assert result.best_match["rule_name"][0] == "mid_tier"
+        assert result.best_match["__specificity"][0] == 2
 
-    def test_catch_all_fallback(self, pool_engine):
+    def test_no_match_when_regex_fails(self, pool_engine):
+        # code_pattern "ABC-001" fails ^T.* → -1 for every rule → all eliminated
         result = pool_engine.evaluate(context={"region": "UK", "value": 500, "code_pattern": "ABC-001"})
-        assert result.best_match["rule_name"][0] == "catch_all"
+        assert result.count == 0
 
 
 class TestNoMatch:

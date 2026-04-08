@@ -25,6 +25,9 @@ class Dimension(BaseModel):
     range_min_inclusive: bool = True
     range_max_inclusive: bool = True
 
+    # REGEX strategy field — literal pattern stored on metadata (not per-rule)
+    regex_pattern: t.Optional[str] = None
+
     @property
     def resolved_context_field(self) -> str:
         """The field name to extract from the context object."""
@@ -59,6 +62,20 @@ class Dimension(BaseModel):
                 raise ValueError(
                     f"Dimension '{self.dimension_name}' uses {self.match_strategy.name} "
                     f"but data_type is {self.data_type.__name__}, expected str"
+                )
+
+        if self.match_strategy == MatchStrategy.REGEX:
+            if not isinstance(self.regex_pattern, str) or not self.regex_pattern:
+                raise ValueError(
+                    f"Dimension '{self.dimension_name}' uses REGEX strategy and "
+                    f"requires a non-empty literal 'regex_pattern' on the Dimension"
+                )
+        else:
+            if self.regex_pattern is not None:
+                raise ValueError(
+                    f"Dimension '{self.dimension_name}' sets regex_pattern but "
+                    f"match_strategy is {self.match_strategy.name}; "
+                    f"regex_pattern is only valid for REGEX strategy"
                 )
 
         if self.match_strategy in (
