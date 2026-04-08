@@ -9,6 +9,11 @@ import mountainash.expressions as ma
 from mountainash_utils_rules.compiler import DimensionCompiler
 from mountainash_utils_rules.constants import CTX_PREFIX, UNKNOWN, UNKNOWN_NUMERIC, MatchStrategy
 from mountainash_utils_rules.dimension import Dimension
+from tests.conftest import (
+    ALL_BACKENDS,
+    SET_MEMBERSHIP_XFAIL_REASON,
+    build_backend_df,
+)
 
 
 @pytest.fixture
@@ -580,26 +585,22 @@ class TestSetExclusionCompilation:
 
 
 class TestBackendAgnosticism:
-    """Smoke tests: each strategy compiles against multiple backends.
+    """Smoke tests: each strategy compiles against all 7 supported backends."""
 
-    SET_MEMBERSHIP and SET_EXCLUSION are excluded because they use a
-    Polars-native workaround pending upstream t_is_in list-column support.
-    """
+    _SAMPLE_DATA = {
+        "str_col": ["A", "B"],
+        "num_col": [10, 20],
+        "min_col": [0, 0],
+        "max_col": [100, 100],
+        "list_col": [["A", "X"], ["B", "Y"]],
+        f"{CTX_PREFIX}str_col": ["A", "A"],
+        f"{CTX_PREFIX}num_col": [15, 15],
+        f"{CTX_PREFIX}list_col": ["A", "A"],
+    }
 
-    def _sample_polars(self):
-        return pl.DataFrame({
-            "str_col": ["A", "B"],
-            "num_col": [10, 20],
-            "min_col": [0, 0],
-            "max_col": [100, 100],
-            f"{CTX_PREFIX}str_col": ["A", "A"],
-            f"{CTX_PREFIX}num_col": [15, 15],
-        })
+    _NON_LIST_DATA = {k: v for k, v in _SAMPLE_DATA.items() if k != "list_col"}
 
-    def _sample_ibis(self):
-        return ibis.memtable(self._sample_polars().to_pandas())
-
-    @pytest.mark.parametrize("backend_name", ["polars", "ibis"])
+    @pytest.mark.parametrize("backend_name", ALL_BACKENDS)
     @pytest.mark.parametrize("strategy,field,data_type,extras", [
         (MatchStrategy.EXACT, "str_col", str, {}),
         (MatchStrategy.NOT_EQUAL, "str_col", str, {}),
@@ -609,9 +610,11 @@ class TestBackendAgnosticism:
         (MatchStrategy.PREFIX, "str_col", str, {}),
         (MatchStrategy.SUFFIX, "str_col", str, {}),
         (MatchStrategy.CONTAINS, "str_col", str, {}),
-        (MatchStrategy.REGEX, "str_col", str, {}),
+        (MatchStrategy.REGEX, "str_col", str, {"regex_pattern": "A"}),
     ])
-    def test_strategy_compiles_on_backend(self, compiler, backend_name, strategy, field, data_type, extras):
+    def test_non_set_strategy_compiles_on_backend(
+        self, compiler, backend_name, strategy, field, data_type, extras
+    ):
         dim = Dimension(
             dimension_name=field,
             match_strategy=strategy,
@@ -619,11 +622,28 @@ class TestBackendAgnosticism:
             **extras,
         )
         expr = compiler.compile_dimension(dim)
+        df = build_backend_df(backend_name, self._NON_LIST_DATA)
+        compiled = expr.compile(df, booleanizer=None)
+        assert compiled is not None
 
-        if backend_name == "polars":
-            df = self._sample_polars()
-        else:
-            df = self._sample_ibis()
-
+    @pytest.mark.parametrize("backend_name", [
+        pytest.param(
+            b,
+            marks=pytest.mark.xfail(strict=True, reason=SET_MEMBERSHIP_XFAIL_REASON),
+        ) if b != "polars" else b
+        for b in ALL_BACKENDS
+    ])
+    @pytest.mark.parametrize("strategy", [
+        MatchStrategy.SET_MEMBERSHIP,
+        MatchStrategy.SET_EXCLUSION,
+    ])
+    def test_set_strategy_compiles_on_backend(self, compiler, backend_name, strategy):
+        dim = Dimension(
+            dimension_name="list_col",
+            match_strategy=strategy,
+            data_type=str,
+        )
+        expr = compiler.compile_dimension(dim)
+        df = build_backend_df(backend_name, self._SAMPLE_DATA)
         compiled = expr.compile(df, booleanizer=None)
         assert compiled is not None
