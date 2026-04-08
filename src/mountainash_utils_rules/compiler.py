@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import polars as pl
+import polars as pl  # allow: SET_MEMBERSHIP workaround pending t_list_contains upstream
 
 import mountainash.expressions as ma
 from mountainash.expressions import BaseExpressionAPI
