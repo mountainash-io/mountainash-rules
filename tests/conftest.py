@@ -53,16 +53,16 @@ SET_MEMBERSHIP_XFAIL_REASON = (
 # Remove entries as upstream bugs are fixed.
 UPSTREAM_BROKEN_BACKENDS: dict[str, str] = {
     "pandas": (
-        "narwhals DuplicateError: ma.lit().alias() emits duplicate 'literal' "
-        "columns on narwhals-pandas path — upstream mountainash bug"
+        "narwhals DuplicateError on ma.lit().alias() — "
+        "mountainash-io/mountainash-expressions#77"
     ),
     "narwhals-pandas": (
-        "narwhals DuplicateError: ma.lit().alias() emits duplicate 'literal' "
-        "columns on narwhals-pandas path — upstream mountainash bug"
+        "narwhals DuplicateError on ma.lit().alias() — "
+        "mountainash-io/mountainash-expressions#77"
     ),
     "ibis-polars": (
-        "ibis polars backend missing WindowFunction translation "
-        "(with_row_index) — upstream ibis bug"
+        "ibis polars backend missing WindowFunction translation — "
+        "mountainash-io/mountainash-expressions#78"
     ),
 }
 
