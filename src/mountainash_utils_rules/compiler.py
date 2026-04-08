@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import polars as pl  # allow: SET_MEMBERSHIP workaround pending t_list_contains upstream
-
 import mountainash.expressions as ma
 from mountainash.expressions import BaseExpressionAPI
 
@@ -143,23 +141,15 @@ class DimensionCompiler:
         return ma.when(match).then(1).otherwise(-1)
 
     def _compile_set_membership(self, dim: Dimension) -> BaseExpressionAPI:
-        """Compile SET_MEMBERSHIP: context value is in the rule's list column."""
-        ctx_field = CTX_PREFIX + dim.dimension_name
-        rule_field = dim.resolved_rule_field
-        ctx_is_sentinel = (
-            ma.col(ctx_field).__eq__(ma.lit(UNKNOWN))
-            | ma.col(ctx_field).__eq__(ma.lit(NOT_SET))
-        )
-        match = ma.native(pl.col(rule_field).list.contains(pl.col(ctx_field)))
-        return ma.when(ctx_is_sentinel).then(0).when(match).then(1).otherwise(-1)
+        """SET_MEMBERSHIP: context value is in the rule's list column."""
+        sentinels = self._sentinels_for_type(dim.data_type)
+        rule_col = ma.col(dim.resolved_rule_field)
+        ctx_col = ma.t_col(CTX_PREFIX + dim.dimension_name, unknown=sentinels)
+        return ctx_col.t_is_in(rule_col)
 
     def _compile_set_exclusion(self, dim: Dimension) -> BaseExpressionAPI:
-        """Compile SET_EXCLUSION: context value is NOT in the rule's list column."""
-        ctx_field = CTX_PREFIX + dim.dimension_name
-        rule_field = dim.resolved_rule_field
-        ctx_is_sentinel = (
-            ma.col(ctx_field).__eq__(ma.lit(UNKNOWN))
-            | ma.col(ctx_field).__eq__(ma.lit(NOT_SET))
-        )
-        not_in = ma.native(~pl.col(rule_field).list.contains(pl.col(ctx_field)))
-        return ma.when(ctx_is_sentinel).then(0).when(not_in).then(1).otherwise(-1)
+        """SET_EXCLUSION: context value is NOT in the rule's list column."""
+        sentinels = self._sentinels_for_type(dim.data_type)
+        rule_col = ma.col(dim.resolved_rule_field)
+        ctx_col = ma.t_col(CTX_PREFIX + dim.dimension_name, unknown=sentinels)
+        return ctx_col.t_is_not_in(rule_col)

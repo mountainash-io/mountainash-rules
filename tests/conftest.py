@@ -39,13 +39,12 @@ LIST_CAPABLE_BACKENDS = [
     "polars",
     "ibis-duckdb",
     "ibis-polars",
-    "narwhals-polars",
 ]
 
-SET_MEMBERSHIP_XFAIL_REASON = (
-    "SET_MEMBERSHIP uses Polars-native workaround pending "
-    "mountainash-io/mountainash-expressions#75 (t_list_contains)"
-)
+# Note: narwhals-polars is intentionally excluded from LIST_CAPABLE_BACKENDS.
+# narwhals (as of 2.19.0) types list.contains(item) as NonNestedLiteral and
+# rejects expression arguments across all its native backends, so t_is_in
+# against a list column cannot compile through the narwhals path.
 
 # Backends with known upstream bugs that break the engine pipeline.
 # Tests on these backends are xfail'd non-strictly — tests that happen to
@@ -73,7 +72,7 @@ def pytest_collection_modifyitems(config, items):
         callspec = getattr(item, "callspec", None)
         if callspec is None:
             continue
-        for param_name in ("backend_name", "list_backend_name"):
+        for param_name in ("backend_name", "list_backend_name", "list_backend"):
             backend = callspec.params.get(param_name)
             if backend in UPSTREAM_BROKEN_BACKENDS:
                 item.add_marker(

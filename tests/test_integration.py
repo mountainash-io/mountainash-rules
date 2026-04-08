@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import polars as pl
 import pytest
 from mountainash.relations import relation
 
@@ -12,7 +11,6 @@ from mountainash_utils_rules.engine import ExpressionRulesEngine
 
 from tests.conftest import (
     LIST_CAPABLE_BACKENDS,
-    SET_MEMBERSHIP_XFAIL_REASON,
     build_backend_df,
 )
 
@@ -249,45 +247,20 @@ def _fraud_metadata() -> DimensionsMetadata:
     ])
 
 
-@pytest.mark.parametrize(
-    "list_backend",
-    [
-        pytest.param(
-            backend,
-            marks=(
-                []
-                if backend == "polars"
-                else [pytest.mark.xfail(strict=True, reason=SET_MEMBERSHIP_XFAIL_REASON)]
-            ),
-        )
-        for backend in LIST_CAPABLE_BACKENDS
-    ],
-)
+@pytest.mark.parametrize("list_backend", LIST_CAPABLE_BACKENDS)
 class TestMixedStrategyFraudDetection:
     """Exercises EXACT, SET_MEMBERSHIP, GREATER_THAN, and PREFIX together.
 
-    SET_MEMBERSHIP uses a Polars-native workaround (ma.native) pending
-    mountainash-io/mountainash-expressions#75. Non-Polars backends are
-    strict xfail — when #75 lands and the workaround is removed, these
-    flip XPASS and force removal of the markers.
+    SET_MEMBERSHIP now compiles cleanly on every list-capable backend via
+    mountainash.expressions `t_is_in` / `t_is_not_in`, which accept list
+    column references polymorphically (mountainash-expressions#75).
     """
 
     @pytest.fixture
     def fraud_engine(self, list_backend):
-        # Build via polars first to get a typed pl.List(Utf8) column,
-        # then dispatch into the requested backend if needed.
-        data = _fraud_rules_data()
-        if list_backend == "polars":
-            rules = pl.DataFrame({
-                **{k: v for k, v in data.items() if k != "allowed_countries"},
-                "allowed_countries": pl.Series(
-                    "allowed_countries",
-                    data["allowed_countries"],
-                    dtype=pl.List(pl.Utf8),
-                ),
-            })
-        else:
-            rules = build_backend_df(list_backend, data, table_name="fraud_rules")
+        rules = build_backend_df(
+            list_backend, _fraud_rules_data(), table_name="fraud_rules"
+        )
         return ExpressionRulesEngine(rules=rules, dimension_metadata=_fraud_metadata())
 
     def test_high_value_review(self, fraud_engine):

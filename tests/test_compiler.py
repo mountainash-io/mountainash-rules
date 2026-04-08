@@ -11,7 +11,6 @@ from mountainash_utils_rules.constants import CTX_PREFIX, UNKNOWN, UNKNOWN_NUMER
 from mountainash_utils_rules.dimension import Dimension
 from tests.conftest import (
     ALL_BACKENDS,
-    SET_MEMBERSHIP_XFAIL_REASON,
     build_backend_df,
 )
 
@@ -626,18 +625,19 @@ class TestBackendAgnosticism:
         compiled = expr.compile(df, booleanizer=None)
         assert compiled is not None
 
-    @pytest.mark.parametrize("backend_name", [
-        pytest.param(
-            b,
-            marks=pytest.mark.xfail(strict=True, reason=SET_MEMBERSHIP_XFAIL_REASON),
-        ) if b != "polars" else b
-        for b in ALL_BACKENDS
-    ])
+    @pytest.mark.parametrize("backend_name", ALL_BACKENDS)
     @pytest.mark.parametrize("strategy", [
         MatchStrategy.SET_MEMBERSHIP,
         MatchStrategy.SET_EXCLUSION,
     ])
     def test_set_strategy_compiles_on_backend(self, compiler, backend_name, strategy):
+        if backend_name == "ibis-sqlite":
+            pytest.skip("SQLite has no native array/list column type.")
+        if backend_name == "narwhals-polars":
+            pytest.skip(
+                "narwhals 2.19.0 types list.contains(item) as NonNestedLiteral "
+                "and rejects expression arguments across native backends."
+            )
         dim = Dimension(
             dimension_name="list_col",
             match_strategy=strategy,
