@@ -1,172 +1,226 @@
-"""Shared fixtures for mountainash_utils_rules tests."""
+"""Shared fixtures for expression-based rules engine tests.
 
-import pytest
-from mountainash_utils_rules import RulesEngine, DimensionsMetadata, Dimension, MatchStrategy
-from mountainash_utils_rules.constants import RuleConstants, RuleTrinaryFlags
-# from mountainash_dataframes import BaseDataFrame, IbisDataFrame
-import polars as pl
+Mirrors the mountainash-expressions exemplar: data-as-dict fixtures + a
+`backend_name` param fixture + per-backend DataFrame factory fixtures that
+auto-parametrize every dependent test across all 7 supported backends.
+"""
+
+from __future__ import annotations
+
+from typing import Any
+
 import ibis
+import narwhals as nw
+import pandas as pd
+import polars as pl
+import pytest
 from pydantic import BaseModel
 
-
-class TestContext(BaseModel):
-    """Standard test context model for use across tests."""
-    DIM_1: str
-    DIM_2: int
-    DIM_3: str
+from mountainash_utils_rules.constants import UNKNOWN, UNKNOWN_NUMERIC, MatchStrategy
+from mountainash_utils_rules.dimension import Dimension, DimensionsMetadata
+from mountainash_utils_rules.engine import ExpressionRulesEngine
 
 
-class ExtendedTestContext(BaseModel):
-    """Extended test context with more dimensions for complex testing."""
-    DIM_1: str
-    DIM_2: int
-    DIM_3: str
-    DIM_4: float
-    DIM_5: bool
+# ---------------------------------------------------------------------------
+# Backend constants
+# ---------------------------------------------------------------------------
+
+ALL_BACKENDS = [
+    "polars",
+    "pandas",
+    "narwhals-polars",
+    "narwhals-pandas",
+    "ibis-duckdb",
+    "ibis-polars",
+    "ibis-sqlite",
+]
+
+LIST_CAPABLE_BACKENDS = [
+    "polars",
+    "ibis-duckdb",
+    "ibis-polars",
+]
+
+# Note: narwhals-polars is intentionally excluded from LIST_CAPABLE_BACKENDS.
+# narwhals (as of 2.19.0) types list.contains(item) as NonNestedLiteral and
+# rejects expression arguments across all its native backends, so t_is_in
+# against a list column cannot compile through the narwhals path.
+
+# ---------------------------------------------------------------------------
+# Per-test upstream xfails
+# ---------------------------------------------------------------------------
+# Surgical xfail markers for specific test × backend combinations that fail
+# due to known upstream bugs.  strict=True so CI flags when upstream fixes land.
+# Remove entries as upstream bugs are fixed.
+
+_ISSUE_78_REASON = (
+    "ibis-polars: missing WindowFunction translation for with_row_index "
+    "— mountainash-io/mountainash-expressions#78"
+)
+
+# (backends, reason, test node substrings)
+_UPSTREAM_XFAILS: list[tuple[set[str], str, list[str]]] = [
+    # #78 — hits any test that reaches with_row_index in the engine pipeline.
+    (
+        {"ibis-polars"},
+        _ISSUE_78_REASON,
+        [
+            # test_engine.py
+            "TestSurvival::test_non_matching_rules_eliminated",
+            "TestSurvival::test_matching_rules_survive",
+            "TestSpecificity::test_specific_rule_ranks_first",
+            "TestSpecificity::test_specificity_values",
+            "TestRanking::test_rank_order",
+            "TestEmptyResult::test_no_survivors",
+            "TestTopN::test_top_n_limits_results",
+            "TestTopN::test_top_n_larger_than_survivors",
+            "TestMinSpecificity::test_min_specificity_filters",
+            "TestDimensionsSubset::test_subset_dimensions",
+            "TestObservability::test_observability_columns_present_by_default",
+            "TestObservability::test_observability_columns_absent_when_disabled",
+            "TestCustomExpressions::test_custom_expression_exact",
+            # test_integration.py
+            "TestPricingCarveOut::test_specific_override_wins",
+            "TestPricingCarveOut::test_fallback_to_client_rate",
+            "TestPricingCarveOut::test_fallback_to_base_rate",
+            "TestPricingCarveOut::test_hierarchy_preserved_in_ranking",
+            "TestEntityPool::test_most_specific_wins",
+            "TestEntityPool::test_mid_tier_fallback",
+            "TestEntityPool::test_no_match_when_regex_fails",
+            "TestNoMatch::test_all_rules_eliminated",
+            "TestTieHandling::test_same_specificity_both_survive",
+            "TestTieHandling::test_equal_specificity_both_returned",
+            "TestExplainIntegration::test_explain_shows_dimension_breakdown",
+            "TestMixedStrategyFraudDetection::test_high_value_review",
+            "TestMixedStrategyFraudDetection::test_blacklist_merchant_blocks",
+            "TestMixedStrategyFraudDetection::test_specific_txn_most_specific",
+        ],
+    ),
+]
 
 
-@pytest.fixture
-def sample_rules_data():
-    """Basic rules data as Polars DataFrame."""
-    return pl.DataFrame({
-        "rule_name": ["rule_1", "rule_2", "rule_3", "rule_4", "rule_5"],
-        "DIM_1": ["A", "B", "C", RuleConstants.UNKNOWN, "D"],
-        "DIM_2_MIN": [0, 10, 20, 30, 40],
-        "DIM_2_MAX": [9, 19, 29, 39, 49],
-        "DIM_3": ["X.*", "Y.*", "Z.*", "W.*", RuleConstants.UNKNOWN]
-    })
+def pytest_collection_modifyitems(config, items):
+    """Mark specific test × backend combinations as strict xfail."""
+    for item in items:
+        callspec = getattr(item, "callspec", None)
+        if callspec is None:
+            continue
+        backend = None
+        for param_name in ("backend_name", "list_backend_name", "list_backend"):
+            backend = callspec.params.get(param_name)
+            if backend is not None:
+                break
+        if backend is None:
+            continue
+        for backends, reason, patterns in _UPSTREAM_XFAILS:
+            if backend not in backends:
+                continue
+            if any(p in item.nodeid for p in patterns):
+                item.add_marker(
+                    pytest.mark.xfail(strict=True, reason=reason)
+                )
+                break
 
 
-@pytest.fixture
-def sample_rules(sample_rules_data):
-    """Sample rules as IbisDataFrame for testing."""
-    return IbisDataFrame(sample_rules_data, ibis_backend_schema="sqlite")
+# ---------------------------------------------------------------------------
+# Backend DataFrame construction
+# ---------------------------------------------------------------------------
+
+def build_backend_df(backend: str, data: dict, table_name: str = "t") -> Any:
+    """Dispatch a data dict into the requested backend's DataFrame type."""
+    if backend == "polars":
+        return pl.DataFrame(data)
+    if backend == "pandas":
+        return pd.DataFrame(data)
+    if backend == "narwhals-polars":
+        return nw.from_native(pl.DataFrame(data))
+    if backend == "narwhals-pandas":
+        return nw.from_native(pd.DataFrame(data), eager_only=True)
+    if backend == "ibis-duckdb":
+        conn = ibis.duckdb.connect()
+        return conn.create_table(table_name, data, overwrite=True)
+    if backend == "ibis-polars":
+        conn = ibis.polars.connect()
+        return conn.create_table(table_name, pl.DataFrame(data), overwrite=True)
+    if backend == "ibis-sqlite":
+        conn = ibis.sqlite.connect(":memory:")
+        return conn.create_table(table_name, data, overwrite=True)
+    raise ValueError(f"Unknown backend: {backend}")
 
 
-@pytest.fixture
-def extended_rules_data():
-    """Extended rules data with more dimensions."""
-    return pl.DataFrame({
-        "rule_name": ["rule_1", "rule_2", "rule_3", "rule_4"],
-        "DIM_1": ["A", "B", "C", RuleConstants.UNKNOWN],
-        "DIM_2_MIN": [0, 10, 20, 30],
-        "DIM_2_MAX": [9, 19, 29, 39],
-        "DIM_3": ["X.*", "Y.*", "Z.*", "W.*"],
-        "DIM_4_MIN": [0.0, 1.5, 3.0, 4.5],
-        "DIM_4_MAX": [1.4, 2.9, 4.4, 5.9],
-        "DIM_5": [True, False, True, RuleConstants.UNKNOWN]
-    })
+# ---------------------------------------------------------------------------
+# Backend param fixtures
+# ---------------------------------------------------------------------------
 
-
-@pytest.fixture
-def extended_rules(extended_rules_data):
-    """Extended rules as IbisDataFrame for complex testing."""
-    return IbisDataFrame(extended_rules_data, ibis_backend_schema="sqlite")
-
-
-@pytest.fixture
-def basic_dimension_metadata():
-    """Basic dimension metadata for standard testing."""
-    return DimensionsMetadata(
-        dimensions=[
-            Dimension(dimension_name="DIM_1", match_strategy=MatchStrategy.EXACT, data_type=str),
-            Dimension(dimension_name="DIM_2", match_strategy=MatchStrategy.RANGE, data_type=int,
-                     range_min_field="DIM_2_MIN", range_max_field="DIM_2_MAX"),
-            Dimension(dimension_name="DIM_3", match_strategy=MatchStrategy.REGEX, data_type=str)
-        ]
-    )
-
-
-@pytest.fixture
-def extended_dimension_metadata():
-    """Extended dimension metadata for complex testing."""
-    return DimensionsMetadata(
-        dimensions=[
-            Dimension(dimension_name="DIM_1", match_strategy=MatchStrategy.EXACT, data_type=str),
-            Dimension(dimension_name="DIM_2", match_strategy=MatchStrategy.RANGE, data_type=int,
-                     range_min_field="DIM_2_MIN", range_max_field="DIM_2_MAX"),
-            Dimension(dimension_name="DIM_3", match_strategy=MatchStrategy.REGEX, data_type=str),
-            Dimension(dimension_name="DIM_4", match_strategy=MatchStrategy.RANGE, data_type=float,
-                     range_min_field="DIM_4_MIN", range_max_field="DIM_4_MAX"),
-            Dimension(dimension_name="DIM_5", match_strategy=MatchStrategy.EXACT, data_type=bool)
-        ]
-    )
-
-
-@pytest.fixture
-def basic_rules_engine(sample_rules, basic_dimension_metadata):
-    """Basic RulesEngine instance for standard testing."""
-    return RulesEngine(rules=sample_rules, dimension_metadata=basic_dimension_metadata)
-
-
-@pytest.fixture
-def extended_rules_engine(extended_rules, extended_dimension_metadata):
-    """Extended RulesEngine instance for complex testing."""
-    return RulesEngine(rules=extended_rules, dimension_metadata=extended_dimension_metadata)
-
-
-@pytest.fixture
-def valid_context():
-    """Valid context instance for testing."""
-    return TestContext(DIM_1="A", DIM_2=5, DIM_3="XYZ")
-
-
-@pytest.fixture
-def extended_valid_context():
-    """Extended valid context instance for complex testing."""
-    return ExtendedTestContext(DIM_1="A", DIM_2=5, DIM_3="XYZ", DIM_4=2.5, DIM_5=True)
-
-
-@pytest.fixture
-def empty_rules_data():
-    """Empty rules dataframe for edge case testing."""
-    return pl.DataFrame({
-        "rule_name": [],
-        "DIM_1": [],
-        "DIM_2_MIN": [],
-        "DIM_2_MAX": [],
-        "DIM_3": []
-    })
-
-
-@pytest.fixture
-def empty_rules(empty_rules_data):
-    """Empty rules as IbisDataFrame for edge case testing."""
-    return IbisDataFrame(empty_rules_data, ibis_backend_schema="sqlite")
-
-
-@pytest.fixture
-def single_dimension():
-    """Single dimension for isolated testing."""
-    return Dimension(dimension_name="DIM_1", match_strategy=MatchStrategy.EXACT, data_type=str)
-
-
-@pytest.fixture
-def range_dimension():
-    """Range dimension for range matching tests."""
-    return Dimension(dimension_name="DIM_2", match_strategy=MatchStrategy.RANGE, data_type=int,
-                    range_min_field="DIM_2_MIN", range_max_field="DIM_2_MAX")
-
-
-@pytest.fixture
-def regex_dimension():
-    """Regex dimension for pattern matching tests."""
-    return Dimension(dimension_name="DIM_3", match_strategy=MatchStrategy.REGEX, data_type=str)
-
-
-@pytest.fixture(params=["sqlite", "polars"])
-def backend_schema(request):
-    """Parameterized fixture for testing different backends."""
+@pytest.fixture(params=ALL_BACKENDS)
+def backend_name(request) -> str:
     return request.param
 
 
+@pytest.fixture(params=LIST_CAPABLE_BACKENDS)
+def list_backend_name(request) -> str:
+    return request.param
+
+
+# ---------------------------------------------------------------------------
+# Context model + data dicts
+# ---------------------------------------------------------------------------
+
+class TestContext(BaseModel):
+    region: str
+    amount: int
+    code: str
+
+
 @pytest.fixture
-def sample_context_variations():
-    """Various context instances for comprehensive testing."""
-    return [
-        TestContext(DIM_1="A", DIM_2=5, DIM_3="XYZ"),
-        TestContext(DIM_1="B", DIM_2=15, DIM_3="YAB"),
-        TestContext(DIM_1="C", DIM_2=25, DIM_3="ZCD"),
-        TestContext(DIM_1="D", DIM_2=45, DIM_3="WEF"),
-        TestContext(DIM_1=RuleConstants.UNKNOWN, DIM_2=35, DIM_3="WAB")
-    ]
+def rules_data() -> dict[str, list]:
+    """Standard 3-dimension rules as plain Python."""
+    return {
+        "rule_name": ["specific", "general", "mid", "no_match"],
+        "region":     ["AU", UNKNOWN, "AU", "US"],
+        "amount_min": [0, UNKNOWN_NUMERIC, 0, 0],
+        "amount_max": [100, UNKNOWN_NUMERIC, 100, 100],
+    }
+
+
+# ---------------------------------------------------------------------------
+# Backend DataFrame fixtures
+# ---------------------------------------------------------------------------
+
+@pytest.fixture
+def backend_rules_df(backend_name: str, rules_data: dict) -> Any:
+    return build_backend_df(backend_name, rules_data, table_name="rules")
+
+
+# ---------------------------------------------------------------------------
+# Metadata + engine
+# ---------------------------------------------------------------------------
+
+@pytest.fixture
+def basic_metadata() -> DimensionsMetadata:
+    return DimensionsMetadata(dimensions=[
+        Dimension(dimension_name="region", match_strategy=MatchStrategy.EXACT, data_type=str),
+        Dimension(
+            dimension_name="amount",
+            match_strategy=MatchStrategy.RANGE,
+            data_type=int,
+            range_min_field="amount_min",
+            range_max_field="amount_max",
+        ),
+        Dimension(
+            dimension_name="code",
+            match_strategy=MatchStrategy.REGEX,
+            data_type=str,
+            regex_pattern="^PRE.*",
+        ),
+    ])
+
+
+@pytest.fixture
+def basic_engine(backend_rules_df, basic_metadata) -> ExpressionRulesEngine:
+    return ExpressionRulesEngine(rules=backend_rules_df, dimension_metadata=basic_metadata)
+
+
+@pytest.fixture
+def valid_context() -> TestContext:
+    return TestContext(region="AU", amount=50, code="PRE-001")

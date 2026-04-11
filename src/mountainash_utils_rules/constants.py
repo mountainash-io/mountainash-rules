@@ -1,72 +1,35 @@
-from enum import auto
-import ibis
+"""Constants for the expression-based rules engine."""
 
-from enum import Enum, StrEnum, IntEnum
+from enum import Enum, auto
+
 
 class MatchStrategy(Enum):
+    """How a dimension matches context values against rule values."""
+
     EXACT = auto()
+    NOT_EQUAL = auto()
     RANGE = auto()
+    GREATER_THAN = auto()
+    LESS_THAN = auto()
+    PREFIX = auto()
+    SUFFIX = auto()
+    CONTAINS = auto()
     REGEX = auto()
-    # WILDCARD = "WILDCARD"
-    # FUZZY = "FUZZY"
-
-    # @classmethod
-    # def EXACT(cls) -> str:
-    #     return cls.EXACT
-
-    # @classmethod
-    # def RANGE(cls) -> str:
-    #     return str(cls.RANGE)
-
-    # @classmethod
-    # def REGEX(cls) -> str:
-    #     return str(cls.REGEX)
+    SET_MEMBERSHIP = auto()
+    SET_EXCLUSION = auto()
 
 
+# Sentinel values for unknown/unset rule and context fields.
+# These are passed to ma.t_col(unknown={...}) so the expression library
+# treats them as UNKNOWN (0) in ternary logic automatically.
+UNKNOWN = "<NA>"
+NOT_SET = "<NOT_SET>"
+UNKNOWN_NUMERIC = -999999999
+NOT_SET_NUMERIC = -999999998
 
-class RuleConstants():
+# All string sentinels and all numeric sentinels, for convenience.
+STRING_SENTINELS = {UNKNOWN, NOT_SET}
+NUMERIC_SENTINELS = {UNKNOWN_NUMERIC, NOT_SET_NUMERIC}
 
-    UNKNOWN = "<NA>"
-    NOT_SET = "<NOT_SET>"
-
-    UNKNOWN_NUMERIC = -999999999
-    NOT_SET_NUMERIC = -999999998
-
-
-    @classmethod
-    def UNKNOWN_IBIS(cls) -> ibis.Scalar:
-        return ibis.literal(cls.UNKNOWN)
-
-    @classmethod
-    def NOT_SET_IBIS(cls) -> ibis.Scalar:
-        return ibis.literal(cls.NOT_SET)
-
-
-    @classmethod
-    def UNKNOWN_NUMERIC_IBIS(cls) -> ibis.Scalar:
-        return ibis.literal(cls.UNKNOWN_NUMERIC)
-
-    @classmethod
-    def NOT_SET_NUMERIC_IBIS(cls) -> ibis.Scalar:
-        return ibis.literal(cls.NOT_SET_NUMERIC)
-
-
-
-class RuleTrinaryFlags:
-
-    # Flags for Prime Filtering
-    PRIME_FALSE = 2
-    PRIME_TRUE = 3
-    PRIME_UNKNOWN = 5
-
-    @classmethod
-    def PRIME_TRUE_IBIS(cls) -> ibis.Scalar:
-        return ibis.literal(cls.PRIME_TRUE)
-
-    @classmethod
-    def PRIME_FALSE_IBIS(cls)-> ibis.Scalar:
-        return ibis.literal(cls.PRIME_FALSE)
-
-    @classmethod
-    def PRIME_UNKNOWN_IBIS(cls)-> ibis.Scalar:
-        return ibis.literal(cls.PRIME_UNKNOWN)
+# Prefix for context literal columns added to the rules DataFrame during evaluation.
+CTX_PREFIX = "__ctx_"
