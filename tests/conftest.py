@@ -53,11 +53,6 @@ LIST_CAPABLE_BACKENDS = [
 # due to known upstream bugs.  strict=True so CI flags when upstream fixes land.
 # Remove entries as upstream bugs are fixed.
 
-_ISSUE_77_REASON = (
-    "narwhals-pandas: batched deferred with_columns generates duplicate "
-    "'literal' intermediates — mountainash-io/mountainash-expressions#77"
-)
-
 _ISSUE_78_REASON = (
     "ibis-polars: missing WindowFunction translation for with_row_index "
     "— mountainash-io/mountainash-expressions#78"
@@ -65,29 +60,6 @@ _ISSUE_78_REASON = (
 
 # (backends, reason, test node substrings)
 _UPSTREAM_XFAILS: list[tuple[set[str], str, list[str]]] = [
-    # #77 — only hits tests with 2+ compiled dimensions through the full
-    # engine pipeline (batched sentinel-aware ternary expressions).
-    (
-        {"pandas", "narwhals-pandas"},
-        _ISSUE_77_REASON,
-        [
-            # test_engine.py
-            "TestSurvival::test_non_matching_rules_eliminated",
-            "TestSurvival::test_matching_rules_survive",
-            "TestSpecificity::test_specific_rule_ranks_first",
-            "TestSpecificity::test_specificity_values",
-            "TestRanking::test_rank_order",
-            "TestTopN::test_top_n_limits_results",
-            "TestTopN::test_top_n_larger_than_survivors",
-            "TestMinSpecificity::test_min_specificity_filters",
-            "TestObservability::test_observability_columns_present_by_default",
-            "TestObservability::test_observability_columns_absent_when_disabled",
-            # test_integration.py
-            "TestEntityPool::test_most_specific_wins",
-            "TestEntityPool::test_mid_tier_fallback",
-            "TestEntityPool::test_no_match_when_regex_fails",
-        ],
-    ),
     # #78 — hits any test that reaches with_row_index in the engine pipeline.
     (
         {"ibis-polars"},
