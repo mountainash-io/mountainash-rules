@@ -52,11 +52,13 @@ LIST_CAPABLE_BACKENDS = [
 # Remove entries as upstream bugs are fixed.
 UPSTREAM_BROKEN_BACKENDS: dict[str, str] = {
     "pandas": (
-        "narwhals DuplicateError on ma.lit().alias() — "
+        "narwhals-pandas batches deferred with_columns at collect(), "
+        "generating duplicate 'literal' intermediates — "
         "mountainash-io/mountainash-expressions#77"
     ),
     "narwhals-pandas": (
-        "narwhals DuplicateError on ma.lit().alias() — "
+        "narwhals-pandas batches deferred with_columns at collect(), "
+        "generating duplicate 'literal' intermediates — "
         "mountainash-io/mountainash-expressions#77"
     ),
     "ibis-polars": (
