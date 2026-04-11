@@ -46,42 +46,106 @@ LIST_CAPABLE_BACKENDS = [
 # rejects expression arguments across all its native backends, so t_is_in
 # against a list column cannot compile through the narwhals path.
 
-# Backends with known upstream bugs that break the engine pipeline.
-# Tests on these backends are xfail'd non-strictly — tests that happen to
-# avoid the bug path still pass; tests that hit it xfail without failing CI.
+# ---------------------------------------------------------------------------
+# Per-test upstream xfails
+# ---------------------------------------------------------------------------
+# Surgical xfail markers for specific test × backend combinations that fail
+# due to known upstream bugs.  strict=True so CI flags when upstream fixes land.
 # Remove entries as upstream bugs are fixed.
-UPSTREAM_BROKEN_BACKENDS: dict[str, str] = {
-    "pandas": (
-        "narwhals-pandas batches deferred with_columns at collect(), "
-        "generating duplicate 'literal' intermediates — "
-        "mountainash-io/mountainash-expressions#77"
+
+_ISSUE_77_REASON = (
+    "narwhals-pandas: batched deferred with_columns generates duplicate "
+    "'literal' intermediates — mountainash-io/mountainash-expressions#77"
+)
+
+_ISSUE_78_REASON = (
+    "ibis-polars: missing WindowFunction translation for with_row_index "
+    "— mountainash-io/mountainash-expressions#78"
+)
+
+# (backends, reason, test node substrings)
+_UPSTREAM_XFAILS: list[tuple[set[str], str, list[str]]] = [
+    # #77 — only hits tests with 2+ compiled dimensions through the full
+    # engine pipeline (batched sentinel-aware ternary expressions).
+    (
+        {"pandas", "narwhals-pandas"},
+        _ISSUE_77_REASON,
+        [
+            # test_engine.py
+            "TestSurvival::test_non_matching_rules_eliminated",
+            "TestSurvival::test_matching_rules_survive",
+            "TestSpecificity::test_specific_rule_ranks_first",
+            "TestSpecificity::test_specificity_values",
+            "TestRanking::test_rank_order",
+            "TestTopN::test_top_n_limits_results",
+            "TestTopN::test_top_n_larger_than_survivors",
+            "TestMinSpecificity::test_min_specificity_filters",
+            "TestObservability::test_observability_columns_present_by_default",
+            "TestObservability::test_observability_columns_absent_when_disabled",
+            # test_integration.py
+            "TestEntityPool::test_most_specific_wins",
+            "TestEntityPool::test_mid_tier_fallback",
+            "TestEntityPool::test_no_match_when_regex_fails",
+        ],
     ),
-    "narwhals-pandas": (
-        "narwhals-pandas batches deferred with_columns at collect(), "
-        "generating duplicate 'literal' intermediates — "
-        "mountainash-io/mountainash-expressions#77"
+    # #78 — hits any test that reaches with_row_index in the engine pipeline.
+    (
+        {"ibis-polars"},
+        _ISSUE_78_REASON,
+        [
+            # test_engine.py
+            "TestSurvival::test_non_matching_rules_eliminated",
+            "TestSurvival::test_matching_rules_survive",
+            "TestSpecificity::test_specific_rule_ranks_first",
+            "TestSpecificity::test_specificity_values",
+            "TestRanking::test_rank_order",
+            "TestEmptyResult::test_no_survivors",
+            "TestTopN::test_top_n_limits_results",
+            "TestTopN::test_top_n_larger_than_survivors",
+            "TestMinSpecificity::test_min_specificity_filters",
+            "TestDimensionsSubset::test_subset_dimensions",
+            "TestObservability::test_observability_columns_present_by_default",
+            "TestObservability::test_observability_columns_absent_when_disabled",
+            "TestCustomExpressions::test_custom_expression_exact",
+            # test_integration.py
+            "TestPricingCarveOut::test_specific_override_wins",
+            "TestPricingCarveOut::test_fallback_to_client_rate",
+            "TestPricingCarveOut::test_fallback_to_base_rate",
+            "TestPricingCarveOut::test_hierarchy_preserved_in_ranking",
+            "TestEntityPool::test_most_specific_wins",
+            "TestEntityPool::test_mid_tier_fallback",
+            "TestEntityPool::test_no_match_when_regex_fails",
+            "TestNoMatch::test_all_rules_eliminated",
+            "TestTieHandling::test_same_specificity_both_survive",
+            "TestTieHandling::test_equal_specificity_both_returned",
+            "TestExplainIntegration::test_explain_shows_dimension_breakdown",
+            "TestMixedStrategyFraudDetection::test_high_value_review",
+            "TestMixedStrategyFraudDetection::test_blacklist_merchant_blocks",
+            "TestMixedStrategyFraudDetection::test_specific_txn_most_specific",
+        ],
     ),
-    "ibis-polars": (
-        "ibis polars backend missing WindowFunction translation — "
-        "mountainash-io/mountainash-expressions#78"
-    ),
-}
+]
 
 
 def pytest_collection_modifyitems(config, items):
-    """Mark tests on known-broken backends as non-strict xfail."""
+    """Mark specific test × backend combinations as strict xfail."""
     for item in items:
         callspec = getattr(item, "callspec", None)
         if callspec is None:
             continue
+        backend = None
         for param_name in ("backend_name", "list_backend_name", "list_backend"):
             backend = callspec.params.get(param_name)
-            if backend in UPSTREAM_BROKEN_BACKENDS:
+            if backend is not None:
+                break
+        if backend is None:
+            continue
+        for backends, reason, patterns in _UPSTREAM_XFAILS:
+            if backend not in backends:
+                continue
+            if any(p in item.nodeid for p in patterns):
                 item.add_marker(
-                    pytest.mark.xfail(
-                        strict=False,
-                        reason=UPSTREAM_BROKEN_BACKENDS[backend],
-                    )
+                    pytest.mark.xfail(strict=True, reason=reason)
                 )
                 break
 
