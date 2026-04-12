@@ -24,12 +24,12 @@ from mountainash_utils_rules.dimension import Dimension, DimensionsMetadata
 
 
 class TestNarwhalsDuplicateLiteralInWithColumns:
-    """mountainash-io/mountainash-expressions#77 (FIXED)
+    """mountainash-io/mountainash#77 (FIXED)
 
     narwhals-pandas: multiple sentinel-aware ternary expressions (compiled
     via DimensionCompiler) applied in a single with_columns() call previously
     generated intermediate columns all named 'literal'. Fixed upstream in
-    mountainash-expressions 0.1.1.
+    mountainash 0.1.1.
     """
 
     def test_batched_compiled_ternary_expressions_on_narwhals_pandas(self):

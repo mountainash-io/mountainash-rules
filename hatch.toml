@@ -15,15 +15,15 @@ installer = "uv"
 dependencies = [
     "cyclonedx-bom==4.5.0",
 
-    "mountainash_constants @      {root:uri}/temp/mountainash-constants",
+    # "mountainash_constants @      {root:uri}/temp/mountainash-constants",
     "mountainash_data @           {root:uri}/temp/mountainash-data",
-    "mountainash_dataframes @             {root:uri}/temp/mountainash-dataframes",
+    "mountainash_dataframes @     {root:uri}/temp/mountainash-dataframes",
 
     "mountainash_settings @       {root:uri}/temp/mountainash-settings",
 
     "mountainash_utils_dataclasses @  {root:uri}/temp/mountainash-utils-dataclasses",
     # "mountainash_utils_os @           {root:uri}/temp/mountainash-utils-os",
-    "mountainash_utils_ssh @          {root:uri}/temp/mountainash-utils-ssh",
+    "mountainash_utils_ssh @      {root:uri}/temp/mountainash-utils-ssh",
 
 ]
 [envs.build_github.scripts]
@@ -73,17 +73,17 @@ dependencies = [
     "pytest-check==2.5.3",
     "pytest-cov==6.1.1",
 
-    "mountainash_constants @      {root:uri}/temp/mountainash-constants",
+    # "mountainash_constants @      {root:uri}/temp/mountainash-constants",
     "mountainash_data @           {root:uri}/temp/mountainash-data",
-    "mountainash_dataframes @             {root:uri}/temp/mountainash-dataframes",
+    "mountainash_dataframes @     {root:uri}/temp/mountainash-dataframes",
 
     "mountainash_settings @       {root:uri}/temp/mountainash-settings",
 
     "mountainash_utils_dataclasses @  {root:uri}/temp/mountainash-utils-dataclasses",
     # "mountainash_utils_os @           {root:uri}/temp/mountainash-utils-os",
-    "mountainash_utils_ssh @          {root:uri}/temp/mountainash-utils-ssh",
+    "mountainash_utils_ssh @      {root:uri}/temp/mountainash-utils-ssh",
 
-    "mountainash @ {root:uri}/temp/mountainash-expressions",
+    "mountainash @ {root:uri}/temp/mountainash",
 
 ]
 [envs.test_github.scripts]
@@ -123,7 +123,7 @@ dependencies = [
     # "mountainash_utils_os @           {root:uri}/../mountainash-utils-os",
     "mountainash_utils_ssh @          {root:uri}/../mountainash-utils-ssh",
 
-    "mountainash @ {root:uri}/../mountainash-expressions",
+    "mountainash @ {root:uri}/../mountainash",
 ]
 [envs.test.scripts]
 # ===========================================

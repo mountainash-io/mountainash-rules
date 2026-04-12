@@ -253,7 +253,7 @@ class TestMixedStrategyFraudDetection:
 
     SET_MEMBERSHIP now compiles cleanly on every list-capable backend via
     mountainash.expressions `t_is_in` / `t_is_not_in`, which accept list
-    column references polymorphically (mountainash-expressions#75).
+    column references polymorphically (mountainash#75).
     """
 
     @pytest.fixture

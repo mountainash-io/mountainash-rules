@@ -4,7 +4,7 @@ Given all of this - the rules engine and the mountainash expression system - wha
 
   What you actually have
 
-  A coherent four-layer stack: data abstraction (mountainash-data/dataframes), cross-backend expressions (mountainash-expressions, Substrait-first), rules engines (mountainash-utils-rules), and a
+  A coherent four-layer stack: data abstraction (mountainash-data/dataframes), cross-backend expressions (mountainash, Substrait-first), rules engines (mountainash-utils-rules), and a
   principles-driven governance model tying it all together. Most "frameworks" I see are loose collections of utilities that accrete around one person's work. Yours has an actual design philosophy, captured in
    a principles repo with lettered categories, status markers, and explicit conflict-resolution rules. That level of architectural hygiene is rare — not just for solo/small-team projects, but for most
   commercial projects too.

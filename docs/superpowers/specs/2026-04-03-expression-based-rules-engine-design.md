@@ -2,7 +2,7 @@
 
 **Date:** 2026-04-03
 **Status:** Approved
-**Scope:** Complete rearchitecture of mountainash-utils-rules to use mountainash-expressions
+**Scope:** Complete rearchitecture of mountainash-utils-rules to use mountainash
 
 ## Summary
 
@@ -13,7 +13,7 @@ This is a clean break — all existing engines (`RulesEngine`, `HybridRulesEngin
 ## Goals
 
 1. **Eliminate iterative evaluation** — current engine applies ~10 mutate() calls per dimension; new engine evaluates all dimensions in a single `with_columns()` call
-2. **Leverage mountainash-expressions** — build-then-compile pattern, ternary logic, backend agnosticism
+2. **Leverage mountainash** — build-then-compile pattern, ternary logic, backend agnosticism
 3. **Backend-agnostic** — same engine works with Polars, Ibis, and Narwhals DataFrames; test primarily with Polars
 4. **Dual API** — convenience path (DataFrame + dimension metadata) and advanced path (raw expressions)
 5. **Built-in observability** — per-dimension ternary columns in results, no separate observer infrastructure
@@ -267,7 +267,7 @@ The `__` prefix prevents collision with rule columns. `__t_*` columns are omitte
 
 ### Ternary Logic Mapping
 
-The current prime-based system (2/3/5) is replaced by mountainash-expressions' integer sentinels:
+The current prime-based system (2/3/5) is replaced by mountainash' integer sentinels:
 
 | Concept | Old (prime) | New (expressions) |
 |---------|-------------|-------------------|
@@ -378,7 +378,7 @@ tests/
 ## Dependencies
 
 **Added:**
-- `mountainash-expressions` — core expression library
+- `mountainash` — core expression library
 
 **Retained:**
 - `polars` — primary test backend

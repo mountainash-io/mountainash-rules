@@ -12,7 +12,7 @@ This spec rewrites both files to use `mountainash.relations.Relation` for all Da
 
 ## Prerequisites (complete)
 
-The following upstream additions to `mountainash-expressions` landed on 2026-04-08 and are required by this work:
+The following upstream additions to `mountainash` landed on 2026-04-08 and are required by this work:
 
 - `Relation.count_rows() -> int` — backend-agnostic row count via `count_records` aggregate
 - `Relation.item(column: str, row: int = 0) -> Any` — backend-agnostic single-cell extraction with strict bounds checking
@@ -123,7 +123,7 @@ The `survivors` property returns the underlying native DataFrame unchanged — t
 ### Engine rewrite
 
 ```python
-"""ExpressionRulesEngine: single-pass rule evaluation using mountainash-expressions."""
+"""ExpressionRulesEngine: single-pass rule evaluation using mountainash."""
 
 from __future__ import annotations
 
@@ -410,7 +410,7 @@ Adding parametrized tests that run the engine against Polars, Ibis, and Narwhals
 
 ## Dependencies
 
-**No new dependencies.** Uses existing `mountainash-expressions` package which now provides:
+**No new dependencies.** Uses existing `mountainash` package which now provides:
 - `mountainash.relations.relation` (backend dispatch)
 - `mountainash.relations.Relation` with `count_rows`, `item`, `with_row_index`, `filter`, `sort`, `with_columns`, `head`, `drop`, `execute`
 - `mountainash.expressions` with `col`, `lit`, `least`, `t_col`, etc.

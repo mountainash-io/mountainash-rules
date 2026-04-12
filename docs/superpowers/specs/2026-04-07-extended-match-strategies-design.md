@@ -6,13 +6,13 @@
 
 ## Summary
 
-Extend `DimensionCompiler` from 3 match strategies (EXACT, RANGE, REGEX) to 11 by adding NOT_EQUAL, GREATER_THAN, LESS_THAN, PREFIX, SUFFIX, CONTAINS, SET_MEMBERSHIP, and SET_EXCLUSION. Rewrite REGEX to be backend-agnostic using the now-consistent `mountainash-expressions` string API.
+Extend `DimensionCompiler` from 3 match strategies (EXACT, RANGE, REGEX) to 11 by adding NOT_EQUAL, GREATER_THAN, LESS_THAN, PREFIX, SUFFIX, CONTAINS, SET_MEMBERSHIP, and SET_EXCLUSION. Rewrite REGEX to be backend-agnostic using the now-consistent `mountainash` string API.
 
 This removes the only Polars-specific code path in `compiler.py` and gives rule authors a complete toolkit for common matching patterns without dropping to the advanced expressions API.
 
 ## Prerequisite (complete)
 
-Upstream fixes in `mountainash-expressions` (completed 2026-04-07):
+Upstream fixes in `mountainash` (completed 2026-04-07):
 - `contains`, `regex_contains`, `strpos`, `count_substring`, `like` — removed silent `_extract_literal_value` calls; all now accept column references like `starts_with` / `ends_with` already did
 - `t_is_in` / `t_is_not_in` — accept column references for list-type rule columns, not just Python literal lists
 
@@ -368,7 +368,7 @@ Update these principles documents:
    - Example rules and contexts
    - Ternary semantics
 
-2. **`mountainash-expressions` principles** — document the string API consistency guarantee (all string comparison methods accept column references) and `t_is_in`/`t_is_not_in` list-column support.
+2. **`mountainash` principles** — document the string API consistency guarantee (all string comparison methods accept column references) and `t_is_in`/`t_is_not_in` list-column support.
 
 3. **README.md** (if present) — update the strategy catalog table.
 
@@ -376,6 +376,6 @@ Update these principles documents:
 
 ## Dependencies
 
-**No new dependencies.** The work leverages existing `mountainash-expressions` capabilities (now consistent after the upstream fixes).
+**No new dependencies.** The work leverages existing `mountainash` capabilities (now consistent after the upstream fixes).
 
 **Removed dependencies:** `import polars as pl` and `import re` are removed from `compiler.py` — the compiler becomes pure expressions.

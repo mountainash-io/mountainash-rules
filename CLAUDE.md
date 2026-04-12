@@ -50,7 +50,7 @@ The rules engine supports 11 match strategies via the `MatchStrategy` enum, comp
 
 **Backend support:**
 - 9 strategies (EXACT, NOT_EQUAL, RANGE, GREATER_THAN, LESS_THAN, PREFIX, SUFFIX, CONTAINS, REGEX) compile cleanly on Polars, Ibis, and Narwhals backends — all support per-row patterns/thresholds via column references
-- `SET_MEMBERSHIP` and `SET_EXCLUSION` currently use a Polars-native workaround (`ma.native(pl.col(...).list.contains(...))`) pending upstream `t_is_in`/`t_is_not_in` support for list-column references in mountainash-expressions
+- `SET_MEMBERSHIP` and `SET_EXCLUSION` currently use a Polars-native workaround (`ma.native(pl.col(...).list.contains(...))`) pending upstream `t_is_in`/`t_is_not_in` support for list-column references in mountainash
 
 **Unknown handling:** Sentinel values (`<NA>` for strings, `-999999999` for numerics) in either rule or context columns produce UNKNOWN (0) ternary results, which count as wildcards in ranking but do not eliminate the rule.
 

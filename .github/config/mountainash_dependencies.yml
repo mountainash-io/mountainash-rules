@@ -4,16 +4,16 @@
 dependencies:
   # - name: mountainash-auth-settings
   #   org-name: mountainash-io
-  - name: mountainash-constants
-    org-name: mountainash-io
+  # - name: mountainash-constants
+  #   org-name: mountainash-io
   - name: mountainash-data
     org-name: mountainash-io
-  - name: mountainash-dataframes
+  - name: mountainash
     org-name: mountainash-io
   - name: mountainash-settings
     org-name: mountainash-io
-  - name: mountainash-utils-dataclasses
-    org-name: mountainash-io
+  # - name: mountainash-utils-dataclasses
+  #   org-name: mountainash-io
   # - name: mountainash-utils-factoryclasses
   #   org-name: mountainash-io
   # - name: mountainash-utils-files
@@ -26,5 +26,5 @@ dependencies:
   #   org-name: mountainash-io
   # - name: mountainash-utils-rules
   #   org-name: mountainash-io
-  - name: mountainash-utils-ssh
-    org-name: mountainash-io
+  # - name: mountainash-utils-ssh
+  #   org-name: mountainash-io

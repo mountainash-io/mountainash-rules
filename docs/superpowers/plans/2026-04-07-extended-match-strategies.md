@@ -2,15 +2,15 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Extend `DimensionCompiler` from 3 to 11 match strategies and rewrite REGEX to be backend-agnostic using the now-consistent mountainash-expressions string API.
+**Goal:** Extend `DimensionCompiler` from 3 to 11 match strategies and rewrite REGEX to be backend-agnostic using the now-consistent mountainash string API.
 
 **Architecture:** Each new strategy is a small compile method in `DimensionCompiler`. String-returning operations (`starts_with`, `ends_with`, `contains`, `regex_contains`) share a `_compile_string_match` helper that wraps the boolean result in a sentinel-aware when/then ternary expression. Direct ternary ops (`t_eq`, `t_ne`, `t_gt`, `t_lt`, `t_is_in`, `t_is_not_in`) compile to one-liners using `t_col` with sentinel sets.
 
-**Tech Stack:** mountainash-expressions (ternary logic, backend-agnostic string ops), polars (primary test backend), pydantic (Dimension model validation), pytest (testing)
+**Tech Stack:** mountainash (ternary logic, backend-agnostic string ops), polars (primary test backend), pydantic (Dimension model validation), pytest (testing)
 
 **Spec:** `docs/superpowers/specs/2026-04-07-extended-match-strategies-design.md`
 
-**Prerequisite:** Upstream `mountainash-expressions` fixes (completed 2026-04-07):
+**Prerequisite:** Upstream `mountainash` fixes (completed 2026-04-07):
 - `contains`, `regex_contains`, `strpos`, `count_substring`, `like` accept column references
 - `t_is_in`, `t_is_not_in` accept column references to list columns
 

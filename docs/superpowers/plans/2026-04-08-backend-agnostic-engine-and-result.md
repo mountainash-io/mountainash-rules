@@ -6,7 +6,7 @@
 
 **Architecture:** The dimension compiler is already backend-agnostic. This rewrite extends the same discipline to the engine pipeline (`with_columns`, `filter`, `sort`, `with_row_index`, `drop`) and to all `RuleResult` accessors (`count`, `best_match`, `explain`, `at_least`). All DataFrame operations go through `mountainash.relations.relation()` and `Relation` methods. All per-row operations go through `mountainash.expressions` (`ma.col`, `ma.lit`, `ma.least`, chained `.add()`).
 
-**Tech Stack:** mountainash-expressions (relational + scalar APIs), mountainash-relations (Relation, count_rows, item, with_row_index), pydantic, pytest
+**Tech Stack:** mountainash (relational + scalar APIs), mountainash-relations (Relation, count_rows, item, with_row_index), pydantic, pytest
 
 **Spec:** `docs/superpowers/specs/2026-04-08-backend-agnostic-engine-and-result-design.md`
 
@@ -168,7 +168,7 @@ Read `src/mountainash_utils_rules/engine.py` in full to understand the current s
 Replace `src/mountainash_utils_rules/engine.py` with this complete new content:
 
 ```python
-"""ExpressionRulesEngine: single-pass rule evaluation using mountainash-expressions."""
+"""ExpressionRulesEngine: single-pass rule evaluation using mountainash."""
 
 from __future__ import annotations
 
@@ -189,7 +189,7 @@ from mountainash_utils_rules.result import RuleResult
 
 
 class ExpressionRulesEngine:
-    """Rule evaluation engine using mountainash-expressions.
+    """Rule evaluation engine using mountainash.
 
     Compiles dimension metadata into expression templates at construction time,
     then evaluates contexts against the rules DataFrame in a single-pass
