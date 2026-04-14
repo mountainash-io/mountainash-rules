@@ -65,6 +65,23 @@ jobs:
       # ======================================================
       # BUILD ARTIFACTS
 
+      - name: Debug Dep State
+        run: |
+          echo "== hatch.toml =="
+          cat hatch.toml
+          echo "== pyproject.toml =="
+          cat pyproject.toml
+          echo "== temp/ tree =="
+          ls -la temp/ || true
+          for d in temp/*/; do
+            echo "--- $d pyproject.toml ---"
+            grep -n "dataframes\|mountainash" "$d/pyproject.toml" || true
+            echo "--- $d hatch.toml ---"
+            grep -n "dataframes\|mountainash" "$d/hatch.toml" 2>/dev/null || true
+          done
+
       - name: Setup Build Environment
+        env:
+          HATCH_VERBOSE: "2"
         run: |
           hatch env create ${{ env.BUILD_ENV }}
