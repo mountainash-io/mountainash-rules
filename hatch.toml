@@ -15,15 +15,11 @@ installer = "uv"
 dependencies = [
     "cyclonedx-bom==4.5.0",
 
-    "mountainash_constants @      {root:uri}/temp/mountainash-constants",
-    "mountainash_data @           {root:uri}/temp/mountainash-data",
-    "mountainash_dataframes @             {root:uri}/temp/mountainash-dataframes",
-
-    "mountainash_settings @       {root:uri}/temp/mountainash-settings",
-
-    "mountainash_utils_dataclasses @  {root:uri}/temp/mountainash-utils-dataclasses",
-    # "mountainash_utils_os @           {root:uri}/temp/mountainash-utils-os",
-    "mountainash_utils_ssh @          {root:uri}/temp/mountainash-utils-ssh",
+    "mountainash_data @             {root:uri}/temp/mountainash-data",
+    "mountainash @                  {root:uri}/temp/mountainash",
+    "mountainash_settings @         {root:uri}/temp/mountainash-settings",
+    # "mountainash_utils_dataclasses @  {root:uri}/temp/mountainash-utils-dataclasses",
+    # "mountainash_utils_ssh @        {root:uri}/temp/mountainash-utils-ssh",
 
 ]
 [envs.build_github.scripts]
@@ -73,17 +69,9 @@ dependencies = [
     "pytest-check==2.5.3",
     "pytest-cov==6.1.1",
 
-    "mountainash_constants @      {root:uri}/temp/mountainash-constants",
-    "mountainash_data @           {root:uri}/temp/mountainash-data",
-    "mountainash_dataframes @             {root:uri}/temp/mountainash-dataframes",
-
-    "mountainash_settings @       {root:uri}/temp/mountainash-settings",
-
-    "mountainash_utils_dataclasses @  {root:uri}/temp/mountainash-utils-dataclasses",
-    # "mountainash_utils_os @           {root:uri}/temp/mountainash-utils-os",
-    "mountainash_utils_ssh @          {root:uri}/temp/mountainash-utils-ssh",
-
-    "mountainash @ {root:uri}/temp/mountainash-expressions",
+    "mountainash_data @             {root:uri}/temp/mountainash-data",
+    "mountainash @                  {root:uri}/temp/mountainash",
+    "mountainash_settings @         {root:uri}/temp/mountainash-settings",
 
 ]
 [envs.test_github.scripts]
@@ -113,17 +101,10 @@ dependencies = [
     "pytest-timeout>=2.1.0",     # Test timing control
     "pytest-picked>=0.5.0",      # Changed files testing
 
-    "mountainash_constants @          {root:uri}/../mountainash-constants",
-    "mountainash_data @               {root:uri}/../mountainash-data",
-    "mountainash_dataframes @             {root:uri}/../mountainash-dataframes",
+    "mountainash_data @         {root:uri}/../mountainash-data",
+    "mountainash @              {root:uri}/../mountainash",
+    "mountainash_settings @     {root:uri}/../mountainash-settings",
 
-    "mountainash_settings @           {root:uri}/../mountainash-settings",
-
-    "mountainash_utils_dataclasses @  {root:uri}/../mountainash-utils-dataclasses",
-    # "mountainash_utils_os @           {root:uri}/../mountainash-utils-os",
-    "mountainash_utils_ssh @          {root:uri}/../mountainash-utils-ssh",
-
-    "mountainash @ {root:uri}/../mountainash-expressions",
 ]
 [envs.test.scripts]
 # ===========================================

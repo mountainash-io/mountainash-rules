@@ -1,4 +1,4 @@
-"""ExpressionRulesEngine: single-pass rule evaluation using mountainash-expressions."""
+"""ExpressionRulesEngine: single-pass rule evaluation using mountainash."""
 
 from __future__ import annotations
 
@@ -19,7 +19,7 @@ from mountainash_utils_rules.result import RuleResult
 
 
 class ExpressionRulesEngine:
-    """Rule evaluation engine using mountainash-expressions.
+    """Rule evaluation engine using mountainash.
 
     Compiles dimension metadata into expression templates at construction time,
     then evaluates contexts against the rules DataFrame in a single-pass

@@ -4,7 +4,7 @@
 
 **Goal:** Parametrize the `mountainash-utils-rules` test suite across all 7 mountainash-supported DataFrame backends, replacing Polars-specific assertions with backend-agnostic reads via `mountainash.relations`.
 
-**Architecture:** Rewrite `tests/conftest.py` to mirror the `mountainash-expressions` exemplar: pure-Python data fixtures, a `backend_name` param fixture over 7 backends, backend DataFrame factory fixtures, and a `basic_engine` that auto-parametrizes transitively. Test files replace direct Polars assertions with `mountainash.relations.relation(...).to_dict()`. SET_MEMBERSHIP / SET_EXCLUSION cases use strict `xfail` on non-Polars backends pointing at `mountainash-io/mountainash-expressions#75`.
+**Architecture:** Rewrite `tests/conftest.py` to mirror the `mountainash` exemplar: pure-Python data fixtures, a `backend_name` param fixture over 7 backends, backend DataFrame factory fixtures, and a `basic_engine` that auto-parametrizes transitively. Test files replace direct Polars assertions with `mountainash.relations.relation(...).to_dict()`. SET_MEMBERSHIP / SET_EXCLUSION cases use strict `xfail` on non-Polars backends pointing at `mountainash-io/mountainash#75`.
 
 **Tech Stack:** pytest, polars, pandas, narwhals, ibis-framework[duckdb,polars,sqlite], mountainash.relations, mountainash.expressions.
 
@@ -38,7 +38,7 @@ Write to `tests/conftest.py`:
 ```python
 """Shared fixtures for expression-based rules engine tests.
 
-Mirrors the mountainash-expressions exemplar: data-as-dict fixtures + a
+Mirrors the mountainash exemplar: data-as-dict fixtures + a
 `backend_name` param fixture + per-backend DataFrame factory fixtures that
 auto-parametrize every dependent test across all 7 supported backends.
 """
@@ -82,7 +82,7 @@ LIST_CAPABLE_BACKENDS = [
 
 SET_MEMBERSHIP_XFAIL_REASON = (
     "SET_MEMBERSHIP uses Polars-native workaround pending "
-    "mountainash-io/mountainash-expressions#75 (t_list_contains)"
+    "mountainash-io/mountainash#75 (t_list_contains)"
 )
 
 
@@ -828,7 +828,7 @@ class TestMixedStrategyFraudDetection:
     """Exercises EXACT, SET_MEMBERSHIP, GREATER_THAN, and PREFIX together.
 
     SET_MEMBERSHIP uses a Polars-native workaround (ma.native) pending
-    mountainash-io/mountainash-expressions#75. Non-Polars backends are
+    mountainash-io/mountainash#75. Non-Polars backends are
     strict xfail — when #75 lands and the workaround is removed, these
     flip XPASS and force removal of the markers.
     """
@@ -888,7 +888,7 @@ Expected: All non-SET tests pass × 7 backends; SET fraud tests are 3 PASS + 9 X
 git add tests/test_integration.py
 git commit -m "test(integration): parametrize fraud detection with xfail for non-polars SET
 
-Refs mountainash-io/mountainash-expressions#75
+Refs mountainash-io/mountainash#75
 
 Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>"
 ```
@@ -919,7 +919,7 @@ class TestBackendAgnosticism:
     """Smoke test: each strategy compiles and runs on every supported backend.
 
     SET_MEMBERSHIP / SET_EXCLUSION are included but xfail-strict on non-Polars
-    backends, pending mountainash-io/mountainash-expressions#75.
+    backends, pending mountainash-io/mountainash#75.
     """
 
     _SAMPLE_DATA = {

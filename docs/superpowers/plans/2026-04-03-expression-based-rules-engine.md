@@ -2,11 +2,11 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Replace the iterative dimension-by-dimension rule evaluation engine with a single-pass expression-based architecture using mountainash-expressions.
+**Goal:** Replace the iterative dimension-by-dimension rule evaluation engine with a single-pass expression-based architecture using mountainash.
 
 **Architecture:** Build ternary expression templates from dimension metadata at construction time, bind context values as literal columns at evaluation time, compile all dimensions in one `with_columns()` call. Survival = no FALSE(-1) in any dimension. Specificity = count of TRUE(1) values. Results ranked by specificity descending.
 
-**Tech Stack:** mountainash-expressions (ternary logic, build-then-compile), polars (primary backend), ibis-framework (secondary), narwhals (tertiary), pydantic (models), pytest (testing)
+**Tech Stack:** mountainash (ternary logic, build-then-compile), polars (primary backend), ibis-framework (secondary), narwhals (tertiary), pydantic (models), pytest (testing)
 
 **Spec:** `docs/superpowers/specs/2026-04-03-expression-based-rules-engine-design.md`
 
@@ -47,7 +47,7 @@
 | `tests/test_numpy_processor.py` | Delete | Old numpy tests |
 | `tests/benchmarks/` | Delete | Old benchmark framework |
 | `pyproject.toml` | Modify | Update dependencies |
-| `hatch.toml` | Modify | Add mountainash-expressions dependency |
+| `hatch.toml` | Modify | Add mountainash dependency |
 
 ---
 
@@ -121,13 +121,13 @@ Changes: removed `pandas>=2.2.0`, removed `sqlite` and `pandas` extras from ibis
 In `hatch.toml`, add the mountainash expressions dependency to the `[envs.test]` dependencies list. Add this line alongside the other mountainash dependencies:
 
 ```
-    "mountainash @                    {root:uri}/../mountainash-expressions",
+    "mountainash @                    {root:uri}/../mountainash",
 ```
 
 Do the same for `[envs.test_github]`:
 
 ```
-    "mountainash @                    {root:uri}/temp/mountainash-expressions",
+    "mountainash @                    {root:uri}/temp/mountainash",
 ```
 
 - [ ] **Step 5: Commit**
@@ -1152,7 +1152,7 @@ Expected: FAIL — `ExpressionRulesEngine` does not exist (old engine.py is stil
 - [ ] **Step 3: Implement engine.py**
 
 ```python
-"""ExpressionRulesEngine: single-pass rule evaluation using mountainash-expressions."""
+"""ExpressionRulesEngine: single-pass rule evaluation using mountainash."""
 
 from __future__ import annotations
 
@@ -1171,7 +1171,7 @@ from mountainash_utils_rules.result import RuleResult
 
 
 class ExpressionRulesEngine:
-    """Rule evaluation engine using mountainash-expressions.
+    """Rule evaluation engine using mountainash.
 
     Compiles dimension metadata into expression templates at construction time,
     then evaluates contexts against the rules DataFrame in a single-pass

@@ -1,6 +1,6 @@
 """Shared fixtures for expression-based rules engine tests.
 
-Mirrors the mountainash-expressions exemplar: data-as-dict fixtures + a
+Mirrors the mountainash exemplar: data-as-dict fixtures + a
 `backend_name` param fixture + per-backend DataFrame factory fixtures that
 auto-parametrize every dependent test across all 7 supported backends.
 """
@@ -55,7 +55,7 @@ LIST_CAPABLE_BACKENDS = [
 
 _ISSUE_78_REASON = (
     "ibis-polars: missing WindowFunction translation for with_row_index "
-    "— mountainash-io/mountainash-expressions#78"
+    "— mountainash-io/mountainash#78"
 )
 
 # (backends, reason, test node substrings)

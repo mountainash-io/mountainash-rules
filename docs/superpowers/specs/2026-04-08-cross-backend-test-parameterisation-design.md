@@ -1,7 +1,7 @@
 # Cross-Backend Test Parameterisation — Design
 
 > **Status:** Approved 2026-04-08
-> **Exemplar:** `mountainash-expressions/tests/conftest.py`
+> **Exemplar:** `mountainash/tests/conftest.py`
 
 ## Goal
 
@@ -9,11 +9,11 @@ Upgrade the `mountainash-utils-rules` test suite to run against all 7 DataFrame 
 
 ## Context
 
-The rewrite landed in PR #38 made `engine.py`, `result.py`, and most of `compiler.py` backend-agnostic via `mountainash.relations.Relation` and `mountainash.expressions`. The only remaining backend dependency is `SET_MEMBERSHIP` / `SET_EXCLUSION` using a Polars `ma.native(pl.col(...).list.contains(...))` workaround, tracked upstream as `mountainash-io/mountainash-expressions#75`.
+The rewrite landed in PR #38 made `engine.py`, `result.py`, and most of `compiler.py` backend-agnostic via `mountainash.relations.Relation` and `mountainash.expressions`. The only remaining backend dependency is `SET_MEMBERSHIP` / `SET_EXCLUSION` using a Polars `ma.native(pl.col(...).list.contains(...))` workaround, tracked upstream as `mountainash-io/mountainash#75`.
 
 Current tests (`test_engine.py`, `test_result.py`, `test_integration.py`, `test_compiler.py`) were written against Polars fixtures and assert on Polars DataFrame methods directly. The backend-agnostic codepath has never actually been exercised on Ibis or Narwhals-wrapped backends in CI.
 
-The exemplar `mountainash-expressions/tests/conftest.py` establishes a clean pattern: pure-Python data fixtures, a `backend_name` param fixture over 7 backends, per-backend DataFrame factory fixtures, and relation-API-based result extraction.
+The exemplar `mountainash/tests/conftest.py` establishes a clean pattern: pure-Python data fixtures, a `backend_name` param fixture over 7 backends, per-backend DataFrame factory fixtures, and relation-API-based result extraction.
 
 ## Scope
 
@@ -146,7 +146,7 @@ import pytest
 
 SET_MEMBERSHIP_XFAIL_REASON = (
     "SET_MEMBERSHIP uses Polars-native workaround pending "
-    "mountainash-io/mountainash-expressions#75 (t_list_contains)"
+    "mountainash-io/mountainash#75 (t_list_contains)"
 )
 
 def _xfail_if_not_polars(backend_name: str):
