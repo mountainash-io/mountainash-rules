@@ -1,347 +1,112 @@
+"""Dimension metadata for rule evaluation."""
 
+from __future__ import annotations
 
-from typing import List, Any,Optional, Dict, Type
+import typing as t
 
-from pydantic import BaseModel
+from pydantic import BaseModel, model_validator
 
-from mountainash_data import BaseDataFrame
-from mountainash_utils_rules.constants import MatchStrategy, RuleConstants
+from mountainash_utils_rules.constants import MatchStrategy
 
 
 class Dimension(BaseModel):
+    """A single dimension that rules are evaluated against."""
 
     dimension_name: str
-    context_field: Optional[str] = None
-    rule_field: Optional[str] = None
-
+    context_field: t.Optional[str] = None
+    rule_field: t.Optional[str] = None
     match_strategy: MatchStrategy = MatchStrategy.EXACT
-    data_type: Type = str  # Default to string, but can be int, float, date, bool etc.
-    
-    valid_values: List[Any] = []  # List of possible values for the dimension
-    
-    range_min_field: Optional[str] = None  # Minimum value for the dimension
-    range_max_field: Optional[str] = None   # Maximum value for the dimension
-    range_min_inclusive: bool = True  # Whether the minimum value is inclusive
-    range_max_inclusive: bool = True  # Whether the maximum value is inclusive
+    data_type: type = str
+    valid_values: list[t.Any] = []
 
+    # RANGE strategy fields
+    range_min_field: t.Optional[str] = None
+    range_max_field: t.Optional[str] = None
+    range_min_inclusive: bool = True
+    range_max_inclusive: bool = True
 
-    def get_dimension_attribute(self, 
-                                attribute: str, 
-                                default_value: Any) -> Any:
-        """
-        Get the field name for the context for a given dimension.
+    # REGEX strategy field — literal pattern stored on metadata (not per-rule)
+    regex_pattern: t.Optional[str] = None
 
-        Args:
-            attribute (str): The attribute to get
-            default_value (Any): The default value to return if the attribute is not set
+    @property
+    def resolved_context_field(self) -> str:
+        """The field name to extract from the context object."""
+        return self.context_field or self.dimension_name
 
-        Returns:
-            Any: The value of the attribute
-        """
-        value = getattr(self, attribute, default_value)
-        if value is not None:
-            return value
-                
-        return default_value
+    @property
+    def resolved_rule_field(self) -> str:
+        """The field name in the rules DataFrame."""
+        return self.rule_field or self.dimension_name
 
-    def get_dimension_context_fieldname(self) -> str:
-        """
-        Get the field name for the context for a given dimension.
-
-        Returns:
-            str: The field name for the context field
-
-        """
-        return self.get_dimension_attribute(attribute="context_field", default_value=self.dimension_name)
-
-    def get_dimension_rule_fieldname(self) -> str:
-        """
-        Get the field name for the rule_field for a given dimension.
-
-        Returns:
-            str: The field name for the rule field
-
-        """
+    @model_validator(mode="after")
+    def _validate_strategy_fields(self) -> "Dimension":
         if self.match_strategy == MatchStrategy.RANGE:
-            return self.get_dimension_rule_range_min_field()
+            if not self.range_min_field or not self.range_max_field:
+                raise ValueError(
+                    f"Dimension '{self.dimension_name}' uses RANGE strategy "
+                    f"but is missing range_min_field or range_max_field"
+                )
+            if self.data_type not in (int, float):
+                raise ValueError(
+                    f"Dimension '{self.dimension_name}' uses RANGE strategy "
+                    f"but data_type is {self.data_type.__name__}, expected int or float"
+                )
+
+        if self.match_strategy in (
+            MatchStrategy.REGEX,
+            MatchStrategy.PREFIX,
+            MatchStrategy.SUFFIX,
+            MatchStrategy.CONTAINS,
+        ):
+            if self.data_type is not str:
+                raise ValueError(
+                    f"Dimension '{self.dimension_name}' uses {self.match_strategy.name} "
+                    f"but data_type is {self.data_type.__name__}, expected str"
+                )
+
+        if self.match_strategy == MatchStrategy.REGEX:
+            if not isinstance(self.regex_pattern, str) or not self.regex_pattern:
+                raise ValueError(
+                    f"Dimension '{self.dimension_name}' uses REGEX strategy and "
+                    f"requires a non-empty literal 'regex_pattern' on the Dimension"
+                )
         else:
-            return self.get_dimension_attribute( attribute="rule_field", default_value=self.dimension_name)
+            if self.regex_pattern is not None:
+                raise ValueError(
+                    f"Dimension '{self.dimension_name}' sets regex_pattern but "
+                    f"match_strategy is {self.match_strategy.name}; "
+                    f"regex_pattern is only valid for REGEX strategy"
+                )
 
-    def get_dimension_match_strategy(self) -> MatchStrategy:
-        """
-        Get the field name for the match_strategy for a given dimension.
+        if self.match_strategy in (
+            MatchStrategy.GREATER_THAN,
+            MatchStrategy.LESS_THAN,
+        ):
+            if self.data_type not in (int, float):
+                raise ValueError(
+                    f"Dimension '{self.dimension_name}' uses {self.match_strategy.name} "
+                    f"but data_type is {self.data_type.__name__}, expected int or float"
+                )
 
-        Returns:
-            MatchStrategy: The match strategy for the dimension
-
-        """
-        return self.get_dimension_attribute(attribute="match_strategy", default_value=MatchStrategy.EXACT)
-
-    def get_dimension_data_type(self) -> Type:
-        """
-        Get the field name for the data_type for a given dimension.
-
-        Returns:
-            Type: The data type for the dimension
-        """
-        return self.get_dimension_attribute( attribute="data_type", default_value=str)
-
-    def get_dimension_rule_range_min_field(self) -> str:
-        """
-        Get the field name for the range_min_field for a given dimension.
-
-        Returns:
-            str: The field name for the range_min_field
-        """
-        range_min_field = self.get_dimension_attribute(attribute="range_min_field", default_value=None)
-
-        if range_min_field is None:
-            return self.get_dimension_rule_fieldname()
-        else:
-            return range_min_field
-
-    def get_dimension_rule_range_max_field(self) -> str:
-        """
-        Get the field name for the range_max_field for a given dimension.
-
-        Returns:   
-            str: The field name for the range_max_field
-        """
-        range_max_field = self.get_dimension_attribute(attribute="range_max_field", default_value=None)
-
-        if range_max_field is None:
-            return self.get_dimension_rule_fieldname()
-        else:
-            return range_max_field
-
-    def get_dimension_rule_range_min_inclusive(self) -> bool:
-        """
-        Get the field name for the range_min_inclusive for a given dimension.
-
-        Returns:
-            bool: The field name for the range_min_inclusive
-        """
-        return self.get_dimension_attribute( attribute="range_min_inclusive", default_value=True)
-
-
-    def get_dimension_rule_range_max_inclusive(self) -> bool:
-        """
-        Get the field name for the range_max_inclusive for a given dimension.
-
-        Returns:
-            bool: The field name for the range_max_inclusive
-        """
-        return self.get_dimension_attribute(attribute="range_max_inclusive", default_value=True)
-
-
-
+        return self
 
 
 class DimensionsMetadata(BaseModel):
-    dimensions: List[Dimension]
+    """Collection of dimension definitions for a rule set."""
 
+    dimensions: list[Dimension]
 
+    @model_validator(mode="after")
+    def _validate_unique_names(self) -> "DimensionsMetadata":
+        names = [d.dimension_name for d in self.dimensions]
+        if len(names) != len(set(names)):
+            dupes = [n for n in names if names.count(n) > 1]
+            raise ValueError(f"Duplicate dimension names: {set(dupes)}")
+        return self
 
-# Metadata Manager
-class MetadataManager:
-
-    def __init__(self, 
-                 rules: BaseDataFrame,
-                 dimension_metadata: Optional[DimensionsMetadata] = None):
-
-        self.raw_dimension_metadata: Optional[DimensionsMetadata]  = dimension_metadata
-
-        self.lookup_dimension_metadata: Optional[Dict[str, Dimension]] = self._init_dimension_metadata(rules=rules,
-                                                                                                       dimension_metadata=dimension_metadata)
-
-
-    def _init_dimension_metadata(self, 
-                                 rules: BaseDataFrame,
-                                 dimension_metadata: Optional[DimensionsMetadata] = None) -> Optional[Dict[str, Dimension]]:
-        """
-        Validate the dimensions in the rule metadata.
-
-        Args:
-            rules (BaseDataFrame): The rules dataframe
-            dimension_metadata (Optional[DimensionsMetadata]): The dimension metadata
-
-        """
-
-        if dimension_metadata is None:
-            return None
-        else:
-
-            self._validate_unique_dimension_names(dimension_metadata=dimension_metadata)
-
-            # Loop through 
-
-            #validate the rule metadata
-            for dimension in dimension_metadata.dimensions:
-
-                #Validate Rule type has required fields in rules
-                if dimension.match_strategy == MatchStrategy.RANGE:
-                    self._validate_range_strategy_dimension( dimension=dimension)
-
-                elif dimension.match_strategy ==  MatchStrategy.REGEX:
-                    self._validate_regex_strategy_dimension( dimension=dimension)
-
-                elif dimension.match_strategy ==  MatchStrategy.EXACT:
-                    continue
-
-                else:
-                    raise ValueError(f"Dimension {dimension.dimension_name} has an invalid rule type: {dimension.match_strategy}")
-
-            #If we get this far, set up the dimensions lookup!
-            return {dimension.dimension_name: dimension for dimension in dimension_metadata.dimensions}
-
-
-    ### Validators
-
-    def _validate_range_strategy_dimension(self, dimension: Dimension) -> None:
-        """
-        Validate the range strategy dimension.
-
-        Args:
-            dimension (Dimension): The dimension to validate
-
-        Raises:
-            ValueError: If the dimension is invalid
-        """
-        if dimension.match_strategy == MatchStrategy.RANGE:
-
-            if dimension.data_type not in [int, float]:
-                raise ValueError(f"Dimension {dimension.dimension_name} is of type RANGE but the data type is not int or float.")
-
-            if dimension.range_min_field is None or dimension.range_max_field is None:
-                raise ValueError(f"Dimension {dimension.dimension_name} is of type RANGE but no min/max fields are specified.")
-
-
-    def _validate_regex_strategy_dimension(self, dimension: Dimension) -> None:
-        """
-        Validate the range strategy dimension.
-
-        Args:
-            dimension (Dimension): The dimension to validate
-
-        Raises:
-            ValueError: If the dimension is invalid
-        """
-        if dimension.match_strategy ==  MatchStrategy.REGEX:
-
-            if dimension.data_type is not str:
-                raise ValueError(f"Dimension {dimension.dimension_name} is of type REGEX but the data type is not a string")
-
-
-
-    def _validate_unique_dimension_names(self, 
-                                         dimension_metadata: DimensionsMetadata) -> None:
-            
-        """
-        Validate the dimension names are unique.
-
-        Args:
-            dimension_metadata (DimensionsMetadata): The dimension metadata
-
-        Raises:
-            ValueError: If the dimension names are not unique
-        """
-        #validate names are unique:
-        dimension_names = [dimension.dimension_name for dimension in dimension_metadata.dimensions]
-
-        if len(dimension_names) != len(set(dimension_names)):
-            raise ValueError("Dimension names must be unique.")
-
-
-    ### Getters
-    def get_dimension(self, 
-                      dimension_name: str) -> Dimension:
-        
-        """ 
-        Get the dimension object for a given dimension name.
-
-        Args:
-            dimension_name (str): The dimension name
-        Returns:
-            Dimension: The dimension object
-        """
-
-        if self.lookup_dimension_metadata is not None and dimension_name in self.lookup_dimension_metadata:
-            return self.lookup_dimension_metadata[dimension_name]
-        else:
-            return Dimension(dimension_name=dimension_name)
-
-
-    def get_dimensions_list(self, 
-                            dimension_names: List[str]) -> List[Dimension]:
-        """
-        
-        Get the dimension objects for a list of dimension names.
-        
-        Args:
-            dimension_names (List[str]): The dimension names
-        Returns:
-            List[Dimension]: The dimension objects
-        """
-
-        if self.lookup_dimension_metadata is not None:
-
-            return [self.get_dimension(dimension_name=dimension_name) for dimension_name in dimension_names]
-        else:
-            return [Dimension(dimension_name=dimension_name) for dimension_name in dimension_names]
-        
-
-
-    def get_active_dimension_names(self, 
-                                   context: BaseModel, 
-                                   rules:   BaseDataFrame,
-                                   dimension_names: List[str]
-                                   ) -> List[str]:
-
-        """
-        Get the active dimension names for a given context and rules.
-        
-        Args:
-            context (BaseModel): The context object
-            rules (BaseDataFrame): The rules dataframe
-            
-        Returns:
-            List[str]: The active dimension names
-        """
-
-        if dimension_names == []:
-            raise ValueError("No dimension names specified") 
-        
-
-        #The fields the rule metadata asks for:
-        expected_rule_fields:    Dict[str,str] = {dimension_name: self.get_dimension(dimension_name=dimension_name).get_dimension_rule_fieldname() for dimension_name in dimension_names}
-        expected_context_fields: Dict[str,str] = {dimension_name: self.get_dimension(dimension_name=dimension_name).get_dimension_context_fieldname() for dimension_name in dimension_names}
-
-        #The fields that actually exist
-        actual_rule_fields:    Dict[str,str] = {dimension_name: fieldname
-                                                for dimension_name, fieldname in expected_rule_fields.items() 
-                                                if fieldname in rules.get_column_names()}
-
-        actual_context_fields: Dict[str,str] = {dimension_name: fieldname
-                                                for dimension_name, fieldname in expected_context_fields.items() 
-                                                if getattr(context, fieldname, RuleConstants.NOT_SET) not in {RuleConstants.NOT_SET, None} }
-
-
-        #find the dimensions that have their fields active in the rules and the context
-        active_context_dimensions =    [dimension_name for dimension_name in dimension_names if dimension_name in actual_context_fields.keys()]
-        active_rule_dimensions =       [dimension_name for dimension_name in dimension_names if dimension_name in actual_rule_fields.keys()]
-
-        #find the common elements in the context and the rules
-        active_dimensions = list(set(active_context_dimensions).intersection(set(active_rule_dimensions)))
-
-        print(f"active_dimensions: {active_dimensions}")
-
-        #find the dimensions that are not in all sources:
-        missing_dimensions = set(dimension_names) - set(active_dimensions)
-
-        if missing_dimensions:
-            print(f"Warning: Dimensons requested in rules_meatadata, but are missing in rules or context: {missing_dimensions}")
-    
-        if active_dimensions == []:
-            raise ValueError("No active dimensions found in rules or context")        
-
-        return active_dimensions
+    def get_dimension(self, name: str) -> Dimension:
+        """Look up a dimension by name."""
+        for d in self.dimensions:
+            if d.dimension_name == name:
+                return d
+        raise KeyError(f"Dimension '{name}' not found")

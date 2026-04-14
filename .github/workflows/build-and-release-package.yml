@@ -4,42 +4,40 @@ on:
   pull_request:
     types: [closed]
     branches:
-      - 'main'
-      - 'develop'
-      - 'release*'
-      - 'feature*'
-      - 'bugfix*'
-      - 'hotfix*'
+      - "main"
+      - "develop"
+      - "release*"
+      - "feature*"
+      - "bugfix*"
+      - "hotfix*"
 
   # Add manual workflow dispatch with fallback branch selection
   workflow_dispatch:
     inputs:
-
       release_type:
-        description: 'Type of release to create'
+        description: "Type of release to create"
         required: true
-        default: 'production'
-        type: 'choice'
+        default: "production"
+        type: "choice"
         options:
           - production
           - rc
-          - beta      
+          - beta
 
       source_branch:
-        description: 'Branch containing code to release'
+        description: "Branch containing code to release"
         required: true
-        default: 'main'
-        type: 'string'
+        default: "main"
+        type: "string"
 
       fallback_branch:
-        description: 'Fallback branch to use for dependencies'
+        description: "Fallback branch to use for dependencies"
         required: true
-        default: 'main'
+        default: "main"
         type: choice
         options:
-        - develop
-        - main
-
+          - develop
+          - main
 
 jobs:
   build-and-release:
@@ -50,12 +48,11 @@ jobs:
       matrix:
         os: [ubuntu-24.04]
         python-version: ["3.12"]
-    
+
     env:
-      BUILD_ENV: 'build_github'
+      BUILD_ENV: "build_github"
 
     steps:
-
       # ======================================================
       # INITIALIZE
 
@@ -70,21 +67,19 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
-
       - name: Checkout Repository (PR)
         if: github.event_name == 'pull_request'
         uses: actions/checkout@v4
         with:
           ref: ${{ github.event.pull_request.merge_commit_sha }}
           fetch-depth: 0
-      
+
       - name: Checkout Repository (Manual)
         if: github.event_name == 'workflow_dispatch'
         uses: actions/checkout@v4
         with:
           ref: ${{ github.event.inputs.source_branch }}
           fetch-depth: 0
-
 
       - name: Set Branch Vars
         run: |
@@ -102,15 +97,13 @@ jobs:
             echo "MANUAL_RELEASE_TYPE=" >> $GITHUB_ENV
           fi
 
-
-
       # ======================================================
       # DEPENDENCIES
 
       - name: Python Dependencies
         run: |
-          pip install hatchling==1.25.0
-          pip install hatch==1.12.0
+          pip install hatchling==1.29.0
+          pip install hatch==1.16.5
 
       # Checkout Mountain Ash Dependencies
       - name: Load Dependencies
@@ -118,8 +111,6 @@ jobs:
         uses: ./.github/actions/load-dependencies
         with:
           config-path: .github/config/mountainash_dependencies.yml
-
-
 
       - name: Checkout Dependencies
         uses: ./.github/actions/checkout-dependencies
@@ -133,14 +124,13 @@ jobs:
       # ======================================================
       # CONFIGURE RELEASE
 
-
       - name: Get Base Version
         id: base_version
         run: |
           # BASE_VERSION=$(python -c "import sys; sys.path.append('src'); from ${{env.PACKAGE_SRCDIR}}.__version__ import __version__; print(__version__)")
           BASE_VERSION=$(hatch version)
           echo "BASE_VERSION=${BASE_VERSION}" >> $GITHUB_ENV
-          
+
           # Validate semantic version format
           if [[ ! "$BASE_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
             echo "Error: Base version must be in semantic version format (X.Y.Z)"
@@ -156,7 +146,7 @@ jobs:
           IS_PRERELEASE="true"
           RELEASE_TITLE=""
           RELEASE_DESCRIPTION=""
-          
+
           # Function to get latest version number
           get_latest_version() {
             local prefix="$1"
@@ -166,11 +156,11 @@ jobs:
               jq -r --arg prefix "$prefix" --arg suffix "$suffix" \
               "map(select(.tag_name | startswith(\$prefix) and contains(\$suffix))) | .[0].tag_name" || echo ""
           }
-          
+
           # Check for manual workflow run
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             echo "Using manual release type: ${{ env.MANUAL_RELEASE_TYPE }}"
-            
+
             case "${{ env.MANUAL_RELEASE_TYPE }}" in
               "production")
                 RELEASE_TYPE="production"
@@ -216,7 +206,7 @@ jobs:
                   exit 1
                 fi
                 ;;
-                
+
               "develop")
                 RELEASE_TYPE="rc"
                 # Get latest RC number for this version
@@ -226,7 +216,7 @@ jobs:
                 RELEASE_TITLE="Release Candidate"
                 RELEASE_DESCRIPTION="Release candidate for testing and validation"
                 ;;
-                
+
               *)
                 if [[ "{{ env.SOURCE_BRANCH }}" == feature/* || "$SOURCE_BRANCH" == bugfix/* ]]; then
                   RELEASE_TYPE="beta"
@@ -242,10 +232,10 @@ jobs:
                 ;;
             esac
           fi
-          
+
           # Set full version
           FULL_VERSION="${BASE_VERSION}${VERSION_SUFFIX:+$VERSION_SUFFIX}"
-          
+
           # Output all variables
           {
             echo "RELEASE_TYPE=${RELEASE_TYPE}"
@@ -255,7 +245,7 @@ jobs:
             echo "RELEASE_TITLE=${RELEASE_TITLE}"
             echo "RELEASE_DESCRIPTION=${RELEASE_DESCRIPTION}"
           } >> $GITHUB_OUTPUT
-          
+
           echo "VERSION=${FULL_VERSION}" >> $GITHUB_ENV
 
       - name: Validate Release
@@ -265,7 +255,7 @@ jobs:
             echo "Error: Tag v${{ env.VERSION }} already exists"
             exit 1
           fi
-          
+
           # Check if release already exists
           RELEASE_ID=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
             "https://api.github.com/repos/${{ github.repository }}/releases/tags/v${{ env.VERSION }}" \
@@ -303,7 +293,6 @@ jobs:
         run: |
           echo "Checking version from Hatch:"
           hatch version
-
 
       - name: Build Package
         id: build
@@ -347,19 +336,18 @@ jobs:
           prerelease: ${{ steps.release_config.outputs.IS_PRERELEASE }}
           body: |
             ${{ steps.release_config.outputs.RELEASE_DESCRIPTION }}
-            
+
             ## Release Details
             - Type: ${{ steps.release_config.outputs.RELEASE_TYPE }}
             - Source Branch: ${{ github.head_ref }}
             - Target Branch: ${{ github.base_ref }}
             - Version: ${{ env.VERSION }}
-            
+
             ## Package Information
             - Package: ${{ env.PACKAGE_NAME }}
             - Base Version: ${{ env.BASE_VERSION }}
             ${{ steps.release_config.outputs.VERSION_SUFFIX && format('- Version Suffix: {0}', steps.release_config.outputs.VERSION_SUFFIX) || '' }}
 
-      
       - name: Upload Package
         uses: actions/upload-release-asset@v1
         env:

@@ -1,38 +1,18 @@
-from .__version__ import __version__
+"""Mountain Ash Utils Rules — expression-based rule evaluation engine."""
 
-# from .rules import RulesEngine, DimensionsMetadata, MatchStrategy, Dimension
-
-from mountainash_utils_rules.constants import MatchStrategy, RuleConstants, RuleTrinaryFlags
-from mountainash_utils_rules.context import ContextHelper
-from mountainash_utils_rules.rule_strategies import ExactMatchStrategy, RangeMatchStrategy, RegexMatchStrategy, MatchStrategyFactory, BaseMatchStrategy
-from mountainash_utils_rules.dimension import DimensionsMetadata, MetadataManager, Dimension
-from mountainash_utils_rules.observer import ObservabilityManager
-from mountainash_utils_rules.rule_manager import RuleManager
-from mountainash_utils_rules.engine import RulesEngine
-
+from mountainash_utils_rules.__version__ import __version__
+from mountainash_utils_rules.compiler import DimensionCompiler
+from mountainash_utils_rules.constants import MatchStrategy
+from mountainash_utils_rules.dimension import Dimension, DimensionsMetadata
+from mountainash_utils_rules.engine import ExpressionRulesEngine
+from mountainash_utils_rules.result import RuleResult
 
 __all__ = (
     "__version__",
-
-    "MatchStrategy",
-    "RuleConstants",
-    "RuleTrinaryFlags",
-    "MatchStrategy",
-
-    "ContextHelper",
-
-    "BaseMatchStrategy",
-    "ExactMatchStrategy",
-    "RangeMatchStrategy",
-    "RegexMatchStrategy",
-    "MatchStrategyFactory",
-
-    "DimensionsMetadata",
-    "MetadataManager",
+    "DimensionCompiler",
     "Dimension",
-
-    "ObservabilityManager",
-
-    "RuleManager",
-    "RulesEngine"
+    "DimensionsMetadata",
+    "ExpressionRulesEngine",
+    "MatchStrategy",
+    "RuleResult",
 )

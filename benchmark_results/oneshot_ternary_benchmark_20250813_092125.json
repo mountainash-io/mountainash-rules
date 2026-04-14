@@ -1,0 +1,84 @@
+{
+  "timestamp": "20250813_092125",
+  "benchmark_type": "oneshot_ternary_comparison",
+  "results": [
+    {
+      "engine_name": "Original RulesEngine (1/1 success)",
+      "rule_count": 100,
+      "context_count": 1,
+      "avg_time_ms": 462.6755030476488,
+      "std_dev_ms": 0.0,
+      "min_time_ms": 462.6755030476488,
+      "max_time_ms": 462.6755030476488,
+      "throughput_ctx_per_sec": 2.1613420062505764,
+      "total_matched": 0,
+      "success_rate": 1.0,
+      "speedup_vs_baseline": 1.0
+    },
+    {
+      "engine_name": "Enhanced Ternary (FAILED)",
+      "rule_count": 100,
+      "context_count": 1,
+      "avg_time_ms": 0.0,
+      "std_dev_ms": 0.0,
+      "min_time_ms": 0.0,
+      "max_time_ms": 0.0,
+      "throughput_ctx_per_sec": 0.0,
+      "total_matched": 0,
+      "success_rate": 0.0,
+      "speedup_vs_baseline": 1.0
+    },
+    {
+      "engine_name": "Original RulesEngine (1/1 success)",
+      "rule_count": 500,
+      "context_count": 1,
+      "avg_time_ms": 1860.7631750055589,
+      "std_dev_ms": 0.0,
+      "min_time_ms": 1860.7631750055589,
+      "max_time_ms": 1860.7631750055589,
+      "throughput_ctx_per_sec": 0.5374139027643927,
+      "total_matched": 1,
+      "success_rate": 1.0,
+      "speedup_vs_baseline": 1.0
+    },
+    {
+      "engine_name": "Enhanced Ternary (FAILED)",
+      "rule_count": 500,
+      "context_count": 1,
+      "avg_time_ms": 0.0,
+      "std_dev_ms": 0.0,
+      "min_time_ms": 0.0,
+      "max_time_ms": 0.0,
+      "throughput_ctx_per_sec": 0.0,
+      "total_matched": 0,
+      "success_rate": 0.0,
+      "speedup_vs_baseline": 1.0
+    },
+    {
+      "engine_name": "Original RulesEngine (1/1 success)",
+      "rule_count": 1000,
+      "context_count": 1,
+      "avg_time_ms": 4222.63168101199,
+      "std_dev_ms": 0.0,
+      "min_time_ms": 4222.63168101199,
+      "max_time_ms": 4222.63168101199,
+      "throughput_ctx_per_sec": 0.23681913923412365,
+      "total_matched": 7,
+      "success_rate": 1.0,
+      "speedup_vs_baseline": 1.0
+    },
+    {
+      "engine_name": "Enhanced Ternary (FAILED)",
+      "rule_count": 1000,
+      "context_count": 1,
+      "avg_time_ms": 0.0,
+      "std_dev_ms": 0.0,
+      "min_time_ms": 0.0,
+      "max_time_ms": 0.0,
+      "throughput_ctx_per_sec": 0.0,
+      "total_matched": 0,
+      "success_rate": 0.0,
+      "speedup_vs_baseline": 1.0
+    }
+  ]
+}
