@@ -10,7 +10,7 @@
 
 Add performance benchmarks to `mountainash-utils-rules` that answer two questions:
 
-1. **Comparative backend ranking** — how do the 7 supported backends compare for the same workload?
+1. **Comparative backend ranking** — how do the 6 benchmarkable backends compare for the same workload?
 2. **Scaling characterisation** — how does each backend behave as rule count and dimension count grow?
 
 This is local-only tooling (no CI gating). Results are printed to the terminal via pytest-benchmark and optionally saved as JSON to `.benchmarks/` for later analysis.
@@ -20,8 +20,9 @@ This is local-only tooling (no CI gating). Results are printed to the terminal v
 ## 2. Scope
 
 **In scope:**
-- Scaling matrix: 3 rule-count tiers × 3 dimension-count tiers × 7 backends (63 benchmarks)
-- Per-strategy isolation: 11 strategies × 7 backends at fixed medium size (77 benchmarks, minus skips for non-list backends)
+- Scaling matrix: 3 rule-count tiers × 3 dimension-count tiers × 6 backends (54 benchmarks)
+- Per-strategy isolation: 11 strategies × 6 backends at fixed medium size (66 benchmarks, minus skips for non-list backends)
+- `ibis-polars` excluded — upstream bug (mountainash-io/mountainash#78) breaks `with_row_index` in the engine pipeline; re-add when fixed
 - Synthetic data generator with seeded RNG for reproducibility
 - Hatch command for saving JSON baselines
 
@@ -135,20 +136,20 @@ DIM_COUNTS = [3, 5, 7]
 @pytest.mark.benchmark(group="scaling")
 @pytest.mark.parametrize("rule_count", RULE_COUNTS, ids=["10r", "100r", "1000r"])
 @pytest.mark.parametrize("dim_count", DIM_COUNTS, ids=["3d", "5d", "7d"])
-@pytest.mark.parametrize("backend_name", ALL_BACKENDS)
+@pytest.mark.parametrize("backend_name", BENCH_BACKENDS)
 def test_scaling_matrix(benchmark, rule_count, dim_count, backend_name):
 ```
 
 **Timed operation:** `engine.apply(context)` only. Engine construction happens in the benchmark setup (pedantic mode).
 
-**63 combinations** = 3 rule counts × 3 dim counts × 7 backends.
+**54 combinations** = 3 rule counts × 3 dim counts × 6 backends.
 
 ### 5.2 Per-Strategy Isolation
 
 ```python
 @pytest.mark.benchmark(group="strategy")
 @pytest.mark.parametrize("strategy", list(MatchStrategy))
-@pytest.mark.parametrize("backend_name", ALL_BACKENDS)
+@pytest.mark.parametrize("backend_name", BENCH_BACKENDS)
 def test_strategy_isolation(benchmark, strategy, backend_name):
 ```
 
@@ -156,7 +157,7 @@ Fixed at 100 rules, 5 dimensions, all dimensions use the same strategy.
 
 SET_MEMBERSHIP and SET_EXCLUSION skip non-list-capable backends via `pytest.skip()`. SUFFIX and NOT_EQUAL are included (all backends support them).
 
-**Up to 77 combinations** = 11 strategies × 7 backends, minus skips.
+**Up to 66 combinations** = 11 strategies × 6 backends, minus skips.
 
 ### 5.3 pytest-benchmark Configuration
 
@@ -169,7 +170,7 @@ All benchmarks are marked with `@pytest.mark.benchmark` so `--benchmark-only` (t
 
 ### 5.4 Backend Import
 
-`ALL_BACKENDS` is imported from the existing `conftest.py`. The `build_engine` factory in `benchmark_data.py` reuses the same backend-construction logic as the existing test fixtures (polars, pandas, narwhals wrapping, ibis table creation).
+Benchmarks define their own `BENCH_BACKENDS` list, which is `ALL_BACKENDS` minus `ibis-polars` (excluded due to mountainash-io/mountainash#78 — `with_row_index` translation missing). The `build_engine` factory in `benchmark_data.py` reuses the `build_backend_df` helper from conftest.
 
 ---
 

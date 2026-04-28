@@ -2,11 +2,11 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Add pytest-benchmark performance benchmarks that measure `engine.evaluate()` latency across all 7 supported backends, with a 3×3 scaling matrix (rules × dimensions) and per-strategy isolation tests.
+**Goal:** Add pytest-benchmark performance benchmarks that measure `engine.evaluate()` latency across the 6 benchmarkable backends (all except `ibis-polars`, blocked by mountainash-io/mountainash#78), with a 3×3 scaling matrix (rules × dimensions) and per-strategy isolation tests.
 
 **Architecture:** A synthetic data generator (`tests/benchmark_data.py`) builds deterministic rule sets and contexts from seeded RNG. Benchmark tests (`tests/test_benchmarks.py`) parametrize over `(rule_count, dim_count, backend_name)` for the scaling matrix and `(strategy, backend_name)` for strategy isolation. pytest-benchmark handles warmup, round statistics, and JSON persistence. Engine construction is excluded from the timed loop via pedantic mode — only `engine.evaluate(context)` is benchmarked.
 
-**Tech Stack:** pytest-benchmark (already in test env), pydantic (context models), mountainash_utils_rules (engine + compiler + constants), existing conftest.py (`ALL_BACKENDS`, `LIST_CAPABLE_BACKENDS`, `build_backend_df`)
+**Tech Stack:** pytest-benchmark (already in test env), pydantic (context models), mountainash_utils_rules (engine + compiler + constants), existing conftest.py (`ALL_BACKENDS`, `LIST_CAPABLE_BACKENDS`, `build_backend_df`). Benchmarks define `BENCH_BACKENDS = [b for b in ALL_BACKENDS if b != "ibis-polars"]` to exclude the broken backend.
 
 **Spec:** `docs/superpowers/specs/2026-04-28-cross-backend-performance-benchmarks-design.md`
 
@@ -680,17 +680,21 @@ import pytest
 from conftest import ALL_BACKENDS, LIST_CAPABLE_BACKENDS
 from benchmark_data import build_engine, generate_context, generate_rules
 
+# ibis-polars excluded: upstream bug mountainash-io/mountainash#78
+# breaks with_row_index in the engine pipeline.
+BENCH_BACKENDS = [b for b in ALL_BACKENDS if b != "ibis-polars"]
+
 RULE_COUNTS = [10, 100, 1000]
 DIM_COUNTS = [3, 5, 7]
 
 
 class TestScalingMatrix:
-    """3×3×7 scaling matrix: rule_count × dim_count × backend."""
+    """3×3×6 scaling matrix: rule_count × dim_count × backend."""
 
     @pytest.mark.benchmark(group="scaling")
     @pytest.mark.parametrize("rule_count", RULE_COUNTS, ids=["10r", "100r", "1000r"])
     @pytest.mark.parametrize("dim_count", DIM_COUNTS, ids=["3d", "5d", "7d"])
-    @pytest.mark.parametrize("backend_name", ALL_BACKENDS)
+    @pytest.mark.parametrize("backend_name", BENCH_BACKENDS)
     def test_scaling(self, benchmark, rule_count, dim_count, backend_name):
         rules_dict, metadata = generate_rules(
             rule_count=rule_count,
@@ -730,7 +734,7 @@ Expected: 1 PASSED with benchmark timing output
 
 ```bash
 git add tests/test_benchmarks.py
-git commit -m "feat(benchmarks): add scaling matrix benchmark (3×3×7)"
+git commit -m "feat(benchmarks): add scaling matrix benchmark (3×3×6)"
 ```
 
 ---
@@ -770,6 +774,10 @@ import pytest
 from conftest import ALL_BACKENDS, LIST_CAPABLE_BACKENDS
 from benchmark_data import build_engine, generate_context, generate_rules
 from mountainash_utils_rules.constants import MatchStrategy
+
+# ibis-polars excluded: upstream bug mountainash-io/mountainash#78
+# breaks with_row_index in the engine pipeline.
+BENCH_BACKENDS = [b for b in ALL_BACKENDS if b != "ibis-polars"]
 
 _SET_STRATEGIES = {MatchStrategy.SET_MEMBERSHIP, MatchStrategy.SET_EXCLUSION}
 ```
@@ -817,7 +825,7 @@ class TestStrategyIsolation:
 
     @pytest.mark.benchmark(group="strategy")
     @pytest.mark.parametrize("strategy", list(MatchStrategy), ids=lambda s: s.name)
-    @pytest.mark.parametrize("backend_name", ALL_BACKENDS)
+    @pytest.mark.parametrize("backend_name", BENCH_BACKENDS)
     def test_strategy(self, benchmark, strategy, backend_name):
         if (
             strategy in _SET_STRATEGIES
@@ -905,7 +913,7 @@ Expected: 11 PASSED (one per strategy)
 - [ ] **Step 3: Run the full suite across all backends**
 
 Run: `hatch run test:test-perf-target tests/test_benchmarks.py -v`
-Expected: ~120+ benchmarks pass (some skipped for SET on non-list backends). Review the terminal output to confirm grouping looks correct.
+Expected: ~100+ benchmarks pass (some skipped for SET on non-list backends). Review the terminal output to confirm grouping looks correct.
 
 - [ ] **Step 4: Verify existing tests are not affected**
 
