@@ -33,6 +33,7 @@ export-requirements = "hatch dep show requirements > ./requirements.txt"
 #================
 [envs.default]
 installer = "uv"
+path = ".venv"
 dependencies = [
     # "ipykernel",
     # "pip",
@@ -153,6 +154,7 @@ test-changed-quick = "pytest --picked"
 # Performance benchmarks only
 test-perf = "pytest --benchmark-only"
 test-perf-target = "pytest --benchmark-only {args}"
+test-perf-save = "pytest --benchmark-only --benchmark-save=baseline {args}"
 
 # Specific test markers
 test-unit = "pytest -m unit"

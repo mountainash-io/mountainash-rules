@@ -40,7 +40,7 @@ Source = "https://github.com/mountainash-io/mountainash-utils-rules"
 # Tool: Coverage
 #================
 [tool.coverage.run]
-source_pkgs = ["mountainash_utils_rules", "tests"]
+source_pkgs = ["mountainash_utils_rules"]
 branch = true
 parallel = true
 omit = ["src/mountainash_utils_rules/__version__.py"]

@@ -172,3 +172,9 @@ htmlcov/
 #testing artifacts
 junit.*
 coverage.*
+
+#benchmark artifacts
+.benchmarks/
+
+.ruff_cache/
+benchmark_results
