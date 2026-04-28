@@ -20,6 +20,12 @@ BENCH_BACKENDS = [b for b in ALL_BACKENDS if b != "ibis-polars"]
 
 _SET_STRATEGIES = {MatchStrategy.SET_MEMBERSHIP, MatchStrategy.SET_EXCLUSION}
 
+# String-match strategies broken on pandas/narwhals backends (upstream).
+# pandas: PREFIX, SUFFIX, CONTAINS fail — str accessor receives Expr not str.
+# narwhals-polars: PREFIX, SUFFIX fail — cannot create literal for Expr.
+_STRING_MATCH_STRATEGIES = {MatchStrategy.PREFIX, MatchStrategy.SUFFIX, MatchStrategy.CONTAINS}
+_STRING_MATCH_BROKEN_BACKENDS = {"pandas", "narwhals-pandas", "narwhals-polars"}
+
 RULE_COUNTS = [10, 100, 1000]
 DIM_COUNTS = [3, 5, 7]
 STRATEGY_RULE_COUNT = 100
@@ -46,6 +52,12 @@ class TestScalingMatrix:
         if has_set_strategy and backend_name not in LIST_CAPABLE_BACKENDS:
             pytest.skip(f"{backend_name} does not support list columns")
 
+        has_string_match = any(
+            d.match_strategy in _STRING_MATCH_STRATEGIES for d in metadata.dimensions
+        )
+        if has_string_match and backend_name in _STRING_MATCH_BROKEN_BACKENDS:
+            pytest.skip(f"{backend_name} does not support per-row string match strategies")
+
         engine = build_engine(rules_dict, metadata, backend_name)
         ctx = generate_context(metadata, rules_dict, seed=42)
 
@@ -69,6 +81,12 @@ class TestStrategyIsolation:
             and backend_name not in LIST_CAPABLE_BACKENDS
         ):
             pytest.skip(f"{backend_name} does not support list columns")
+
+        if (
+            strategy in _STRING_MATCH_STRATEGIES
+            and backend_name in _STRING_MATCH_BROKEN_BACKENDS
+        ):
+            pytest.skip(f"{backend_name} does not support per-row string match strategies")
 
         rules_dict, metadata = generate_rules(
             rule_count=STRATEGY_RULE_COUNT,
