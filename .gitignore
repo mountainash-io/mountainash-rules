@@ -176,5 +176,5 @@ coverage.*
 #benchmark artifacts
 .benchmarks/
 
-
-sp_productpricingmatrix_discretion_combos.sql
+.ruff_cache/
+benchmark_results
