@@ -23,6 +23,7 @@ _SET_STRATEGIES = {MatchStrategy.SET_MEMBERSHIP, MatchStrategy.SET_EXCLUSION}
 # String-match strategies broken on pandas/narwhals backends (upstream).
 # pandas: PREFIX, SUFFIX, CONTAINS fail — str accessor receives Expr not str.
 # narwhals-polars: PREFIX, SUFFIX fail — cannot create literal for Expr.
+# Tracked as mountainash-io/mountainash#89.
 _STRING_MATCH_STRATEGIES = {MatchStrategy.PREFIX, MatchStrategy.SUFFIX, MatchStrategy.CONTAINS}
 _STRING_MATCH_BROKEN_BACKENDS = {"pandas", "narwhals-pandas", "narwhals-polars"}
 
