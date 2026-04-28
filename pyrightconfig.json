@@ -1,6 +1,6 @@
 {
-  "venvPath": "/home/nathanielramm/.local/share/hatch/env/virtual/mountainash-utils-rules/TyHB4Emq",
-  "venv": "test.py3.12",
+  "venvPath": ".",
+  "venv": ".venv",
 
   "include": ["src", "tests"],
   "exclude": [
@@ -10,11 +10,11 @@
     "**/dist",
     "**/node_modules",
     "docs/superpowers",
-    "tests/deprecated"
+    "tests/deprecated",
   ],
   "extraPaths": ["src"],
 
-  "pythonVersion": "3.10",
+  "pythonVersion": "3.12",
   "pythonPlatform": "Linux",
 
   "typeCheckingMode": "basic",
@@ -50,7 +50,7 @@
       "root": "tests",
       "reportPrivateUsage": "none",
       "reportMissingTypeStubs": "none",
-      "reportUntypedFunctionDecorator": "none"
-    }
-  ]
+      "reportUntypedFunctionDecorator": "none",
+    },
+  ],
 }

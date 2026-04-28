@@ -1,7 +1,7 @@
 # Case Study — A Production Mortgage Pricing Engine at a Major Australian Retail Bank
 
 **Prepared:** 2026-04-07
-**Role:** Sole developer and architect
+**Role:** Lead architect and developer
 **Tenure:** ~2 years in production
 **Scope:** Full mortgage pricing strategy execution for a Big 4 Australian retail bank
 
