@@ -2,9 +2,17 @@
 
 ![Python](https://img.shields.io/badge/python-3.12-blue) ![License](https://img.shields.io/badge/license-MIT-green) ![Backend](https://img.shields.io/badge/backends-7-purple)
 
-A rules engine for evaluating business rules against a context and ranking matches by specificity. Define dimensions with match strategies (exact, range, regex, prefix, set membership, etc.), pass a context, and get back the most specific matching rules — ranked, explained, and ready to use.
+Business rules that live in code are slow to change — every update requires a code review, a deploy, and a prayer. This engine moves the logic into **metadata**: rules are rows in a DataFrame (or a database table), and the engine evaluates them against a context without any rule-specific code. Change a rule, reload the DataFrame, and the new behaviour applies immediately. No redeploy. No code change. No branching logic to maintain.
+
+The engine evaluates rules against a context and ranks matches by specificity. Define dimensions with match strategies (exact, range, regex, prefix, set membership, etc.), pass a context, and get back the most specific matching rules — ranked, explained, and ready to use.
 
 Built on [mountainash](https://github.com/mountainash-io/mountainash) expressions for backend-agnostic evaluation. Rules compile once; contexts evaluate in a single vectorised pass. Supports Polars, Pandas, Ibis (DuckDB, SQLite, Polars), and Narwhals backends with zero code changes.
+
+### Why metadata, not code?
+
+- **Rules change faster than code.** Pricing tiers, eligibility criteria, fraud thresholds — these are business decisions that shift weekly. When rules are data, a product owner can update them in a database and the engine picks up the change on the next evaluation. No PR, no deploy, no downtime.
+- **Rules are auditable.** Every rule is a row with a name, dimensions, and match criteria. You can diff two rule sets, version them in a table, and explain exactly why a context matched — because the engine tracks per-dimension ternary results (match / unknown / non-match) for every rule.
+- **Rules scale without branching.** A hand-coded rule system with 2,000 rules is unmaintainable. A DataFrame with 2,000 rows is just data. The engine evaluates all of them in one vectorised pass regardless of count.
 
 ## Quick Start
 
