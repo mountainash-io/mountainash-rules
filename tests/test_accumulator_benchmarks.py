@@ -2,6 +2,8 @@
 
 Run with: pytest tests/test_accumulator_benchmarks.py -v --benchmark-enable
 Skip with: pytest tests/test_accumulator_benchmarks.py -v --benchmark-disable
+
+Requires pytest-benchmark (not installed in CI test_github env).
 """
 
 import random
@@ -9,6 +11,8 @@ import random
 import polars as pl
 import pytest
 from pydantic import create_model
+
+pytestmark = pytest.mark.benchmark
 
 from mountainash_utils_rules.accumulator_engine import AccumulatorEngine
 from mountainash_utils_rules.aggregate import Aggregate

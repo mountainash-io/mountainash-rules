@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import pytest
 
+pytestmark = pytest.mark.benchmark
+
 from tests.conftest import ALL_BACKENDS, LIST_CAPABLE_BACKENDS
 from tests.benchmark_data import build_engine, generate_context, generate_rules
 from mountainash_utils_rules.constants import MatchStrategy

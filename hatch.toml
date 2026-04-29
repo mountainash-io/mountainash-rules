@@ -76,8 +76,8 @@ dependencies = [
 
 ]
 [envs.test_github.scripts]
-test = "pytest"
-test-cov = "pytest --cov --junitxml=junit.xml -o junit_family=legacy  --cov-report=xml"
+test = "pytest -m 'not benchmark'"
+test-cov = "pytest -m 'not benchmark' --cov --junitxml=junit.xml -o junit_family=legacy  --cov-report=xml"
 
 
 #================
