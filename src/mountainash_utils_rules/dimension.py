@@ -6,7 +6,7 @@ import typing as t
 
 from pydantic import BaseModel, model_validator
 
-from mountainash_utils_rules.constants import MatchStrategy
+from mountainash_utils_rules.constants import DimensionRole, MatchStrategy
 
 
 class Dimension(BaseModel):
@@ -17,6 +17,7 @@ class Dimension(BaseModel):
     rule_field: t.Optional[str] = None
     match_strategy: MatchStrategy = MatchStrategy.EXACT
     data_type: type = str
+    role: DimensionRole = DimensionRole.CONSTRAINT
     valid_values: list[t.Any] = []
 
     # RANGE strategy fields
