@@ -9,7 +9,10 @@ import polars as pl
 import mountainash.expressions as ma
 from mountainash.relations import relation, concat
 
+from pydantic import BaseModel
+
 from mountainash_utils_rules.accumulator_compiler import AccumulatorCompiler
+from mountainash_utils_rules.accumulator_result import AccumulatorResult
 from mountainash_utils_rules.aggregate import Aggregate
 from mountainash_utils_rules.constants import (
     DimensionRole,
@@ -18,6 +21,7 @@ from mountainash_utils_rules.constants import (
     UNKNOWN_NUMERIC,
 )
 from mountainash_utils_rules.dimension import Dimension, DimensionsMetadata
+from mountainash_utils_rules.engine import ExpressionRulesEngine
 from mountainash_utils_rules.lattice import Lattice
 from mountainash_utils_rules.primes import get_prime
 
@@ -396,26 +400,120 @@ class AccumulatorEngine:
 
         return lattices
 
+    def _build_apply_metadata(self) -> DimensionsMetadata:
+        """Create a DimensionsMetadata that remaps CONSTRAINT dims to co_ columns.
+
+        The lattice stores coalesced values in co_-prefixed columns. This method
+        builds dimension metadata that points the filter engine at those columns
+        while keeping context field names as the original dimension names (since
+        the context comes from the user, not the lattice).
+        """
+        dims: list[Dimension] = []
+        for d in self._constraint_dims:
+            if d.match_strategy == MatchStrategy.RANGE:
+                dims.append(Dimension(
+                    dimension_name=d.dimension_name,
+                    context_field=d.resolved_context_field,
+                    match_strategy=d.match_strategy,
+                    data_type=d.data_type,
+                    range_min_field=f"co_{d.range_min_field}",
+                    range_max_field=f"co_{d.range_max_field}",
+                    range_min_inclusive=d.range_min_inclusive,
+                    range_max_inclusive=d.range_max_inclusive,
+                ))
+            else:
+                dims.append(Dimension(
+                    dimension_name=d.dimension_name,
+                    context_field=d.resolved_context_field,
+                    rule_field=f"co_{d.resolved_rule_field}",
+                    match_strategy=d.match_strategy,
+                    data_type=d.data_type,
+                ))
+        return DimensionsMetadata(dimensions=dims)
+
     def apply(
         self,
         lattice: Lattice,
         context: t.Any,
         dimensions: list[str] | None = None,
-    ) -> t.Any:
+    ) -> AccumulatorResult:
         """Apply a context to a lattice to find matching combinations.
 
-        Stub for Task 9.
+        Builds remapped metadata that points at the co_ columns in the lattice,
+        creates an ExpressionRulesEngine with the lattice as rules, evaluates
+        the context, and wraps the result in an AccumulatorResult.
+
+        Args:
+            lattice: A pre-built Lattice from build() or build_all().
+            context: A Pydantic model or dict with context values.
+            dimensions: Optional subset of dimensions to evaluate.
+
+        Returns:
+            AccumulatorResult wrapping the matching combinations.
         """
-        raise NotImplementedError("apply() will be implemented in Task 9")
+        filter_metadata = self._build_apply_metadata()
+        filter_engine = ExpressionRulesEngine(
+            rules=lattice.combinations,
+            dimension_metadata=filter_metadata,
+        )
+        filter_result = filter_engine.evaluate(context, dimensions=dimensions)
+        return AccumulatorResult(
+            dataframe=filter_result.survivors,
+            active_dimensions=filter_result.active_dimensions,
+            aggregates=self._aggregates,
+            lattice=lattice,
+        )
+
+    def _extract_partition_key(self, context: t.Any) -> tuple:
+        """Extract the partition key tuple from a context object."""
+        if isinstance(context, BaseModel):
+            raw = context.model_dump()
+        elif isinstance(context, dict):
+            raw = context
+        else:
+            raise TypeError(
+                f"Context must be a BaseModel or dict, got {type(context).__name__}"
+            )
+        return tuple(
+            raw[d.resolved_context_field]
+            for d in self._context_key_dims
+        )
 
     def apply_auto(
         self,
-        rules: t.Any,
+        lattices: list[Lattice],
         context: t.Any,
         dimensions: list[str] | None = None,
-    ) -> t.Any:
-        """Build lattice and apply context in one step.
+    ) -> AccumulatorResult:
+        """Select the correct lattice by partition key and apply the context.
 
-        Stub for Task 9.
+        Args:
+            lattices: List of Lattice objects from build_all().
+            context: A Pydantic model or dict with context values.
+            dimensions: Optional subset of dimensions to evaluate.
+
+        Returns:
+            AccumulatorResult wrapping the matching combinations.
+
+        Raises:
+            KeyError: If no lattice matches the partition key from the context.
         """
-        raise NotImplementedError("apply_auto() will be implemented in Task 9")
+        # Build a lookup dict from partition key tuples to lattices
+        lattice_map: dict[tuple, Lattice] = {}
+        for lattice in lattices:
+            if lattice.partition_key is not None:
+                key = tuple(
+                    lattice.partition_key[d.dimension_name]
+                    for d in self._context_key_dims
+                )
+                lattice_map[key] = lattice
+            else:
+                # No partition key — single lattice case
+                lattice_map[()] = lattice
+
+        context_key = self._extract_partition_key(context)
+        if context_key not in lattice_map:
+            raise KeyError(
+                f"No lattice for partition key {context_key!r}"
+            )
+        return self.apply(lattice_map[context_key], context, dimensions=dimensions)
