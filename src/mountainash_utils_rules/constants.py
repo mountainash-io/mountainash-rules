@@ -19,6 +19,13 @@ class MatchStrategy(Enum):
     SET_EXCLUSION = auto()
 
 
+class DimensionRole(Enum):
+    """Whether a dimension partitions the lattice or participates in coalesce."""
+
+    CONSTRAINT = auto()
+    CONTEXT_KEY = auto()
+
+
 # Sentinel values for unknown/unset rule and context fields.
 # These are passed to ma.t_col(unknown={...}) so the expression library
 # treats them as UNKNOWN (0) in ternary logic automatically.

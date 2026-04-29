@@ -2,8 +2,8 @@
 
 import pytest
 
-from mountainash_utils_rules.constants import MatchStrategy
-from mountainash_utils_rules.dimension import Dimension
+from mountainash_utils_rules.constants import DimensionRole, MatchStrategy
+from mountainash_utils_rules.dimension import Dimension, DimensionsMetadata
 
 
 class TestNumericStrategyValidation:
@@ -163,3 +163,30 @@ class TestExistingValidationUnchanged:
                 match_strategy=MatchStrategy.RANGE,
                 data_type=int,
             )
+
+
+class TestDimensionRole:
+    def test_default_role_is_constraint(self):
+        dim = Dimension(dimension_name="region", match_strategy=MatchStrategy.EXACT)
+        assert dim.role == DimensionRole.CONSTRAINT
+
+    def test_explicit_context_key_role(self):
+        dim = Dimension(
+            dimension_name="product_id",
+            match_strategy=MatchStrategy.EXACT,
+            role=DimensionRole.CONTEXT_KEY,
+        )
+        assert dim.role == DimensionRole.CONTEXT_KEY
+
+    def test_existing_dimensions_unaffected(self):
+        metadata = DimensionsMetadata(dimensions=[
+            Dimension(dimension_name="region", match_strategy=MatchStrategy.EXACT),
+            Dimension(
+                dimension_name="amount",
+                match_strategy=MatchStrategy.RANGE,
+                data_type=int,
+                range_min_field="amount_min",
+                range_max_field="amount_max",
+            ),
+        ])
+        assert all(d.role == DimensionRole.CONSTRAINT for d in metadata.dimensions)

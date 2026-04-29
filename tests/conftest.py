@@ -94,6 +94,10 @@ _UPSTREAM_XFAILS: list[tuple[set[str], str, list[str]]] = [
             "TestMixedStrategyFraudDetection::test_high_value_review",
             "TestMixedStrategyFraudDetection::test_blacklist_merchant_blocks",
             "TestMixedStrategyFraudDetection::test_specific_txn_most_specific",
+            # test_accumulator_backends.py
+            "TestApplyCrossBackend::test_apply_correct_count",
+            "TestApplyCrossBackend::test_apply_accumulated_margin",
+            "TestApplyCrossBackend::test_apply_partial_match",
         ],
     ),
 ]
@@ -106,7 +110,7 @@ def pytest_collection_modifyitems(config, items):
         if callspec is None:
             continue
         backend = None
-        for param_name in ("backend_name", "list_backend_name", "list_backend"):
+        for param_name in ("backend_name", "list_backend_name", "list_backend", "apply_backend"):
             backend = callspec.params.get(param_name)
             if backend is not None:
                 break

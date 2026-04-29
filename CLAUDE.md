@@ -19,6 +19,14 @@ Mountain Ash Utils Rules is a high-performance Python package that provides revo
 - **BaseMatchStrategy**: Abstract base class for rule matching strategies
 - **ContextHelper**: Utilities for context value extraction and type validation
 
+#### Accumulator Engine
+- **AccumulatorEngine**: Build/Apply engine that computes maximal consistent rule combinations with accumulated numerics. Python-controlled iteration with expression-based steps via `mountainash.relations`
+- **AccumulatorCompiler**: Compiles `coalesce`, `compatible`, and NA flag expressions per dimension for the accumulator's recursive combination step
+- **Lattice**: Data class wrapping the build-phase output — outermost rulesets as a backend DataFrame
+- **AccumulatorResult**: Extends `RuleResult` with accumulator-specific accessors (accumulated numerics, provenance, combination depth)
+- **Aggregate**: Pydantic model declaring a named numeric column and its monoidal operation (sum, min, max, product)
+- **DimensionRole**: Enum (`CONSTRAINT` / `CONTEXT_KEY`) on `Dimension` — distinguishes lattice-partitioning dimensions from coalesced dimensions
+
 #### Performance-Optimized Engines (Phases 2-3)
 - **HybridRulesEngine**: Hybrid numpy/ibis engine with automatic optimization selection
 - **NumpyRuleProcessor**: Vectorized numpy-based rule processor for performance
@@ -62,16 +70,18 @@ The rules engine supports 11 match strategies via the `MatchStrategy` enum, comp
 src/mountainash_utils_rules/
 ├── __init__.py              # Package exports and public API
 ├── __version__.py           # Version information
-├── constants.py             # Constants, enums, and ternary value definitions
+├── accumulator_compiler.py  # Coalesce/compatible/NA flag expression compilation
+├── accumulator_engine.py    # AccumulatorEngine: build/apply for rule combinations
+├── accumulator_result.py    # AccumulatorResult extending RuleResult
+├── aggregate.py             # Aggregate model for numeric accumulation
+├── constants.py             # Constants, enums (MatchStrategy, DimensionRole), ternary values
+├── compiler.py              # DimensionCompiler for filter engine expressions
 ├── context.py               # Context handling utilities with batch optimization
-├── dimension.py             # Dimension metadata and management
-├── engine.py                # Original RulesEngine implementation
-├── hybrid_engine.py         # Phase 2: Hybrid numpy/ibis engine
-├── numpy_processor.py       # Vectorized numpy rule processor
-├── vectorized_engine.py     # Phase 3: Revolutionary polars-based engine
-├── observer.py              # Observability and debugging support
-├── rule_manager.py          # Rule storage and backend management
-└── rule_strategies.py       # Match strategy implementations
+├── dimension.py             # Dimension metadata (with role field) and management
+├── engine.py                # ExpressionRulesEngine (filter engine)
+├── lattice.py               # Lattice data class wrapping build output
+├── primes.py                # Prime table and checked multiply for combination DNA
+└── result.py                # RuleResult base class
 
 tests/
 ├── benchmarks/              # Performance benchmarking framework
