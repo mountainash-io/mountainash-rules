@@ -30,3 +30,11 @@ class Lattice:
     @property
     def partition_key(self) -> dict | None:
         return self._partition_key
+
+    @property
+    def metadata(self) -> DimensionsMetadata:
+        return self._metadata
+
+    @property
+    def aggregates(self) -> list[Aggregate]:
+        return self._aggregates
