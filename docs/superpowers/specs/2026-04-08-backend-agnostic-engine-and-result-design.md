@@ -135,11 +135,11 @@ from mountainash.expressions import BaseExpressionAPI
 import mountainash.expressions as ma
 from mountainash.relations import relation
 
-from mountainash_utils_rules.compiler import DimensionCompiler
-from mountainash_utils_rules.constants import CTX_PREFIX
-from mountainash_utils_rules.context import extract_context_values
-from mountainash_utils_rules.dimension import DimensionsMetadata
-from mountainash_utils_rules.result import RuleResult
+from mountainash_rules.compiler import DimensionCompiler
+from mountainash_rules.constants import CTX_PREFIX
+from mountainash_rules.context import extract_context_values
+from mountainash_rules.dimension import DimensionsMetadata
+from mountainash_rules.result import RuleResult
 
 
 class ExpressionRulesEngine:
@@ -309,9 +309,9 @@ result_df = rel.execute()
 
 ## Technical Reference
 
-- `mountainash-utils-rules/src/mountainash_utils_rules/engine.py` — `ExpressionRulesEngine`, the only engine
-- `mountainash-utils-rules/src/mountainash_utils_rules/result.py` — `RuleResult`, all backend-agnostic
-- `mountainash-utils-rules/src/mountainash_utils_rules/compiler.py` — `DimensionCompiler`, all backend-agnostic except the documented SET_MEMBERSHIP exception
+- `mountainash-utils-rules/src/mountainash_rules/engine.py` — `ExpressionRulesEngine`, the only engine
+- `mountainash-utils-rules/src/mountainash_rules/result.py` — `RuleResult`, all backend-agnostic
+- `mountainash-utils-rules/src/mountainash_rules/compiler.py` — `DimensionCompiler`, all backend-agnostic except the documented SET_MEMBERSHIP exception
 - `mountainash-utils-rules/tests/test_backend_purity.py` — the import-check test that enforces this principle
 - `mountainash-utils-rules/docs/superpowers/specs/2026-04-08-backend-agnostic-engine-and-result-design.md` — this spec
 
@@ -349,7 +349,7 @@ from pathlib import Path
 
 import pytest
 
-SRC_ROOT = Path(__file__).parent.parent / "src" / "mountainash_utils_rules"
+SRC_ROOT = Path(__file__).parent.parent / "src" / "mountainash_rules"
 PROHIBITED_PACKAGES = ("polars", "ibis", "narwhals")
 PURE_FILES = ("engine.py", "result.py", "compiler.py")
 ALLOW_PATTERN = re.compile(r"#\s*allow:\s*\w+")

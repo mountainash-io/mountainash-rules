@@ -54,9 +54,9 @@ import polars as pl
 import pytest
 from pydantic import BaseModel
 
-from mountainash_utils_rules.constants import UNKNOWN, UNKNOWN_NUMERIC, MatchStrategy
-from mountainash_utils_rules.dimension import Dimension, DimensionsMetadata
-from mountainash_utils_rules.engine import ExpressionRulesEngine
+from mountainash_rules.constants import UNKNOWN, UNKNOWN_NUMERIC, MatchStrategy
+from mountainash_rules.dimension import Dimension, DimensionsMetadata
+from mountainash_rules.engine import ExpressionRulesEngine
 
 
 # ---------------------------------------------------------------------------
@@ -220,9 +220,9 @@ import mountainash.expressions as ma
 import pytest
 from mountainash.relations import relation
 
-from mountainash_utils_rules.constants import CTX_PREFIX, UNKNOWN, MatchStrategy
-from mountainash_utils_rules.dimension import Dimension, DimensionsMetadata
-from mountainash_utils_rules.engine import ExpressionRulesEngine
+from mountainash_rules.constants import CTX_PREFIX, UNKNOWN, MatchStrategy
+from mountainash_rules.dimension import Dimension, DimensionsMetadata
+from mountainash_rules.engine import ExpressionRulesEngine
 
 from tests.conftest import build_backend_df
 
@@ -451,7 +451,7 @@ from __future__ import annotations
 import pytest
 from mountainash.relations import relation
 
-from mountainash_utils_rules.result import RuleResult
+from mountainash_rules.result import RuleResult
 
 from tests.conftest import build_backend_df
 
@@ -554,9 +554,9 @@ from __future__ import annotations
 import pytest
 from mountainash.relations import relation
 
-from mountainash_utils_rules.constants import UNKNOWN, UNKNOWN_NUMERIC, MatchStrategy
-from mountainash_utils_rules.dimension import Dimension, DimensionsMetadata
-from mountainash_utils_rules.engine import ExpressionRulesEngine
+from mountainash_rules.constants import UNKNOWN, UNKNOWN_NUMERIC, MatchStrategy
+from mountainash_rules.dimension import Dimension, DimensionsMetadata
+from mountainash_rules.engine import ExpressionRulesEngine
 
 from tests.conftest import (
     LIST_CAPABLE_BACKENDS,

@@ -18,20 +18,20 @@
 
 | File | Action | Responsibility |
 |------|--------|----------------|
-| `src/mountainash_utils_rules/__init__.py` | Rewrite | New public API exports |
-| `src/mountainash_utils_rules/constants.py` | Rewrite | MatchStrategy enum, sentinel values, CTX_PREFIX |
-| `src/mountainash_utils_rules/dimension.py` | Simplify | Keep Dimension + DimensionsMetadata, remove MetadataManager |
-| `src/mountainash_utils_rules/compiler.py` | Create | DimensionCompiler: metadata → expression templates |
-| `src/mountainash_utils_rules/engine.py` | Rewrite | ExpressionRulesEngine |
-| `src/mountainash_utils_rules/result.py` | Create | RuleResult wrapper |
-| `src/mountainash_utils_rules/context.py` | Rewrite | Simplified context extraction |
-| `src/mountainash_utils_rules/rule_manager.py` | Delete | No longer needed |
-| `src/mountainash_utils_rules/rule_strategies.py` | Delete | Replaced by compiler |
-| `src/mountainash_utils_rules/rule_strategies_original.py` | Delete | Replaced by compiler |
-| `src/mountainash_utils_rules/observer.py` | Delete | Replaced by result columns |
-| `src/mountainash_utils_rules/vectorized_engine.py` | Delete | Replaced by engine |
-| `src/mountainash_utils_rules/enhanced_ternary_processor.py` | Delete | Replaced by engine |
-| `src/mountainash_utils_rules/deprecated/` | Delete | Entire directory |
+| `src/mountainash_rules/__init__.py` | Rewrite | New public API exports |
+| `src/mountainash_rules/constants.py` | Rewrite | MatchStrategy enum, sentinel values, CTX_PREFIX |
+| `src/mountainash_rules/dimension.py` | Simplify | Keep Dimension + DimensionsMetadata, remove MetadataManager |
+| `src/mountainash_rules/compiler.py` | Create | DimensionCompiler: metadata → expression templates |
+| `src/mountainash_rules/engine.py` | Rewrite | ExpressionRulesEngine |
+| `src/mountainash_rules/result.py` | Create | RuleResult wrapper |
+| `src/mountainash_rules/context.py` | Rewrite | Simplified context extraction |
+| `src/mountainash_rules/rule_manager.py` | Delete | No longer needed |
+| `src/mountainash_rules/rule_strategies.py` | Delete | Replaced by compiler |
+| `src/mountainash_rules/rule_strategies_original.py` | Delete | Replaced by compiler |
+| `src/mountainash_rules/observer.py` | Delete | Replaced by result columns |
+| `src/mountainash_rules/vectorized_engine.py` | Delete | Replaced by engine |
+| `src/mountainash_rules/enhanced_ternary_processor.py` | Delete | Replaced by engine |
+| `src/mountainash_rules/deprecated/` | Delete | Entire directory |
 | `tests/conftest.py` | Rewrite | New fixtures for expression-based engine |
 | `tests/test_compiler.py` | Create | DimensionCompiler tests |
 | `tests/test_engine.py` | Create | ExpressionRulesEngine tests |
@@ -54,13 +54,13 @@
 ### Task 1: Clean Slate — Remove Old Code, Update Dependencies
 
 **Files:**
-- Delete: `src/mountainash_utils_rules/rule_manager.py`
-- Delete: `src/mountainash_utils_rules/rule_strategies.py`
-- Delete: `src/mountainash_utils_rules/rule_strategies_original.py`
-- Delete: `src/mountainash_utils_rules/observer.py`
-- Delete: `src/mountainash_utils_rules/vectorized_engine.py`
-- Delete: `src/mountainash_utils_rules/enhanced_ternary_processor.py`
-- Delete: `src/mountainash_utils_rules/deprecated/` (entire directory)
+- Delete: `src/mountainash_rules/rule_manager.py`
+- Delete: `src/mountainash_rules/rule_strategies.py`
+- Delete: `src/mountainash_rules/rule_strategies_original.py`
+- Delete: `src/mountainash_rules/observer.py`
+- Delete: `src/mountainash_rules/vectorized_engine.py`
+- Delete: `src/mountainash_rules/enhanced_ternary_processor.py`
+- Delete: `src/mountainash_rules/deprecated/` (entire directory)
 - Delete: `tests/test_rule_engine.py`
 - Delete: `tests/test_rule_manager.py`
 - Delete: `tests/test_rule_strategies.py`
@@ -77,13 +77,13 @@
 
 ```bash
 cd /home/nathanielramm/git/mountainash-io/mountainash/mountainash-utils-rules
-rm -f src/mountainash_utils_rules/rule_manager.py
-rm -f src/mountainash_utils_rules/rule_strategies.py
-rm -f src/mountainash_utils_rules/rule_strategies_original.py
-rm -f src/mountainash_utils_rules/observer.py
-rm -f src/mountainash_utils_rules/vectorized_engine.py
-rm -f src/mountainash_utils_rules/enhanced_ternary_processor.py
-rm -rf src/mountainash_utils_rules/deprecated/
+rm -f src/mountainash_rules/rule_manager.py
+rm -f src/mountainash_rules/rule_strategies.py
+rm -f src/mountainash_rules/rule_strategies_original.py
+rm -f src/mountainash_rules/observer.py
+rm -f src/mountainash_rules/vectorized_engine.py
+rm -f src/mountainash_rules/enhanced_ternary_processor.py
+rm -rf src/mountainash_rules/deprecated/
 ```
 
 - [ ] **Step 2: Delete old test files**
@@ -142,8 +142,8 @@ git commit -m "chore: remove old engine code and update dependencies for express
 ### Task 2: Constants and Dimension Models
 
 **Files:**
-- Rewrite: `src/mountainash_utils_rules/constants.py`
-- Simplify: `src/mountainash_utils_rules/dimension.py`
+- Rewrite: `src/mountainash_rules/constants.py`
+- Simplify: `src/mountainash_rules/dimension.py`
 
 - [ ] **Step 1: Rewrite constants.py**
 
@@ -190,7 +190,7 @@ import typing as t
 
 from pydantic import BaseModel, model_validator
 
-from mountainash_utils_rules.constants import MatchStrategy
+from mountainash_rules.constants import MatchStrategy
 
 
 class Dimension(BaseModel):
@@ -269,8 +269,8 @@ Run a quick Python check:
 ```bash
 cd /home/nathanielramm/git/mountainash-io/mountainash/mountainash-utils-rules
 hatch run test:test-target-quick -x -c "
-from mountainash_utils_rules.constants import MatchStrategy, UNKNOWN, UNKNOWN_NUMERIC, CTX_PREFIX
-from mountainash_utils_rules.dimension import Dimension, DimensionsMetadata
+from mountainash_rules.constants import MatchStrategy, UNKNOWN, UNKNOWN_NUMERIC, CTX_PREFIX
+from mountainash_rules.dimension import Dimension, DimensionsMetadata
 
 d = Dimension(dimension_name='test', match_strategy=MatchStrategy.EXACT, data_type=str)
 assert d.resolved_context_field == 'test'
@@ -280,8 +280,8 @@ dm = DimensionsMetadata(dimensions=[d])
 assert dm.get_dimension('test') == d
 print('Constants and dimension models OK')
 " 2>&1 || python3 -c "
-from mountainash_utils_rules.constants import MatchStrategy, UNKNOWN, UNKNOWN_NUMERIC, CTX_PREFIX
-from mountainash_utils_rules.dimension import Dimension, DimensionsMetadata
+from mountainash_rules.constants import MatchStrategy, UNKNOWN, UNKNOWN_NUMERIC, CTX_PREFIX
+from mountainash_rules.dimension import Dimension, DimensionsMetadata
 
 d = Dimension(dimension_name='test', match_strategy=MatchStrategy.EXACT, data_type=str)
 assert d.resolved_context_field == 'test'
@@ -298,7 +298,7 @@ Expected: `Constants and dimension models OK`
 - [ ] **Step 4: Commit**
 
 ```bash
-git add src/mountainash_utils_rules/constants.py src/mountainash_utils_rules/dimension.py
+git add src/mountainash_rules/constants.py src/mountainash_rules/dimension.py
 git commit -m "refactor: simplify constants and dimension models for expression-based engine"
 ```
 
@@ -307,7 +307,7 @@ git commit -m "refactor: simplify constants and dimension models for expression-
 ### Task 3: Context Extraction
 
 **Files:**
-- Rewrite: `src/mountainash_utils_rules/context.py`
+- Rewrite: `src/mountainash_rules/context.py`
 - Create: `tests/test_context.py` (new, minimal)
 
 - [ ] **Step 1: Write failing test for context extraction**
@@ -320,8 +320,8 @@ Create `tests/test_context.py`:
 import pytest
 from pydantic import BaseModel
 
-from mountainash_utils_rules.context import extract_context_values
-from mountainash_utils_rules.constants import NOT_SET, NOT_SET_NUMERIC
+from mountainash_rules.context import extract_context_values
+from mountainash_rules.constants import NOT_SET, NOT_SET_NUMERIC
 
 
 class SampleContext(BaseModel):
@@ -374,7 +374,7 @@ import typing as t
 
 from pydantic import BaseModel
 
-from mountainash_utils_rules.constants import NOT_SET, NOT_SET_NUMERIC
+from mountainash_rules.constants import NOT_SET, NOT_SET_NUMERIC
 
 
 def extract_context_values(
@@ -419,7 +419,7 @@ Expected: All 4 tests PASS.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/mountainash_utils_rules/context.py tests/test_context.py
+git add src/mountainash_rules/context.py tests/test_context.py
 git commit -m "feat: add simplified context extraction for expression-based engine"
 ```
 
@@ -428,7 +428,7 @@ git commit -m "feat: add simplified context extraction for expression-based engi
 ### Task 4: DimensionCompiler — EXACT Strategy
 
 **Files:**
-- Create: `src/mountainash_utils_rules/compiler.py`
+- Create: `src/mountainash_rules/compiler.py`
 - Create: `tests/test_compiler.py`
 
 - [ ] **Step 1: Write failing test for EXACT compilation**
@@ -443,9 +443,9 @@ import pytest
 
 import mountainash.expressions as ma
 
-from mountainash_utils_rules.compiler import DimensionCompiler
-from mountainash_utils_rules.constants import CTX_PREFIX, UNKNOWN, UNKNOWN_NUMERIC, MatchStrategy
-from mountainash_utils_rules.dimension import Dimension
+from mountainash_rules.compiler import DimensionCompiler
+from mountainash_rules.constants import CTX_PREFIX, UNKNOWN, UNKNOWN_NUMERIC, MatchStrategy
+from mountainash_rules.dimension import Dimension
 
 
 @pytest.fixture
@@ -525,7 +525,7 @@ from __future__ import annotations
 import mountainash.expressions as ma
 from mountainash.expressions import BaseExpressionAPI
 
-from mountainash_utils_rules.constants import (
+from mountainash_rules.constants import (
     CTX_PREFIX,
     UNKNOWN,
     UNKNOWN_NUMERIC,
@@ -535,7 +535,7 @@ from mountainash_utils_rules.constants import (
     NUMERIC_SENTINELS,
     MatchStrategy,
 )
-from mountainash_utils_rules.dimension import Dimension, DimensionsMetadata
+from mountainash_rules.dimension import Dimension, DimensionsMetadata
 
 
 class DimensionCompiler:
@@ -594,7 +594,7 @@ Expected: All 4 tests PASS.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/mountainash_utils_rules/compiler.py tests/test_compiler.py
+git add src/mountainash_rules/compiler.py tests/test_compiler.py
 git commit -m "feat: add DimensionCompiler with EXACT strategy"
 ```
 
@@ -603,7 +603,7 @@ git commit -m "feat: add DimensionCompiler with EXACT strategy"
 ### Task 5: DimensionCompiler — RANGE Strategy
 
 **Files:**
-- Modify: `src/mountainash_utils_rules/compiler.py`
+- Modify: `src/mountainash_rules/compiler.py`
 - Modify: `tests/test_compiler.py`
 
 - [ ] **Step 1: Write failing test for RANGE compilation**
@@ -737,7 +737,7 @@ Expected: All 4 tests PASS.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/mountainash_utils_rules/compiler.py tests/test_compiler.py
+git add src/mountainash_rules/compiler.py tests/test_compiler.py
 git commit -m "feat: add RANGE strategy to DimensionCompiler"
 ```
 
@@ -746,7 +746,7 @@ git commit -m "feat: add RANGE strategy to DimensionCompiler"
 ### Task 6: DimensionCompiler — REGEX Strategy
 
 **Files:**
-- Modify: `src/mountainash_utils_rules/compiler.py`
+- Modify: `src/mountainash_rules/compiler.py`
 - Modify: `tests/test_compiler.py`
 
 - [ ] **Step 1: Write failing test for REGEX compilation**
@@ -836,7 +836,7 @@ Expected: All 11 tests PASS (4 EXACT + 4 RANGE + 3 REGEX).
 - [ ] **Step 6: Commit**
 
 ```bash
-git add src/mountainash_utils_rules/compiler.py tests/test_compiler.py
+git add src/mountainash_rules/compiler.py tests/test_compiler.py
 git commit -m "feat: add REGEX strategy to DimensionCompiler"
 ```
 
@@ -845,7 +845,7 @@ git commit -m "feat: add REGEX strategy to DimensionCompiler"
 ### Task 7: RuleResult
 
 **Files:**
-- Create: `src/mountainash_utils_rules/result.py`
+- Create: `src/mountainash_rules/result.py`
 - Create: `tests/test_result.py`
 
 - [ ] **Step 1: Write failing tests for RuleResult**
@@ -858,7 +858,7 @@ Create `tests/test_result.py`:
 import polars as pl
 import pytest
 
-from mountainash_utils_rules.result import RuleResult
+from mountainash_rules.result import RuleResult
 
 
 @pytest.fixture
@@ -1023,7 +1023,7 @@ Expected: All 9 tests PASS.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/mountainash_utils_rules/result.py tests/test_result.py
+git add src/mountainash_rules/result.py tests/test_result.py
 git commit -m "feat: add RuleResult with explain and filtering"
 ```
 
@@ -1032,7 +1032,7 @@ git commit -m "feat: add RuleResult with explain and filtering"
 ### Task 8: ExpressionRulesEngine — Core Evaluation
 
 **Files:**
-- Rewrite: `src/mountainash_utils_rules/engine.py`
+- Rewrite: `src/mountainash_rules/engine.py`
 - Create: `tests/test_engine.py`
 
 - [ ] **Step 1: Write failing tests for engine evaluation**
@@ -1045,10 +1045,10 @@ Create `tests/test_engine.py`:
 import polars as pl
 import pytest
 
-from mountainash_utils_rules.constants import UNKNOWN, UNKNOWN_NUMERIC, MatchStrategy
-from mountainash_utils_rules.dimension import Dimension, DimensionsMetadata
-from mountainash_utils_rules.engine import ExpressionRulesEngine
-from mountainash_utils_rules.result import RuleResult
+from mountainash_rules.constants import UNKNOWN, UNKNOWN_NUMERIC, MatchStrategy
+from mountainash_rules.dimension import Dimension, DimensionsMetadata
+from mountainash_rules.engine import ExpressionRulesEngine
+from mountainash_rules.result import RuleResult
 
 
 @pytest.fixture
@@ -1163,11 +1163,11 @@ from pydantic import BaseModel
 
 from mountainash.expressions import BaseExpressionAPI
 
-from mountainash_utils_rules.compiler import DimensionCompiler
-from mountainash_utils_rules.constants import CTX_PREFIX
-from mountainash_utils_rules.context import extract_context_values
-from mountainash_utils_rules.dimension import DimensionsMetadata
-from mountainash_utils_rules.result import RuleResult
+from mountainash_rules.compiler import DimensionCompiler
+from mountainash_rules.constants import CTX_PREFIX
+from mountainash_rules.context import extract_context_values
+from mountainash_rules.dimension import DimensionsMetadata
+from mountainash_rules.result import RuleResult
 
 
 class ExpressionRulesEngine:
@@ -1309,7 +1309,7 @@ Expected: All 7 tests PASS.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/mountainash_utils_rules/engine.py tests/test_engine.py
+git add src/mountainash_rules/engine.py tests/test_engine.py
 git commit -m "feat: add ExpressionRulesEngine with single-pass evaluation"
 ```
 
@@ -1424,7 +1424,7 @@ Append to `tests/test_engine.py`:
 
 ```python
 import mountainash.expressions as ma
-from mountainash_utils_rules.constants import CTX_PREFIX, UNKNOWN
+from mountainash_rules.constants import CTX_PREFIX, UNKNOWN
 
 
 class TestCustomExpressions:
@@ -1496,9 +1496,9 @@ Create `tests/test_integration.py`:
 import polars as pl
 import pytest
 
-from mountainash_utils_rules.constants import UNKNOWN, UNKNOWN_NUMERIC, MatchStrategy
-from mountainash_utils_rules.dimension import Dimension, DimensionsMetadata
-from mountainash_utils_rules.engine import ExpressionRulesEngine
+from mountainash_rules.constants import UNKNOWN, UNKNOWN_NUMERIC, MatchStrategy
+from mountainash_rules.dimension import Dimension, DimensionsMetadata
+from mountainash_rules.engine import ExpressionRulesEngine
 
 
 class TestPricingCarveOut:
@@ -1663,7 +1663,7 @@ git commit -m "test: add integration tests for hierarchical rules, pricing, and 
 ### Task 12: Update __init__.py and Fixtures
 
 **Files:**
-- Rewrite: `src/mountainash_utils_rules/__init__.py`
+- Rewrite: `src/mountainash_rules/__init__.py`
 - Rewrite: `tests/conftest.py`
 
 - [ ] **Step 1: Rewrite __init__.py**
@@ -1671,12 +1671,12 @@ git commit -m "test: add integration tests for hierarchical rules, pricing, and 
 ```python
 """Mountain Ash Utils Rules — expression-based rule evaluation engine."""
 
-from mountainash_utils_rules.__version__ import __version__
-from mountainash_utils_rules.compiler import DimensionCompiler
-from mountainash_utils_rules.constants import MatchStrategy
-from mountainash_utils_rules.dimension import Dimension, DimensionsMetadata
-from mountainash_utils_rules.engine import ExpressionRulesEngine
-from mountainash_utils_rules.result import RuleResult
+from mountainash_rules.__version__ import __version__
+from mountainash_rules.compiler import DimensionCompiler
+from mountainash_rules.constants import MatchStrategy
+from mountainash_rules.dimension import Dimension, DimensionsMetadata
+from mountainash_rules.engine import ExpressionRulesEngine
+from mountainash_rules.result import RuleResult
 
 __all__ = (
     "__version__",
@@ -1698,9 +1698,9 @@ import polars as pl
 import pytest
 from pydantic import BaseModel
 
-from mountainash_utils_rules.constants import UNKNOWN, UNKNOWN_NUMERIC, MatchStrategy
-from mountainash_utils_rules.dimension import Dimension, DimensionsMetadata
-from mountainash_utils_rules.engine import ExpressionRulesEngine
+from mountainash_rules.constants import UNKNOWN, UNKNOWN_NUMERIC, MatchStrategy
+from mountainash_rules.dimension import Dimension, DimensionsMetadata
+from mountainash_rules.engine import ExpressionRulesEngine
 
 
 class TestContext(BaseModel):
@@ -1760,7 +1760,7 @@ Expected: All tests PASS across all test files.
 - [ ] **Step 4: Commit**
 
 ```bash
-git add src/mountainash_utils_rules/__init__.py tests/conftest.py
+git add src/mountainash_rules/__init__.py tests/conftest.py
 git commit -m "feat: update public API and shared test fixtures"
 ```
 

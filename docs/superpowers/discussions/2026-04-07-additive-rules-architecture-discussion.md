@@ -739,7 +739,7 @@ Otherwise LGTM
 
 ● Update(CLAUDE.md)
   ⎿  Added 1 line, removed 1 line
-      36  src/mountainash_utils_rules/
+      36  src/mountainash_rules/
       37  ├── __init__.py              # Package exports and public API
       38  ├── __version__.py           # Version information
       39 -├── constants.py             # Constants, enums, and prime-based ternary flags

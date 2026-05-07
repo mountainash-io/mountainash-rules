@@ -40,7 +40,7 @@ Mountain Ash Utils Rules is a high-performance Python package that provides revo
 
 ## Match Strategies
 
-The rules engine supports 11 match strategies via the `MatchStrategy` enum, compiled in `src/mountainash_utils_rules/compiler.py`:
+The rules engine supports 11 match strategies via the `MatchStrategy` enum, compiled in `src/mountainash_rules/compiler.py`:
 
 | Strategy | Rule Column Format | Data Type | Description |
 |----------|-------------------|-----------|-------------|
@@ -67,7 +67,7 @@ The rules engine supports 11 match strategies via the `MatchStrategy` enum, comp
 ### Package Structure
 
 ```
-src/mountainash_utils_rules/
+src/mountainash_rules/
 ├── __init__.py              # Package exports and public API
 ├── __version__.py           # Version information
 ├── accumulator_compiler.py  # Coalesce/compatible/NA flag expression compilation
@@ -216,7 +216,7 @@ Uses CalVer (Calendar Versioning) with semantic versioning:
 ### Performance-Optimized Engine Selection
 
 ```python
-from mountainash_utils_rules import (
+from mountainash_rules import (
     # Original engine
     RulesEngine,
     # Performance engines

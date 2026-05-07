@@ -22,9 +22,9 @@
 
 | File | Action | Responsibility |
 |------|--------|----------------|
-| `src/mountainash_utils_rules/constants.py` | Modify | Add 8 new values to `MatchStrategy` enum |
-| `src/mountainash_utils_rules/dimension.py` | Modify | Add validation rules for new strategies |
-| `src/mountainash_utils_rules/compiler.py` | Rewrite | Add 8 compile methods, rewrite REGEX, remove polars/re imports |
+| `src/mountainash_rules/constants.py` | Modify | Add 8 new values to `MatchStrategy` enum |
+| `src/mountainash_rules/dimension.py` | Modify | Add validation rules for new strategies |
+| `src/mountainash_rules/compiler.py` | Rewrite | Add 8 compile methods, rewrite REGEX, remove polars/re imports |
 | `tests/test_compiler.py` | Modify | Add 8 new test classes, rewrite REGEX tests |
 | `tests/test_dimension.py` | Create | Validation tests for new strategies |
 | `tests/test_integration.py` | Modify | Add fraud detection scenario using mixed strategies |
@@ -34,11 +34,11 @@
 ### Task 1: Extend MatchStrategy Enum
 
 **Files:**
-- Modify: `src/mountainash_utils_rules/constants.py`
+- Modify: `src/mountainash_rules/constants.py`
 
 - [ ] **Step 1: Add new enum values**
 
-Replace the `MatchStrategy` class in `src/mountainash_utils_rules/constants.py` with:
+Replace the `MatchStrategy` class in `src/mountainash_rules/constants.py` with:
 
 ```python
 class MatchStrategy(Enum):
@@ -68,7 +68,7 @@ Expected: All 11 existing compiler tests still PASS (new enum values don't break
 - [ ] **Step 3: Commit**
 
 ```bash
-git add src/mountainash_utils_rules/constants.py
+git add src/mountainash_rules/constants.py
 git commit -m "feat(constants): add 8 new MatchStrategy enum values"
 ```
 
@@ -77,7 +77,7 @@ git commit -m "feat(constants): add 8 new MatchStrategy enum values"
 ### Task 2: Add Dimension Validation for New Strategies
 
 **Files:**
-- Modify: `src/mountainash_utils_rules/dimension.py`
+- Modify: `src/mountainash_rules/dimension.py`
 - Create: `tests/test_dimension.py`
 
 - [ ] **Step 1: Write failing validation tests**
@@ -89,8 +89,8 @@ Create `tests/test_dimension.py`:
 
 import pytest
 
-from mountainash_utils_rules.constants import MatchStrategy
-from mountainash_utils_rules.dimension import Dimension
+from mountainash_rules.constants import MatchStrategy
+from mountainash_rules.dimension import Dimension
 
 
 class TestNumericStrategyValidation:
@@ -226,7 +226,7 @@ Expected: Numeric/string strategy tests FAIL (validation not implemented yet). E
 
 - [ ] **Step 3: Update `_validate_strategy_fields` in dimension.py**
 
-In `src/mountainash_utils_rules/dimension.py`, replace the `_validate_strategy_fields` method with:
+In `src/mountainash_rules/dimension.py`, replace the `_validate_strategy_fields` method with:
 
 ```python
     @model_validator(mode="after")
@@ -279,7 +279,7 @@ Expected: All 13 validation tests PASS.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/mountainash_utils_rules/dimension.py tests/test_dimension.py
+git add src/mountainash_rules/dimension.py tests/test_dimension.py
 git commit -m "feat(dimension): add validation rules for new match strategies"
 ```
 
@@ -288,7 +288,7 @@ git commit -m "feat(dimension): add validation rules for new match strategies"
 ### Task 3: Add _compile_string_match Helper and NOT_EQUAL
 
 **Files:**
-- Modify: `src/mountainash_utils_rules/compiler.py`
+- Modify: `src/mountainash_rules/compiler.py`
 - Modify: `tests/test_compiler.py`
 
 - [ ] **Step 1: Write failing tests for NOT_EQUAL**
@@ -334,7 +334,7 @@ Expected: FAIL — `Unknown match strategy: MatchStrategy.NOT_EQUAL`.
 
 - [ ] **Step 3: Add NOT_EQUAL case and method to compiler.py**
 
-In `src/mountainash_utils_rules/compiler.py`:
+In `src/mountainash_rules/compiler.py`:
 
 1. Add the case to `compile_dimension`'s match statement (before the wildcard):
 
@@ -364,7 +364,7 @@ Expected: Both tests PASS.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/mountainash_utils_rules/compiler.py tests/test_compiler.py
+git add src/mountainash_rules/compiler.py tests/test_compiler.py
 git commit -m "feat(compiler): add NOT_EQUAL match strategy"
 ```
 
@@ -373,7 +373,7 @@ git commit -m "feat(compiler): add NOT_EQUAL match strategy"
 ### Task 4: GREATER_THAN and LESS_THAN Strategies
 
 **Files:**
-- Modify: `src/mountainash_utils_rules/compiler.py`
+- Modify: `src/mountainash_rules/compiler.py`
 - Modify: `tests/test_compiler.py`
 
 - [ ] **Step 1: Write failing tests for GREATER_THAN**
@@ -562,7 +562,7 @@ Expected: All 8 tests PASS.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/mountainash_utils_rules/compiler.py tests/test_compiler.py
+git add src/mountainash_rules/compiler.py tests/test_compiler.py
 git commit -m "feat(compiler): add GREATER_THAN and LESS_THAN strategies"
 ```
 
@@ -571,7 +571,7 @@ git commit -m "feat(compiler): add GREATER_THAN and LESS_THAN strategies"
 ### Task 5: PREFIX Strategy and Shared _compile_string_match Helper
 
 **Files:**
-- Modify: `src/mountainash_utils_rules/compiler.py`
+- Modify: `src/mountainash_rules/compiler.py`
 - Modify: `tests/test_compiler.py`
 
 - [ ] **Step 1: Write failing tests for PREFIX**
@@ -680,7 +680,7 @@ Expected: All 4 tests PASS.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/mountainash_utils_rules/compiler.py tests/test_compiler.py
+git add src/mountainash_rules/compiler.py tests/test_compiler.py
 git commit -m "feat(compiler): add PREFIX strategy with shared string-match helper"
 ```
 
@@ -689,7 +689,7 @@ git commit -m "feat(compiler): add PREFIX strategy with shared string-match help
 ### Task 6: SUFFIX and CONTAINS Strategies
 
 **Files:**
-- Modify: `src/mountainash_utils_rules/compiler.py`
+- Modify: `src/mountainash_rules/compiler.py`
 - Modify: `tests/test_compiler.py`
 
 - [ ] **Step 1: Write failing tests for SUFFIX and CONTAINS**
@@ -839,7 +839,7 @@ Expected: All 8 tests PASS.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/mountainash_utils_rules/compiler.py tests/test_compiler.py
+git add src/mountainash_rules/compiler.py tests/test_compiler.py
 git commit -m "feat(compiler): add SUFFIX and CONTAINS strategies"
 ```
 
@@ -848,7 +848,7 @@ git commit -m "feat(compiler): add SUFFIX and CONTAINS strategies"
 ### Task 7: Rewrite REGEX Strategy (Backend-Agnostic)
 
 **Files:**
-- Modify: `src/mountainash_utils_rules/compiler.py`
+- Modify: `src/mountainash_rules/compiler.py`
 - Modify: `tests/test_compiler.py`
 
 - [ ] **Step 1: Add new REGEX per-row test**
@@ -880,7 +880,7 @@ Expected: All 4 tests PASS (old Polars-specific implementation still handles per
 
 - [ ] **Step 3: Rewrite _compile_regex in compiler.py**
 
-Replace the entire `_compile_regex` method in `src/mountainash_utils_rules/compiler.py` with:
+Replace the entire `_compile_regex` method in `src/mountainash_rules/compiler.py` with:
 
 ```python
     def _compile_regex(self, dim: Dimension) -> BaseExpressionAPI:
@@ -889,7 +889,7 @@ Replace the entire `_compile_regex` method in `src/mountainash_utils_rules/compi
 
 - [ ] **Step 4: Remove now-unused imports from compiler.py**
 
-Remove these lines from the top of `src/mountainash_utils_rules/compiler.py`:
+Remove these lines from the top of `src/mountainash_rules/compiler.py`:
 
 ```python
 import re
@@ -918,7 +918,7 @@ Expected: All tests PASS.
 - [ ] **Step 7: Commit**
 
 ```bash
-git add src/mountainash_utils_rules/compiler.py tests/test_compiler.py
+git add src/mountainash_rules/compiler.py tests/test_compiler.py
 git commit -m "refactor(compiler): rewrite REGEX to be backend-agnostic using regex_contains"
 ```
 
@@ -927,7 +927,7 @@ git commit -m "refactor(compiler): rewrite REGEX to be backend-agnostic using re
 ### Task 8: SET_MEMBERSHIP and SET_EXCLUSION Strategies
 
 **Files:**
-- Modify: `src/mountainash_utils_rules/compiler.py`
+- Modify: `src/mountainash_rules/compiler.py`
 - Modify: `tests/test_compiler.py`
 
 - [ ] **Step 1: Write failing tests for SET strategies**
@@ -1084,7 +1084,7 @@ Expected: All 6 tests PASS.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/mountainash_utils_rules/compiler.py tests/test_compiler.py
+git add src/mountainash_rules/compiler.py tests/test_compiler.py
 git commit -m "feat(compiler): add SET_MEMBERSHIP and SET_EXCLUSION strategies"
 ```
 
