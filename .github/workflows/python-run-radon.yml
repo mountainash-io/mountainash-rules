@@ -1,17 +1,21 @@
 name: Radon Complexity Checks
 
-on: 
-  pull_request_target:
+on:
+  pull_request:
     paths:
-      - 'src/mountainash_utils_rules/**'    
+      - "src/mountainash_rules/**"
   workflow_dispatch:
 
-jobs:
+permissions:
+  contents: read
 
+jobs:
   complexity-checks:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up Python 3.12
         uses: actions/setup-python@v5
@@ -29,4 +33,3 @@ jobs:
 
       - name: Complexity checks with radon - mi
         run: hatch run radon:radon-mi
-
