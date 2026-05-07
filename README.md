@@ -18,7 +18,7 @@ Built on [mountainash](https://github.com/mountainash-io/mountainash) expression
 
 ```python
 import polars as pl
-from mountainash_utils_rules import (
+from mountainash_rules import (
     ExpressionRulesEngine, Dimension, DimensionsMetadata, MatchStrategy,
 )
 from pydantic import BaseModel

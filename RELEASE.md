@@ -65,7 +65,7 @@ If you encounter dependency conflicts during CI builds:
    - **Important**: Create matching release branches in all dependency repositories first
 
 2. **Update Version**
-   - In the release branch, update the version in `src/mountainash_utils_rules/__version__.py`
+   - In the release branch, update the version in `src/mountainash_rules/__version__.py`
    - Ensure it follows our CalVer format: `__version__ = 'YY.MM.MICRO'`
    - Commit and push this change
 
@@ -95,7 +95,7 @@ If you need to create a hotfix for a production release:
    - **Important**: Create matching hotfix branches in all dependency repositories that need fixes
 
 2. **Update Version**
-   - Update the version in `src/mountainash_utils_rules/__version__.py`
+   - Update the version in `src/mountainash_rules/__version__.py`
    - Increment the micro version: `__version__ = 'YY.MM.MICRO+1'`
    - Commit and push your changes
 
@@ -137,7 +137,7 @@ If you need to create a hotfix for a production release:
 
 Each release generates the following artifacts:
 
-- **Wheel file**: `mountainash_utils_rules-{version}-py3-none-any.whl`
+- **Wheel file**: `mountainash_rules-{version}-py3-none-any.whl`
 - **Full SBOM**: `mountainash-utils-rules-{version}-sbom-full.xml`
 - **Direct dependencies SBOM**: `mountainash-utils-rules-{version}-sbom-direct.xml`
 

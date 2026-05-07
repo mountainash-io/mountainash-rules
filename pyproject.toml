@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "mountainash_utils_rules"
+name = "mountainash_rules"
 dynamic = ["version"]
 description = 'Mountain Ash - Utils - Rules'
 readme = "README.md"
@@ -40,15 +40,15 @@ Source = "https://github.com/mountainash-io/mountainash-utils-rules"
 # Tool: Coverage
 #================
 [tool.coverage.run]
-source_pkgs = ["mountainash_utils_rules"]
+source_pkgs = ["mountainash_rules"]
 branch = true
 parallel = true
-omit = ["src/mountainash_utils_rules/__version__.py"]
+omit = ["src/mountainash_rules/__version__.py"]
 
 [tool.coverage.paths]
-mountainash_utils_rules = [
-    "src/mountainash_utils_rules",
-    "*/mountainash-utils-rules/src/mountainash_utils_rules",
+mountainash_rules = [
+    "src/mountainash_rules",
+    "*/mountainash-utils-rules/src/mountainash_rules",
 ]
 tests = ["tests", "*/mountainash-utils-rules/tests"]
 
