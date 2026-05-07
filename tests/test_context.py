@@ -3,8 +3,8 @@
 import pytest
 from pydantic import BaseModel
 
-from mountainash_utils_rules.context import extract_context_values
-from mountainash_utils_rules.constants import NOT_SET, NOT_SET_NUMERIC
+from mountainash_rules.context import extract_context_values
+from mountainash_rules.constants import NOT_SET, NOT_SET_NUMERIC
 
 
 class SampleContext(BaseModel):

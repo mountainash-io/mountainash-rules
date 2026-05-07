@@ -2,8 +2,8 @@ import typing as t
 
 from mountainash.relations import relation
 
-from mountainash_utils_rules.aggregate import Aggregate
-from mountainash_utils_rules.dimension import DimensionsMetadata
+from mountainash_rules.aggregate import Aggregate
+from mountainash_rules.dimension import DimensionsMetadata
 
 
 class Lattice:

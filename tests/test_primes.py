@@ -2,7 +2,7 @@
 
 import pytest
 
-from mountainash_utils_rules.primes import (
+from mountainash_rules.primes import (
     PRIME_TABLE,
     get_prime,
     checked_multiply,

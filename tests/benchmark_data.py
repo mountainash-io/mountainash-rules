@@ -11,13 +11,13 @@ import typing as t
 
 from pydantic import BaseModel, create_model
 
-from mountainash_utils_rules.constants import (
+from mountainash_rules.constants import (
     UNKNOWN,
     UNKNOWN_NUMERIC,
     MatchStrategy,
 )
-from mountainash_utils_rules.dimension import Dimension, DimensionsMetadata
-from mountainash_utils_rules.engine import ExpressionRulesEngine
+from mountainash_rules.dimension import Dimension, DimensionsMetadata
+from mountainash_rules.engine import ExpressionRulesEngine
 
 # ---------------------------------------------------------------------------
 # Strategy mix defaults

@@ -1,8 +1,8 @@
 import polars as pl
-from mountainash_utils_rules.aggregate import Aggregate
-from mountainash_utils_rules.constants import MatchStrategy
-from mountainash_utils_rules.dimension import Dimension, DimensionsMetadata
-from mountainash_utils_rules.lattice import Lattice
+from mountainash_rules.aggregate import Aggregate
+from mountainash_rules.constants import MatchStrategy
+from mountainash_rules.dimension import Dimension, DimensionsMetadata
+from mountainash_rules.lattice import Lattice
 
 
 def test_lattice_metadata_property():

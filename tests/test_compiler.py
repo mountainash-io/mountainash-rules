@@ -6,9 +6,9 @@ import pytest
 
 import mountainash.expressions as ma
 
-from mountainash_utils_rules.compiler import DimensionCompiler
-from mountainash_utils_rules.constants import CTX_PREFIX, UNKNOWN, UNKNOWN_NUMERIC, MatchStrategy
-from mountainash_utils_rules.dimension import Dimension
+from mountainash_rules.compiler import DimensionCompiler
+from mountainash_rules.constants import CTX_PREFIX, UNKNOWN, UNKNOWN_NUMERIC, MatchStrategy
+from mountainash_rules.dimension import Dimension
 from tests.conftest import (
     ALL_BACKENDS,
     build_backend_df,

@@ -11,19 +11,19 @@ from mountainash.relations import relation, concat
 
 from pydantic import BaseModel
 
-from mountainash_utils_rules.accumulator_compiler import AccumulatorCompiler
-from mountainash_utils_rules.accumulator_result import AccumulatorResult
-from mountainash_utils_rules.aggregate import Aggregate
-from mountainash_utils_rules.constants import (
+from mountainash_rules.accumulator_compiler import AccumulatorCompiler
+from mountainash_rules.accumulator_result import AccumulatorResult
+from mountainash_rules.aggregate import Aggregate
+from mountainash_rules.constants import (
     DimensionRole,
     MatchStrategy,
     UNKNOWN,
     UNKNOWN_NUMERIC,
 )
-from mountainash_utils_rules.dimension import Dimension, DimensionsMetadata
-from mountainash_utils_rules.engine import ExpressionRulesEngine
-from mountainash_utils_rules.lattice import Lattice
-from mountainash_utils_rules.primes import get_prime
+from mountainash_rules.dimension import Dimension, DimensionsMetadata
+from mountainash_rules.engine import ExpressionRulesEngine
+from mountainash_rules.lattice import Lattice
+from mountainash_rules.primes import get_prime
 
 
 class AccumulatorEngine:

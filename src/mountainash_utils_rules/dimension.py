@@ -6,7 +6,7 @@ import typing as t
 
 from pydantic import BaseModel, model_validator
 
-from mountainash_utils_rules.constants import DimensionRole, MatchStrategy
+from mountainash_rules.constants import DimensionRole, MatchStrategy
 
 
 class Dimension(BaseModel):

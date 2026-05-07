@@ -5,7 +5,7 @@ from __future__ import annotations
 import mountainash.expressions as ma
 from mountainash.expressions import BaseExpressionAPI
 
-from mountainash_utils_rules.constants import (
+from mountainash_rules.constants import (
     CTX_PREFIX,
     UNKNOWN,
     NOT_SET,
@@ -13,7 +13,7 @@ from mountainash_utils_rules.constants import (
     NUMERIC_SENTINELS,
     MatchStrategy,
 )
-from mountainash_utils_rules.dimension import Dimension, DimensionsMetadata
+from mountainash_rules.dimension import Dimension, DimensionsMetadata
 
 
 class DimensionCompiler:

@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-SRC_ROOT = Path(__file__).parent.parent / "src" / "mountainash_utils_rules"
+SRC_ROOT = Path(__file__).parent.parent / "src" / "mountainash_rules"
 PROHIBITED_PACKAGES = ("polars", "ibis", "narwhals")
 PURE_FILES = ("engine.py", "result.py", "compiler.py")
 ALLOW_PATTERN = re.compile(r"#\s*allow:\s*\w+")
