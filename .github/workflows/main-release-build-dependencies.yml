@@ -6,6 +6,9 @@ on:
     branches:
       - "main"
 
+permissions:
+  contents: read
+
 jobs:
   main-release-build-dependencies:
     runs-on: ${{ matrix.os }}
@@ -47,6 +50,14 @@ jobs:
           pip install hatch==1.16.5
 
       # Checkout Mountain Ash Dependencies
+      - name: Generate GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ secrets.CI_APP_ID }}
+          private-key: ${{ secrets.CI_APP_PRIVATE_KEY }}
+          owner: mountainash-io
+
       - name: Load Dependencies
         id: deps
         uses: ./.github/actions/load-dependencies
@@ -59,7 +70,7 @@ jobs:
           dependencies: ${{ steps.deps.outputs.dependencies }}
           target-branch: ${{ env.TARGET_BRANCH }}
           default-branch: main
-          token: ${{ secrets.CLONE_PRIVATE_REPOS_TOKEN }}
+          token: ${{ steps.app-token.outputs.token }}
           org-name: ${{ env.ORGNAME }}
 
       # ======================================================
