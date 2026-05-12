@@ -334,7 +334,7 @@ class TestFraudDetectionScenario:
 No new public symbols beyond the new `MatchStrategy` enum values. All classes (`ExpressionRulesEngine`, `Dimension`, `DimensionsMetadata`, `RuleResult`, `DimensionCompiler`) keep their current interfaces.
 
 ```python
-from mountainash_utils_rules import MatchStrategy
+from mountainash_rules import MatchStrategy
 
 # All 11 available:
 MatchStrategy.EXACT

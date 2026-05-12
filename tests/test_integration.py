@@ -5,9 +5,9 @@ from __future__ import annotations
 import pytest
 from mountainash.relations import relation
 
-from mountainash_utils_rules.constants import UNKNOWN, UNKNOWN_NUMERIC, MatchStrategy
-from mountainash_utils_rules.dimension import Dimension, DimensionsMetadata
-from mountainash_utils_rules.engine import ExpressionRulesEngine
+from mountainash_rules.constants import UNKNOWN, UNKNOWN_NUMERIC, MatchStrategy
+from mountainash_rules.dimension import Dimension, DimensionsMetadata
+from mountainash_rules.engine import ExpressionRulesEngine
 
 from tests.conftest import (
     LIST_CAPABLE_BACKENDS,

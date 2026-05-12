@@ -6,7 +6,7 @@
 
 **Architecture:** A synthetic data generator (`tests/benchmark_data.py`) builds deterministic rule sets and contexts from seeded RNG. Benchmark tests (`tests/test_benchmarks.py`) parametrize over `(rule_count, dim_count, backend_name)` for the scaling matrix and `(strategy, backend_name)` for strategy isolation. pytest-benchmark handles warmup, round statistics, and JSON persistence. Engine construction is excluded from the timed loop via pedantic mode — only `engine.evaluate(context)` is benchmarked.
 
-**Tech Stack:** pytest-benchmark (already in test env), pydantic (context models), mountainash_utils_rules (engine + compiler + constants), existing conftest.py (`ALL_BACKENDS`, `LIST_CAPABLE_BACKENDS`, `build_backend_df`). Benchmarks define `BENCH_BACKENDS = [b for b in ALL_BACKENDS if b != "ibis-polars"]` to exclude the broken backend.
+**Tech Stack:** pytest-benchmark (already in test env), pydantic (context models), mountainash_rules (engine + compiler + constants), existing conftest.py (`ALL_BACKENDS`, `LIST_CAPABLE_BACKENDS`, `build_backend_df`). Benchmarks define `BENCH_BACKENDS = [b for b in ALL_BACKENDS if b != "ibis-polars"]` to exclude the broken backend.
 
 **Spec:** `docs/superpowers/specs/2026-04-28-cross-backend-performance-benchmarks-design.md`
 
@@ -38,7 +38,7 @@ Create `tests/test_benchmark_data.py`:
 ```python
 """Tests for the synthetic benchmark data generator."""
 
-from mountainash_utils_rules.constants import MatchStrategy
+from mountainash_rules.constants import MatchStrategy
 from benchmark_data import assign_strategies
 
 
@@ -87,7 +87,7 @@ from __future__ import annotations
 
 import math
 
-from mountainash_utils_rules.constants import MatchStrategy
+from mountainash_rules.constants import MatchStrategy
 
 
 DEFAULT_STRATEGY_MIX: dict[str, float] = {
@@ -194,7 +194,7 @@ def test_generate_rules_set_membership_produces_lists():
 def test_generate_rules_unknown_density():
     """~15% of values should be sentinels."""
     rules_dict, metadata = generate_rules(rule_count=200, dim_count=3, seed=42)
-    from mountainash_utils_rules.constants import UNKNOWN, UNKNOWN_NUMERIC
+    from mountainash_rules.constants import UNKNOWN, UNKNOWN_NUMERIC
     sentinels = {UNKNOWN, UNKNOWN_NUMERIC}
     total = 0
     unknown_count = 0
@@ -229,12 +229,12 @@ Add to `tests/benchmark_data.py`:
 import random
 import typing as t
 
-from mountainash_utils_rules.constants import (
+from mountainash_rules.constants import (
     UNKNOWN,
     UNKNOWN_NUMERIC,
     MatchStrategy,
 )
-from mountainash_utils_rules.dimension import Dimension, DimensionsMetadata
+from mountainash_rules.dimension import Dimension, DimensionsMetadata
 
 
 # --- Regex patterns safe from catastrophic backtracking ---
@@ -597,7 +597,7 @@ Append to `tests/test_benchmark_data.py`:
 
 ```python
 from benchmark_data import build_engine
-from mountainash_utils_rules.engine import ExpressionRulesEngine
+from mountainash_rules.engine import ExpressionRulesEngine
 
 
 def test_build_engine_polars():
@@ -627,7 +627,7 @@ Expected: FAIL with `ImportError: cannot import name 'build_engine'`
 Add to `tests/benchmark_data.py`:
 
 ```python
-from mountainash_utils_rules.engine import ExpressionRulesEngine
+from mountainash_rules.engine import ExpressionRulesEngine
 from conftest import build_backend_df
 
 
@@ -706,8 +706,8 @@ class TestScalingMatrix:
         # the generated rules include them and the backend can't handle it.
         has_set_strategy = any(
             d.match_strategy in (
-                __import__("mountainash_utils_rules.constants", fromlist=["MatchStrategy"]).MatchStrategy.SET_MEMBERSHIP,
-                __import__("mountainash_utils_rules.constants", fromlist=["MatchStrategy"]).MatchStrategy.SET_EXCLUSION,
+                __import__("mountainash_rules.constants", fromlist=["MatchStrategy"]).MatchStrategy.SET_MEMBERSHIP,
+                __import__("mountainash_rules.constants", fromlist=["MatchStrategy"]).MatchStrategy.SET_EXCLUSION,
             )
             for d in metadata.dimensions
         )
@@ -751,7 +751,7 @@ The `__import__` hack in Task 5 is ugly. Clean it up now that the file exists.
 Replace the `has_set_strategy` block in `tests/test_benchmarks.py`:
 
 ```python
-from mountainash_utils_rules.constants import MatchStrategy
+from mountainash_rules.constants import MatchStrategy
 
 # ... inside the test method, replace the has_set_strategy block with:
 
@@ -773,7 +773,7 @@ import pytest
 
 from conftest import ALL_BACKENDS, LIST_CAPABLE_BACKENDS
 from benchmark_data import build_engine, generate_context, generate_rules
-from mountainash_utils_rules.constants import MatchStrategy
+from mountainash_rules.constants import MatchStrategy
 
 # ibis-polars excluded: upstream bug mountainash-io/mountainash#78
 # breaks with_row_index in the engine pipeline.

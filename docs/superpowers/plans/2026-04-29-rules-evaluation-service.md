@@ -119,7 +119,7 @@ packages = ["src/mountainash_rules_service"]
 installer = "uv"
 path = ".venv"
 dependencies = [
-    "mountainash_utils_rules @   {root:uri}/../mountainash-utils-rules",
+    "mountainash_rules @   {root:uri}/../mountainash-utils-rules",
     "mountainash_data @          {root:uri}/../mountainash-data",
     "mountainash @               {root:uri}/../mountainash",
     "mountainash_settings @      {root:uri}/../mountainash-settings",
@@ -135,7 +135,7 @@ dependencies = [
     "pytest-cov>=4.1.0",
     "httpx>=0.27.0",
 
-    "mountainash_utils_rules @   {root:uri}/../mountainash-utils-rules",
+    "mountainash_rules @   {root:uri}/../mountainash-utils-rules",
     "mountainash_data @          {root:uri}/../mountainash-data",
     "mountainash @               {root:uri}/../mountainash",
     "mountainash_settings @      {root:uri}/../mountainash-settings",
@@ -724,9 +724,9 @@ import polars as pl
 import yaml
 from mountainash.relations import relation
 
-from mountainash_utils_rules.constants import MatchStrategy
-from mountainash_utils_rules.dimension import Dimension, DimensionsMetadata
-from mountainash_utils_rules.engine import ExpressionRulesEngine
+from mountainash_rules.constants import MatchStrategy
+from mountainash_rules.dimension import Dimension, DimensionsMetadata
+from mountainash_rules.engine import ExpressionRulesEngine
 
 from mountainash_rules_service.models import (
     DimensionInfo,

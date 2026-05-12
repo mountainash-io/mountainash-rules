@@ -30,7 +30,7 @@ This is a clean break — all existing engines (`RulesEngine`, `HybridRulesEngin
 ### Package Structure
 
 ```
-src/mountainash_utils_rules/
+src/mountainash_rules/
 ├── __init__.py                  # Public API exports
 ├── __version__.py               # Version (unchanged)
 ├── constants.py                 # MatchStrategy enum, context column prefix, sentinel values
@@ -285,16 +285,16 @@ Sentinel values (`<NA>`, `-999999999`) are handled by `t_col(unknown={...})` —
 
 ```python
 # Engine
-from mountainash_utils_rules import ExpressionRulesEngine
+from mountainash_rules import ExpressionRulesEngine
 
 # Metadata (convenience path)
-from mountainash_utils_rules import Dimension, DimensionsMetadata, MatchStrategy
+from mountainash_rules import Dimension, DimensionsMetadata, MatchStrategy
 
 # Result
-from mountainash_utils_rules import RuleResult
+from mountainash_rules import RuleResult
 
 # Compiler (advanced users)
-from mountainash_utils_rules import DimensionCompiler
+from mountainash_rules import DimensionCompiler
 ```
 
 **Convenience path:**

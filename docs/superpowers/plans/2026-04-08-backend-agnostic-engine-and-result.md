@@ -22,9 +22,9 @@
 
 | File | Action | Responsibility |
 |------|--------|----------------|
-| `src/mountainash_utils_rules/engine.py` | Rewrite | Use `mountainash.relations.relation()` for all DataFrame ops, no `polars` import |
-| `src/mountainash_utils_rules/result.py` | Rewrite | Use `relation()`, `count_rows()`, `item()` for all accessors, no DataFrame-library imports |
-| `src/mountainash_utils_rules/compiler.py` | Modify | Add `# allow: SET_MEMBERSHIP workaround pending t_list_contains upstream` comment to the polars import line |
+| `src/mountainash_rules/engine.py` | Rewrite | Use `mountainash.relations.relation()` for all DataFrame ops, no `polars` import |
+| `src/mountainash_rules/result.py` | Rewrite | Use `relation()`, `count_rows()`, `item()` for all accessors, no DataFrame-library imports |
+| `src/mountainash_rules/compiler.py` | Modify | Add `# allow: SET_MEMBERSHIP workaround pending t_list_contains upstream` comment to the polars import line |
 | `tests/test_backend_purity.py` | Create | Import-check test enforcing no polars/ibis/narwhals imports in the three pure files |
 | `mountainash-central/01.principles/mountainash-utils-rules/c.identity-and-representation/representation-fits-host-language.md` | Rewrite | Reflect new one-engine-many-backends architecture; promote to ENFORCED |
 
@@ -57,7 +57,7 @@ from pathlib import Path
 
 import pytest
 
-SRC_ROOT = Path(__file__).parent.parent / "src" / "mountainash_utils_rules"
+SRC_ROOT = Path(__file__).parent.parent / "src" / "mountainash_rules"
 PROHIBITED_PACKAGES = ("polars", "ibis", "narwhals")
 PURE_FILES = ("engine.py", "result.py", "compiler.py")
 ALLOW_PATTERN = re.compile(r"#\s*allow:\s*\w+")
@@ -111,13 +111,13 @@ git commit -m "test(backend-purity): add import-check test (currently failing)"
 ### Task 2: Tag the SET_MEMBERSHIP Polars Exception in compiler.py
 
 **Files:**
-- Modify: `src/mountainash_utils_rules/compiler.py`
+- Modify: `src/mountainash_rules/compiler.py`
 
 The `import polars as pl` line in `compiler.py` is the only legitimate exception, used by `_compile_set_membership` and `_compile_set_exclusion` for the `ma.native(pl.col(...).list.contains(...))` workaround. Tag it with the allow-comment so the purity test recognises the exception.
 
 - [ ] **Step 1: Read current imports in compiler.py**
 
-Read `src/mountainash_utils_rules/compiler.py` lines 1-10 to confirm the current `import polars as pl` line.
+Read `src/mountainash_rules/compiler.py` lines 1-10 to confirm the current `import polars as pl` line.
 
 - [ ] **Step 2: Add the allow comment**
 
@@ -146,7 +146,7 @@ Expected: All 52 compiler tests still PASS. The comment is non-functional and sh
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/mountainash_utils_rules/compiler.py
+git add src/mountainash_rules/compiler.py
 git commit -m "chore(compiler): tag polars import as documented SET_MEMBERSHIP exception"
 ```
 
@@ -155,17 +155,17 @@ git commit -m "chore(compiler): tag polars import as documented SET_MEMBERSHIP e
 ### Task 3: Rewrite engine.py to Use mountainash.relations
 
 **Files:**
-- Modify: `src/mountainash_utils_rules/engine.py`
+- Modify: `src/mountainash_rules/engine.py`
 
 This is the core rewrite. Replace the entire `_evaluate` pipeline and the `_bind_context` helper with a single chained `Relation` pipeline. Remove the `import polars as pl` line.
 
 - [ ] **Step 1: Read the current engine.py**
 
-Read `src/mountainash_utils_rules/engine.py` in full to understand the current structure. The file is approximately 145 lines.
+Read `src/mountainash_rules/engine.py` in full to understand the current structure. The file is approximately 145 lines.
 
 - [ ] **Step 2: Replace the entire engine.py file**
 
-Replace `src/mountainash_utils_rules/engine.py` with this complete new content:
+Replace `src/mountainash_rules/engine.py` with this complete new content:
 
 ```python
 """ExpressionRulesEngine: single-pass rule evaluation using mountainash."""
@@ -181,11 +181,11 @@ import mountainash.expressions as ma
 from mountainash.expressions import BaseExpressionAPI
 from mountainash.relations import relation
 
-from mountainash_utils_rules.compiler import DimensionCompiler
-from mountainash_utils_rules.constants import CTX_PREFIX
-from mountainash_utils_rules.context import extract_context_values
-from mountainash_utils_rules.dimension import DimensionsMetadata
-from mountainash_utils_rules.result import RuleResult
+from mountainash_rules.compiler import DimensionCompiler
+from mountainash_rules.constants import CTX_PREFIX
+from mountainash_rules.context import extract_context_values
+from mountainash_rules.dimension import DimensionsMetadata
+from mountainash_rules.result import RuleResult
 
 
 class ExpressionRulesEngine:
@@ -364,7 +364,7 @@ Expected: PASS. engine.py no longer has a polars import.
 - [ ] **Step 7: Commit**
 
 ```bash
-git add src/mountainash_utils_rules/engine.py
+git add src/mountainash_rules/engine.py
 git commit -m "refactor(engine): use mountainash.relations.Relation for backend-agnostic pipeline
 
 Replaces direct polars imports with mountainash.relations and
@@ -381,17 +381,17 @@ Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>"
 ### Task 4: Rewrite result.py to Use mountainash.relations
 
 **Files:**
-- Modify: `src/mountainash_utils_rules/result.py`
+- Modify: `src/mountainash_rules/result.py`
 
 `RuleResult` currently has four Polars-specific idioms (`shape[0]`, `df[col] == value`, `row[col][0]`, `df.filter(df[col] >= n)`). Replace each with `relation()` + `count_rows()`/`item()` calls.
 
 - [ ] **Step 1: Read current result.py**
 
-Read `src/mountainash_utils_rules/result.py` in full. The file is approximately 75 lines.
+Read `src/mountainash_rules/result.py` in full. The file is approximately 75 lines.
 
 - [ ] **Step 2: Replace the entire result.py file**
 
-Replace `src/mountainash_utils_rules/result.py` with this complete new content:
+Replace `src/mountainash_rules/result.py` with this complete new content:
 
 ```python
 """RuleResult: wrapper for evaluated rule results with backend-agnostic accessors."""
@@ -521,7 +521,7 @@ Expected: All 3 tests PASS (compiler.py via the allow-comment, engine.py and res
 - [ ] **Step 8: Commit**
 
 ```bash
-git add src/mountainash_utils_rules/result.py
+git add src/mountainash_rules/result.py
 git commit -m "refactor(result): use mountainash.relations for all RuleResult accessors
 
 Replaces Polars-specific idioms (shape[0], df[col]==value, row[col][0])
@@ -638,9 +638,9 @@ result_df = rel.execute()
 
 ## Technical Reference
 
-- `mountainash-utils-rules/src/mountainash_utils_rules/engine.py` — `ExpressionRulesEngine`, the only engine
-- `mountainash-utils-rules/src/mountainash_utils_rules/result.py` — `RuleResult`, all backend-agnostic
-- `mountainash-utils-rules/src/mountainash_utils_rules/compiler.py` — `DimensionCompiler`, all backend-agnostic except the documented SET_MEMBERSHIP exception
+- `mountainash-utils-rules/src/mountainash_rules/engine.py` — `ExpressionRulesEngine`, the only engine
+- `mountainash-utils-rules/src/mountainash_rules/result.py` — `RuleResult`, all backend-agnostic
+- `mountainash-utils-rules/src/mountainash_rules/compiler.py` — `DimensionCompiler`, all backend-agnostic except the documented SET_MEMBERSHIP exception
 - `mountainash-utils-rules/tests/test_backend_purity.py` — the import-check test that enforces this principle
 - `mountainash-utils-rules/docs/superpowers/specs/2026-04-08-backend-agnostic-engine-and-result-design.md` — the design spec for this principle's current form
 
@@ -688,17 +688,17 @@ Expected: All tests PASS, coverage report shows >= 90%.
 Run these commands and confirm the output:
 
 ```bash
-grep -nE '^(import|from)\s+(polars|ibis|narwhals)' src/mountainash_utils_rules/engine.py
+grep -nE '^(import|from)\s+(polars|ibis|narwhals)' src/mountainash_rules/engine.py
 ```
 Expected: no output (no matches).
 
 ```bash
-grep -nE '^(import|from)\s+(polars|ibis|narwhals)' src/mountainash_utils_rules/result.py
+grep -nE '^(import|from)\s+(polars|ibis|narwhals)' src/mountainash_rules/result.py
 ```
 Expected: no output.
 
 ```bash
-grep -nE '^(import|from)\s+(polars|ibis|narwhals)' src/mountainash_utils_rules/compiler.py
+grep -nE '^(import|from)\s+(polars|ibis|narwhals)' src/mountainash_rules/compiler.py
 ```
 Expected: one line — `import polars as pl  # allow: SET_MEMBERSHIP workaround pending t_list_contains upstream`
 

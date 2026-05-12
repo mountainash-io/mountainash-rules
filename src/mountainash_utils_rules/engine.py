@@ -11,11 +11,11 @@ import mountainash.expressions as ma
 from mountainash.expressions import BaseExpressionAPI
 from mountainash.relations import relation
 
-from mountainash_utils_rules.compiler import DimensionCompiler
-from mountainash_utils_rules.constants import CTX_PREFIX
-from mountainash_utils_rules.context import extract_context_values
-from mountainash_utils_rules.dimension import DimensionsMetadata
-from mountainash_utils_rules.result import RuleResult
+from mountainash_rules.compiler import DimensionCompiler
+from mountainash_rules.constants import CTX_PREFIX
+from mountainash_rules.context import extract_context_values
+from mountainash_rules.dimension import DimensionsMetadata
+from mountainash_rules.result import RuleResult
 
 
 class ExpressionRulesEngine:

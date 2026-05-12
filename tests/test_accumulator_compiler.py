@@ -5,9 +5,9 @@ import pytest
 
 import mountainash.expressions as ma
 
-from mountainash_utils_rules.accumulator_compiler import AccumulatorCompiler
-from mountainash_utils_rules.constants import UNKNOWN, UNKNOWN_NUMERIC, MatchStrategy
-from mountainash_utils_rules.dimension import Dimension
+from mountainash_rules.accumulator_compiler import AccumulatorCompiler
+from mountainash_rules.constants import UNKNOWN, UNKNOWN_NUMERIC, MatchStrategy
+from mountainash_rules.dimension import Dimension
 
 
 @pytest.fixture

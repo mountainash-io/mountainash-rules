@@ -4,10 +4,10 @@ import polars as pl
 import pytest
 from mountainash.relations import relation
 
-from mountainash_utils_rules.accumulator_engine import AccumulatorEngine
-from mountainash_utils_rules.aggregate import Aggregate
-from mountainash_utils_rules.constants import UNKNOWN, UNKNOWN_NUMERIC, MatchStrategy, DimensionRole
-from mountainash_utils_rules.dimension import Dimension, DimensionsMetadata
+from mountainash_rules.accumulator_engine import AccumulatorEngine
+from mountainash_rules.aggregate import Aggregate
+from mountainash_rules.constants import UNKNOWN, UNKNOWN_NUMERIC, MatchStrategy, DimensionRole
+from mountainash_rules.dimension import Dimension, DimensionsMetadata
 
 
 def _rows(df) -> dict:
