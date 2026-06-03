@@ -1,0 +1,54 @@
+{
+  "id": "mountainash_rules.engine",
+  "path": "src/mountainash_utils_rules/engine.py",
+  "summary": "ExpressionRulesEngine: vectorized, single-pass rule evaluation against a context, producing ranked RuleResult output.",
+  "role": "public-api",
+  "visibility": "public",
+  "stability": "stable",
+  "audiences": ["users", "maintainers", "contributors"],
+  "doc_priority": "essential",
+  "confidence": "high",
+  "public_api": ["ExpressionRulesEngine"],
+  "key_classes": [
+    {
+      "name": "ExpressionRulesEngine",
+      "summary": "Compiles DimensionsMetadata at construction; evaluates contexts in a single vectorized pass via mountainash.relations.Relation. Two construction paths: dimension_metadata (auto-compiled) or dimension_expressions (advanced, pre-compiled)."
+    }
+  ],
+  "key_functions": [],
+  "dependencies": [
+    "mountainash_rules.compiler",
+    "mountainash_rules.constants",
+    "mountainash_rules.context",
+    "mountainash_rules.dimension",
+    "mountainash_rules.result",
+    "mountainash.expressions",
+    "mountainash.relations"
+  ],
+  "dependents": [
+    "mountainash_rules.__init__",
+    "mountainash_rules.accumulator_engine"
+  ],
+  "extension_points": [
+    "dimension_expressions constructor argument allows injecting pre-compiled expressions for advanced use cases."
+  ],
+  "lifecycle_notes": [
+    "Evaluation pipeline: bind ctx literals → compute ternary columns → survived/specificity → sort → rank → filter.",
+    "Backend is determined by the type of `rules` passed at construction; result returns the same backend."
+  ],
+  "documentation_hooks": [
+    "The evaluate() method signature (context, dimensions, top_n, min_specificity, include_observability) is the primary user API.",
+    "include_observability=True keeps __t_<dim> columns in output for explainability — document this default."
+  ],
+  "examples": [],
+  "tests": ["tests/test_engine.py", "tests/test_backend_purity.py", "tests/test_integration.py"],
+  "risks": [],
+  "open_questions": [],
+  "evidence": [
+    {"kind": "symbol", "path": "src/mountainash_utils_rules/engine.py", "detail": "ExpressionRulesEngine.evaluate() is the public entry point"},
+    {"kind": "test", "path": "tests/test_engine.py", "detail": "dedicated engine tests, cross-backend parameterised"},
+    {"kind": "test", "path": "tests/test_integration.py", "detail": "integration tests cover full evaluate flow"}
+  ],
+  "source_hash": "41d584652aa29b09762aa1140ae64fb640473940",
+  "manual": {"notes": "", "editorial_status": "", "owner": "", "manual_summary": ""}
+}

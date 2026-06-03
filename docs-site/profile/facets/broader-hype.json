@@ -1,0 +1,71 @@
+{
+  "audience": "broader-hype",
+  "summary": "A rule engine that evaluates on any backend, explains every decision, and solves combinatorial problems that simpler engines can't express.",
+
+  "the_vision": "Business rules — pricing tiers, eligibility matrices, compliance conditions, feature flags, configuration logic — live at the heart of every data-driven organisation. mountainash-rules evaluates them as tabular data against whatever backend holds the data, with vectorized performance and built-in explainability. When overlapping rules interact, the accumulator engine resolves all consistent combinations and traces the provenance of every result.",
+
+  "what_it_makes_possible": [
+    {
+      "capability": "Rules that live where the data lives",
+      "essence": "Rule definitions are tabular data. Match strategies compile to mountainash expressions. The rule engine evaluates directly against whatever backend holds the data — Polars in a notebook, DuckDB in a pipeline, Snowflake in production, ClickHouse for analytics. The rules don't move to the data. The expressions compile to the backend."
+    },
+    {
+      "capability": "Every evaluation explains itself",
+      "essence": "Ask why a rule matched and get a per-dimension breakdown — not just 'matched' or 'didn't match,' but which dimensions matched, which were wildcards, and which excluded. Explainability is built into the evaluation, not a post-hoc analysis. Regulatory audit, pricing justification, eligibility appeals — the explanation is always available."
+    },
+    {
+      "capability": "Combinatorial problems solved",
+      "essence": "When multiple rules can apply simultaneously — overlapping discount tiers, interacting eligibility conditions, complex regulatory criteria — the accumulator engine pre-computes all consistent combinations in one build step. Each combination traces which rules contributed through prime-product provenance. Problems that would require exponential if/else trees become a single vectorized evaluation."
+    },
+    {
+      "capability": "Match strategies that cover real-world logic",
+      "essence": "Exact match, ranges, greater/less than, prefix, suffix, contains, regex, set membership, set exclusion — real business rules need more than equality checks. Each strategy compiles to backend-native expressions. Wildcard dimensions match everything, enabling graduated specificity."
+    },
+    {
+      "capability": "Rules that rank themselves",
+      "essence": "Surviving rules are automatically ranked by specificity — a rule that matches three dimensions explicitly is more specific than one that matches two and wildcards the third. The best match is always the most specific. Ties resolve deterministically."
+    },
+    {
+      "capability": "Backend portability from the expression engine",
+      "essence": "Because match strategies compile to mountainash expressions, and those expressions compile to Polars, Narwhals, and Ibis — rules evaluate on any backend the expression engine reaches. Store rule tables in Snowflake. Evaluate against DuckDB. Persist results to Iceberg. The rule definitions don't change."
+    }
+  ],
+
+  "use_cases": [
+    {
+      "title": "The pricing engine",
+      "story": "A pricing team maintains discount and eligibility rules as a table — customer segment, geography, product tier, contract terms. The rule engine evaluates directly against Snowflake. The accumulator resolves overlapping discounts. Every customer's price comes with a full explanation of which rules applied and why. Rules-babel exports to DMN for compliance review."
+    },
+    {
+      "title": "The feature flag engine",
+      "story": "Feature flags as rule tables — user segment, region, plan tier, beta status. Evaluate against the production database in one vectorized pass. No feature flag service to maintain. When flags get complex (percentage rollouts that interact with plan restrictions), the accumulator handles the combinations."
+    },
+    {
+      "title": "The compliance evaluator",
+      "story": "Regulatory conditions as rule dimensions. Evaluate a portfolio against compliance rules with full explainability — which conditions matched, which were neutral, which excluded. Export the rule definitions as DMN decision tables for regulatory review. The rules, the evaluation, and the audit trail are one system."
+    },
+    {
+      "title": "The ML feature selector",
+      "story": "Feature engineering rules that determine which model features apply to which populations — binning, exclusion criteria, interaction terms. The rule engine evaluates against the feature store on any backend. Ternary logic handles sentinel values from ClickHouse without special-case code. The specification IS the evaluation."
+    },
+    {
+      "title": "The conformed business rule library",
+      "story": "A central team publishes rule sets as a versioned Python library — pricing rules, eligibility rules, compliance rules. Any team imports the library and evaluates against their own backend. The rules are the same everywhere. The explainability is the same everywhere."
+    }
+  ],
+
+  "featured_modules": [
+    "mountainash_rules.engine",
+    "mountainash_rules.result",
+    "mountainash_rules.constants",
+    "mountainash_rules.accumulator_engine",
+    "mountainash_rules.accumulator_result"
+  ],
+  "hidden_or_internal_modules": [
+    "mountainash_rules.compiler",
+    "mountainash_rules.accumulator_compiler",
+    "mountainash_rules.context",
+    "mountainash_rules.primes"
+  ],
+  "open_questions": []
+}

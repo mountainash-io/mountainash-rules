@@ -1,0 +1,28 @@
+{
+  "id": "mountainash_rules.__version__",
+  "path": "src/mountainash_utils_rules/__version__.py",
+  "summary": "Declares the package version string (26.4.0). Single assignment, no logic.",
+  "role": "model",
+  "visibility": "private",
+  "stability": "stable",
+  "audiences": ["maintainers"],
+  "doc_priority": "skip-with-reason",
+  "confidence": "high",
+  "public_api": ["__version__"],
+  "key_classes": [],
+  "key_functions": [],
+  "dependencies": [],
+  "dependents": ["mountainash_rules.__init__"],
+  "extension_points": [],
+  "lifecycle_notes": ["Version follows CalVer YYYY.MM.MICRO; current is 26.4.0"],
+  "documentation_hooks": [],
+  "examples": [],
+  "tests": [],
+  "risks": [],
+  "open_questions": [],
+  "evidence": [
+    {"kind": "symbol", "path": "src/mountainash_utils_rules/__version__.py", "detail": "__version__='26.4.0'"}
+  ],
+  "source_hash": "41d584652aa29b09762aa1140ae64fb640473940",
+  "manual": {"notes": "", "editorial_status": "", "owner": "", "manual_summary": ""}
+}

@@ -1,0 +1,45 @@
+{
+  "id": "mountainash_rules.accumulator_compiler",
+  "path": "src/mountainash_utils_rules/accumulator_compiler.py",
+  "summary": "AccumulatorCompiler produces compatible/coalesce/NA-flag expressions for dimension pairs used during the accumulator build phase cross-join step.",
+  "role": "backend",
+  "visibility": "internal",
+  "stability": "evolving",
+  "audiences": ["maintainers", "contributors", "backend-architecture"],
+  "doc_priority": "useful",
+  "confidence": "high",
+  "public_api": ["AccumulatorCompiler"],
+  "key_classes": [
+    {
+      "name": "AccumulatorCompiler",
+      "summary": "Compiles three expression types per dimension: compile_compatible (can two rules coexist?), compile_coalesce (merged value), compile_coalesce_na_flag (both-wildcard flag). Supports EXACT, RANGE, GREATER_THAN, LESS_THAN only."
+    }
+  ],
+  "key_functions": [],
+  "dependencies": [
+    "mountainash_rules.constants",
+    "mountainash_rules.dimension",
+    "mountainash.expressions"
+  ],
+  "dependents": ["mountainash_rules.accumulator_engine"],
+  "extension_points": [
+    "Adding a new accumulator-compatible strategy: add cases to compile_compatible and compile_coalesce."
+  ],
+  "lifecycle_notes": [
+    "GREATER_THAN and LESS_THAN are always compatible — _compatible_threshold returns literal True.",
+    "RANGE coalesce computes intersection (max of mins, min of maxes) with full sentinel handling."
+  ],
+  "documentation_hooks": [],
+  "examples": [],
+  "tests": ["tests/test_accumulator_compiler.py"],
+  "risks": [],
+  "open_questions": [
+    "String/set strategies (PREFIX, SUFFIX, CONTAINS, REGEX, SET_MEMBERSHIP, SET_EXCLUSION) are not yet supported."
+  ],
+  "evidence": [
+    {"kind": "symbol", "path": "src/mountainash_utils_rules/accumulator_compiler.py", "detail": "AccumulatorCompiler with 3 compile_* methods"},
+    {"kind": "test", "path": "tests/test_accumulator_compiler.py", "detail": "dedicated compiler test file"}
+  ],
+  "source_hash": "41d584652aa29b09762aa1140ae64fb640473940",
+  "manual": {"notes": "", "editorial_status": "", "owner": "", "manual_summary": ""}
+}

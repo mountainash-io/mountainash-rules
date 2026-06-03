@@ -1,0 +1,56 @@
+{
+  "profile_version": "1.0",
+  "generated_at": "2026-05-14T00:00:00+00:00",
+  "source": {
+    "root": ".",
+    "git": {
+      "previous_hash": null,
+      "current_hash": "41d584652aa29b09762aa1140ae64fb640473940",
+      "branch": "develop",
+      "working_tree_dirty": false
+    }
+  },
+  "scope": {
+    "include": ["src/mountainash_utils_rules/**/*.py"],
+    "exclude": [".venv/**", "**/__pycache__/**"],
+    "package_roots": ["src/mountainash_utils_rules"]
+  },
+  "audiences": ["users", "maintainers", "contributors", "backend-architecture", "broader-hype"],
+  "counts": {
+    "modules_discovered": 14,
+    "modules_profiled": 14,
+    "profiles_ignored": 0,
+    "facets_written": 5
+  },
+  "changed_scopes": {
+    "files": [],
+    "modules": [],
+    "facets": []
+  },
+  "ignored_paths": [],
+  "profile_files": {
+    "modules": {
+      "mountainash_rules.__init__": "modules/init.json",
+      "mountainash_rules.__version__": "modules/version.json",
+      "mountainash_rules.constants": "modules/constants.json",
+      "mountainash_rules.dimension": "modules/dimension.json",
+      "mountainash_rules.compiler": "modules/compiler.json",
+      "mountainash_rules.engine": "modules/engine.json",
+      "mountainash_rules.result": "modules/result.json",
+      "mountainash_rules.context": "modules/context.json",
+      "mountainash_rules.accumulator_engine": "modules/accumulator_engine.json",
+      "mountainash_rules.accumulator_compiler": "modules/accumulator_compiler.json",
+      "mountainash_rules.accumulator_result": "modules/accumulator_result.json",
+      "mountainash_rules.aggregate": "modules/aggregate.json",
+      "mountainash_rules.lattice": "modules/lattice.json",
+      "mountainash_rules.primes": "modules/primes.json"
+    },
+    "facets": {
+      "users": "facets/users.json",
+      "maintainers": "facets/maintainers.json",
+      "contributors": "facets/contributors.json",
+      "backend-architecture": "facets/backend-architecture.json",
+      "broader-hype": "facets/broader-hype.json"
+    }
+  }
+}

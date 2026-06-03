@@ -1,0 +1,46 @@
+{
+  "id": "mountainash_rules.result",
+  "path": "src/mountainash_utils_rules/result.py",
+  "summary": "RuleResult wraps evaluated output with backend-agnostic accessors: survivors, best_match, count, explain(), at_least().",
+  "role": "model",
+  "visibility": "public",
+  "stability": "stable",
+  "audiences": ["users", "maintainers"],
+  "doc_priority": "essential",
+  "confidence": "high",
+  "public_api": ["RuleResult"],
+  "key_classes": [
+    {
+      "name": "RuleResult",
+      "summary": "Wraps post-evaluation DataFrame. Provides survivors (full ranked set), best_match (top 1), count, explain(rule_name) (per-dim ternary), and at_least(n) (specificity filter)."
+    }
+  ],
+  "key_functions": [],
+  "dependencies": ["mountainash.expressions", "mountainash.relations"],
+  "dependents": [
+    "mountainash_rules.__init__",
+    "mountainash_rules.engine",
+    "mountainash_rules.accumulator_result"
+  ],
+  "extension_points": [
+    "AccumulatorResult extends RuleResult with accumulator-specific accessors."
+  ],
+  "lifecycle_notes": [
+    "explain() requires a 'rule_name' column in the rules DataFrame.",
+    "All accessors use mountainash.relations.Relation so they are backend-agnostic."
+  ],
+  "documentation_hooks": [
+    "Document that survivors returns the native backend DataFrame — users can chain Polars/Ibis ops directly.",
+    "explain() is the primary explainability entry point — worth a dedicated section in user docs."
+  ],
+  "examples": [],
+  "tests": ["tests/test_result.py"],
+  "risks": [],
+  "open_questions": [],
+  "evidence": [
+    {"kind": "symbol", "path": "src/mountainash_utils_rules/result.py", "detail": "RuleResult with 5 public accessors"},
+    {"kind": "test", "path": "tests/test_result.py", "detail": "dedicated result test file"}
+  ],
+  "source_hash": "41d584652aa29b09762aa1140ae64fb640473940",
+  "manual": {"notes": "", "editorial_status": "", "owner": "", "manual_summary": ""}
+}

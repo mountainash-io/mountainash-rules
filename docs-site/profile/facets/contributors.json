@@ -1,0 +1,52 @@
+{
+  "audience": "contributors",
+  "summary": "mountainash-rules is designed for extensibility across match strategies, aggregate operations, and backends. The codebase follows consistent patterns that make it straightforward to add new capabilities while maintaining cross-backend correctness.",
+  "use_cases": [
+    "Add a new match strategy to support a domain-specific comparison (e.g., geographic proximity, semantic similarity).",
+    "Extend the accumulator engine with additional aggregate operations beyond sum.",
+    "Contribute cross-backend test coverage for new or existing strategies.",
+    "Improve expression compilation for better performance on a specific backend."
+  ],
+  "concepts": [
+    {
+      "name": "Adding a new MatchStrategy",
+      "module_ids": ["mountainash_rules.constants", "mountainash_rules.dimension", "mountainash_rules.compiler"],
+      "description": "The end-to-end process for a new strategy follows a clear path: add the enum value in constants.py, add validation logic in dimension.py, implement the _compile_ method in compiler.py, and add a corresponding test class. The design spec at docs/superpowers/specs/2026-04-07-extended-match-strategies-design.md provides detailed guidance."
+    },
+    {
+      "name": "Adding an accumulator strategy",
+      "module_ids": ["mountainash_rules.accumulator_compiler", "mountainash_rules.accumulator_engine"],
+      "description": "The AccumulatorCompiler currently supports EXACT, RANGE, GT, and LT strategies. To add support for additional strategies, implement the corresponding cases in compile_compatible (the compatibility guard) and compile_coalesce (the value-merge logic)."
+    },
+    {
+      "name": "Adding a new aggregate operation",
+      "module_ids": ["mountainash_rules.aggregate", "mountainash_rules.accumulator_engine"],
+      "description": "The Aggregate.operation field and the _expand_level method's agg_updates section define how accumulated values are combined. Currently sum is fully implemented; adding min, max, or product involves extending the agg_updates logic in _expand_level."
+    },
+    {
+      "name": "Backend-agnostic expression patterns",
+      "module_ids": ["mountainash_rules.compiler", "mountainash_rules.engine"],
+      "description": "All compiler output uses the mountainash BaseExpressionAPI, ensuring expressions work across every supported backend. Use t_col, t_eq, t_ne and related helpers for sentinel-aware ternary comparisons, and ma.when/then/otherwise for conditional logic. Staying within these abstractions guarantees cross-backend compatibility."
+    },
+    {
+      "name": "Test patterns",
+      "module_ids": [],
+      "description": "Tests follow a consistent cross-backend parameterisation pattern. test_engine.py serves as the primary template for backend-parameterised evaluation tests, while test_accumulator_backends.py covers the accumulator engine. New strategies and features should follow these patterns to ensure coverage across all backends."
+    }
+  ],
+  "featured_modules": [
+    "mountainash_rules.constants",
+    "mountainash_rules.dimension",
+    "mountainash_rules.compiler",
+    "mountainash_rules.accumulator_compiler",
+    "mountainash_rules.engine",
+    "mountainash_rules.accumulator_engine",
+    "mountainash_rules.aggregate"
+  ],
+  "hidden_or_internal_modules": [
+    "mountainash_rules.__version__",
+    "mountainash_rules.context",
+    "mountainash_rules.primes"
+  ],
+  "open_questions": []
+}

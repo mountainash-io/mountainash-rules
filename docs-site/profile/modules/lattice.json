@@ -1,0 +1,50 @@
+{
+  "id": "mountainash_rules.lattice",
+  "path": "src/mountainash_utils_rules/lattice.py",
+  "summary": "Lattice: data class wrapping the AccumulatorEngine build-phase output — a DataFrame of outermost rule combinations plus provenance metadata.",
+  "role": "model",
+  "visibility": "public",
+  "stability": "evolving",
+  "audiences": ["users", "maintainers"],
+  "doc_priority": "useful",
+  "confidence": "high",
+  "public_api": ["Lattice"],
+  "key_classes": [
+    {
+      "name": "Lattice",
+      "summary": "Stores combinations DataFrame, DimensionsMetadata, aggregates list, and optional partition_key. Exposes combinations, count, partition_key, metadata, aggregates properties."
+    }
+  ],
+  "key_functions": [],
+  "dependencies": [
+    "mountainash_rules.aggregate",
+    "mountainash_rules.dimension",
+    "mountainash.relations"
+  ],
+  "dependents": [
+    "mountainash_rules.__init__",
+    "mountainash_rules.accumulator_engine",
+    "mountainash_rules.accumulator_result"
+  ],
+  "extension_points": [],
+  "lifecycle_notes": [
+    "Lattice is built once per partition and cached by the caller — it does not recompute on access."
+  ],
+  "documentation_hooks": [
+    "The Lattice is the primary artifact of the build phase; document it as a cacheable, serialization target.",
+    "partition_key is None for un-partitioned lattices (no CONTEXT_KEY dims)."
+  ],
+  "examples": [],
+  "tests": ["tests/test_lattice.py", "tests/test_lattice_properties.py"],
+  "risks": [],
+  "open_questions": [
+    "Lattice serialization (save/load) is not yet implemented — advanced users who want to cache lattices to disk must handle this themselves."
+  ],
+  "evidence": [
+    {"kind": "symbol", "path": "src/mountainash_utils_rules/lattice.py", "detail": "Lattice with 5 properties"},
+    {"kind": "test", "path": "tests/test_lattice.py", "detail": "lattice tests"},
+    {"kind": "test", "path": "tests/test_lattice_properties.py", "detail": "lattice property tests"}
+  ],
+  "source_hash": "41d584652aa29b09762aa1140ae64fb640473940",
+  "manual": {"notes": "", "editorial_status": "", "owner": "", "manual_summary": ""}
+}

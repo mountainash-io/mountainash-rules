@@ -1,0 +1,51 @@
+{
+  "audience": "backend-architecture",
+  "summary": "mountainash-rules provides two complementary rule evaluation architectures that share a unified dimension model and expression system. Both engines are backend-agnostic through the mountainash.relations and mountainash.expressions layers, enabling seamless operation across Polars, Ibis, and Narwhals-backed DataFrames. A rich ternary logic system powers sentinel-aware matching with full observability.",
+  "concepts": [
+    {
+      "name": "Shared dimension model",
+      "module_ids": ["mountainash_rules.dimension", "mountainash_rules.constants"],
+      "description": "DimensionsMetadata serves as the single source of truth for both engines. It encapsulates dimension definitions, match strategies, and sentinel configuration, providing a consistent contract that decouples rule semantics from evaluation strategy."
+    },
+    {
+      "name": "Filter engine: expression compilation and evaluation",
+      "module_ids": ["mountainash_rules.compiler", "mountainash_rules.engine"],
+      "description": "DimensionCompiler translates each dimension's MatchStrategy into a backend-agnostic BaseExpressionAPI expression. ExpressionRulesEngine then evaluates these compiled expressions against a context via mountainash.relations.Relation, producing ternary match columns, survival flags, and specificity scores in a single vectorized pass."
+    },
+    {
+      "name": "Accumulator engine: prime-encoded combination lattice",
+      "module_ids": ["mountainash_rules.accumulator_engine", "mountainash_rules.accumulator_compiler", "mountainash_rules.primes", "mountainash_rules.lattice"],
+      "description": "Each rule receives a unique prime number as its identity. Rule combinations are represented as the product of their constituent primes, giving every combination a unique fingerprint. The build phase iteratively expands valid combinations, and a frontier filter prunes dominated entries via modular arithmetic, producing a compact Lattice of all maximal valid combinations."
+    },
+    {
+      "name": "Backend-agnostic protocol via mountainash.relations",
+      "module_ids": ["mountainash_rules.engine", "mountainash_rules.result", "mountainash_rules.accumulator_engine"],
+      "description": "All DataFrame operations flow through the Relation protocol, which abstracts over concrete backends. The relation(df) call wraps any supported DataFrame, and collect() materialises results back to the caller's native format. This design allows the same rule definitions and evaluation logic to run on Polars, Ibis, or Narwhals-Pandas backends."
+    },
+    {
+      "name": "Ternary logic and sentinel-aware expressions",
+      "module_ids": ["mountainash_rules.constants", "mountainash_rules.compiler"],
+      "description": "The expression system uses a three-valued logic (match=1, unknown=0, non-match=-1) to handle missing or wildcard rule values gracefully. Sentinel values in rule metadata are automatically mapped to ternary 0 via the t_col wrapper, and all comparisons (t_eq, t_ne, t_gt, t_lt) preserve ternary semantics throughout the evaluation pipeline."
+    },
+    {
+      "name": "CTX_PREFIX column injection pattern",
+      "module_ids": ["mountainash_rules.engine", "mountainash_rules.constants"],
+      "description": "Context values are bound into the evaluation frame as literal columns with a __ctx_ prefix. The compiler references these prefixed columns by convention, enabling a clean separation between rule metadata columns and runtime context values within a single DataFrame operation."
+    }
+  ],
+  "featured_modules": [
+    "mountainash_rules.engine",
+    "mountainash_rules.compiler",
+    "mountainash_rules.accumulator_engine",
+    "mountainash_rules.accumulator_compiler",
+    "mountainash_rules.primes",
+    "mountainash_rules.lattice",
+    "mountainash_rules.constants",
+    "mountainash_rules.result"
+  ],
+  "hidden_or_internal_modules": [
+    "mountainash_rules.context",
+    "mountainash_rules.__version__"
+  ],
+  "open_questions": []
+}

@@ -1,0 +1,53 @@
+{
+  "audience": "maintainers",
+  "summary": "mountainash-rules is built around two evaluation architectures (filter engine and accumulator engine) that share a dimension model, ternary logic system, and sentinel contract. Understanding these shared invariants and the prime-product identity is key to confident maintenance across both engines.",
+  "concepts": [
+    {
+      "name": "Ternary logic encoding",
+      "module_ids": ["mountainash_rules.constants", "mountainash_rules.compiler", "mountainash_rules.engine"],
+      "description": "The ternary invariant (1=match, 0=unknown, -1=non-match) is the foundation of evaluation correctness. Sentinels in constants.py map to ternary 0 through the mountainash t_col wrapper, and specificity is computed by counting only definite matches (1s). This invariant must hold across all match strategies and backends."
+    },
+    {
+      "name": "Sentinel contract",
+      "module_ids": ["mountainash_rules.constants", "mountainash_rules.compiler", "mountainash_rules.accumulator_compiler"],
+      "description": "UNKNOWN (-999999999 for numerics, '<NA>' for strings) signals a wildcard or missing value. Both the filter compiler and accumulator compiler check for sentinels in every expression they generate. When adding or modifying match strategies, sentinel handling must be verified to preserve ternary correctness."
+    },
+    {
+      "name": "Filter engine evaluation pipeline",
+      "module_ids": ["mountainash_rules.engine", "mountainash_rules.compiler", "mountainash_rules.context"],
+      "description": "The _evaluate() method follows a six-step pipeline: bind context columns, add ternary match columns, compute survived and specificity scores, filter non-survivors, sort by specificity, rank, and drop internal columns. Each step is a pure DataFrame transformation, making the pipeline straightforward to trace and debug."
+    },
+    {
+      "name": "Accumulator build algorithm",
+      "module_ids": ["mountainash_rules.accumulator_engine", "mountainash_rules.accumulator_compiler", "mountainash_rules.primes", "mountainash_rules.lattice"],
+      "description": "The build phase assigns unique primes to rules, creates an anchor lattice from single-rule entries, then iteratively expands by cross-joining compatible rules and coalescing their dimension values. A frontier filter removes dominated combinations (those whose prime product divides a larger combination's product), yielding only maximal valid combinations in the final Lattice."
+    },
+    {
+      "name": "Prime product identity and limits",
+      "module_ids": ["mountainash_rules.primes", "mountainash_rules.accumulator_engine"],
+      "description": "The prime table supports approximately 500 entries, and checked_multiply guards against int64 overflow during combination expansion. Partitions with more than ~500 rules will raise an IndexError. These limits are inherent to the prime-product encoding and should be documented clearly for users working with large rule sets."
+    },
+    {
+      "name": "Test suite structure",
+      "module_ids": [],
+      "description": "The test suite includes dedicated test files per module, cross-backend parameterised tests (test_backend_purity.py, test_accumulator_backends.py), and regression tests (test_upstream_regressions.py). When modifying engine internals, run the full cross-backend suite to verify consistent behaviour across all supported DataFrame backends."
+    }
+  ],
+  "featured_modules": [
+    "mountainash_rules.engine",
+    "mountainash_rules.compiler",
+    "mountainash_rules.accumulator_engine",
+    "mountainash_rules.accumulator_compiler",
+    "mountainash_rules.primes",
+    "mountainash_rules.constants",
+    "mountainash_rules.dimension",
+    "mountainash_rules.result",
+    "mountainash_rules.accumulator_result",
+    "mountainash_rules.lattice",
+    "mountainash_rules.context"
+  ],
+  "hidden_or_internal_modules": [
+    "mountainash_rules.__version__"
+  ],
+  "open_questions": []
+}

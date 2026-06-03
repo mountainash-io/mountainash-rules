@@ -1,0 +1,55 @@
+{
+  "audience": "users",
+  "summary": "mountainash-rules gives you a concise, expressive way to define business rules as tabular data and evaluate them in a single vectorized pass. Define your dimensions, choose from 11 match strategies, load your rules, and get ranked results with full per-dimension explainability. For combinatorial problems, the AccumulatorEngine builds a compact lattice of valid rule combinations with provenance tracking.",
+  "use_cases": [
+    "Pricing engine: evaluate a customer context against hundreds of pricing rules and retrieve the best-matching tier with a full explanation of why it won.",
+    "Eligibility screening: define eligibility criteria across multiple dimensions and instantly see which rules a given applicant satisfies.",
+    "Configuration selection: match device or environment attributes to configuration profiles, ranked by specificity.",
+    "Portfolio allocation: use the AccumulatorEngine to find all valid combinations of investment rules for a given risk profile, with accumulated totals."
+  ],
+  "concepts": [
+    {
+      "name": "Defining dimensions",
+      "module_ids": ["mountainash_rules.dimension", "mountainash_rules.constants"],
+      "description": "Dimensions describe the axes your rules operate on. Each dimension pairs a data column with a MatchStrategy (EXACT, RANGE, REGEX, SET_MEMBERSHIP, and more), giving you fine-grained control over how context values are compared to rule metadata."
+    },
+    {
+      "name": "Single-context rule evaluation",
+      "module_ids": ["mountainash_rules.engine", "mountainash_rules.result"],
+      "description": "Pass a context dictionary to ExpressionRulesEngine.evaluate() and receive a RuleResult containing every surviving rule, ranked by specificity. Access the best match, count survivors, or iterate the full ranked list."
+    },
+    {
+      "name": "Explainability",
+      "module_ids": ["mountainash_rules.result"],
+      "description": "Every evaluation result carries a per-dimension ternary breakdown (match / unknown / non-match) so you can see exactly which dimensions contributed to a rule's survival and which were neutral. Call explain() on any rule to get the full picture."
+    },
+    {
+      "name": "Accumulator: building and applying rule lattices",
+      "module_ids": ["mountainash_rules.accumulator_engine", "mountainash_rules.lattice", "mountainash_rules.accumulator_result", "mountainash_rules.aggregate"],
+      "description": "The AccumulatorEngine handles problems where you need valid combinations of rules rather than a single winner. Build a Lattice from your rule set, then apply a context to retrieve accumulated values (sums, counts) with full provenance showing which rules contributed to each combination."
+    },
+    {
+      "name": "Partitioned lattices (CONTEXT_KEY dimensions)",
+      "module_ids": ["mountainash_rules.accumulator_engine", "mountainash_rules.constants"],
+      "description": "Mark dimensions as CONTEXT_KEY to partition your rule set before building lattices. The engine builds a separate lattice per partition and apply_auto() selects the correct one at evaluation time, keeping large rule sets fast and memory-efficient."
+    }
+  ],
+  "featured_modules": [
+    "mountainash_rules.engine",
+    "mountainash_rules.result",
+    "mountainash_rules.dimension",
+    "mountainash_rules.constants",
+    "mountainash_rules.accumulator_engine",
+    "mountainash_rules.accumulator_result",
+    "mountainash_rules.aggregate",
+    "mountainash_rules.lattice"
+  ],
+  "hidden_or_internal_modules": [
+    "mountainash_rules.compiler",
+    "mountainash_rules.accumulator_compiler",
+    "mountainash_rules.context",
+    "mountainash_rules.primes",
+    "mountainash_rules.__version__"
+  ],
+  "open_questions": []
+}

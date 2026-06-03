@@ -1,0 +1,44 @@
+{
+  "id": "mountainash_rules.accumulator_result",
+  "path": "src/mountainash_utils_rules/accumulator_result.py",
+  "summary": "AccumulatorResult extends RuleResult with accumulator-specific accessors: best_combination, accumulated(name), provenance, depths.",
+  "role": "model",
+  "visibility": "public",
+  "stability": "evolving",
+  "audiences": ["users", "maintainers"],
+  "doc_priority": "useful",
+  "confidence": "high",
+  "public_api": ["AccumulatorResult"],
+  "key_classes": [
+    {
+      "name": "AccumulatorResult",
+      "summary": "Subclass of RuleResult. Adds: best_combination (alias for best_match), accumulated(aggregate_name) (returns __agg_ column), provenance (__prime_product), depths (__level)."
+    }
+  ],
+  "key_functions": [],
+  "dependencies": [
+    "mountainash_rules.result",
+    "mountainash_rules.aggregate",
+    "mountainash_rules.lattice",
+    "mountainash.relations"
+  ],
+  "dependents": [
+    "mountainash_rules.__init__",
+    "mountainash_rules.accumulator_engine"
+  ],
+  "extension_points": [],
+  "lifecycle_notes": [],
+  "documentation_hooks": [
+    "provenance (prime products) is the traceability mechanism — document it alongside a worked example showing which rules contributed."
+  ],
+  "examples": [],
+  "tests": ["tests/test_accumulator_result.py"],
+  "risks": [],
+  "open_questions": [],
+  "evidence": [
+    {"kind": "symbol", "path": "src/mountainash_utils_rules/accumulator_result.py", "detail": "AccumulatorResult with 4 accessors"},
+    {"kind": "test", "path": "tests/test_accumulator_result.py", "detail": "dedicated result test file"}
+  ],
+  "source_hash": "41d584652aa29b09762aa1140ae64fb640473940",
+  "manual": {"notes": "", "editorial_status": "", "owner": "", "manual_summary": ""}
+}

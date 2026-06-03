@@ -1,0 +1,56 @@
+{
+  "id": "mountainash_rules.constants",
+  "path": "src/mountainash_utils_rules/constants.py",
+  "summary": "Defines MatchStrategy and DimensionRole enums, sentinel values, and the CTX_PREFIX constant.",
+  "role": "model",
+  "visibility": "public",
+  "stability": "stable",
+  "audiences": ["users", "maintainers", "contributors", "backend-architecture"],
+  "doc_priority": "essential",
+  "confidence": "high",
+  "public_api": [
+    "MatchStrategy", "DimensionRole",
+    "UNKNOWN", "NOT_SET", "UNKNOWN_NUMERIC", "NOT_SET_NUMERIC",
+    "STRING_SENTINELS", "NUMERIC_SENTINELS", "CTX_PREFIX"
+  ],
+  "key_classes": [
+    {
+      "name": "MatchStrategy",
+      "summary": "Enum of 11 dimension match strategies: EXACT, NOT_EQUAL, RANGE, GREATER_THAN, LESS_THAN, PREFIX, SUFFIX, CONTAINS, REGEX, SET_MEMBERSHIP, SET_EXCLUSION."
+    },
+    {
+      "name": "DimensionRole",
+      "summary": "Enum distinguishing CONSTRAINT (lattice filter) from CONTEXT_KEY (partition key) dimensions."
+    }
+  ],
+  "key_functions": [],
+  "dependencies": [],
+  "dependents": [
+    "mountainash_rules.__init__",
+    "mountainash_rules.dimension",
+    "mountainash_rules.compiler",
+    "mountainash_rules.accumulator_compiler",
+    "mountainash_rules.accumulator_engine",
+    "mountainash_rules.engine"
+  ],
+  "extension_points": [
+    "Adding a new MatchStrategy enum member is the first step when extending match strategies."
+  ],
+  "lifecycle_notes": [],
+  "documentation_hooks": [
+    "Ternary encoding (1/0/-1) is consumed here via sentinels — document the sentinel contract for extension authors."
+  ],
+  "examples": [],
+  "tests": ["tests/test_compiler.py", "tests/test_dimension.py"],
+  "risks": [
+    "UNKNOWN_NUMERIC sentinel (-999999999) must not collide with valid domain values. Users with values near INT_MIN should be warned."
+  ],
+  "open_questions": [],
+  "evidence": [
+    {"kind": "symbol", "path": "src/mountainash_utils_rules/constants.py", "detail": "MatchStrategy with 11 members"},
+    {"kind": "symbol", "path": "src/mountainash_utils_rules/constants.py", "detail": "DimensionRole CONSTRAINT/CONTEXT_KEY"},
+    {"kind": "import", "path": "src/mountainash_utils_rules/compiler.py", "detail": "imports UNKNOWN, NOT_SET, STRING_SENTINELS, NUMERIC_SENTINELS, MatchStrategy"}
+  ],
+  "source_hash": "41d584652aa29b09762aa1140ae64fb640473940",
+  "manual": {"notes": "", "editorial_status": "", "owner": "", "manual_summary": ""}
+}
