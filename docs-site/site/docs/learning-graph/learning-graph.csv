@@ -1,0 +1,91 @@
+ConceptID,ConceptLabel,Dependencies,TaxonomyID
+1,Ternary Logic,,FOUND
+2,Sentinel Values,1,FOUND
+3,Match Strategy Patterns,,FOUND
+4,Pydantic Model Validation,,FOUND
+5,Vectorized Evaluation,,FOUND
+6,Backend-Agnostic Design,,FOUND
+7,DataFrame as Rule Store,5,FOUND
+8,Mountainash Expressions,5|6,FOUND
+9,Mountainash Relations,8|7,FOUND
+10,Context Object,4,FOUND
+11,MatchStrategy Enum,3,DIM
+12,EXACT Strategy,11,DIM
+13,NOT_EQUAL Strategy,11,DIM
+14,RANGE Strategy,11,DIM
+15,GREATER_THAN Strategy,11,DIM
+16,LESS_THAN Strategy,11,DIM
+17,PREFIX Strategy,11,DIM
+18,SUFFIX Strategy,11,DIM
+19,CONTAINS Strategy,11,DIM
+20,REGEX Strategy,11,DIM
+21,SET_MEMBERSHIP Strategy,11,DIM
+22,SET_EXCLUSION Strategy,11,DIM
+23,DimensionRole Enum,3,DIM
+24,CONSTRAINT Role,23,DIM
+25,CONTEXT_KEY Role,23,DIM
+26,Dimension Class,4|11|23,DIM
+27,DimensionsMetadata,26,DIM
+28,Field Resolution,26,DIM
+29,Dimension Validator,26|14|20,DIM
+30,Data Type Constraints,26|12|14|15|16|17|20,DIM
+31,DimensionCompiler,27|8,EXPR
+32,Compile Exact Expression,31|12|2,EXPR
+33,Compile Range Expression,31|14|2,EXPR
+34,Compile String Match,31|17|18|19|2,EXPR
+35,Compile Regex Expression,31|20,EXPR
+36,Compile Set Expression,31|21|22|2,EXPR
+37,Compile Threshold Expression,31|15|16|2,EXPR
+38,Sentinel-Aware Ternary,1|2|8,EXPR
+39,Context Value Extraction,10|2,EXPR
+40,ExpressionRulesEngine,31|9|39,EXPR
+41,Engine Construction,40|27,EXPR
+42,Convenience vs Advanced Path,41,EXPR
+43,Single-Pass Evaluation,40|7|5,EXPR
+44,Context Binding Phase,43|39|8,EXPR
+45,Dimension Expression Phase,43|32|33|34|35|36|37,EXPR
+46,Survival Computation,45|38|1,EXPR
+47,Specificity Scoring,46,EXPR
+48,Rank Assignment,47,EXPR
+49,RuleResult Class,48,RESULT
+50,Survivors Accessor,49,RESULT
+51,Best Match Accessor,49|9,RESULT
+52,Count Accessor,49|9,RESULT
+53,Active Dimensions,49,RESULT
+54,Explain Method,49|38,RESULT
+55,At Least Filter,49|47,RESULT
+56,Top N Filtering,43,RESULT
+57,Min Specificity Filter,43|47,RESULT
+58,Observability Columns,43|38,RESULT
+59,AccumulatorCompiler,8|26,ACCUM
+60,Compatible Expression,59|12,ACCUM
+61,Coalesce Expression,59|12,ACCUM
+62,Coalesce NA Flag,59|2,ACCUM
+63,Compatible Exact,60|2,ACCUM
+64,Compatible Range,60|14,ACCUM
+65,Coalesce Exact,61|2,ACCUM
+66,Coalesce Range,61|14,ACCUM
+67,Coalesce Threshold,61|15|16,ACCUM
+68,AccumulatorEngine,59|27|40,ACCUM
+69,Prime Number Encoding,68,ACCUM
+70,Prime Table Sieve,69,ACCUM
+71,Get Prime Function,70,ACCUM
+72,Checked Multiply,71,ACCUM
+73,Anchor Creation,68|69,ACCUM
+74,Level Expansion,73|63|64|65|66|67,ACCUM
+75,Canonical Ordering Guard,74|69,ACCUM
+76,Frontier Filter,74|72,ACCUM
+77,Lattice Class,76|27,LATT
+78,Lattice Combinations,77,LATT
+79,Lattice Partition Key,77|25,LATT
+80,Coalesced Columns,77|61,LATT
+81,NA Flag Columns,77|62,LATT
+82,Combination Depth,77|74,LATT
+83,AccumulatorResult Class,77|49,LATT
+84,Accumulated Aggregates,83|87,LATT
+85,Provenance Accessor,83|72,LATT
+86,Depths Accessor,83|82,LATT
+87,Aggregate Model,4,SUPP
+88,Partition Key Filtering,25|9,SUPP
+89,Build All Partitions,68|88,SUPP
+90,Apply Auto Selection,89|83,SUPP
