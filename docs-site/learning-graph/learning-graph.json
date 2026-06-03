@@ -1,0 +1,1198 @@
+{
+  "metadata": {
+    "title": "Mountainash Rules Package Concept Graph",
+    "description": "A concept dependency graph covering the mountainash-rules vectorized, backend-agnostic business rules engine. 90 concepts across 7 taxonomy categories spanning foundation, dimension model, expression rules engine, accumulator engine, lattice structures, and supporting modules.",
+    "creator": "Nathaniel Ramm",
+    "date": "2026-06-03",
+    "version": "1.0",
+    "format": "Learning Graph JSON v1.0",
+    "schema": "https://raw.githubusercontent.com/dmccreary/learning-graphs/refs/heads/main/src/schema/learning-graph-schema.json",
+    "license": "CC BY-NC-SA 4.0 DEED"
+  },
+  "groups": {
+    "FOUND": {
+      "classifierName": "Foundation Concepts",
+      "color": "SteelBlue",
+      "font": {
+        "color": "white"
+      }
+    },
+    "DIM": {
+      "classifierName": "Dimension Model",
+      "color": "DarkGreen",
+      "font": {
+        "color": "white"
+      }
+    },
+    "EXPR": {
+      "classifierName": "Expression Rules Engine",
+      "color": "Gold",
+      "font": {
+        "color": "black"
+      }
+    },
+    "RESULT": {
+      "classifierName": "Expression Engine Results",
+      "color": "Teal",
+      "font": {
+        "color": "white"
+      }
+    },
+    "ACCUM": {
+      "classifierName": "Accumulator Engine",
+      "color": "MediumPurple",
+      "font": {
+        "color": "white"
+      }
+    },
+    "LATT": {
+      "classifierName": "Accumulator Lattice & Results",
+      "color": "Orange",
+      "font": {
+        "color": "black"
+      }
+    },
+    "SUPP": {
+      "classifierName": "Supporting Modules",
+      "color": "Crimson",
+      "font": {
+        "color": "white"
+      }
+    }
+  },
+  "nodes": [
+    {
+      "id": 1,
+      "label": "Ternary Logic",
+      "group": "FOUND",
+      "shape": "box"
+    },
+    {
+      "id": 2,
+      "label": "Sentinel Values",
+      "group": "FOUND"
+    },
+    {
+      "id": 3,
+      "label": "Match Strategy Patterns",
+      "group": "FOUND",
+      "shape": "box"
+    },
+    {
+      "id": 4,
+      "label": "Pydantic Model Validation",
+      "group": "FOUND",
+      "shape": "box"
+    },
+    {
+      "id": 5,
+      "label": "Vectorized Evaluation",
+      "group": "FOUND",
+      "shape": "box"
+    },
+    {
+      "id": 6,
+      "label": "Backend-Agnostic Design",
+      "group": "FOUND",
+      "shape": "box"
+    },
+    {
+      "id": 7,
+      "label": "DataFrame as Rule Store",
+      "group": "FOUND"
+    },
+    {
+      "id": 8,
+      "label": "Mountainash Expressions",
+      "group": "FOUND"
+    },
+    {
+      "id": 9,
+      "label": "Mountainash Relations",
+      "group": "FOUND"
+    },
+    {
+      "id": 10,
+      "label": "Context Object",
+      "group": "FOUND"
+    },
+    {
+      "id": 11,
+      "label": "MatchStrategy Enum",
+      "group": "DIM"
+    },
+    {
+      "id": 12,
+      "label": "EXACT Strategy",
+      "group": "DIM"
+    },
+    {
+      "id": 13,
+      "label": "NOT_EQUAL Strategy",
+      "group": "DIM"
+    },
+    {
+      "id": 14,
+      "label": "RANGE Strategy",
+      "group": "DIM"
+    },
+    {
+      "id": 15,
+      "label": "GREATER_THAN Strategy",
+      "group": "DIM"
+    },
+    {
+      "id": 16,
+      "label": "LESS_THAN Strategy",
+      "group": "DIM"
+    },
+    {
+      "id": 17,
+      "label": "PREFIX Strategy",
+      "group": "DIM"
+    },
+    {
+      "id": 18,
+      "label": "SUFFIX Strategy",
+      "group": "DIM"
+    },
+    {
+      "id": 19,
+      "label": "CONTAINS Strategy",
+      "group": "DIM"
+    },
+    {
+      "id": 20,
+      "label": "REGEX Strategy",
+      "group": "DIM"
+    },
+    {
+      "id": 21,
+      "label": "SET_MEMBERSHIP Strategy",
+      "group": "DIM"
+    },
+    {
+      "id": 22,
+      "label": "SET_EXCLUSION Strategy",
+      "group": "DIM"
+    },
+    {
+      "id": 23,
+      "label": "DimensionRole Enum",
+      "group": "DIM"
+    },
+    {
+      "id": 24,
+      "label": "CONSTRAINT Role",
+      "group": "DIM"
+    },
+    {
+      "id": 25,
+      "label": "CONTEXT_KEY Role",
+      "group": "DIM"
+    },
+    {
+      "id": 26,
+      "label": "Dimension Class",
+      "group": "DIM"
+    },
+    {
+      "id": 27,
+      "label": "DimensionsMetadata",
+      "group": "DIM"
+    },
+    {
+      "id": 28,
+      "label": "Field Resolution",
+      "group": "DIM"
+    },
+    {
+      "id": 29,
+      "label": "Dimension Validator",
+      "group": "DIM"
+    },
+    {
+      "id": 30,
+      "label": "Data Type Constraints",
+      "group": "DIM"
+    },
+    {
+      "id": 31,
+      "label": "DimensionCompiler",
+      "group": "EXPR"
+    },
+    {
+      "id": 32,
+      "label": "Compile Exact Expression",
+      "group": "EXPR"
+    },
+    {
+      "id": 33,
+      "label": "Compile Range Expression",
+      "group": "EXPR"
+    },
+    {
+      "id": 34,
+      "label": "Compile String Match",
+      "group": "EXPR"
+    },
+    {
+      "id": 35,
+      "label": "Compile Regex Expression",
+      "group": "EXPR"
+    },
+    {
+      "id": 36,
+      "label": "Compile Set Expression",
+      "group": "EXPR"
+    },
+    {
+      "id": 37,
+      "label": "Compile Threshold Expression",
+      "group": "EXPR"
+    },
+    {
+      "id": 38,
+      "label": "Sentinel-Aware Ternary",
+      "group": "EXPR"
+    },
+    {
+      "id": 39,
+      "label": "Context Value Extraction",
+      "group": "EXPR"
+    },
+    {
+      "id": 40,
+      "label": "ExpressionRulesEngine",
+      "group": "EXPR"
+    },
+    {
+      "id": 41,
+      "label": "Engine Construction",
+      "group": "EXPR"
+    },
+    {
+      "id": 42,
+      "label": "Convenience vs Advanced Path",
+      "group": "EXPR"
+    },
+    {
+      "id": 43,
+      "label": "Single-Pass Evaluation",
+      "group": "EXPR"
+    },
+    {
+      "id": 44,
+      "label": "Context Binding Phase",
+      "group": "EXPR"
+    },
+    {
+      "id": 45,
+      "label": "Dimension Expression Phase",
+      "group": "EXPR"
+    },
+    {
+      "id": 46,
+      "label": "Survival Computation",
+      "group": "EXPR"
+    },
+    {
+      "id": 47,
+      "label": "Specificity Scoring",
+      "group": "EXPR"
+    },
+    {
+      "id": 48,
+      "label": "Rank Assignment",
+      "group": "EXPR"
+    },
+    {
+      "id": 49,
+      "label": "RuleResult Class",
+      "group": "RESULT"
+    },
+    {
+      "id": 50,
+      "label": "Survivors Accessor",
+      "group": "RESULT"
+    },
+    {
+      "id": 51,
+      "label": "Best Match Accessor",
+      "group": "RESULT"
+    },
+    {
+      "id": 52,
+      "label": "Count Accessor",
+      "group": "RESULT"
+    },
+    {
+      "id": 53,
+      "label": "Active Dimensions",
+      "group": "RESULT"
+    },
+    {
+      "id": 54,
+      "label": "Explain Method",
+      "group": "RESULT"
+    },
+    {
+      "id": 55,
+      "label": "At Least Filter",
+      "group": "RESULT"
+    },
+    {
+      "id": 56,
+      "label": "Top N Filtering",
+      "group": "RESULT"
+    },
+    {
+      "id": 57,
+      "label": "Min Specificity Filter",
+      "group": "RESULT"
+    },
+    {
+      "id": 58,
+      "label": "Observability Columns",
+      "group": "RESULT"
+    },
+    {
+      "id": 59,
+      "label": "AccumulatorCompiler",
+      "group": "ACCUM"
+    },
+    {
+      "id": 60,
+      "label": "Compatible Expression",
+      "group": "ACCUM"
+    },
+    {
+      "id": 61,
+      "label": "Coalesce Expression",
+      "group": "ACCUM"
+    },
+    {
+      "id": 62,
+      "label": "Coalesce NA Flag",
+      "group": "ACCUM"
+    },
+    {
+      "id": 63,
+      "label": "Compatible Exact",
+      "group": "ACCUM"
+    },
+    {
+      "id": 64,
+      "label": "Compatible Range",
+      "group": "ACCUM"
+    },
+    {
+      "id": 65,
+      "label": "Coalesce Exact",
+      "group": "ACCUM"
+    },
+    {
+      "id": 66,
+      "label": "Coalesce Range",
+      "group": "ACCUM"
+    },
+    {
+      "id": 67,
+      "label": "Coalesce Threshold",
+      "group": "ACCUM"
+    },
+    {
+      "id": 68,
+      "label": "AccumulatorEngine",
+      "group": "ACCUM"
+    },
+    {
+      "id": 69,
+      "label": "Prime Number Encoding",
+      "group": "ACCUM"
+    },
+    {
+      "id": 70,
+      "label": "Prime Table Sieve",
+      "group": "ACCUM"
+    },
+    {
+      "id": 71,
+      "label": "Get Prime Function",
+      "group": "ACCUM"
+    },
+    {
+      "id": 72,
+      "label": "Checked Multiply",
+      "group": "ACCUM"
+    },
+    {
+      "id": 73,
+      "label": "Anchor Creation",
+      "group": "ACCUM"
+    },
+    {
+      "id": 74,
+      "label": "Level Expansion",
+      "group": "ACCUM"
+    },
+    {
+      "id": 75,
+      "label": "Canonical Ordering Guard",
+      "group": "ACCUM"
+    },
+    {
+      "id": 76,
+      "label": "Frontier Filter",
+      "group": "ACCUM"
+    },
+    {
+      "id": 77,
+      "label": "Lattice Class",
+      "group": "LATT"
+    },
+    {
+      "id": 78,
+      "label": "Lattice Combinations",
+      "group": "LATT"
+    },
+    {
+      "id": 79,
+      "label": "Lattice Partition Key",
+      "group": "LATT"
+    },
+    {
+      "id": 80,
+      "label": "Coalesced Columns",
+      "group": "LATT"
+    },
+    {
+      "id": 81,
+      "label": "NA Flag Columns",
+      "group": "LATT"
+    },
+    {
+      "id": 82,
+      "label": "Combination Depth",
+      "group": "LATT"
+    },
+    {
+      "id": 83,
+      "label": "AccumulatorResult Class",
+      "group": "LATT"
+    },
+    {
+      "id": 84,
+      "label": "Accumulated Aggregates",
+      "group": "LATT"
+    },
+    {
+      "id": 85,
+      "label": "Provenance Accessor",
+      "group": "LATT"
+    },
+    {
+      "id": 86,
+      "label": "Depths Accessor",
+      "group": "LATT"
+    },
+    {
+      "id": 87,
+      "label": "Aggregate Model",
+      "group": "SUPP"
+    },
+    {
+      "id": 88,
+      "label": "Partition Key Filtering",
+      "group": "SUPP"
+    },
+    {
+      "id": 89,
+      "label": "Build All Partitions",
+      "group": "SUPP"
+    },
+    {
+      "id": 90,
+      "label": "Apply Auto Selection",
+      "group": "SUPP"
+    }
+  ],
+  "edges": [
+    {
+      "from": 2,
+      "to": 1
+    },
+    {
+      "from": 7,
+      "to": 5
+    },
+    {
+      "from": 8,
+      "to": 5
+    },
+    {
+      "from": 8,
+      "to": 6
+    },
+    {
+      "from": 9,
+      "to": 8
+    },
+    {
+      "from": 9,
+      "to": 7
+    },
+    {
+      "from": 10,
+      "to": 4
+    },
+    {
+      "from": 11,
+      "to": 3
+    },
+    {
+      "from": 12,
+      "to": 11
+    },
+    {
+      "from": 13,
+      "to": 11
+    },
+    {
+      "from": 14,
+      "to": 11
+    },
+    {
+      "from": 15,
+      "to": 11
+    },
+    {
+      "from": 16,
+      "to": 11
+    },
+    {
+      "from": 17,
+      "to": 11
+    },
+    {
+      "from": 18,
+      "to": 11
+    },
+    {
+      "from": 19,
+      "to": 11
+    },
+    {
+      "from": 20,
+      "to": 11
+    },
+    {
+      "from": 21,
+      "to": 11
+    },
+    {
+      "from": 22,
+      "to": 11
+    },
+    {
+      "from": 23,
+      "to": 3
+    },
+    {
+      "from": 24,
+      "to": 23
+    },
+    {
+      "from": 25,
+      "to": 23
+    },
+    {
+      "from": 26,
+      "to": 4
+    },
+    {
+      "from": 26,
+      "to": 11
+    },
+    {
+      "from": 26,
+      "to": 23
+    },
+    {
+      "from": 27,
+      "to": 26
+    },
+    {
+      "from": 28,
+      "to": 26
+    },
+    {
+      "from": 29,
+      "to": 26
+    },
+    {
+      "from": 29,
+      "to": 14
+    },
+    {
+      "from": 29,
+      "to": 20
+    },
+    {
+      "from": 30,
+      "to": 26
+    },
+    {
+      "from": 30,
+      "to": 12
+    },
+    {
+      "from": 30,
+      "to": 14
+    },
+    {
+      "from": 30,
+      "to": 15
+    },
+    {
+      "from": 30,
+      "to": 16
+    },
+    {
+      "from": 30,
+      "to": 17
+    },
+    {
+      "from": 30,
+      "to": 20
+    },
+    {
+      "from": 31,
+      "to": 27
+    },
+    {
+      "from": 31,
+      "to": 8
+    },
+    {
+      "from": 32,
+      "to": 31
+    },
+    {
+      "from": 32,
+      "to": 12
+    },
+    {
+      "from": 32,
+      "to": 2
+    },
+    {
+      "from": 33,
+      "to": 31
+    },
+    {
+      "from": 33,
+      "to": 14
+    },
+    {
+      "from": 33,
+      "to": 2
+    },
+    {
+      "from": 34,
+      "to": 31
+    },
+    {
+      "from": 34,
+      "to": 17
+    },
+    {
+      "from": 34,
+      "to": 18
+    },
+    {
+      "from": 34,
+      "to": 19
+    },
+    {
+      "from": 34,
+      "to": 2
+    },
+    {
+      "from": 35,
+      "to": 31
+    },
+    {
+      "from": 35,
+      "to": 20
+    },
+    {
+      "from": 36,
+      "to": 31
+    },
+    {
+      "from": 36,
+      "to": 21
+    },
+    {
+      "from": 36,
+      "to": 22
+    },
+    {
+      "from": 36,
+      "to": 2
+    },
+    {
+      "from": 37,
+      "to": 31
+    },
+    {
+      "from": 37,
+      "to": 15
+    },
+    {
+      "from": 37,
+      "to": 16
+    },
+    {
+      "from": 37,
+      "to": 2
+    },
+    {
+      "from": 38,
+      "to": 1
+    },
+    {
+      "from": 38,
+      "to": 2
+    },
+    {
+      "from": 38,
+      "to": 8
+    },
+    {
+      "from": 39,
+      "to": 10
+    },
+    {
+      "from": 39,
+      "to": 2
+    },
+    {
+      "from": 40,
+      "to": 31
+    },
+    {
+      "from": 40,
+      "to": 9
+    },
+    {
+      "from": 40,
+      "to": 39
+    },
+    {
+      "from": 41,
+      "to": 40
+    },
+    {
+      "from": 41,
+      "to": 27
+    },
+    {
+      "from": 42,
+      "to": 41
+    },
+    {
+      "from": 43,
+      "to": 40
+    },
+    {
+      "from": 43,
+      "to": 7
+    },
+    {
+      "from": 43,
+      "to": 5
+    },
+    {
+      "from": 44,
+      "to": 43
+    },
+    {
+      "from": 44,
+      "to": 39
+    },
+    {
+      "from": 44,
+      "to": 8
+    },
+    {
+      "from": 45,
+      "to": 43
+    },
+    {
+      "from": 45,
+      "to": 32
+    },
+    {
+      "from": 45,
+      "to": 33
+    },
+    {
+      "from": 45,
+      "to": 34
+    },
+    {
+      "from": 45,
+      "to": 35
+    },
+    {
+      "from": 45,
+      "to": 36
+    },
+    {
+      "from": 45,
+      "to": 37
+    },
+    {
+      "from": 46,
+      "to": 45
+    },
+    {
+      "from": 46,
+      "to": 38
+    },
+    {
+      "from": 46,
+      "to": 1
+    },
+    {
+      "from": 47,
+      "to": 46
+    },
+    {
+      "from": 48,
+      "to": 47
+    },
+    {
+      "from": 49,
+      "to": 48
+    },
+    {
+      "from": 50,
+      "to": 49
+    },
+    {
+      "from": 51,
+      "to": 49
+    },
+    {
+      "from": 51,
+      "to": 9
+    },
+    {
+      "from": 52,
+      "to": 49
+    },
+    {
+      "from": 52,
+      "to": 9
+    },
+    {
+      "from": 53,
+      "to": 49
+    },
+    {
+      "from": 54,
+      "to": 49
+    },
+    {
+      "from": 54,
+      "to": 38
+    },
+    {
+      "from": 55,
+      "to": 49
+    },
+    {
+      "from": 55,
+      "to": 47
+    },
+    {
+      "from": 56,
+      "to": 43
+    },
+    {
+      "from": 57,
+      "to": 43
+    },
+    {
+      "from": 57,
+      "to": 47
+    },
+    {
+      "from": 58,
+      "to": 43
+    },
+    {
+      "from": 58,
+      "to": 38
+    },
+    {
+      "from": 59,
+      "to": 8
+    },
+    {
+      "from": 59,
+      "to": 26
+    },
+    {
+      "from": 60,
+      "to": 59
+    },
+    {
+      "from": 60,
+      "to": 12
+    },
+    {
+      "from": 61,
+      "to": 59
+    },
+    {
+      "from": 61,
+      "to": 12
+    },
+    {
+      "from": 62,
+      "to": 59
+    },
+    {
+      "from": 62,
+      "to": 2
+    },
+    {
+      "from": 63,
+      "to": 60
+    },
+    {
+      "from": 63,
+      "to": 2
+    },
+    {
+      "from": 64,
+      "to": 60
+    },
+    {
+      "from": 64,
+      "to": 14
+    },
+    {
+      "from": 65,
+      "to": 61
+    },
+    {
+      "from": 65,
+      "to": 2
+    },
+    {
+      "from": 66,
+      "to": 61
+    },
+    {
+      "from": 66,
+      "to": 14
+    },
+    {
+      "from": 67,
+      "to": 61
+    },
+    {
+      "from": 67,
+      "to": 15
+    },
+    {
+      "from": 67,
+      "to": 16
+    },
+    {
+      "from": 68,
+      "to": 59
+    },
+    {
+      "from": 68,
+      "to": 27
+    },
+    {
+      "from": 68,
+      "to": 40
+    },
+    {
+      "from": 69,
+      "to": 68
+    },
+    {
+      "from": 70,
+      "to": 69
+    },
+    {
+      "from": 71,
+      "to": 70
+    },
+    {
+      "from": 72,
+      "to": 71
+    },
+    {
+      "from": 73,
+      "to": 68
+    },
+    {
+      "from": 73,
+      "to": 69
+    },
+    {
+      "from": 74,
+      "to": 73
+    },
+    {
+      "from": 74,
+      "to": 63
+    },
+    {
+      "from": 74,
+      "to": 64
+    },
+    {
+      "from": 74,
+      "to": 65
+    },
+    {
+      "from": 74,
+      "to": 66
+    },
+    {
+      "from": 74,
+      "to": 67
+    },
+    {
+      "from": 75,
+      "to": 74
+    },
+    {
+      "from": 75,
+      "to": 69
+    },
+    {
+      "from": 76,
+      "to": 74
+    },
+    {
+      "from": 76,
+      "to": 72
+    },
+    {
+      "from": 77,
+      "to": 76
+    },
+    {
+      "from": 77,
+      "to": 27
+    },
+    {
+      "from": 78,
+      "to": 77
+    },
+    {
+      "from": 79,
+      "to": 77
+    },
+    {
+      "from": 79,
+      "to": 25
+    },
+    {
+      "from": 80,
+      "to": 77
+    },
+    {
+      "from": 80,
+      "to": 61
+    },
+    {
+      "from": 81,
+      "to": 77
+    },
+    {
+      "from": 81,
+      "to": 62
+    },
+    {
+      "from": 82,
+      "to": 77
+    },
+    {
+      "from": 82,
+      "to": 74
+    },
+    {
+      "from": 83,
+      "to": 77
+    },
+    {
+      "from": 83,
+      "to": 49
+    },
+    {
+      "from": 84,
+      "to": 83
+    },
+    {
+      "from": 84,
+      "to": 87
+    },
+    {
+      "from": 85,
+      "to": 83
+    },
+    {
+      "from": 85,
+      "to": 72
+    },
+    {
+      "from": 86,
+      "to": 83
+    },
+    {
+      "from": 86,
+      "to": 82
+    },
+    {
+      "from": 87,
+      "to": 4
+    },
+    {
+      "from": 88,
+      "to": 25
+    },
+    {
+      "from": 88,
+      "to": 9
+    },
+    {
+      "from": 89,
+      "to": 68
+    },
+    {
+      "from": 89,
+      "to": 88
+    },
+    {
+      "from": 90,
+      "to": 89
+    },
+    {
+      "from": 90,
+      "to": 83
+    }
+  ]
+}
