@@ -43,6 +43,7 @@ The compiler produces two families of expressions for each CONSTRAINT dimension:
 - **Compatible expressions**: determine whether two rules can coexist on a dimension (they do not contradict each other)
 - **Coalesce expressions**: compute the merged value when two compatible rules are combined (the intersection of their constraints)
 
+<!-- concept:59 -->
 ## AccumulatorCompiler
 
 The `AccumulatorCompiler` is a stateless compiler class (similar to the DimensionCompiler from Chapter 4) that produces expressions operating on *pairs* of rules rather than rule-context pairs. Its expressions reference two sets of columns:
@@ -72,6 +73,10 @@ This restriction means that rule sets using PREFIX, SUFFIX, CONTAINS, REGEX, SET
 | PREFIX, SUFFIX, etc. | N/A | N/A | No |
 | SET_MEMBERSHIP, SET_EXCLUSION | N/A | N/A | No |
 
+<!-- concept:60 -->
+<!-- concept:61 -->
+<!-- concept:63 -->
+<!-- concept:64 -->
 ## Compatible Expression
 
 A compatible expression evaluates to True when two rules can coexist in the same lattice combination for a given dimension. The fundamental question it answers is: "is there any context value that could satisfy both rules on this dimension simultaneously?"
@@ -103,6 +108,10 @@ Type: workflow
 **Learning objective:** Determine whether two rule values are compatible on a given dimension (Bloom: Apply)
 </details>
 
+<!-- concept:62 -->
+<!-- concept:65 -->
+<!-- concept:66 -->
+<!-- concept:67 -->
 ## Coalesce Expression
 
 A coalesce expression computes the merged dimension value when two compatible rules are combined. The merged value represents the *intersection* of both constraints — the tightest constraint that satisfies both rules simultaneously.

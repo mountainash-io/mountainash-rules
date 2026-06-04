@@ -33,6 +33,18 @@ This chapter covers the MatchStrategy enum and all its strategy types. Each stra
 
 ---
 
+<!-- concept:11 -->
+<!-- concept:12 -->
+<!-- concept:13 -->
+<!-- concept:14 -->
+<!-- concept:15 -->
+<!-- concept:16 -->
+<!-- concept:17 -->
+<!-- concept:18 -->
+<!-- concept:19 -->
+<!-- concept:20 -->
+<!-- concept:21 -->
+<!-- concept:22 -->
 ## The MatchStrategy Enum
 
 The `MatchStrategy` enum is defined in `mountainash_rules.constants` and enumerates every comparison operation the rules engine supports. Each member represents a distinct semantic for comparing a context value against a rule cell value, and each produces a ternary result (1, 0, or -1) according to the logic described in Chapter 1.

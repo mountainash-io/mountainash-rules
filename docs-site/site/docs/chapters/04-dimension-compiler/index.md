@@ -32,12 +32,19 @@ This chapter explains how the DimensionCompiler translates dimension metadata in
 
 ---
 
+<!-- concept:32 -->
+<!-- concept:33 -->
+<!-- concept:35 -->
+<!-- concept:36 -->
+<!-- concept:37 -->
 ## From Metadata to Expressions
 
 Chapters 2 and 3 defined *what* each match strategy means and *how* dimensions are configured. This chapter bridges the gap between configuration and execution by showing how the `DimensionCompiler` transforms dimension metadata into executable expression templates.
 
 An expression template is a lazy computation tree that references two column names: the rule column (from the DataFrame) and the context literal column (injected at evaluation time). The template does not execute immediately — it becomes executable only when the engine applies it to a relation containing both columns. This separation of compilation from evaluation is what enables the engine to compile once and evaluate many times with different contexts.
 
+<!-- concept:31 -->
+<!-- concept:34 -->
 ## DimensionCompiler
 
 The `DimensionCompiler` class is a stateless translator. It takes a `Dimension` object (or an entire `DimensionsMetadata` collection) and produces expression templates — one per dimension. The class has no internal state; it could be a collection of free functions, but is organized as a class for namespacing and future extensibility.
@@ -120,6 +127,7 @@ ctx_col = ma.t_col("__ctx_age", unknown=sentinels)
 min_col = ma.t_col("age_min", unknown=sentinels)
 max_col = ma.t_col("age_max", unknown=sentinels)
 
+<!-- concept:39 -->
 # Lower bound: min <= context
 lower = min_col.t_le(ctx_col)
 # Upper bound: max >= context
@@ -235,6 +243,7 @@ expr = ctx_col.t_lt(rule_col)
 
 Note the operand order: `ctx_col.t_gt(rule_col)` reads as "context is greater than rule." This matters for the accumulator engine (Chapter 7), where threshold coalescing uses `ma.greatest` for GREATER_THAN (taking the stricter lower bound) and `ma.least` for LESS_THAN (taking the stricter upper bound).
 
+<!-- concept:38 -->
 ## Sentinel-Aware Ternary
 
 The sentinel-aware ternary system is the mechanism that makes wildcard handling automatic and correct. It operates at two levels:

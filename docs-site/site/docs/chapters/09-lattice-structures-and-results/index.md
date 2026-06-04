@@ -39,6 +39,9 @@ This chapter covers the Lattice data structure produced by the AccumulatorEngine
 
 ---
 
+<!-- concept:77 -->
+<!-- concept:78 -->
+<!-- concept:79 -->
 ## What the Lattice Represents
 
 In Chapter 8 you learned how the AccumulatorEngine expands individual rules into multi-rule combinations through level expansion and then filters dominated combinations using the frontier filter. The output of that process is a DataFrame where each row represents a valid combination of rules, annotated with coalesced dimension values, aggregated outputs, prime products for provenance tracking, and depth information. The **Lattice** class wraps this DataFrame along with its associated metadata, making the accumulator's output a first-class object that can be stored, inspected, and applied to contexts.
@@ -60,6 +63,7 @@ Type: class diagram with data preview | **sim-id:** lattice-structure-overview<b
 **Interactions:** Click each property node (combinations, partition_key, metadata, aggregates) to see its type, a description, and an example value. Hover over the DataFrame node to see sample columns including co_-prefixed, na_-prefixed, __prime_product, and __level columns.
 </details>
 
+<!-- concept:83 -->
 ## The Lattice Class
 
 A **Lattice** is constructed with four arguments: a DataFrame of combinations, a DimensionsMetadata describing the dimensions used during accumulation, a list of Aggregate models specifying which output columns to aggregate and how, and an optional partition key dictionary that identifies which subset of the rule space this lattice covers.
@@ -83,6 +87,7 @@ The class exposes four read-only properties. The `combinations` property returns
 
 The Lattice is intentionally a thin wrapper. It does not add computation or transformation logic -- those responsibilities belong to the AccumulatorEngine. Its purpose is to bundle the DataFrame with its schema context so that downstream code (particularly the `apply()` method) can reconstruct the correct evaluation metadata without the caller needing to pass metadata separately.
 
+<!-- concept:82 -->
 ## Lattice Combinations
 
 The **lattice combinations** are the rows of the wrapped DataFrame. Each row represents one valid combination of rules that survived the frontier filter. A combination at depth 1 corresponds to a single original rule. A combination at depth 2 represents two rules whose constraint dimensions are compatible (they can be coalesced without contradiction). A combination at depth 3 represents three compatible rules, and so on.
@@ -105,6 +110,7 @@ The combination DataFrame is the central data artifact of the accumulator pipeli
 | Prime product | `__prime_product` | 30 (= 2 * 3 * 5) | Provenance tracking |
 | Level | `__level` | 3 | Combination depth |
 
+<!-- concept:88 -->
 ## Lattice Partition Key
 
 A **partition key** is a dictionary that identifies which slice of the rule space a particular Lattice covers. Partition keys correspond to dimensions with the `CONTEXT_KEY` role (introduced in Chapter 3). These dimensions are not used for constraint matching -- instead, they segment the rule table so that each segment can be built into its own independent lattice.
@@ -122,6 +128,8 @@ print(lattice.count)          # Number of combinations for insurance only
 
 When no `CONTEXT_KEY` dimensions exist, the entire rule table is built into a single lattice with `partition_key=None`.
 
+<!-- concept:80 -->
+<!-- concept:81 -->
 ## Coalesced Columns
 
 **Coalesced columns** store the tightened constraint values for each combination. When two rules are combined, their constraints on each dimension are merged. For an EXACT match dimension, if both rules specify the same value, the coalesced value is that value. If one rule specifies a value and the other leaves the dimension unconstrained (sentinel), the coalesced value takes the constrained rule's value. For a RANGE dimension, the coalesced range is the intersection of the two rules' ranges -- the tighter of the two minimum bounds and the tighter of the two maximum bounds.
@@ -200,6 +208,8 @@ class AccumulatorResult(RuleResult):
 
 The constructor takes the matching combinations DataFrame, the list of active dimension names, the Aggregate model list, and a reference to the source Lattice. The lattice reference enables downstream code to access the full combination space if needed, not just the matches.
 
+<!-- concept:84 -->
+<!-- concept:87 -->
 ## Accumulated Aggregates
 
 The **accumulated aggregates** accessor retrieves the aggregated output values for matching combinations. Each aggregate is identified by name (corresponding to the `column_name` field of the Aggregate model). The `accumulated()` method selects the `__agg_`-prefixed column from the result DataFrame and returns it as a collected value.
@@ -216,6 +226,8 @@ The method name follows the pattern `accumulated(aggregate_name)` rather than a 
 
 The accumulated values represent the sum (or other configured operation) of the original rule values across all rules in each combination. A combination at depth 3 with three rules contributing premium values of 50, 30, and 20 would have an `__agg_premium` of 100 (assuming sum aggregation).
 
+<!-- concept:85 -->
+<!-- concept:86 -->
 ## Provenance Accessor
 
 The **provenance accessor** returns the prime product column from the result DataFrame. The prime product is a single integer that uniquely encodes which original rules contributed to each matching combination. By factoring this integer into its prime components (each rule is assigned a unique prime number during engine construction), you can recover the exact set of contributing rules.
@@ -300,6 +312,7 @@ Type: routing diagram | **sim-id:** partition-key-routing<br/> | **Library:** vi
 **Interactions:** Enter a context with different product_type values and see which lattice partition is selected. View the rules in each partition and the resulting combinations. See the KeyError path when no partition matches.
 </details>
 
+<!-- concept:89 -->
 ## Build All Partitions
 
 The **build_all** method is the multi-partition entry point on AccumulatorEngine. It takes a rules DataFrame and returns a list of Lattice objects, one per unique partition key combination found in the rules. If no `CONTEXT_KEY` dimensions are defined, it falls back to building a single unpartitioned lattice.
@@ -319,6 +332,7 @@ The method works by extracting the unique values of all context key fields, iter
 
 Build-all is designed for batch scenarios where you want to pre-compute all lattices once and then apply many contexts against them. Building is the expensive operation (it involves level expansion and frontier filtering); applying is comparatively cheap (it is a single-pass filter through the lattice). Pre-building all partitions amortizes the build cost across many apply calls.
 
+<!-- concept:90 -->
 ## Apply Auto Selection
 
 The **apply_auto** method completes the partition workflow. It takes a list of lattices (typically from `build_all()`), a context object, and an optional dimension subset. It extracts the partition key from the context by reading the context key dimension values, looks up the corresponding lattice from a dictionary keyed by partition tuples, and delegates to the standard `apply()` method.

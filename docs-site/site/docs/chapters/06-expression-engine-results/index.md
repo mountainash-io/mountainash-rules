@@ -41,6 +41,7 @@ The wrapper also decouples the engine's internal column naming conventions (pref
 
 The RuleResult is also designed as a base class. The accumulator engine (Chapter 9) extends it with `AccumulatorResult`, adding aggregate and provenance accessors. This inheritance ensures that any code written against RuleResult also works transparently with AccumulatorResult — the accumulator workflow is a strict superset of the expression workflow.
 
+<!-- concept:49 -->
 ## RuleResult Class
 
 The `RuleResult` class is constructed by the engine at the end of evaluation. It receives two inputs:
@@ -57,6 +58,9 @@ class RuleResult:
 
 All accessors on RuleResult reach the underlying DataFrame through `mountainash.relations.relation()`, maintaining backend agnosticism. The only exception is the `survivors` property, which returns the raw DataFrame directly for callers who want backend-specific operations.
 
+<!-- concept:50 -->
+<!-- concept:51 -->
+<!-- concept:52 -->
 ## Survivors Accessor
 
 The `survivors` property returns the complete result DataFrame — all rules that passed the survival filter, sorted by specificity descending, with rank assignments.
@@ -124,6 +128,7 @@ Type: diagram
 **Learning objective:** Navigate the RuleResult API to select the appropriate accessor for a given use case (Bloom: Apply)
 </details>
 
+<!-- concept:53 -->
 ## Active Dimensions
 
 The `active_dimensions` property returns the list of dimension names that were evaluated. This may be a subset of all configured dimensions if the caller passed a `dimensions` parameter to `evaluate()`.
@@ -134,6 +139,7 @@ dims = result.active_dimensions  # ["region", "tier"]
 
 This property is primarily used by the `explain()` method to know which ternary columns to inspect, but it is also useful for logging and debugging — confirming which dimensions contributed to the evaluation.
 
+<!-- concept:54 -->
 ## Explain Method
 
 The `explain()` method provides per-dimension ternary values for a specific rule, identified by its `rule_name` column value. This is the primary debugging tool for understanding *why* a rule received its specificity score.
@@ -163,6 +169,8 @@ The explain output provides immediate diagnostic value:
 
 A -1 value in an explain result indicates an internal inconsistency — it should never appear because survival filtering removes all rules with any -1 dimension. If you see it, the evaluation pipeline has a bug.
 
+<!-- concept:55 -->
+<!-- concept:57 -->
 ## At Least Filter
 
 The `at_least(n)` method returns a filtered DataFrame containing only survivors with specificity >= n. This is a post-evaluation convenience that applies a floor to the specificity score.
@@ -180,6 +188,7 @@ Use cases for `at_least`:
 - Requiring a minimum level of context matching before accepting a rule
 - Implementing tiered fallback: try `at_least(3)`, fall back to `at_least(2)`, then `at_least(1)`
 
+<!-- concept:56 -->
 ## Top N Filtering
 
 The `top_n` parameter on `evaluate()` limits the result to the N most specific survivors. Unlike `at_least`, this is applied during evaluation (after ranking, before result construction) rather than as a post-evaluation filter.
@@ -223,6 +232,7 @@ The key difference from `at_least()` is timing:
 | top_n | Evaluation | Yes (truncated) | evaluate() parameter |
 | at_least | Post-evaluation | No (original ranks preserved) | RuleResult method |
 
+<!-- concept:58 -->
 ## Observability Columns
 
 When `include_observability=True` (the default), the result DataFrame retains the per-dimension ternary columns (`__t_region`, `__t_tier`, etc.). These columns are the foundation for debugging and monitoring rule behavior in production.

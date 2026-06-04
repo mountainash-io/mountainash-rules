@@ -1,0 +1,67 @@
+{
+  "schema_version": "1.0",
+  "baseline": {
+    "source_commit": "41d584652aa29b09762aa1140ae64fb640473940",
+    "refresh_date": "2026-06-04T12:47:44Z",
+    "tool_versions": {
+      "python": "3.12",
+      "enrich_script": "1.0.0"
+    }
+  },
+  "chapter_state": {
+    "01-foundation-concepts": {
+      "content_hash": "dd9d4604f75f4cf07e3700533e0892e681b35cb97b60723ceae479609f106ed3",
+      "word_count": 3228,
+      "has_concept_markers": true
+    },
+    "02-match-strategies": {
+      "content_hash": "b646300c408e7b9541c6006add5573924969442f4a3bd046295f7ad0df4dece5",
+      "word_count": 3207,
+      "has_concept_markers": true
+    },
+    "03-dimension-model": {
+      "content_hash": "a87a9ef78a2208ffe5f4d45f7ade4ad712322ad8f2af057d22b26922c10a0aaa",
+      "word_count": 2820,
+      "has_concept_markers": true
+    },
+    "04-dimension-compiler": {
+      "content_hash": "d68d9e6ef2d35deade872a294ee35c4a54175782f3f1c8e19f96672b4fa0c6e1",
+      "word_count": 3081,
+      "has_concept_markers": true
+    },
+    "05-expression-rules-engine": {
+      "content_hash": "061636844c485a862b5673cb61a26499b481a6677dd2cf40a2fdf7d9f8c192f5",
+      "word_count": 3011,
+      "has_concept_markers": true
+    },
+    "06-expression-engine-results": {
+      "content_hash": "46979c6150abec92bdb2f4eaffcd3d24b337bcf0cad7f064bcc3f056b21ab4b7",
+      "word_count": 2827,
+      "has_concept_markers": true
+    },
+    "07-accumulator-compiler": {
+      "content_hash": "3f0ee7261470e38b8f9a37140767ec17800c2d256587a2453ee3e037b41514e4",
+      "word_count": 2823,
+      "has_concept_markers": true
+    },
+    "08-accumulator-engine": {
+      "content_hash": "0b9bd360336dfb9c26077328cd8dee474844d881290164b002bff59c24274930",
+      "word_count": 2941,
+      "has_concept_markers": true
+    },
+    "09-lattice-structures-and-results": {
+      "content_hash": "5661944185e18bc3ba743e4e2aafb7d9d48fd1d8137ad0df892b2d6c6411b3e8",
+      "word_count": 3687,
+      "has_concept_markers": true
+    }
+  },
+  "learning_graph_state": {
+    "content_hash": "a28361ca162d1ed9c033a4bf918c5420ed397ab5732651c6483c1e5ac912ac6b",
+    "node_count": 90,
+    "edge_count": 169,
+    "enriched_nodes": 90,
+    "low_confidence_count": 50
+  },
+  "faq_state": null,
+  "refresh_history": []
+}

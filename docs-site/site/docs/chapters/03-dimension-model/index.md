@@ -30,12 +30,15 @@ This chapter covers the dimension metadata layer — the Pydantic models that de
 
 ---
 
+<!-- concept:26 -->
+<!-- concept:29 -->
 ## The Role of Dimension Metadata
 
 A rules table is just a DataFrame — rows and columns with no inherent semantics. The dimension metadata layer gives meaning to those columns by declaring how each one should participate in evaluation. Without metadata, the engine cannot know which columns are conditions, which are outcomes, which store range bounds, or which require string pattern matching.
 
 The metadata layer consists of three key elements: the `DimensionRole` enum (which classifies columns by purpose), the `Dimension` class (which describes a single column's evaluation behavior), and the `DimensionsMetadata` class (which validates a collection of dimensions as a coherent unit).
 
+<!-- concept:23 -->
 ## DimensionRole Enum
 
 The `DimensionRole` enum assigns a functional classification to each dimension, controlling how it participates in both the expression rules engine and the accumulator engine. There are exactly two roles.
@@ -50,6 +53,7 @@ class DimensionRole(Enum):
 
 The role determines the dimension's behavior at two different stages: during expression evaluation (Chapter 5) and during lattice construction (Chapters 7-9). Choosing the correct role for each dimension is a fundamental modelling decision.
 
+<!-- concept:24 -->
 ### CONSTRAINT Role
 
 A dimension with the CONSTRAINT role participates in ternary evaluation. During rule evaluation, its compiled expression compares the rule cell value against the context value and produces a ternary result (1, 0, or -1). The survival and specificity computations include this dimension.
@@ -58,6 +62,7 @@ In the accumulator engine, CONSTRAINT dimensions participate in coalesce logic �
 
 Most dimensions in a typical rules table are CONSTRAINTs. Examples include region, product category, customer tier, and any other field that filters rules based on the evaluation context.
 
+<!-- concept:25 -->
 ### CONTEXT_KEY Role
 
 A dimension with the CONTEXT_KEY role does not participate in ternary evaluation at all. Instead, it acts as a partitioning dimension for the accumulator engine — the engine builds a separate lattice for each unique combination of CONTEXT_KEY values.
@@ -105,6 +110,7 @@ dim = Dimension(dimension_name="region")
 # Equivalent to:
 # Dimension(
 #     dimension_name="region",
+<!-- concept:28 -->
 #     context_field=None,          -> resolved_context_field = "region"
 #     rule_field=None,             -> resolved_rule_field = "region"
 #     match_strategy=MatchStrategy.EXACT,
@@ -163,6 +169,7 @@ Type: diagram
 **Learning objective:** Identify which Dimension fields are required for each match strategy configuration (Bloom: Analyze)
 </details>
 
+<!-- concept:27 -->
 ## DimensionsMetadata
 
 The `DimensionsMetadata` class is a validated container for a list of `Dimension` objects. It serves as the engine's configuration input — you construct a `DimensionsMetadata` instance and pass it to the `ExpressionRulesEngine` or `AccumulatorEngine` constructor. It acts as the single source of truth for how the engine interprets the rules DataFrame.
@@ -257,6 +264,7 @@ Type: workflow
 **Learning objective:** Predict which dimension configurations will pass or fail validation (Bloom: Evaluate)
 </details>
 
+<!-- concept:30 -->
 ## Data Type Constraints
 
 The `data_type` field on a Dimension serves two purposes: it determines which sentinel set to use (string vs numeric) and it restricts which match strategies are valid for that dimension.

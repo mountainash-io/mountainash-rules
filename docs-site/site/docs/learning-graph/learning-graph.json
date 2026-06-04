@@ -7,7 +7,9 @@
     "version": "1.0",
     "format": "Learning Graph JSON v1.0",
     "schema": "https://raw.githubusercontent.com/dmccreary/learning-graphs/refs/heads/main/src/schema/learning-graph-schema.json",
-    "license": "CC BY-NC-SA 4.0 DEED"
+    "license": "CC BY-NC-SA 4.0 DEED",
+    "source_commit": "41d584652aa29b09762aa1140ae64fb640473940",
+    "profile_dir": "03.profile/mountainash-rules"
   },
   "groups": {
     "FOUND": {
@@ -65,456 +67,816 @@
       "id": 1,
       "label": "Ternary Logic",
       "group": "FOUND",
-      "shape": "box"
+      "shape": "box",
+      "source_module": null,
+      "source_path": null,
+      "chapter": "01-foundation-concepts",
+      "match_confidence": 0.0
     },
     {
       "id": 2,
       "label": "Sentinel Values",
-      "group": "FOUND"
+      "group": "FOUND",
+      "source_module": null,
+      "source_path": null,
+      "chapter": "01-foundation-concepts",
+      "match_confidence": 0.0
     },
     {
       "id": 3,
       "label": "Match Strategy Patterns",
       "group": "FOUND",
-      "shape": "box"
+      "shape": "box",
+      "source_module": null,
+      "source_path": null,
+      "chapter": "01-foundation-concepts",
+      "match_confidence": 0.0
     },
     {
       "id": 4,
       "label": "Pydantic Model Validation",
       "group": "FOUND",
-      "shape": "box"
+      "shape": "box",
+      "source_module": null,
+      "source_path": null,
+      "chapter": "01-foundation-concepts",
+      "match_confidence": 0.0
     },
     {
       "id": 5,
       "label": "Vectorized Evaluation",
       "group": "FOUND",
-      "shape": "box"
+      "shape": "box",
+      "source_module": null,
+      "source_path": null,
+      "chapter": "01-foundation-concepts",
+      "match_confidence": 0.0
     },
     {
       "id": 6,
       "label": "Backend-Agnostic Design",
       "group": "FOUND",
-      "shape": "box"
+      "shape": "box",
+      "source_module": null,
+      "source_path": null,
+      "chapter": "01-foundation-concepts",
+      "match_confidence": 0.0
     },
     {
       "id": 7,
       "label": "DataFrame as Rule Store",
-      "group": "FOUND"
+      "group": "FOUND",
+      "source_module": null,
+      "source_path": null,
+      "chapter": "01-foundation-concepts",
+      "match_confidence": 0.0
     },
     {
       "id": 8,
       "label": "Mountainash Expressions",
-      "group": "FOUND"
+      "group": "FOUND",
+      "source_module": null,
+      "source_path": null,
+      "chapter": "01-foundation-concepts",
+      "match_confidence": 0.0
     },
     {
       "id": 9,
       "label": "Mountainash Relations",
-      "group": "FOUND"
+      "group": "FOUND",
+      "source_module": null,
+      "source_path": null,
+      "chapter": "01-foundation-concepts",
+      "match_confidence": 0.0
     },
     {
       "id": 10,
       "label": "Context Object",
-      "group": "FOUND"
+      "group": "FOUND",
+      "source_module": null,
+      "source_path": null,
+      "chapter": "01-foundation-concepts",
+      "match_confidence": 0.0
     },
     {
       "id": 11,
       "label": "MatchStrategy Enum",
-      "group": "DIM"
+      "group": "DIM",
+      "source_module": "mountainash_rules.constants",
+      "source_path": "src/mountainash_utils_rules/constants.py",
+      "chapter": "02-match-strategies",
+      "match_confidence": 0.85
     },
     {
       "id": 12,
       "label": "EXACT Strategy",
-      "group": "DIM"
+      "group": "DIM",
+      "source_module": "mountainash_rules.constants",
+      "source_path": "src/mountainash_utils_rules/constants.py",
+      "chapter": "02-match-strategies",
+      "match_confidence": 0.62
     },
     {
       "id": 13,
       "label": "NOT_EQUAL Strategy",
-      "group": "DIM"
+      "group": "DIM",
+      "source_module": null,
+      "source_path": null,
+      "chapter": "02-match-strategies",
+      "match_confidence": 0.3
     },
     {
       "id": 14,
       "label": "RANGE Strategy",
-      "group": "DIM"
+      "group": "DIM",
+      "source_module": null,
+      "source_path": null,
+      "chapter": "02-match-strategies",
+      "match_confidence": 0.3
     },
     {
       "id": 15,
       "label": "GREATER_THAN Strategy",
-      "group": "DIM"
+      "group": "DIM",
+      "source_module": null,
+      "source_path": null,
+      "chapter": "02-match-strategies",
+      "match_confidence": 0.3
     },
     {
       "id": 16,
       "label": "LESS_THAN Strategy",
-      "group": "DIM"
+      "group": "DIM",
+      "source_module": null,
+      "source_path": null,
+      "chapter": "02-match-strategies",
+      "match_confidence": 0.3
     },
     {
       "id": 17,
       "label": "PREFIX Strategy",
-      "group": "DIM"
+      "group": "DIM",
+      "source_module": null,
+      "source_path": null,
+      "chapter": "02-match-strategies",
+      "match_confidence": 0.3
     },
     {
       "id": 18,
       "label": "SUFFIX Strategy",
-      "group": "DIM"
+      "group": "DIM",
+      "source_module": null,
+      "source_path": null,
+      "chapter": "02-match-strategies",
+      "match_confidence": 0.3
     },
     {
       "id": 19,
       "label": "CONTAINS Strategy",
-      "group": "DIM"
+      "group": "DIM",
+      "source_module": null,
+      "source_path": null,
+      "chapter": "02-match-strategies",
+      "match_confidence": 0.3
     },
     {
       "id": 20,
       "label": "REGEX Strategy",
-      "group": "DIM"
+      "group": "DIM",
+      "source_module": null,
+      "source_path": null,
+      "chapter": "02-match-strategies",
+      "match_confidence": 0.3
     },
     {
       "id": 21,
       "label": "SET_MEMBERSHIP Strategy",
-      "group": "DIM"
+      "group": "DIM",
+      "source_module": null,
+      "source_path": null,
+      "chapter": "02-match-strategies",
+      "match_confidence": 0.3
     },
     {
       "id": 22,
       "label": "SET_EXCLUSION Strategy",
-      "group": "DIM"
+      "group": "DIM",
+      "source_module": null,
+      "source_path": null,
+      "chapter": "02-match-strategies",
+      "match_confidence": 0.3
     },
     {
       "id": 23,
       "label": "DimensionRole Enum",
-      "group": "DIM"
+      "group": "DIM",
+      "source_module": "mountainash_rules.constants",
+      "source_path": "src/mountainash_utils_rules/constants.py",
+      "chapter": "03-dimension-model",
+      "match_confidence": 0.85
     },
     {
       "id": 24,
       "label": "CONSTRAINT Role",
-      "group": "DIM"
+      "group": "DIM",
+      "source_module": null,
+      "source_path": null,
+      "chapter": "03-dimension-model",
+      "match_confidence": 0.3
     },
     {
       "id": 25,
       "label": "CONTEXT_KEY Role",
-      "group": "DIM"
+      "group": "DIM",
+      "source_module": "mountainash_rules.context",
+      "source_path": "src/mountainash_utils_rules/context.py",
+      "chapter": "03-dimension-model",
+      "match_confidence": 0.6
     },
     {
       "id": 26,
       "label": "Dimension Class",
-      "group": "DIM"
+      "group": "DIM",
+      "source_module": "mountainash_rules.dimension",
+      "source_path": "src/mountainash_utils_rules/dimension.py",
+      "chapter": "03-dimension-model",
+      "match_confidence": 0.85
     },
     {
       "id": 27,
       "label": "DimensionsMetadata",
-      "group": "DIM"
+      "group": "DIM",
+      "source_module": "mountainash_rules.dimension",
+      "source_path": "src/mountainash_utils_rules/dimension.py",
+      "chapter": "03-dimension-model",
+      "match_confidence": 1.0
     },
     {
       "id": 28,
       "label": "Field Resolution",
-      "group": "DIM"
+      "group": "DIM",
+      "source_module": null,
+      "source_path": null,
+      "chapter": "03-dimension-model",
+      "match_confidence": 0.3
     },
     {
       "id": 29,
       "label": "Dimension Validator",
-      "group": "DIM"
+      "group": "DIM",
+      "source_module": "mountainash_rules.dimension",
+      "source_path": "src/mountainash_utils_rules/dimension.py",
+      "chapter": "03-dimension-model",
+      "match_confidence": 0.7
     },
     {
       "id": 30,
       "label": "Data Type Constraints",
-      "group": "DIM"
+      "group": "DIM",
+      "source_module": null,
+      "source_path": null,
+      "chapter": "03-dimension-model",
+      "match_confidence": 0.3
     },
     {
       "id": 31,
       "label": "DimensionCompiler",
-      "group": "EXPR"
+      "group": "EXPR",
+      "source_module": "mountainash_rules.compiler",
+      "source_path": "src/mountainash_utils_rules/compiler.py",
+      "chapter": "04-dimension-compiler",
+      "match_confidence": 1.0
     },
     {
       "id": 32,
       "label": "Compile Exact Expression",
-      "group": "EXPR"
+      "group": "EXPR",
+      "source_module": null,
+      "source_path": null,
+      "chapter": "04-dimension-compiler",
+      "match_confidence": 0.3
     },
     {
       "id": 33,
       "label": "Compile Range Expression",
-      "group": "EXPR"
+      "group": "EXPR",
+      "source_module": "mountainash_rules.compiler",
+      "source_path": "src/mountainash_utils_rules/compiler.py",
+      "chapter": "04-dimension-compiler",
+      "match_confidence": 0.6
     },
     {
       "id": 34,
       "label": "Compile String Match",
-      "group": "EXPR"
+      "group": "EXPR",
+      "source_module": null,
+      "source_path": null,
+      "chapter": "04-dimension-compiler",
+      "match_confidence": 0.3
     },
     {
       "id": 35,
       "label": "Compile Regex Expression",
-      "group": "EXPR"
+      "group": "EXPR",
+      "source_module": "mountainash_rules.compiler",
+      "source_path": "src/mountainash_utils_rules/compiler.py",
+      "chapter": "04-dimension-compiler",
+      "match_confidence": 0.6
     },
     {
       "id": 36,
       "label": "Compile Set Expression",
-      "group": "EXPR"
+      "group": "EXPR",
+      "source_module": null,
+      "source_path": null,
+      "chapter": "04-dimension-compiler",
+      "match_confidence": 0.3
     },
     {
       "id": 37,
       "label": "Compile Threshold Expression",
-      "group": "EXPR"
+      "group": "EXPR",
+      "source_module": null,
+      "source_path": null,
+      "chapter": "04-dimension-compiler",
+      "match_confidence": 0.3
     },
     {
       "id": 38,
       "label": "Sentinel-Aware Ternary",
-      "group": "EXPR"
+      "group": "EXPR",
+      "source_module": null,
+      "source_path": null,
+      "chapter": "04-dimension-compiler",
+      "match_confidence": 0.3
     },
     {
       "id": 39,
       "label": "Context Value Extraction",
-      "group": "EXPR"
+      "group": "EXPR",
+      "source_module": "mountainash_rules.context",
+      "source_path": "src/mountainash_utils_rules/context.py",
+      "chapter": "04-dimension-compiler",
+      "match_confidence": 0.6
     },
     {
       "id": 40,
       "label": "ExpressionRulesEngine",
-      "group": "EXPR"
+      "group": "EXPR",
+      "source_module": "mountainash_rules.engine",
+      "source_path": "src/mountainash_utils_rules/engine.py",
+      "chapter": "05-expression-rules-engine",
+      "match_confidence": 1.0
     },
     {
       "id": 41,
       "label": "Engine Construction",
-      "group": "EXPR"
+      "group": "EXPR",
+      "source_module": "mountainash_rules.engine",
+      "source_path": "src/mountainash_utils_rules/engine.py",
+      "chapter": "05-expression-rules-engine",
+      "match_confidence": 0.6
     },
     {
       "id": 42,
       "label": "Convenience vs Advanced Path",
-      "group": "EXPR"
+      "group": "EXPR",
+      "source_module": null,
+      "source_path": null,
+      "chapter": "05-expression-rules-engine",
+      "match_confidence": 0.3
     },
     {
       "id": 43,
       "label": "Single-Pass Evaluation",
-      "group": "EXPR"
+      "group": "EXPR",
+      "source_module": null,
+      "source_path": null,
+      "chapter": "05-expression-rules-engine",
+      "match_confidence": 0.3
     },
     {
       "id": 44,
       "label": "Context Binding Phase",
-      "group": "EXPR"
+      "group": "EXPR",
+      "source_module": "mountainash_rules.context",
+      "source_path": "src/mountainash_utils_rules/context.py",
+      "chapter": "05-expression-rules-engine",
+      "match_confidence": 0.6
     },
     {
       "id": 45,
       "label": "Dimension Expression Phase",
-      "group": "EXPR"
+      "group": "EXPR",
+      "source_module": "mountainash_rules.dimension",
+      "source_path": "src/mountainash_utils_rules/dimension.py",
+      "chapter": "05-expression-rules-engine",
+      "match_confidence": 0.7
     },
     {
       "id": 46,
       "label": "Survival Computation",
-      "group": "EXPR"
+      "group": "EXPR",
+      "source_module": null,
+      "source_path": null,
+      "chapter": "05-expression-rules-engine",
+      "match_confidence": 0.3
     },
     {
       "id": 47,
       "label": "Specificity Scoring",
-      "group": "EXPR"
+      "group": "EXPR",
+      "source_module": null,
+      "source_path": null,
+      "chapter": "05-expression-rules-engine",
+      "match_confidence": 0.3
     },
     {
       "id": 48,
       "label": "Rank Assignment",
-      "group": "EXPR"
+      "group": "EXPR",
+      "source_module": null,
+      "source_path": null,
+      "chapter": "05-expression-rules-engine",
+      "match_confidence": 0.3
     },
     {
       "id": 49,
       "label": "RuleResult Class",
-      "group": "RESULT"
+      "group": "RESULT",
+      "source_module": "mountainash_rules.result",
+      "source_path": "src/mountainash_utils_rules/result.py",
+      "chapter": "06-expression-engine-results",
+      "match_confidence": 0.85
     },
     {
       "id": 50,
       "label": "Survivors Accessor",
-      "group": "RESULT"
+      "group": "RESULT",
+      "source_module": null,
+      "source_path": null,
+      "chapter": "06-expression-engine-results",
+      "match_confidence": 0.3
     },
     {
       "id": 51,
       "label": "Best Match Accessor",
-      "group": "RESULT"
+      "group": "RESULT",
+      "source_module": null,
+      "source_path": null,
+      "chapter": "06-expression-engine-results",
+      "match_confidence": 0.3
     },
     {
       "id": 52,
       "label": "Count Accessor",
-      "group": "RESULT"
+      "group": "RESULT",
+      "source_module": null,
+      "source_path": null,
+      "chapter": "06-expression-engine-results",
+      "match_confidence": 0.3
     },
     {
       "id": 53,
       "label": "Active Dimensions",
-      "group": "RESULT"
+      "group": "RESULT",
+      "source_module": "mountainash_rules.dimension",
+      "source_path": "src/mountainash_utils_rules/dimension.py",
+      "chapter": "06-expression-engine-results",
+      "match_confidence": 0.7
     },
     {
       "id": 54,
       "label": "Explain Method",
-      "group": "RESULT"
+      "group": "RESULT",
+      "source_module": null,
+      "source_path": null,
+      "chapter": "06-expression-engine-results",
+      "match_confidence": 0.3
     },
     {
       "id": 55,
       "label": "At Least Filter",
-      "group": "RESULT"
+      "group": "RESULT",
+      "source_module": null,
+      "source_path": null,
+      "chapter": "06-expression-engine-results",
+      "match_confidence": 0.3
     },
     {
       "id": 56,
       "label": "Top N Filtering",
-      "group": "RESULT"
+      "group": "RESULT",
+      "source_module": null,
+      "source_path": null,
+      "chapter": "06-expression-engine-results",
+      "match_confidence": 0.3
     },
     {
       "id": 57,
       "label": "Min Specificity Filter",
-      "group": "RESULT"
+      "group": "RESULT",
+      "source_module": null,
+      "source_path": null,
+      "chapter": "06-expression-engine-results",
+      "match_confidence": 0.3
     },
     {
       "id": 58,
       "label": "Observability Columns",
-      "group": "RESULT"
+      "group": "RESULT",
+      "source_module": null,
+      "source_path": null,
+      "chapter": "06-expression-engine-results",
+      "match_confidence": 0.3
     },
     {
       "id": 59,
       "label": "AccumulatorCompiler",
-      "group": "ACCUM"
+      "group": "ACCUM",
+      "source_module": "mountainash_rules.accumulator_compiler",
+      "source_path": "src/mountainash_utils_rules/accumulator_compiler.py",
+      "chapter": "07-accumulator-compiler",
+      "match_confidence": 1.0
     },
     {
       "id": 60,
       "label": "Compatible Expression",
-      "group": "ACCUM"
+      "group": "ACCUM",
+      "source_module": null,
+      "source_path": null,
+      "chapter": "07-accumulator-compiler",
+      "match_confidence": 0.3
     },
     {
       "id": 61,
       "label": "Coalesce Expression",
-      "group": "ACCUM"
+      "group": "ACCUM",
+      "source_module": null,
+      "source_path": null,
+      "chapter": "07-accumulator-compiler",
+      "match_confidence": 0.3
     },
     {
       "id": 62,
       "label": "Coalesce NA Flag",
-      "group": "ACCUM"
+      "group": "ACCUM",
+      "source_module": null,
+      "source_path": null,
+      "chapter": "07-accumulator-compiler",
+      "match_confidence": 0.3
     },
     {
       "id": 63,
       "label": "Compatible Exact",
-      "group": "ACCUM"
+      "group": "ACCUM",
+      "source_module": null,
+      "source_path": null,
+      "chapter": "07-accumulator-compiler",
+      "match_confidence": 0.3
     },
     {
       "id": 64,
       "label": "Compatible Range",
-      "group": "ACCUM"
+      "group": "ACCUM",
+      "source_module": null,
+      "source_path": null,
+      "chapter": "07-accumulator-compiler",
+      "match_confidence": 0.3
     },
     {
       "id": 65,
       "label": "Coalesce Exact",
-      "group": "ACCUM"
+      "group": "ACCUM",
+      "source_module": null,
+      "source_path": null,
+      "chapter": "07-accumulator-compiler",
+      "match_confidence": 0.3
     },
     {
       "id": 66,
       "label": "Coalesce Range",
-      "group": "ACCUM"
+      "group": "ACCUM",
+      "source_module": null,
+      "source_path": null,
+      "chapter": "07-accumulator-compiler",
+      "match_confidence": 0.3
     },
     {
       "id": 67,
       "label": "Coalesce Threshold",
-      "group": "ACCUM"
+      "group": "ACCUM",
+      "source_module": null,
+      "source_path": null,
+      "chapter": "07-accumulator-compiler",
+      "match_confidence": 0.3
     },
     {
       "id": 68,
       "label": "AccumulatorEngine",
-      "group": "ACCUM"
+      "group": "ACCUM",
+      "source_module": "mountainash_rules.accumulator_engine",
+      "source_path": "src/mountainash_utils_rules/accumulator_engine.py",
+      "chapter": "08-accumulator-engine",
+      "match_confidence": 1.0
     },
     {
       "id": 69,
       "label": "Prime Number Encoding",
-      "group": "ACCUM"
+      "group": "ACCUM",
+      "source_module": null,
+      "source_path": null,
+      "chapter": "08-accumulator-engine",
+      "match_confidence": 0.3
     },
     {
       "id": 70,
       "label": "Prime Table Sieve",
-      "group": "ACCUM"
+      "group": "ACCUM",
+      "source_module": "mountainash_rules.primes",
+      "source_path": "src/mountainash_utils_rules/primes.py",
+      "chapter": "08-accumulator-engine",
+      "match_confidence": 0.7
     },
     {
       "id": 71,
       "label": "Get Prime Function",
-      "group": "ACCUM"
+      "group": "ACCUM",
+      "source_module": "mountainash_rules.primes",
+      "source_path": "src/mountainash_utils_rules/primes.py",
+      "chapter": "08-accumulator-engine",
+      "match_confidence": 0.85
     },
     {
       "id": 72,
       "label": "Checked Multiply",
-      "group": "ACCUM"
+      "group": "ACCUM",
+      "source_module": "mountainash_rules.primes",
+      "source_path": "src/mountainash_utils_rules/primes.py",
+      "chapter": "08-accumulator-engine",
+      "match_confidence": 0.8
     },
     {
       "id": 73,
       "label": "Anchor Creation",
-      "group": "ACCUM"
+      "group": "ACCUM",
+      "source_module": null,
+      "source_path": null,
+      "chapter": "08-accumulator-engine",
+      "match_confidence": 0.3
     },
     {
       "id": 74,
       "label": "Level Expansion",
-      "group": "ACCUM"
+      "group": "ACCUM",
+      "source_module": null,
+      "source_path": null,
+      "chapter": "08-accumulator-engine",
+      "match_confidence": 0.3
     },
     {
       "id": 75,
       "label": "Canonical Ordering Guard",
-      "group": "ACCUM"
+      "group": "ACCUM",
+      "source_module": null,
+      "source_path": null,
+      "chapter": "08-accumulator-engine",
+      "match_confidence": 0.3
     },
     {
       "id": 76,
       "label": "Frontier Filter",
-      "group": "ACCUM"
+      "group": "ACCUM",
+      "source_module": null,
+      "source_path": null,
+      "chapter": "08-accumulator-engine",
+      "match_confidence": 0.3
     },
     {
       "id": 77,
       "label": "Lattice Class",
-      "group": "LATT"
+      "group": "LATT",
+      "source_module": "mountainash_rules.lattice",
+      "source_path": "src/mountainash_utils_rules/lattice.py",
+      "chapter": "09-lattice-structures-and-results",
+      "match_confidence": 0.85
     },
     {
       "id": 78,
       "label": "Lattice Combinations",
-      "group": "LATT"
+      "group": "LATT",
+      "source_module": "mountainash_rules.lattice",
+      "source_path": "src/mountainash_utils_rules/lattice.py",
+      "chapter": "09-lattice-structures-and-results",
+      "match_confidence": 0.7
     },
     {
       "id": 79,
       "label": "Lattice Partition Key",
-      "group": "LATT"
+      "group": "LATT",
+      "source_module": "mountainash_rules.lattice",
+      "source_path": "src/mountainash_utils_rules/lattice.py",
+      "chapter": "09-lattice-structures-and-results",
+      "match_confidence": 0.7
     },
     {
       "id": 80,
       "label": "Coalesced Columns",
-      "group": "LATT"
+      "group": "LATT",
+      "source_module": null,
+      "source_path": null,
+      "chapter": "09-lattice-structures-and-results",
+      "match_confidence": 0.3
     },
     {
       "id": 81,
       "label": "NA Flag Columns",
-      "group": "LATT"
+      "group": "LATT",
+      "source_module": null,
+      "source_path": null,
+      "chapter": "09-lattice-structures-and-results",
+      "match_confidence": 0.3
     },
     {
       "id": 82,
       "label": "Combination Depth",
-      "group": "LATT"
+      "group": "LATT",
+      "source_module": null,
+      "source_path": null,
+      "chapter": "09-lattice-structures-and-results",
+      "match_confidence": 0.3
     },
     {
       "id": 83,
       "label": "AccumulatorResult Class",
-      "group": "LATT"
+      "group": "LATT",
+      "source_module": "mountainash_rules.accumulator_result",
+      "source_path": "src/mountainash_utils_rules/accumulator_result.py",
+      "chapter": "09-lattice-structures-and-results",
+      "match_confidence": 0.85
     },
     {
       "id": 84,
       "label": "Accumulated Aggregates",
-      "group": "LATT"
+      "group": "LATT",
+      "source_module": "mountainash_rules.aggregate",
+      "source_path": "src/mountainash_utils_rules/aggregate.py",
+      "chapter": "09-lattice-structures-and-results",
+      "match_confidence": 0.7
     },
     {
       "id": 85,
       "label": "Provenance Accessor",
-      "group": "LATT"
+      "group": "LATT",
+      "source_module": null,
+      "source_path": null,
+      "chapter": "09-lattice-structures-and-results",
+      "match_confidence": 0.3
     },
     {
       "id": 86,
       "label": "Depths Accessor",
-      "group": "LATT"
+      "group": "LATT",
+      "source_module": null,
+      "source_path": null,
+      "chapter": "09-lattice-structures-and-results",
+      "match_confidence": 0.3
     },
     {
       "id": 87,
       "label": "Aggregate Model",
-      "group": "SUPP"
+      "group": "SUPP",
+      "source_module": "mountainash_rules.aggregate",
+      "source_path": "src/mountainash_utils_rules/aggregate.py",
+      "chapter": "09-lattice-structures-and-results",
+      "match_confidence": 0.85
     },
     {
       "id": 88,
       "label": "Partition Key Filtering",
-      "group": "SUPP"
+      "group": "SUPP",
+      "source_module": null,
+      "source_path": null,
+      "chapter": "09-lattice-structures-and-results",
+      "match_confidence": 0.3
     },
     {
       "id": 89,
       "label": "Build All Partitions",
-      "group": "SUPP"
+      "group": "SUPP",
+      "source_module": "mountainash_rules.accumulator_engine",
+      "source_path": "src/mountainash_utils_rules/accumulator_engine.py",
+      "chapter": "09-lattice-structures-and-results",
+      "match_confidence": 0.7
     },
     {
       "id": 90,
       "label": "Apply Auto Selection",
-      "group": "SUPP"
+      "group": "SUPP",
+      "source_module": "mountainash_rules.accumulator_engine",
+      "source_path": "src/mountainash_utils_rules/accumulator_engine.py",
+      "chapter": "09-lattice-structures-and-results",
+      "match_confidence": 0.7
     }
   ],
   "edges": [

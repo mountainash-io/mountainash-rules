@@ -32,8 +32,10 @@ This chapter covers the ExpressionRulesEngine class — the primary entry point 
 
 ---
 
+<!-- concept:41 -->
 ## The Central Engine Class
 
+<!-- concept:40 -->
 The `ExpressionRulesEngine` is the primary API for rule evaluation in mountainash-rules. It accepts a rules DataFrame and dimension configuration at construction time, compiles expressions once, and then evaluates any number of contexts against those rules using a fixed single-pass pipeline.
 
 The engine is designed around three principles from Chapter 1: vectorized evaluation (all rules processed simultaneously), backend-agnostic design (any supported DataFrame type), and ternary logic (wildcards handled algebraically). This chapter shows how those principles manifest in the concrete implementation.
@@ -57,6 +59,7 @@ engine = ExpressionRulesEngine(
     dimension_metadata=metadata,
 )
 
+<!-- concept:45 -->
 # Construction with pre-compiled expressions (advanced path)
 engine = ExpressionRulesEngine(
     rules=rules_df,
@@ -66,6 +69,7 @@ engine = ExpressionRulesEngine(
 
 During construction, the engine stores the rules DataFrame as `self._rules` and the compiled expressions as `self._expressions`. If metadata is provided, it also stores the metadata as `self._metadata` for reference (though this is not used during evaluation — only the compiled expressions matter at runtime).
 
+<!-- concept:42 -->
 ## Convenience vs Advanced Path
 
 The two construction paths serve different use cases:
@@ -119,6 +123,7 @@ Once constructed, the engine's internal state is effectively immutable. The comp
 
 The only mutable activity happens during evaluation, where temporary columns are added to *copies* of the rules DataFrame (the relation API does not mutate the original). The original `self._rules` is never modified.
 
+<!-- concept:43 -->
 ## Single-Pass Evaluation
 
 The `evaluate()` method is the engine's primary interface. It accepts a context and returns a `RuleResult` containing all surviving rules ranked by specificity. The entire evaluation happens in a single pass through the rules DataFrame — there is no iteration, no recursion, and no multi-stage filtering.
@@ -151,6 +156,7 @@ Internally, `evaluate()` performs three preparatory steps before delegating to t
 
 It then calls `_evaluate()` which executes the six-step pipeline and returns the materialized result DataFrame, which is wrapped in a `RuleResult` object.
 
+<!-- concept:44 -->
 ## Context Binding Phase
 
 The first step of the evaluation pipeline binds context values to the rules DataFrame as literal columns. Each context value is broadcast to every row, creating a uniform reference for column-to-column comparisons.
@@ -186,11 +192,13 @@ After this step, the DataFrame has columns `__t_region`, `__t_tier`, etc., each 
 
 This is where the vectorized power manifests: all rules are evaluated for all dimensions in a single `with_columns` call. The backend processes each expression across the entire column using SIMD instructions, with no Python-level loops.
 
+<!-- concept:46 -->
 ## Survival Computation
 
 The third step determines which rules survive evaluation and how specific they are. A rule survives if no dimension produced FALSE (-1) — equivalently, if the minimum ternary value across all dimensions is >= 0.
 
 ```python
+<!-- concept:47 -->
 # Step 3: Compute survival and specificity
 t_cols = [ma.col(f"__t_{d}") for d in active_dims]
 
@@ -225,6 +233,7 @@ Both survive (no -1 values), but R1 is specificity 3 (matches on all three) whil
 
 Specificity scoring is computed vectorially — no sorting or comparison between rows is needed to determine each row's specificity. It is a purely per-row calculation.
 
+<!-- concept:48 -->
 ## Rank Assignment
 
 After computing survival and specificity, the pipeline filters out non-survivors, sorts by specificity descending, and assigns a 1-based rank:

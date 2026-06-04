@@ -37,6 +37,7 @@ Business logic in production systems often takes the form of nested conditional 
 
 The mountainash-rules package takes this concept further by evaluating all rules simultaneously against a given context, using vectorized operations rather than row-by-row iteration. Before diving into the engine itself, you need to understand ten foundational concepts that make this approach work.
 
+<!-- concept:1 -->
 ## Ternary Logic
 
 Classical Boolean logic recognizes two states: true and false. When evaluating business rules, however, a third state is essential — *unknown*. A rule might not specify a value for a particular dimension, meaning that dimension should be treated as a wildcard: the rule neither matches nor fails on that dimension.
@@ -54,6 +55,7 @@ This encoding has a useful algebraic property: combining multiple dimensions req
 !!! note "Why Not Null?"
     Many systems use null or NaN for missing values, but these propagate unpredictably through arithmetic. By mapping unknowns to the integer 0, the rules engine can use standard numeric operations (minimum, summation, comparison) without special null-handling branches.
 
+<!-- concept:2 -->
 ## Sentinel Values
 
 Ternary logic requires a mechanism for detecting when a rule cell or context field is "empty" — that is, when it carries no meaningful constraint. The engine uses **sentinel values**: reserved constants that can never appear as legitimate business data. When the engine encounters a sentinel in a rule column or context value, it maps the comparison result to the UNKNOWN (0) state in ternary logic.
@@ -79,6 +81,7 @@ NOT_SET_NUMERIC  # -999999998  — missing numeric context value
 
 The engine also provides convenience sets `STRING_SENTINELS` and `NUMERIC_SENTINELS` that group each pair together, making it straightforward to test whether any value is a sentinel regardless of its source.
 
+<!-- concept:3 -->
 ## Match Strategy Patterns
 
 A match strategy defines the comparison operation used to evaluate a context value against a rule value. Rather than hardcoding a single equality check, mountainash-rules supports a catalogue of strategies that handle different data shapes: exact equality, inequality, numeric ranges, string patterns, and set operations.
@@ -119,6 +122,7 @@ Type: diagram
 **Learning objective:** Classify match strategies by data type and comparison semantics (Bloom: Analyze)
 </details>
 
+<!-- concept:4 -->
 ## Pydantic Model Validation
 
 The mountainash-rules package uses Pydantic `BaseModel` classes to define and validate its configuration objects. Pydantic provides automatic type checking, default value handling, and custom validation logic through model validators — all of which are critical for catching configuration errors at construction time rather than at evaluation time.
@@ -154,6 +158,7 @@ dim = Dimension(
 
 This early-validation approach ensures that by the time the engine compiles expressions, every dimension is known to be internally consistent.
 
+<!-- concept:5 -->
 ## Vectorized Evaluation
 
 Traditional rule engines evaluate each rule one at a time, iterating through the rule set for each incoming context. Mountainash-rules takes a fundamentally different approach: it evaluates all rules simultaneously using **vectorized operations** — column-wise computations that process the entire rules DataFrame in a single pass.
@@ -192,6 +197,7 @@ Type: microsim
 **Learning objective:** Compare the efficiency of vectorized versus iterative rule evaluation (Bloom: Evaluate)
 </details>
 
+<!-- concept:6 -->
 ## Backend-Agnostic Design
 
 A key architectural decision in mountainash-rules is that the engine does not depend on any specific DataFrame library. The expression and relation APIs provided by the `mountainash` package abstract over multiple backends — Polars, Pandas (via Narwhals), PyArrow, and Ibis — so the same compiled expressions work regardless of which library the caller uses for their rules DataFrame.
@@ -217,6 +223,7 @@ result = engine.evaluate(context)  # Returns Polars DataFrame
 
 The backend-agnostic design means that teams can adopt mountainash-rules without changing their existing data pipeline infrastructure.
 
+<!-- concept:7 -->
 ## DataFrame as Rule Store
 
 In mountainash-rules, the rules table is stored as a DataFrame — not a database table, not an in-memory tree, and not a list of dictionaries. Each row represents one rule, and each column represents either a dimension (a condition the rule constrains) or a payload field (an outcome value the rule carries).
@@ -232,6 +239,8 @@ During evaluation, the engine adds temporary columns to the DataFrame — contex
 
 The prefix `__ctx_` is a reserved namespace. Context values from the caller are broadcast as literal columns so that each row can be compared against the same context value using vectorized column-to-column operations rather than scalar comparisons.
 
+<!-- concept:8 -->
+<!-- concept:9 -->
 ## Mountainash Expressions
 
 The `mountainash.expressions` module (imported as `ma`) provides the expression-building API that the rules engine uses to construct comparison logic. An expression is a lazy computation tree — it describes what to compute, not when to compute it. Expressions are only materialized when the relation's `.collect()` method is called.
@@ -289,6 +298,7 @@ Relations are lazy by default: calling `.with_columns()` or `.filter()` builds a
 
 The rules engine pipeline is expressed entirely as a chain of relation operations. The `ExpressionRulesEngine._evaluate()` method constructs a relation from the input DataFrame, chains context binding, dimension expression, survival computation, filtering, sorting, and ranking operations, then collects the result.
 
+<!-- concept:10 -->
 ## Context Object
 
 The **context** represents the set of values that the rules should be evaluated against. When a caller asks "which rules match this situation?", the situation is described by a context object — typically a Python dictionary or a Pydantic `BaseModel` instance.

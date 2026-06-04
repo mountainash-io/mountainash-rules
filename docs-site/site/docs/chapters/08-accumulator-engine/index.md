@@ -41,6 +41,7 @@ The result — a lattice of combinations — can then be queried at runtime just
 
 The AccumulatorEngine uses the compatible and coalesce expressions from Chapter 7 as building blocks, orchestrating them through a five-phase lattice construction algorithm.
 
+<!-- concept:68 -->
 ## AccumulatorEngine
 
 The `AccumulatorEngine` class is constructed with dimension metadata and optional aggregate definitions:
@@ -70,6 +71,9 @@ The engine also provides three higher-level methods built on top of `build()`:
 
 These convenience methods are covered in detail in Chapter 9. This chapter focuses on the build algorithm itself.
 
+<!-- concept:69 -->
+<!-- concept:70 -->
+<!-- concept:71 -->
 ## Prime Number Encoding
 
 The core algorithmic insight of the AccumulatorEngine is using prime numbers to represent combinations. Each rule is assigned a unique prime number. A combination of rules is represented by the *product* of their primes.
@@ -151,6 +155,7 @@ def get_prime(index: int) -> int:
 
 The function uses 0-based indexing: `get_prime(0)` returns 2, `get_prime(1)` returns 3, and so on. The bounds check provides a clear error message when a partition exceeds the supported rule count, rather than failing silently or with a cryptic index error.
 
+<!-- concept:72 -->
 ## Checked Multiply
 
 As combinations grow larger, their prime products can exceed the int64 range (\(2^{63} - 1\)). The `checked_multiply` function guards against this:
@@ -175,6 +180,7 @@ The overflow check triggers when a partition has many mutually compatible rules 
 !!! warning "Overflow in Practice"
     The first 15 primes multiply to approximately \(6.1 \times 10^{17}\), which is within int64 range. Adding the 16th prime (53) pushes the product to \(3.3 \times 10^{19}\), exceeding int64 max. Partitions with more than 15 mutually compatible rules will trigger the overflow guard.
 
+<!-- concept:73 -->
 ## Anchor Creation
 
 The lattice build begins with **anchor creation** — constructing level-0 singleton combinations where each rule stands alone. The anchor DataFrame adds several column families to the original rules:
@@ -191,6 +197,7 @@ The lattice build begins with **anchor creation** — constructing level-0 singl
 # Original: region="AU", age_min=18, age_max=65, discount=0.10, __prime=2
 # Added:    co_region="AU", co_age_min=18, co_age_max=65
 #           co_region_na=0, co_age_na=0
+<!-- concept:74 -->
 #           __prime_product=2, __level=0
 #           __agg_discount=0.10
 ```
@@ -211,6 +218,7 @@ Each expansion iteration:
 6. **Update tracking**: multiply prime products, increment level, accumulate aggregates
 
 ```python
+<!-- concept:75 -->
 # Canonical ordering guard
 guard1 = ma.col("__prime").lt(ma.col("__prime_rhs"))
 
@@ -270,6 +278,7 @@ This is equivalent to requiring that rules in a combination are always ordered b
 
 The result: each combination is generated exactly once, in its canonical (sorted) form. This reduces the expansion space from \( O(n!) \) orderings per combination to \( O(1) \).
 
+<!-- concept:76 -->
 ## Frontier Filter
 
 After all levels have been expanded and combined, the engine applies a **frontier filter** to remove dominated combinations. A combination A is dominated by combination B if:
