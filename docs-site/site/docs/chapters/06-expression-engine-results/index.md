@@ -12,25 +12,6 @@ version: 0.08
 
 This chapter covers the RuleResult class that wraps the output of the ExpressionRulesEngine. You will learn how to access survivors, retrieve the best match, inspect active dimensions, generate per-rule explanations, and apply post-evaluation filters including at_least, top_n, and min_specificity. The chapter also covers observability columns for debugging.
 
-## Concepts Covered
-
-- RuleResult Class
-- Survivors Accessor
-- Best Match Accessor
-- Count Accessor
-- Active Dimensions
-- Explain Method
-- At Least Filter
-- Top N Filtering
-- Min Specificity Filter
-- Observability Columns
-
-## Prerequisites
-
-- Chapter 1: Foundation Concepts (Mountainash Relations)
-- Chapter 4: Dimension Compiler (Sentinel-Aware Ternary)
-- Chapter 5: Expression Rules Engine (Single-Pass Evaluation, Survival Computation, Specificity Scoring, Rank Assignment)
-
 ---
 
 ## Why a Result Wrapper?

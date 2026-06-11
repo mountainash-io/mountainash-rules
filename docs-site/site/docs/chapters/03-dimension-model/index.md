@@ -12,22 +12,6 @@ version: 0.08
 
 This chapter covers the dimension metadata layer — the Pydantic models that describe how each column in a rules table should be interpreted during evaluation. You will learn about the DimensionRole enum (CONSTRAINT vs CONTEXT_KEY), the Dimension class with its field resolution and validation, the DimensionsMetadata collection, and data type constraints that govern which strategies apply to which column types.
 
-## Concepts Covered
-
-- DimensionRole Enum
-- CONSTRAINT Role
-- CONTEXT_KEY Role
-- Dimension Class
-- DimensionsMetadata
-- Field Resolution
-- Dimension Validator
-- Data Type Constraints
-
-## Prerequisites
-
-- Chapter 1: Foundation Concepts (Pydantic Model Validation, Match Strategy Patterns)
-- Chapter 2: Match Strategies (MatchStrategy Enum, individual strategies)
-
 ---
 
 <!-- concept:26 -->

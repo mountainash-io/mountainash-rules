@@ -12,25 +12,6 @@ version: 0.08
 
 This chapter covers the MatchStrategy enum and all its strategy types. Each strategy defines how a dimension value in a rules table is compared against a value from the evaluation context — from exact equality and inequality through range comparisons, string pattern matching, and set operations.
 
-## Concepts Covered
-
-- MatchStrategy Enum
-- EXACT Strategy
-- NOT_EQUAL Strategy
-- RANGE Strategy
-- GREATER_THAN Strategy
-- LESS_THAN Strategy
-- PREFIX Strategy
-- SUFFIX Strategy
-- CONTAINS Strategy
-- REGEX Strategy
-- SET_MEMBERSHIP Strategy
-- SET_EXCLUSION Strategy
-
-## Prerequisites
-
-- Chapter 1: Foundation Concepts (Match Strategy Patterns)
-
 ---
 
 <!-- concept:11 -->

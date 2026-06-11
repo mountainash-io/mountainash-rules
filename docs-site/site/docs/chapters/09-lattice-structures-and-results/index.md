@@ -12,31 +12,6 @@ version: 0.08
 
 This chapter covers the Lattice data structure produced by the AccumulatorEngine and the AccumulatorResult class that wraps evaluation output. You will learn about lattice combinations, partition keys, coalesced columns, NA flag columns, combination depth tracking, and the AccumulatorResult accessors for accumulated aggregates, provenance via prime products, and depth information. The chapter concludes with supporting modules: the Aggregate model, partition key filtering, build_all for multi-partition construction, and apply_auto for automatic lattice selection.
 
-## Concepts Covered
-
-- Lattice Class
-- Lattice Combinations
-- Lattice Partition Key
-- Coalesced Columns
-- NA Flag Columns
-- Combination Depth
-- AccumulatorResult Class
-- Accumulated Aggregates
-- Provenance Accessor
-- Depths Accessor
-- Aggregate Model
-- Partition Key Filtering
-- Build All Partitions
-- Apply Auto Selection
-
-## Prerequisites
-
-- Chapter 1: Foundation Concepts (Pydantic Model Validation, Mountainash Relations)
-- Chapter 3: Dimension Model (DimensionsMetadata, CONTEXT_KEY Role)
-- Chapter 6: Expression Engine Results (RuleResult Class)
-- Chapter 7: Accumulator Compiler (Coalesce Expression, Coalesce NA Flag)
-- Chapter 8: Accumulator Engine (AccumulatorEngine, Prime Number Encoding, Checked Multiply, Level Expansion, Frontier Filter)
-
 ---
 
 <!-- concept:77 -->
