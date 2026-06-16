@@ -12,24 +12,6 @@ version: 0.08
 
 This chapter explains how the DimensionCompiler translates dimension metadata into backend-agnostic expression templates. Each match strategy has a corresponding compile method that produces a mountainash expression capable of evaluating a context value against the rules column. You will also learn about sentinel-aware ternary logic in compiled expressions and context value extraction.
 
-## Concepts Covered
-
-- DimensionCompiler
-- Compile Exact Expression
-- Compile Range Expression
-- Compile String Match
-- Compile Regex Expression
-- Compile Set Expression
-- Compile Threshold Expression
-- Sentinel-Aware Ternary
-- Context Value Extraction
-
-## Prerequisites
-
-- Chapter 1: Foundation Concepts (Ternary Logic, Sentinel Values, Mountainash Expressions, Context Object)
-- Chapter 2: Match Strategies (EXACT, RANGE, PREFIX, SUFFIX, CONTAINS, REGEX, SET_MEMBERSHIP, SET_EXCLUSION, GREATER_THAN, LESS_THAN)
-- Chapter 3: Dimension Model (DimensionsMetadata)
-
 ---
 
 <!-- concept:32 -->

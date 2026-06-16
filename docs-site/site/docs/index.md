@@ -1,35 +1,25 @@
 ---
-title: 'Mountainash Rules'
-description: 'An intelligent textbook for the mountainash-rules vectorized backend-agnostic business rules engine'
+title: Mountainash Rules
+description: A practitioner's manual for the mountainash-rules vectorized, backend-agnostic business rules engine
 ---
 
+
+[← Back to Ecosystem](../)
 # Mountainash Rules
 
-An intelligent textbook for the mountainash-rules vectorized backend-agnostic business rules engine
+Define business rules as tabular data, evaluate them in a single vectorized pass on any backend, and get ranked results with full per-dimension explainability.
 
-## Getting Started
+## Why a Guided Manual?
 
-This is an intelligent textbook built with MkDocs Material. Use the navigation
-sidebar on the left to explore chapters, the learning graph, MicroSims, and
-supporting reference content.
+The API reference tells you *what* each class and method does. This manual explains *why* the engine works the way it does -- how ternary logic enables wildcard matching, why specificity ranking produces deterministic best-match results, and when to reach for the accumulator engine instead of the expression engine. Understanding the design makes the API intuitive rather than something you memorize.
 
-## Front Matter
+## What's Inside
 
-- **About** — audience, prerequisites, and how to read the book
-- **Course Description** — the seed document used to generate the learning graph
+- **[Chapters](chapters/index.md)** -- 9 chapters covering foundations through accumulator results, in dependency order
+- **[MicroSims](sims/index.md)** -- Interactive simulations for building intuition around key concepts
+- **[Learning Graph](learning-graph/index.md)** -- Visual map of how concepts depend on each other
+- **[API Reference](api/index.md)** -- Auto-generated documentation for all 12 public modules
 
-## Chapters
+## Who This Is For
 
-The main body of the book lives under [Chapters](chapters/index.md). Each
-chapter has its own folder with a two-digit prefix (e.g. `01-introduction`).
-
-## Learning Graph
-
-The [Learning Graph](learning-graph/index.md) shows how concepts depend on each
-other. Concepts are introduced in dependency order so prerequisites are always
-covered before they are used.
-
-## MicroSims
-
-Interactive simulations live under [MicroSims](sims/index.md). Each MicroSim
-focuses on one concept and is embeddable as an iframe inside chapter content.
+Python developers building configurable business logic -- pricing engines, eligibility checkers, configuration selectors, and combinatorial accumulation problems. If you work with rules stored as tabular data and need vectorized evaluation that runs on any backend, start with [About](about.md) to see whether this manual fits your background.

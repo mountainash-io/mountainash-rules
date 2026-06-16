@@ -12,24 +12,6 @@ version: 0.08
 
 This chapter covers the ExpressionRulesEngine class — the primary entry point for single-pass vectorized rule evaluation. You will learn how the engine is constructed, the distinction between convenience and advanced construction paths, and the complete evaluation pipeline: context binding, dimension expression application, survival computation, specificity scoring, and rank assignment.
 
-## Concepts Covered
-
-- ExpressionRulesEngine
-- Engine Construction
-- Convenience vs Advanced Path
-- Single-Pass Evaluation
-- Context Binding Phase
-- Dimension Expression Phase
-- Survival Computation
-- Specificity Scoring
-- Rank Assignment
-
-## Prerequisites
-
-- Chapter 1: Foundation Concepts (Ternary Logic, Vectorized Evaluation, DataFrame as Rule Store, Mountainash Expressions, Mountainash Relations)
-- Chapter 3: Dimension Model (DimensionsMetadata)
-- Chapter 4: Dimension Compiler (DimensionCompiler, all compile expressions, Sentinel-Aware Ternary, Context Value Extraction)
-
 ---
 
 <!-- concept:41 -->

@@ -12,24 +12,6 @@ version: 0.08
 
 This chapter introduces the AccumulatorCompiler, which produces two families of expressions for the lattice-building process: compatible expressions (determining whether two rules can coexist in a combination) and coalesce expressions (merging dimension values when building lattice nodes). You will learn how each match strategy translates into compatible and coalesce semantics, and how NA flags track sentinel propagation.
 
-## Concepts Covered
-
-- AccumulatorCompiler
-- Compatible Expression
-- Coalesce Expression
-- Coalesce NA Flag
-- Compatible Exact
-- Compatible Range
-- Coalesce Exact
-- Coalesce Range
-- Coalesce Threshold
-
-## Prerequisites
-
-- Chapter 1: Foundation Concepts (Sentinel Values, Mountainash Expressions)
-- Chapter 2: Match Strategies (EXACT, RANGE, GREATER_THAN, LESS_THAN)
-- Chapter 3: Dimension Model (Dimension Class)
-
 ---
 
 ## The Accumulator Problem

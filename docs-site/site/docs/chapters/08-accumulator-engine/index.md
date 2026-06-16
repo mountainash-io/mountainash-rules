@@ -12,25 +12,6 @@ version: 0.08
 
 This chapter covers the AccumulatorEngine class and its lattice-building algorithm. You will learn how prime number encoding provides unique combination identity and subset detection, the sieve-based prime table, the five-phase build process (partition, prime assignment, anchor creation, level expansion with canonical ordering, and frontier filter for removing dominated combinations), and how checked multiplication guards against overflow.
 
-## Concepts Covered
-
-- AccumulatorEngine
-- Prime Number Encoding
-- Prime Table Sieve
-- Get Prime Function
-- Checked Multiply
-- Anchor Creation
-- Level Expansion
-- Canonical Ordering Guard
-- Frontier Filter
-
-## Prerequisites
-
-- Chapter 1: Foundation Concepts (Mountainash Expressions)
-- Chapter 3: Dimension Model (DimensionsMetadata)
-- Chapter 5: Expression Rules Engine (ExpressionRulesEngine)
-- Chapter 7: Accumulator Compiler (AccumulatorCompiler, Compatible Exact, Compatible Range, Coalesce Exact, Coalesce Range, Coalesce Threshold)
-
 ---
 
 ## From Expression Engine to Accumulator

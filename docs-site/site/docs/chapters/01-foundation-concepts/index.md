@@ -12,23 +12,6 @@ version: 0.08
 
 This chapter introduces the foundational abstractions that underpin the mountainash-rules engine. You will learn about ternary logic and its role in wildcard matching, sentinel values for representing missing or inapplicable data, match strategy patterns, Pydantic model validation, vectorized evaluation principles, backend-agnostic design, and the core mountainash expression and relation libraries.
 
-## Concepts Covered
-
-- Ternary Logic
-- Sentinel Values
-- Match Strategy Patterns
-- Pydantic Model Validation
-- Vectorized Evaluation
-- Backend-Agnostic Design
-- DataFrame as Rule Store
-- Mountainash Expressions
-- Mountainash Relations
-- Context Object
-
-## Prerequisites
-
-None — this is the introductory chapter.
-
 ---
 
 ## Why a Rules Engine?
