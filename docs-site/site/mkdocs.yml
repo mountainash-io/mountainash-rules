@@ -54,20 +54,6 @@ nav:
   - MicroSims:
       - List of MicroSims: sims/index.md
 
-  - API Reference:
-      - Overview: api/index.md
-      - Accumulator Compiler: api/accumulator_compiler.md
-      - Accumulator Engine: api/accumulator_engine.md
-      - Accumulator Result: api/accumulator_result.md
-      - Aggregate: api/aggregate.md
-      - Compiler: api/compiler.md
-      - Constants: api/constants.md
-      - Context: api/context.md
-      - Dimension: api/dimension.md
-      - Engine: api/engine.md
-      - Lattice: api/lattice.md
-      - Primes: api/primes.md
-      - Result: api/result.md
 
   - License: license.md
   - Contact: contact.md
@@ -99,17 +85,6 @@ theme:
 # Plugins
 plugins:
   - search
-  - mkdocstrings:
-      handlers:
-        python:
-          paths: ["../../../mountainash-rules/src"]
-          options:
-            show_source: true
-            show_bases: true
-            show_root_heading: true
-            show_root_full_path: false
-            heading_level: 2
-            members_order: source
   # Uncomment after running `pip install "mkdocs-material[imaging]"`:
   # - social
   # Uncomment after running `pip install mkdocs-glightbox`:

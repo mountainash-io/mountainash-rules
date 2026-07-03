@@ -18,7 +18,6 @@ The API reference tells you *what* each class and method does. This manual expla
 - **[Chapters](chapters/index.md)** -- 9 chapters covering foundations through accumulator results, in dependency order
 - **[MicroSims](sims/index.md)** -- Interactive simulations for building intuition around key concepts
 - **[Learning Graph](learning-graph/index.md)** -- Visual map of how concepts depend on each other
-- **[API Reference](api/index.md)** -- Auto-generated documentation for all 12 public modules
 
 ## Who This Is For
 

@@ -36,7 +36,6 @@ After working through this manual, you will know how to:
 - **Use search** -- the search bar (top right) indexes every page; use it to jump to a specific term or class
 - **Try the MicroSims** -- interactive simulations are the fastest way to build intuition for a new concept
 - **Check the Learning Graph** -- the [Learning Graph](learning-graph/index.md) shows how concepts relate to each other
-- **Use the API Reference** -- the [API Reference](api/index.md) has auto-generated documentation for every public module; use it alongside the chapters
 
 ## About Mountainash Rules
 
