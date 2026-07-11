@@ -59,8 +59,13 @@ semantics, and coalesce(A, B) must be exactly the set of contexts matching
 both.**
 
 Rule-side don't-care is expressed only with `UNKNOWN` / `UNKNOWN_NUMERIC`;
-`NOT_SET*` sentinels remain context-side only (unchanged, but now documented
-in the module docstring).
+`NOT_SET*` sentinels remain context-side only. Note the filter engine is
+currently more permissive: `NUMERIC_SENTINELS` includes both numeric
+sentinels, so `_compile_range` also treats a rule-side `NOT_SET_NUMERIC` as
+unknown. This spec documents the discrepancy (accumulator recognises only
+`UNKNOWN*` rule-side; the filter engine tolerates `NOT_SET*` there too) in
+the module docstring; narrowing the filter compiler's rule-side sentinel set
+is deferred as a separate change.
 
 ### Fix 1: `_compatible_range` — sentinel-aware, inclusivity-aware overlap
 
@@ -85,7 +90,7 @@ side are inclusive:
 by the first interval's max, so strict comparison is correct — the single
 `and` condition captures all four flag combinations.)
 
-### Fix 2: NA flag — all four sentinel checks
+### Fix 2: NA flag — all four sentinel checks, in both places
 
 ```
 co_<dim>_na = (co_min_s AND rhs_min_s) AND (co_max_s AND rhs_max_s)
@@ -94,6 +99,13 @@ co_<dim>_na = (co_min_s AND rhs_min_s) AND (co_max_s AND rhs_max_s)
 i.e. the coalesced interval is fully don't-care only when both mins and both
 maxes are sentinels. (Equivalent to computing it from the coalesced columns,
 but computed pre-coalesce to keep the single `with_columns` pass.)
+
+The same defect exists at level 0: `AccumulatorEngine._create_anchor` sets
+the RANGE anchor NA flag from the min field alone, so a singleton
+`[<sentinel>, 10]` is marked fully don't-care before any coalesce happens —
+and NA columns participate in the frontier fingerprint, so stale anchor
+flags corrupt dominance grouping. The anchor flag becomes
+`min_s AND max_s`.
 
 `_coalesce_range` is already correct under the ±∞ reading (each bound
 handled independently with per-side sentinel propagation) — no change, but it
@@ -118,12 +130,21 @@ is marginal):
    proceed.
 2. Verify: otherwise, materialise just the two columns
    (`select(__prime_product, __prime_rhs).to_polars()`) and run
-   `checked_multiply` per row. If any row overflows, raise
-   `LatticeWidthExceededError`.
+   `checked_multiply` per row. `_expand_level` catches the plain
+   `OverflowError` that `checked_multiply` raises and re-raises it as
+   `LatticeWidthExceededError` with partition and level context
+   (`checked_multiply` itself stays context-free and unchanged).
 
 The screen is conservative-but-cheap; the verification is exact, so a level
 where only non-maximal rows combine never raises spuriously. This finally
 wires in `primes.checked_multiply`.
+
+**Scope:** the guard protects the `__prime_product` identity only —
+multiplication in `_expand_level` is the sole growth operation on it (guard
+2's modulo and the frontier filter's modulo do not grow values). Aggregate
+accumulation (`__agg_* + *_rhs`) is a separate arithmetic path and is
+explicitly out of scope here: aggregate overflow is a data-magnitude
+concern, not a combination-identity concern.
 
 **New exception**, in `primes.py`:
 
@@ -178,7 +199,12 @@ All tests in `tests/test_accumulator_correctness.py`, written RED first.
    assert the three-way equivalence:
    `compatible(A, B)` ⟺ coalesced interval non-empty ⟺ ∃ context value in
    `{-1, 0, 2, 5, 7, 10, 11}` matching both A and B through
-   `ExpressionRulesEngine` (the apply-phase oracle).
+   `ExpressionRulesEngine` (the apply-phase oracle). "Non-empty" is computed
+   from the coalesced bounds with the same sentinel-as-±∞ and inclusivity
+   reading (sentinel bound → satisfied; else `lo < hi`, or `lo <= hi` when
+   both flags inclusive). Degenerate inputs with finite `min > max` are
+   excluded from enumeration — they are invalid rules, not a compatibility
+   case (a follow-up validation item, not this spec).
 6. **NA flag**: combinations of half-open ranges assert `co_<dim>_na`
    reflects all four bounds.
 
@@ -188,7 +214,8 @@ All tests in `tests/test_accumulator_correctness.py`, written RED first.
   `compile_coalesce_na_flag`.
 - `src/mountainash_rules/accumulator_engine.py` — tier-1 check in `build()`,
   tier-2 screen/verify in `_expand_level` (which gains the level's
-  safe/unsafe flag as a parameter or engine attribute).
+  safe/unsafe flag as a parameter or engine attribute), and the
+  `_create_anchor` RANGE NA-flag fix (`min_s AND max_s`).
 - `src/mountainash_rules/primes.py` — `LatticeWidthExceededError`;
   `checked_multiply` unchanged but now exercised.
 - `tests/test_accumulator_correctness.py` — new.

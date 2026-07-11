@@ -46,16 +46,27 @@ difference is that those columns now come from a join instead of literals.
 
 ### 2. Pipeline
 
-1. **Context prep.** `relation(contexts)`; add `__context_id` via
-   `with_row_index` unless `context_id_field` given (then validated unique).
-   For each active dimension: rename/alias `dim.resolved_context_field` →
-   `__ctx_<dimension_name>`; a **missing column** becomes a typed sentinel
-   literal (`NOT_SET` / `NOT_SET_NUMERIC` / temporal sentinel per
-   `data_type`), and **null values** in present columns are `fill_null`-ed
-   with the same sentinel — exactly the single-context semantics from the P0
-   fix, so batch and single results agree row-for-row. Non-dimension context
-   columns are dropped before the join (they'd collide with rule columns and
-   bloat the cross product).
+1. **Context prep.** `relation(contexts)`; the internal id column is
+   **always** `__context_id`: synthesised via `with_row_index` when
+   `context_id_field` is absent, otherwise the supplied field is validated
+   unique and *copied* into `__context_id` (and echoed back in results under
+   its original name). The prepared frame is built by **projection with
+   aliases**, not rename: `select(__context_id, [ctx exprs...])` where each
+   active dimension contributes
+   `ma.col(dim.resolved_context_field).alias(f"__ctx_{dimension_name}")` —
+   projection (a) guarantees nothing but reserved-prefix columns enters the
+   join, eliminating collision-by-construction, and (b) handles two
+   dimensions sharing one `resolved_context_field` (legal — metadata only
+   enforces unique dimension names), which a rename could not. A **missing
+   column** becomes a typed sentinel literal (`NOT_SET` / `NOT_SET_NUMERIC`
+   / temporal sentinel per `data_type`); **null values** in present columns
+   are `fill_null`-ed with the same sentinel — exactly the single-context
+   semantics from the P0 fix, so batch and single results agree row-for-row.
+   **Reserved-column validation**: before joining, both frames are checked —
+   neither contexts nor rules may already contain `__context_id`,
+   `__rule_index`, `__global_idx`, `__grp_base`, `__rank`, `__specificity`,
+   `__survived`, or `__t_*`/`__ctx_*` columns (`ValueError` naming
+   offenders; same reserved-namespace rule as the hit-policies spec).
 2. **Combine.** Rules relation (with `__rule_index` from the hit-policies
    spec) cross-joined with prepared contexts. Rules × contexts is the honest
    cost model; `chunk_size` (see §4) bounds memory.
@@ -64,19 +75,26 @@ difference is that those columns now come from a join instead of literals.
    `filter(__survived)`.
 4. **Per-context ranking — portable, no window functions.** Sort by
    `(__context_id, policy ordering keys…, __rule_index)`, add a global
-   `__global_idx` via `with_row_index`, then compute per-group rank by an
-   aggregate self-join: `group_by(__context_id).agg(min(__global_idx) as
-   __grp_base)` joined back, `__rank = __global_idx - __grp_base + 1`. This
-   uses only verbs every backend already supports (sort, group-agg, join) —
+   `__global_idx` via `with_row_index`, then compute per-group rank via
+   `Relation.group_by("__context_id")` — which returns a grouped relation
+   whose `.agg(...)` supports aggregate expressions —
+   `.agg(min(__global_idx) as __grp_base)`, joined back:
+   `__rank = __global_idx - __grp_base + 1`. This uses only verbs the
+   relations API exposes today (sort, group_by/agg, join, with_row_index) —
    deliberately chosen over `over()`-style windows, which mountainash
    relations do not currently expose. A native window implementation is a
    future optimisation behind the same API, not a semantic change.
-5. **Hit policy per context.** COLLECT/RULE_ORDER: ordering only.
-   FIRST/PRIORITY: `filter(__rank == 1)`. UNIQUE: group-agg survivor counts;
-   any count > 1 → `HitPolicyViolationError` listing offending context ids
-   (bounded to first 20 in the message; full frame on the error object).
-   ANY: per-context `unique().count` over output-field projection; violation
-   handling as UNIQUE. `top_n_per_context` = `filter(__rank <= n)`.
+5. **Hit policy per context** (order mirrors the single-context pipeline:
+   rank → assertions → `min_specificity` → `top_n_per_context` →
+   cardinality). COLLECT/RULE_ORDER: ordering only. UNIQUE: group-agg
+   survivor counts; any count > 1 → `HitPolicyViolationError` listing
+   offending context ids (bounded to first 20 in the message; full
+   offending frame on the error object). ANY: per-context `unique().count`
+   over the output-field projection; violation handling as UNIQUE. Then
+   `filter(__specificity >= min_specificity)` if set, then
+   `top_n_per_context` = `filter(__rank <= n)`, and finally the
+   FIRST/PRIORITY/ANY cardinality step `filter(__rank == 1)` per context
+   (matching the hit-policies spec's head(1) semantics).
 6. **Collect** once into `BatchRuleResult`.
 
 ### 3. `BatchRuleResult` (`src/mountainash_rules/batch_result.py`, new)
@@ -100,10 +118,13 @@ Backend-agnostic accessors mirroring `RuleResult`:
 When `chunk_size` is set, contexts are split into id-ranges of that size and
 Steps 2–5 run per chunk with results concatenated via `relations.concat`
 before a single collect. This is a memory bound, not a semantics change:
-per-context ranking never crosses chunk boundaries, so results are identical.
-Default `None` (single pass) — chunking is opt-in for very large cross
-products. No automatic heuristics (YAGNI; the caller knows their memory
-budget).
+context ids are unique (validated in prep), each context lives in exactly
+one chunk, and all per-context computation is chunk-local — so results are
+identical. UNIQUE/ANY violation detection **accumulates across all chunks**
+before raising (the error reports every offending context id, not just the
+first violating chunk's). Default `None` (single pass) — chunking is opt-in
+for very large cross products. No automatic heuristics (YAGNI; the caller
+knows their memory budget).
 
 ### 5. Apply-phase caching (accumulator)
 
@@ -112,11 +133,13 @@ Two independent fixes in `accumulator_engine.py`:
 1. **`apply()` engine memoisation.** A `weakref.WeakKeyDictionary[Lattice,
    ExpressionRulesEngine]` on the `AccumulatorEngine` caches the filter
    engine built from `_build_apply_metadata()` + lattice combinations.
-   `Lattice` uses default identity hashing and is immutable in practice
-   (its `_df` is never reassigned), so identity-keyed caching is sound; the
-   weak reference means dropping a lattice frees its engine. Repeated
-   `apply(lattice, ctx)` calls stop recompiling `DimensionCompiler` output
-   per call.
+   `Lattice` uses default identity hashing and is weakref-able, so
+   identity-keyed caching is sound; the weak reference means dropping a
+   lattice frees its engine. The cache assumes lattice contents are not
+   mutated after construction — there is no public setter, but
+   `Lattice.combinations` exposes the underlying frame, so this assumption
+   is documented on the property. Repeated `apply(lattice, ctx)` calls stop
+   recompiling `DimensionCompiler` output per call.
 2. **`LatticeIndex`** (new class, `lattice.py`): wraps `list[Lattice]` +
    the context-key dimension list, building the partition-key → lattice map
    once:
@@ -135,9 +158,14 @@ Two independent fixes in `accumulator_engine.py`:
    map inside `apply_auto` keyed on the list is not an option; an explicit
    index object is the honest API.)
 
-   `apply_batch` gives the accumulator the same batch story: partition the
-   contexts frame by the CONTEXT_KEY columns, run the lattice's cached filter
-   engine's `evaluate_batch` per partition, concat. This is the
+   `apply_batch` gives the accumulator the same batch story. Mechanics
+   (relations expose no grouped-subframe iterator, so partitioning is
+   explicit): collect the distinct combinations of each CONTEXT_KEY
+   dimension's `resolved_context_field` from the contexts frame via
+   `unique()`; for each combination, map the values to
+   `partition_key[dimension_name]` to select the lattice, `filter` the
+   contexts to that partition, run the lattice's cached filter engine's
+   `evaluate_batch`, and `concat` the results. This is the
    `two-engines-two-stages` Stage-2 at dataset scale with no new engine
    machinery.
 

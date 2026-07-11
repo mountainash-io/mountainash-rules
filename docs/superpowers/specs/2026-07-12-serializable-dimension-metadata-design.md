@@ -53,9 +53,11 @@ class DimensionRole(StrEnum):
 ```
 
 Explicit lowercase values (not `auto()`) so the serialised form is stable
-forever regardless of member order. Pydantic serialises/validates StrEnums by
-value natively — `MatchStrategy("range")` round-trips. Anyone comparing
-`.value` to an int breaks; that is the point of doing this now.
+forever regardless of member order. Pydantic validates StrEnums by value and
+`model_dump(mode="json")` emits the plain string (`"range"`); note plain
+`model_dump()` emits the enum member itself — all serialisation paths in
+this spec use `mode="json"`. Anyone comparing `.value` to an int breaks;
+that is the point of doing this now.
 
 ### 2. `DataType` StrEnum replacing `data_type: type`
 
@@ -87,8 +89,14 @@ the shim is removed after the ecosystem repos migrate.
 selects the "orderable non-string" path, or plain `.is_numeric` where it
 selects the numeric sentinel. Touched: `compiler.py::_sentinels_for_type`,
 `accumulator_compiler.py::_sentinel_checks`, `accumulator_engine.py` anchor NA
-flags, `context.py` sentinel selection, `dimension.py` validators, babel
-`dmn.py::_type_ref`.
+flags, `context.py` sentinel selection, `dimension.py` validators — including
+the three error messages formatting `self.data_type.__name__` (StrEnum
+members have no meaningful `__name__`; they format as `.value` directly) —
+and babel `dmn.py`: both `_type_ref` and `_feel_entry`'s `dtype == str` /
+`dtype in (int, float)` comparisons (which the deprecation shim would
+otherwise silently break). The implementation plan includes a
+`grep -rn "data_type"` sweep across both repos as its own task so no site
+is missed.
 
 ### 3. Temporal support
 
@@ -112,26 +120,43 @@ flags, `context.py` sentinel selection, `dimension.py` validators, babel
   the inline checks in `accumulator_compiler.py`/`context.py`. `context.py`'s
   missing-field path returns the matching `NOT_SET_*` sentinel per type.
 - This promotes backlog item E1 (temporal don't-cares) to implemented for the
-  filter engine **and** the accumulator (RANGE coalesce/compatible work on any
-  orderable type — the expressions are type-agnostic; only sentinel selection
-  changes).
+  filter engine **and** the accumulator. The accumulator's comparison
+  expressions (`greatest`/`least`/`lt`/`gt`) are type-agnostic, but its
+  sentinel handling is **not** currently: `accumulator_compiler.py`
+  hard-codes `UNKNOWN_NUMERIC` in `compile_coalesce_na_flag`,
+  `_range_sentinel_checks`, and `_coalesce_range`/`_coalesce_threshold`
+  literals, and `accumulator_engine.py::_create_anchor` does the same. All
+  of these switch to `sentinels_for(dim.data_type)` / a per-type
+  `unknown_sentinel_for(dim.data_type)` lookup as part of this change —
+  temporal RANGE in the accumulator is in scope, not assumed free.
 - `BOOL` is valid for EXACT/NOT_EQUAL only. Booleans have no in-band sentinel;
-  don't-care is expressed as null. The compiler wraps bool dimensions so null
-  rule/context values yield ternary 0: if `ma.t_col` already maps nulls to
-  UNKNOWN this is free; otherwise `_compile_exact` adds an explicit
-  `is_null → 0` `when` branch for `DataType.BOOL`. (Implementation verifies
-  which during the RED phase; both paths are specified so there is no
-  ambiguity.)
+  don't-care is expressed as null. Two coordinated pieces: (a)
+  `context.py::extract_context_values` must **preserve `None`** for
+  `DataType.BOOL` dimensions instead of substituting the string `NOT_SET`
+  sentinel (which would type-clash in a boolean column); (b) the compiler
+  wraps bool dimensions so null rule/context values yield ternary 0 — if
+  `ma.t_col` already maps nulls to UNKNOWN this is free; otherwise
+  `_compile_exact` adds an explicit `is_null → 0` `when` branch for
+  `DataType.BOOL`. (Implementation verifies which during the RED phase; both
+  paths are specified so there is no ambiguity.)
 
 ### 4. Per-row REGEX
 
 Split the current single strategy:
 
-- **`REGEX`** (repurposed): the rule column holds a per-row pattern string.
-  Compiled through the existing `_compile_string_match(dim, "regex_contains")`
-  path — identical mechanics to PREFIX/SUFFIX/CONTAINS, including sentinel →
-  UNKNOWN handling. `regex_pattern` on the Dimension is **forbidden** for this
-  strategy.
+- **`REGEX`** (repurposed): the rule column holds a per-row pattern string,
+  with the same sentinel → UNKNOWN handling as PREFIX/SUFFIX/CONTAINS.
+  Mechanics caveat: mountainash's `regex_contains` currently accepts only a
+  literal pattern, not a column reference, so this cannot simply reuse
+  `_compile_string_match(dim, "regex_contains")`. Implementation follows the
+  established SET_MEMBERSHIP precedent: a backend-native workaround
+  (`ma.native(...)` — e.g. polars `str.contains(pl.col(...))`, DuckDB
+  `regexp_matches(col, pattern_col)`) behind the same compiled-expression
+  interface, pending upstream mountainash support for column-valued regex
+  patterns (tracked as a mountainash issue filed with this change). Backends
+  without a native path raise a clear `NotImplementedError` naming the
+  strategy and backend. `regex_pattern` on the Dimension is **forbidden**
+  for this strategy.
 - **`CONTEXT_REGEX`** (new name for current behaviour): literal
   `regex_pattern` on the Dimension, acting as a global context validator; the
   existing `_compile_regex` implementation moves here unchanged.
@@ -156,23 +181,25 @@ class DimensionsMetadata(BaseModel):
     def from_yaml_file(cls, path: Path) -> DimensionsMetadata
 ```
 
-Implemented as `yaml.safe_dump(self.model_dump(mode="json"), sort_keys=False)`
+Implemented as
+`yaml.safe_dump(self.model_dump(mode="json", exclude_defaults=True), sort_keys=False)`
 and `cls.model_validate(yaml.safe_load(text))` — all field types are now
-JSON-scalar (StrEnums, str, bool, list), so no custom encoders. JSON comes
-free via pydantic's `model_dump_json`/`model_validate_json`; no wrapper
-methods needed. **New core dependency: `pyyaml`** (ubiquitous, stdlib-adjacent;
+JSON-scalar (StrEnums, str, bool, list), so no custom encoders. Omitting
+defaults keeps files minimal and forward-compatible (a file written today
+validates after new optional fields are added); round-trip equality still
+holds because pydantic re-applies defaults on load. JSON comes free via
+pydantic's `model_dump_json`/`model_validate_json`; no wrapper methods
+needed. **New core dependency: `pyyaml`** (ubiquitous, stdlib-adjacent;
 acceptable for the package's role as the metadata authority).
-
-Serialisation omits defaults (`exclude_defaults=True`) so files stay minimal
-and forward-compatible: a file written today validates after new optional
-fields are added.
 
 ### 6. `valid_values`
 
 Kept, as a declarative domain for the *context* values of a dimension:
 
-- `valid_values: list[t.Any] = Field(default_factory=list)` — fixes the
-  mutable-default footgun.
+- `valid_values: list[str | int | float | bool] = Field(default_factory=list)`
+  — fixes the mutable-default footgun and constrains entries to YAML/JSON
+  scalar types so serialisation cannot fail on arbitrary objects (temporal
+  domains are declared as ISO strings).
 - The engines continue to ignore it (documented in the docstring). Its
   consumer is babel's coverage validator (backlog D2), which needs
   per-dimension domains to enumerate uncovered contexts.
@@ -184,8 +211,11 @@ Kept, as a declarative domain for the *context* values of a dimension:
 when provided, inference is skipped entirely and the metadata is attached
 as-is (RANGE min/max columns validated present in the CSV; missing columns →
 `ValueError` naming them). When `metadata` is a `str | Path` ending in
-`.yaml`/`.yml`, it is loaded via `from_yaml_file`. Inference remains the
-no-metadata fallback, now emitting `DataType` values.
+`.yaml`/`.yml`, it is loaded via `from_yaml_file` — or, when the file is a
+babel `LatticeManifest` (the sidecar format babel ships, which *embeds* this
+spec's `DimensionsMetadata` payload — see the babel lattice-schema-contract
+spec, which owns the sidecar format), the embedded payload is used.
+Inference remains the no-metadata fallback, now emitting `DataType` values.
 
 ### Approaches considered
 
@@ -210,8 +240,12 @@ no-metadata fallback, now emitting `DataType` values.
    metadata set covering every strategy, RANGE inclusivity flags, roles,
    `context_field`/`rule_field` remaps, and `valid_values`.
 4. Temporal: RANGE dimension over `DataType.DATE` matches/excludes contexts
-   through `ExpressionRulesEngine`; `UNKNOWN_DATE` bound behaves as ±∞
-   (ternary 0); missing date context field → `NOT_SET_DATE` → UNKNOWN.
+   through `ExpressionRulesEngine`; an `UNKNOWN_DATE` bound yields ternary 0
+   (UNKNOWN), which survives filtering — i.e. the bound is unconstrained;
+   missing date context field → `NOT_SET_DATE` → UNKNOWN. Explicit backend
+   regression tests on polars **and** ibis-duckdb assert that
+   `date(1,1,1)`-family sentinels store and compare correctly (proleptic
+   minimum dates are an untested corner of both backends).
 5. Bool: EXACT bool dimension with null rule value → ternary 0; RANGE bool →
    `ValueError`.
 6. Per-row REGEX: rules column with distinct patterns matches per-row;
