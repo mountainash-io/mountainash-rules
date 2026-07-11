@@ -83,7 +83,7 @@ class ExpressionRulesEngine:
             if dim_name not in all_dim_names:
                 raise KeyError(f"Dimension '{dim_name}' not found in expressions")
 
-        context_values = extract_context_values(context, active_dims)
+        context_values = extract_context_values(context, active_dims, metadata=self._metadata)
         result_df = self._evaluate(
             active_dims=active_dims,
             context_values=context_values,
