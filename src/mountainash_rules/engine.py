@@ -14,7 +14,12 @@ from mountainash.relations import relation
 import dataclasses
 
 from mountainash_rules.compiler import DimensionCompiler
-from mountainash_rules.constants import CTX_PREFIX, HitPolicy
+from mountainash_rules.constants import (
+    CTX_PREFIX,
+    NOT_SET,
+    HitPolicy,
+    not_set_sentinel_for,
+)
 from mountainash_rules.context import extract_context_values
 from mountainash_rules.dimension import DimensionsMetadata
 from mountainash_rules.hit_policy import (
@@ -122,6 +127,63 @@ class ExpressionRulesEngine:
             selection_info=dataclasses.replace(info, truncated=truncated),
         )
 
+    _BATCH_RESERVED = (
+        "__context_id", "__global_idx", "__grp_base",
+        "__rule_index", "__rank", "__specificity", "__survived",
+    )
+
+    def _check_reserved(self, rel: t.Any, what: str) -> None:
+        """Raise if a user-supplied frame collides with engine columns."""
+        colliding = [
+            c for c in rel.columns
+            if c in self._BATCH_RESERVED or c.startswith(("__t_", CTX_PREFIX))
+        ]
+        if colliding:
+            raise ValueError(
+                f"{what} frame contains reserved engine columns: {colliding}"
+            )
+
+    def _prepare_contexts(
+        self,
+        contexts: t.Any,
+        active_dims: list[str],
+        context_id_field: str | None,
+    ) -> t.Any:
+        """Project contexts to __context_id + __ctx_<dim> columns with sentinels."""
+        rel = relation(contexts)
+        self._check_reserved(rel, "Contexts")
+
+        if context_id_field is None:
+            rel = rel.with_row_index(name="__context_id")
+        else:
+            total = rel.count_rows()
+            distinct = rel.select(ma.col(context_id_field)).unique().count_rows()
+            if distinct != total:
+                raise ValueError(
+                    f"context_id_field '{context_id_field}' must be unique "
+                    f"({total} rows, {distinct} distinct)"
+                )
+            rel = rel.with_columns(
+                ma.col(context_id_field).alias("__context_id")
+            )
+
+        available = set(rel.columns)
+        ctx_exprs: list[t.Any] = [ma.col("__context_id")]
+        for name in active_dims:
+            dim = self._metadata.get_dimension(name) if self._metadata else None
+            field = dim.resolved_context_field if dim is not None else name
+            sentinel = (
+                not_set_sentinel_for(dim.data_type) if dim is not None else NOT_SET
+            )
+            alias = f"{CTX_PREFIX}{name}"
+            if field in available:
+                ctx_exprs.append(
+                    ma.coalesce(ma.col(field), ma.lit(sentinel)).alias(alias)
+                )
+            else:
+                ctx_exprs.append(ma.lit(sentinel).alias(alias))
+        return rel.select(*ctx_exprs)
+
     def _evaluate(
         self,
         active_dims: list[str],
@@ -136,15 +198,7 @@ class ExpressionRulesEngine:
         rel = relation(self._rules)
 
         # Step 0: Reserved-column guard + stable input row order
-        reserved = ("__rule_index", "__rank", "__specificity", "__survived")
-        colliding = [
-            c for c in rel.columns
-            if c in reserved or c.startswith(("__t_", CTX_PREFIX))
-        ]
-        if colliding:
-            raise ValueError(
-                f"Rules frame contains reserved engine columns: {colliding}"
-            )
+        self._check_reserved(rel, "Rules")
         rel = rel.with_row_index(name="__rule_index")
 
         # Step 1: Bind context values as literal columns
