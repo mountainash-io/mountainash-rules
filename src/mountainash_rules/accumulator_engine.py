@@ -216,6 +216,7 @@ class AccumulatorEngine:
                 sentinel = UNKNOWN_NUMERIC
                 na_exprs.append(
                     ma.col(dim.range_min_field).eq(ma.lit(sentinel))
+                    .__and__(ma.col(dim.range_max_field).eq(ma.lit(sentinel)))
                     .cast(int)
                     .alias(f"co_{dim.dimension_name}_na")
                 )

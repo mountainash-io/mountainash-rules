@@ -84,3 +84,19 @@ class TestRangeNaFlags:
         products, rows = _build_pair((S, S), (S, S))
         by_product = {p: i for i, p in enumerate(rows["__prime_product"])}
         assert rows["co_x_na"][by_product[6]] == 1
+
+
+class TestAnchorNaFlags:
+    def test_half_open_singleton_not_flagged_na(self):
+        engine = AccumulatorEngine(dimension_metadata=_range_metadata())
+        rules = pl.DataFrame({"rule_name": ["A"], "x_min": [S], "x_max": [10]})
+        lattice = engine.build(rules)
+        rows = relation(lattice.combinations).to_dict()
+        assert rows["co_x_na"][0] == 0
+
+    def test_all_sentinel_singleton_flagged_na(self):
+        engine = AccumulatorEngine(dimension_metadata=_range_metadata())
+        rules = pl.DataFrame({"rule_name": ["A"], "x_min": [S], "x_max": [S]})
+        lattice = engine.build(rules)
+        rows = relation(lattice.combinations).to_dict()
+        assert rows["co_x_na"][0] == 1
