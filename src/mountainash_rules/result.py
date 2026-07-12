@@ -7,6 +7,14 @@ import typing as t
 import mountainash.expressions as ma
 from mountainash.relations import relation
 
+from mountainash_rules.constants import HitPolicy
+from mountainash_rules.hit_policy import (
+    SelectionInfo,
+    apply_cardinality,
+    check_assertions,
+    ordering_keys,
+)
+
 
 class RuleResult:
     """Wraps the evaluated rules DataFrame with convenience accessors.
@@ -22,9 +30,51 @@ class RuleResult:
     input backend so users can chain backend-specific operations on the result.
     """
 
-    def __init__(self, dataframe: t.Any, active_dimensions: list[str]) -> None:
+    def __init__(
+        self,
+        dataframe: t.Any,
+        active_dimensions: list[str],
+        selection_info: SelectionInfo | None = None,
+    ) -> None:
         self._df = dataframe
         self._active_dimensions = active_dimensions
+        self._selection_info = selection_info
+
+    def select(
+        self, policy: HitPolicy, priority_field: str | None = None
+    ) -> "RuleResult":
+        """Re-apply a hit policy over an untruncated COLLECT result."""
+        info = self._selection_info
+        if info is None:
+            raise ValueError(
+                "select() requires a result produced by evaluate() with "
+                "metadata (no selection info available)"
+            )
+        if info.truncated:
+            raise ValueError(
+                "select() on a truncated result (top_n/min_specificity was "
+                "applied); re-evaluate without truncation instead"
+            )
+        rel = relation(self._df)
+        for required in ("__specificity", "__rule_index"):
+            if required not in rel.columns:
+                raise ValueError(f"select() requires the {required} column")
+        pf = priority_field or info.priority_field
+        keys = ordering_keys(policy, pf)
+        rel = (
+            rel
+            .sort(*[k for k, _ in keys], descending=[d for _, d in keys])
+            .drop("__rank")
+            .with_row_index(name="__rank")
+            .with_columns(ma.col("__rank").add(ma.lit(1)).alias("__rank"))
+        )
+        check_assertions(rel, policy, info)
+        rel = apply_cardinality(rel, policy)
+        return RuleResult(
+            dataframe=rel.collect(),
+            active_dimensions=self._active_dimensions,
+            selection_info=info,
+        )
 
     @property
     def survivors(self) -> t.Any:

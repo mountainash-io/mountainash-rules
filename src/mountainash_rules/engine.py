@@ -11,10 +11,19 @@ import mountainash.expressions as ma
 from mountainash.expressions import BaseExpressionAPI
 from mountainash.relations import relation
 
+import dataclasses
+
 from mountainash_rules.compiler import DimensionCompiler
-from mountainash_rules.constants import CTX_PREFIX
+from mountainash_rules.constants import CTX_PREFIX, HitPolicy
 from mountainash_rules.context import extract_context_values
 from mountainash_rules.dimension import DimensionsMetadata
+from mountainash_rules.hit_policy import (
+    SelectionInfo,
+    apply_cardinality,
+    check_assertions,
+    ordering_keys,
+    selection_info_from_metadata,
+)
 from mountainash_rules.result import RuleResult
 
 
@@ -63,6 +72,8 @@ class ExpressionRulesEngine:
         top_n: int | None = None,
         min_specificity: int | None = None,
         include_observability: bool = True,
+        hit_policy: HitPolicy | None = None,
+        priority_field: str | None = None,
     ) -> RuleResult:
         """Evaluate rules against a context.
 
@@ -72,6 +83,10 @@ class ExpressionRulesEngine:
             top_n: Return only the top N matches by specificity.
             min_specificity: Minimum hard-match count to include.
             include_observability: Include per-dimension ternary columns in result.
+            hit_policy: Selection semantics over survivors; None uses the
+                metadata's policy (COLLECT on the expressions-only path).
+            priority_field: Column ordering PRIORITY selection (overrides
+                the metadata's priority_field).
 
         Returns:
             RuleResult with ranked surviving rules.
@@ -83,15 +98,29 @@ class ExpressionRulesEngine:
             if dim_name not in all_dim_names:
                 raise KeyError(f"Dimension '{dim_name}' not found in expressions")
 
+        if hit_policy is None:
+            hit_policy = (
+                self._metadata.hit_policy if self._metadata else HitPolicy.COLLECT
+            )
+        info = selection_info_from_metadata(
+            self._metadata, priority_field, include_observability
+        )
+
         context_values = extract_context_values(context, active_dims, metadata=self._metadata)
-        result_df = self._evaluate(
+        result_df, truncated = self._evaluate(
             active_dims=active_dims,
             context_values=context_values,
             top_n=top_n,
             min_specificity=min_specificity,
             include_observability=include_observability,
+            hit_policy=hit_policy,
+            info=info,
         )
-        return RuleResult(dataframe=result_df, active_dimensions=active_dims)
+        return RuleResult(
+            dataframe=result_df,
+            active_dimensions=active_dims,
+            selection_info=dataclasses.replace(info, truncated=truncated),
+        )
 
     def _evaluate(
         self,
@@ -100,7 +129,9 @@ class ExpressionRulesEngine:
         top_n: int | None,
         min_specificity: int | None,
         include_observability: bool,
-    ) -> t.Any:
+        hit_policy: HitPolicy,
+        info: SelectionInfo,
+    ) -> tuple[t.Any, bool]:
         """Run the single-pass evaluation pipeline via mountainash.relations.Relation."""
         rel = relation(self._rules)
 
@@ -144,26 +175,36 @@ class ExpressionRulesEngine:
         ).alias("__specificity")
         rel = rel.with_columns(survived, specificity)
 
-        # Step 4: Filter survivors, sort by specificity with deterministic
-        # rule-order tie-break, add 1-based rank
+        # Step 4: Filter survivors, apply the policy's ordering, add 1-based rank
+        keys = ordering_keys(hit_policy, info.priority_field)
         rel = (
             rel
             .filter(ma.col("__survived"))
-            .sort("__specificity", "__rule_index", descending=[True, False])
+            .sort(*[k for k, _ in keys], descending=[d for _, d in keys])
             .with_row_index(name="__rank")
             .with_columns(ma.col("__rank").add(ma.lit(1)).alias("__rank"))
         )
 
-        # Step 5: Apply optional filters (after ranking, so __rank reflects pre-filter position)
-        if min_specificity is not None:
-            rel = rel.filter(ma.col("__specificity").ge(ma.lit(min_specificity)))
-        if top_n is not None:
-            rel = rel.head(top_n)
+        # Step 5: Assertions over the FULL survivor set (pre-truncation)
+        check_assertions(rel, hit_policy, info)
 
-        # Step 6: Drop temporary and observability columns
+        # Step 6: Optional filters (after ranking, so __rank reflects
+        # pre-filter position), then policy cardinality
+        truncated = False
+        if min_specificity is not None:
+            before = rel.count_rows()
+            rel = rel.filter(ma.col("__specificity").ge(ma.lit(min_specificity)))
+            truncated = truncated or rel.count_rows() < before
+        if top_n is not None:
+            before = rel.count_rows()
+            rel = rel.head(top_n)
+            truncated = truncated or before > top_n
+        rel = apply_cardinality(rel, hit_policy)
+
+        # Step 7: Drop temporary and observability columns
         drop_cols = ["__survived"] + [f"{CTX_PREFIX}{d}" for d in active_dims]
         if not include_observability:
             drop_cols += [f"__t_{d}" for d in active_dims]
         rel = rel.drop(*drop_cols)
 
-        return rel.collect()
+        return rel.collect(), truncated
