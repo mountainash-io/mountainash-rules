@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import math
 import typing as t
+import weakref
 
 import polars as pl
 
@@ -52,6 +53,9 @@ class AccumulatorEngine:
         self._metadata = dimension_metadata
         self._aggregates = aggregates or []
         self._compiler = AccumulatorCompiler()
+        self._apply_engines: weakref.WeakKeyDictionary[Lattice, ExpressionRulesEngine] = (
+            weakref.WeakKeyDictionary()
+        )
 
         # Separate context-key dims from constraint dims
         self._context_key_dims: list[Dimension] = []
@@ -509,11 +513,7 @@ class AccumulatorEngine:
         Returns:
             AccumulatorResult wrapping the matching combinations.
         """
-        filter_metadata = self._build_apply_metadata()
-        filter_engine = ExpressionRulesEngine(
-            rules=lattice.combinations,
-            dimension_metadata=filter_metadata,
-        )
+        filter_engine = self._filter_engine_for(lattice)
         filter_result = filter_engine.evaluate(context, dimensions=dimensions)
         return AccumulatorResult(
             dataframe=filter_result.survivors,
@@ -521,6 +521,22 @@ class AccumulatorEngine:
             aggregates=self._aggregates,
             lattice=lattice,
         )
+
+    def _filter_engine_for(self, lattice: Lattice) -> ExpressionRulesEngine:
+        """Memoised apply-phase filter engine, keyed on lattice identity."""
+        engine = self._apply_engines.get(lattice)
+        if engine is None:
+            engine = ExpressionRulesEngine(
+                rules=lattice.combinations,
+                dimension_metadata=self._build_apply_metadata(),
+            )
+            self._apply_engines[lattice] = engine
+        return engine
+
+    def index(self, lattices: list[Lattice]) -> "LatticeIndex":
+        """Build a partition-key routing index over pre-built lattices."""
+        from mountainash_rules.lattice import LatticeIndex
+        return LatticeIndex(self, lattices, self._context_key_dims)
 
     def _extract_partition_key(self, context: t.Any) -> tuple:
         """Extract the partition key tuple from a context object."""
@@ -555,23 +571,8 @@ class AccumulatorEngine:
 
         Raises:
             KeyError: If no lattice matches the partition key from the context.
-        """
-        # Build a lookup dict from partition key tuples to lattices
-        lattice_map: dict[tuple, Lattice] = {}
-        for lattice in lattices:
-            if lattice.partition_key is not None:
-                key = tuple(
-                    lattice.partition_key[d.dimension_name]
-                    for d in self._context_key_dims
-                )
-                lattice_map[key] = lattice
-            else:
-                # No partition key — single lattice case
-                lattice_map[()] = lattice
 
-        context_key = self._extract_partition_key(context)
-        if context_key not in lattice_map:
-            raise KeyError(
-                f"No lattice for partition key {context_key!r}"
-            )
-        return self.apply(lattice_map[context_key], context, dimensions=dimensions)
+        Note:
+            Convenience wrapper; hot paths should hold a LatticeIndex.
+        """
+        return self.index(lattices).apply(context, dimensions=dimensions)

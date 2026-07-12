@@ -209,3 +209,53 @@ class TestChunking:
             )
         msg = str(exc_info.value)
         assert "0" in msg and "3" in msg
+
+
+class TestApplyCaching:
+    def _setup(self):
+        from mountainash_rules.accumulator_engine import AccumulatorEngine
+        from mountainash_rules.constants import DimensionRole
+        md = DimensionsMetadata(dimensions=[
+            Dimension(dimension_name="segment", role=DimensionRole.CONTEXT_KEY),
+            Dimension(dimension_name="region"),
+        ])
+        rules = pl.DataFrame({
+            "rule_name": ["a", "b", "c"],
+            "segment": ["retail", "retail", "corp"],
+            "region": ["AU", "<NA>", "AU"],
+        })
+        engine = AccumulatorEngine(dimension_metadata=md)
+        return engine, engine.build_all(rules)
+
+    def test_apply_compiles_engine_once_per_lattice(self, monkeypatch):
+        import mountainash_rules.engine as eng_mod
+        engine, lattices = self._setup()
+        calls = []
+        original = eng_mod.DimensionCompiler.compile_dimensions
+        monkeypatch.setattr(
+            eng_mod.DimensionCompiler, "compile_dimensions",
+            lambda self, md: calls.append(1) or original(self, md),
+        )
+        target = lattices[0]
+        engine.apply(target, {"segment": target.partition_key["segment"],
+                              "region": "AU"})
+        engine.apply(target, {"segment": target.partition_key["segment"],
+                              "region": "NZ"})
+        assert len(calls) == 1
+
+    def test_lattice_index_routes_by_partition(self):
+        engine, lattices = self._setup()
+        index = engine.index(lattices)
+        result = index.apply({"segment": "corp", "region": "AU"})
+        rows = relation(result.survivors).to_polars()
+        assert set(rows["rule_name"]) <= {"c"}
+
+    def test_lattice_index_apply_batch(self):
+        engine, lattices = self._setup()
+        index = engine.index(lattices)
+        contexts = pl.DataFrame({
+            "segment": ["retail", "corp"], "region": ["AU", "AU"],
+        })
+        batch = index.apply_batch(contexts)
+        surv = relation(batch.survivors).to_polars()
+        assert surv["__context_id"].n_unique() == 2
