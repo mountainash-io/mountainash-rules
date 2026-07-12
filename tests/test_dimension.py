@@ -86,7 +86,7 @@ class TestRegexPatternValidation:
     def test_regex_with_pattern_ok(self):
         d = Dimension(
             dimension_name="code",
-            match_strategy=MatchStrategy.REGEX,
+            match_strategy=MatchStrategy.CONTEXT_REGEX,
             data_type=str,
             regex_pattern="^foo",
         )
@@ -96,7 +96,7 @@ class TestRegexPatternValidation:
         with pytest.raises(ValueError, match="regex_pattern"):
             Dimension(
                 dimension_name="code",
-                match_strategy=MatchStrategy.REGEX,
+                match_strategy=MatchStrategy.CONTEXT_REGEX,
                 data_type=str,
             )
 
@@ -104,7 +104,7 @@ class TestRegexPatternValidation:
         with pytest.raises(ValueError, match="regex_pattern"):
             Dimension(
                 dimension_name="code",
-                match_strategy=MatchStrategy.REGEX,
+                match_strategy=MatchStrategy.CONTEXT_REGEX,
                 data_type=str,
                 regex_pattern="",
             )

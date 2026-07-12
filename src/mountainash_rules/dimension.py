@@ -94,19 +94,22 @@ class Dimension(BaseModel):
                     f"{self.data_type.value}; expected str"
                 )
 
-        if self.match_strategy == MatchStrategy.REGEX:
+        if self.match_strategy == MatchStrategy.CONTEXT_REGEX:
             if not isinstance(self.regex_pattern, str) or not self.regex_pattern:
                 raise ValueError(
-                    f"Dimension '{self.dimension_name}' uses REGEX strategy and "
-                    f"requires a non-empty literal 'regex_pattern' on the Dimension"
+                    f"Dimension '{self.dimension_name}' uses context_regex and "
+                    f"requires a non-empty literal 'regex_pattern'"
                 )
-        else:
-            if self.regex_pattern is not None:
-                raise ValueError(
-                    f"Dimension '{self.dimension_name}' sets regex_pattern but "
-                    f"match_strategy is {self.match_strategy.value}; "
-                    f"regex_pattern is only valid for REGEX strategy"
-                )
+        elif self.regex_pattern is not None:
+            hint = (
+                " (per-row regex reads patterns from the rule column; "
+                "for a literal metadata pattern use context_regex)"
+                if self.match_strategy == MatchStrategy.REGEX else ""
+            )
+            raise ValueError(
+                f"Dimension '{self.dimension_name}' sets regex_pattern but "
+                f"match_strategy is {self.match_strategy.value}{hint}"
+            )
 
         if self.match_strategy in (
             MatchStrategy.GREATER_THAN,

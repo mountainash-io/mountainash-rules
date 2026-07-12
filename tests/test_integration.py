@@ -72,7 +72,7 @@ class TestPricingCarveOut:
 class TestEntityPool:
     """Entity pool with range-based and regex rules for increasing specificity.
 
-    REGEX uses literal pattern on Dimension metadata (not a per-rule column).
+    CONTEXT_REGEX uses a literal pattern on Dimension metadata (not a per-rule column).
     """
 
     @pytest.fixture
@@ -95,7 +95,7 @@ class TestEntityPool:
             ),
             Dimension(
                 dimension_name="code_pattern",
-                match_strategy=MatchStrategy.REGEX,
+                match_strategy=MatchStrategy.CONTEXT_REGEX,
                 data_type=str,
                 regex_pattern="^T.*",
             ),

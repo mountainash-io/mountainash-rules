@@ -52,12 +52,14 @@ The rules engine supports 11 match strategies via the `MatchStrategy` enum, comp
 | `PREFIX` | Prefix string | str | Context value starts with rule |
 | `SUFFIX` | Suffix string | str | Context value ends with rule |
 | `CONTAINS` | Substring | str | Context value contains rule |
-| `REGEX` | Regex pattern | str | Context value matches rule pattern (search semantics) |
+| `REGEX` | Pattern column | str | Rule column holds a per-row pattern (search semantics) |
+| `CONTEXT_REGEX` | Literal `regex_pattern` on Dimension metadata | str | Global context validator shared by all rules |
 | `SET_MEMBERSHIP` | List column | any | Context value is in rule's list |
 | `SET_EXCLUSION` | List column | any | Context value is not in rule's list |
 
 **Backend support:**
-- 9 strategies (EXACT, NOT_EQUAL, RANGE, GREATER_THAN, LESS_THAN, PREFIX, SUFFIX, CONTAINS, REGEX) compile cleanly on Polars, Ibis, and Narwhals backends — all support per-row patterns/thresholds via column references
+- 9 strategies (EXACT, NOT_EQUAL, RANGE, GREATER_THAN, LESS_THAN, PREFIX, SUFFIX, CONTAINS, CONTEXT_REGEX) compile cleanly on Polars, Ibis, and Narwhals backends
+- `REGEX` (per-row pattern column) currently uses a Polars-native workaround (`ma.native(pl.col(ctx).str.contains(pl.col(rule)))`) pending upstream column-pattern `regex_contains` support in mountainash
 - `SET_MEMBERSHIP` and `SET_EXCLUSION` currently use a Polars-native workaround (`ma.native(pl.col(...).list.contains(...))`) pending upstream `t_is_in`/`t_is_not_in` support for list-column references in mountainash
 
 **Unknown handling:** Sentinel values (`<NA>` for strings, `-999999999` for numerics) in either rule or context columns produce UNKNOWN (0) ternary results, which count as wildcards in ranking but do not eliminate the rule.

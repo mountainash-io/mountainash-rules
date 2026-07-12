@@ -226,3 +226,31 @@ class TestTemporalBackendRegression:
         )
         result = engine.evaluate({"asof": datetime.date(2026, 7, 12)})
         assert result.count == 1
+
+
+class TestRegexSplit:
+    def test_regex_forbids_regex_pattern(self):
+        with pytest.raises(ValueError, match="context_regex"):
+            Dimension(
+                dimension_name="x", match_strategy=MatchStrategy.REGEX,
+                regex_pattern="^A.*",
+            )
+
+    def test_context_regex_requires_pattern(self):
+        with pytest.raises(ValueError, match="regex_pattern"):
+            Dimension(dimension_name="x", match_strategy=MatchStrategy.CONTEXT_REGEX)
+
+    def test_per_row_regex_matches_per_rule(self):
+        from mountainash_rules.constants import UNKNOWN
+        rules = pl.DataFrame({
+            "rule_name": ["au", "nz", "any"],
+            "x": ["^AU-", "^NZ-", UNKNOWN],
+        })
+        md = DimensionsMetadata(dimensions=[
+            Dimension(dimension_name="x", match_strategy=MatchStrategy.REGEX),
+        ])
+        engine = ExpressionRulesEngine(rules=rules, dimension_metadata=md)
+        result = engine.evaluate({"x": "AU-1234"})
+        assert result.count == 2  # au (match) + any (sentinel wildcard)
+        assert result.explain("au") == {"x": 1}
+        assert result.explain("any") == {"x": 0}

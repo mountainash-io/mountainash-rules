@@ -26,7 +26,7 @@ from mountainash_rules.engine import ExpressionRulesEngine
 _DEFAULT_STRATEGY_MIX: dict[MatchStrategy, float] = {
     MatchStrategy.EXACT: 0.35,
     MatchStrategy.RANGE: 0.25,
-    MatchStrategy.REGEX: 0.10,
+    MatchStrategy.CONTEXT_REGEX: 0.10,
     MatchStrategy.PREFIX: 0.10,
     MatchStrategy.GREATER_THAN: 0.05,
     MatchStrategy.LESS_THAN: 0.05,
@@ -224,7 +224,7 @@ def generate_rules(
                 )
             )
 
-        elif strategy == MatchStrategy.REGEX:
+        elif strategy == MatchStrategy.CONTEXT_REGEX:
             # Pick one pattern for this dimension and store per-rule values that
             # the pattern can be validated against in the rule column.  The
             # Dimension validator requires a non-empty regex_pattern literal.
@@ -241,7 +241,7 @@ def generate_rules(
             dimensions.append(
                 Dimension(
                     dimension_name=dim_name,
-                    match_strategy=MatchStrategy.REGEX,
+                    match_strategy=MatchStrategy.CONTEXT_REGEX,
                     data_type=str,
                     regex_pattern=pattern,
                 )
@@ -346,7 +346,7 @@ def generate_context(
             field_defs[name] = (int, ...)
             field_values[name] = value
 
-        elif strategy == MatchStrategy.REGEX:
+        elif strategy == MatchStrategy.CONTEXT_REGEX:
             # Generate a value that matches the pattern; use a safe template
             # matching patterns like "^[A-Z]{2}_\d+" or "^[A-Z]{3}_\d{4}"
             letters2 = "".join(rng.choices("ABCDEFGHIJKLMNOPQRSTUVWXYZ", k=2))

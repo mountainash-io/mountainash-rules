@@ -157,17 +157,17 @@ class TestRangeCompilation:
         assert values[1] == 0  # unknown min → unknown result
 
 
-class TestRegexCompilation:
-    """REGEX uses a literal pattern from Dimension metadata (not a rule column).
+class TestContextRegexCompilation:
+    """CONTEXT_REGEX uses a literal pattern from Dimension metadata (not a rule column).
 
     The ternary outcome is purely context-driven: every rule in the engine
-    shares the same +1 / -1 outcome for a REGEX dimension.
+    shares the same +1 / -1 outcome for a CONTEXT_REGEX dimension.
     """
 
     def test_regex_context_matches_pattern(self, compiler):
         dim = Dimension(
             dimension_name="code",
-            match_strategy=MatchStrategy.REGEX,
+            match_strategy=MatchStrategy.CONTEXT_REGEX,
             data_type=str,
             regex_pattern="^PRE.*",
         )
@@ -183,7 +183,7 @@ class TestRegexCompilation:
         """regex_contains uses search semantics (match anywhere, not anchored)."""
         dim = Dimension(
             dimension_name="code",
-            match_strategy=MatchStrategy.REGEX,
+            match_strategy=MatchStrategy.CONTEXT_REGEX,
             data_type=str,
             regex_pattern="123",
         )
@@ -196,10 +196,10 @@ class TestRegexCompilation:
         assert result["__t_code"].to_list() == [1, -1]
 
     def test_regex_no_unknown_state(self, compiler):
-        """REGEX has no unknown/0 state — pattern is fixed at metadata time."""
+        """CONTEXT_REGEX has no unknown/0 state — pattern is fixed at metadata time."""
         dim = Dimension(
             dimension_name="code",
-            match_strategy=MatchStrategy.REGEX,
+            match_strategy=MatchStrategy.CONTEXT_REGEX,
             data_type=str,
             regex_pattern="^AU.*",
         )
@@ -609,7 +609,7 @@ class TestBackendAgnosticism:
         (MatchStrategy.PREFIX, "str_col", str, {}),
         (MatchStrategy.SUFFIX, "str_col", str, {}),
         (MatchStrategy.CONTAINS, "str_col", str, {}),
-        (MatchStrategy.REGEX, "str_col", str, {"regex_pattern": "A"}),
+        (MatchStrategy.CONTEXT_REGEX, "str_col", str, {"regex_pattern": "A"}),
     ])
     def test_non_set_strategy_compiles_on_backend(
         self, compiler, backend_name, strategy, field, data_type, extras

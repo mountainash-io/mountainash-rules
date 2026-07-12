@@ -37,7 +37,9 @@ class DimensionCompiler:
             case MatchStrategy.RANGE:
                 return self._compile_range(dim)
             case MatchStrategy.REGEX:
-                return self._compile_regex(dim)
+                return self._compile_regex_per_row(dim)
+            case MatchStrategy.CONTEXT_REGEX:
+                return self._compile_context_regex(dim)
             case MatchStrategy.NOT_EQUAL:
                 return self._compile_not_equal(dim)
             case MatchStrategy.GREATER_THAN:
@@ -122,12 +124,37 @@ class DimensionCompiler:
     def _compile_contains(self, dim: Dimension) -> BaseExpressionAPI:
         return self._compile_string_match(dim, "contains")
 
-    def _compile_regex(self, dim: Dimension) -> BaseExpressionAPI:
-        """REGEX dimensions use a literal pattern from metadata.
+    def _compile_regex_per_row(self, dim: Dimension) -> BaseExpressionAPI:
+        """Per-row REGEX: the rule column holds the pattern for each rule.
 
-        All rules in the engine share the same ternary outcome for a REGEX
-        dimension — it acts as a global context validator. There is no
-        unknown state because the pattern is fixed at metadata time.
+        Sentinel patterns act as don't-care (0); otherwise search semantics
+        against the context value per rule row.
+
+        mountainash's regex_contains only accepts a literal pattern, so this
+        uses a Polars-native expression pending upstream support for
+        column-valued patterns (same workaround precedent as
+        SET_MEMBERSHIP/SET_EXCLUSION before t_is_in landed). Non-polars
+        backends fail at evaluation with mountainash's native-expression
+        error.
+        """
+        import polars as pl  # allow: native fallback pending mountainash column-pattern regex_contains
+
+        rule_field = dim.resolved_rule_field
+        ctx_name = CTX_PREFIX + dim.dimension_name
+        rule_col = ma.col(rule_field)
+        rule_is_sentinel = (
+            rule_col.__eq__(ma.lit(UNKNOWN)) | rule_col.__eq__(ma.lit(NOT_SET))
+        )
+        match = ma.native(pl.col(ctx_name).str.contains(pl.col(rule_field)))
+        return ma.when(rule_is_sentinel).then(0).when(match).then(1).otherwise(-1)
+
+    def _compile_context_regex(self, dim: Dimension) -> BaseExpressionAPI:
+        """CONTEXT_REGEX dimensions use a literal pattern from metadata.
+
+        All rules in the engine share the same ternary outcome for a
+        CONTEXT_REGEX dimension — it acts as a global context validator.
+        There is no unknown state because the pattern is fixed at metadata
+        time.
         """
         ctx_col = ma.col(CTX_PREFIX + dim.dimension_name)
         match = ctx_col.str.regex_contains(dim.regex_pattern)

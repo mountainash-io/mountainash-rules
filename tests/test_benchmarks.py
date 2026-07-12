@@ -91,10 +91,10 @@ class TestStrategyIsolation:
         ):
             pytest.skip(f"{backend_name} does not support per-row string match strategies")
 
-        if strategy is MatchStrategy.CONTEXT_REGEX:
+        if strategy is MatchStrategy.REGEX:
             pytest.skip(
-                "CONTEXT_REGEX takes a literal pattern on Dimension metadata; "
-                "the benchmark rule generator only produces per-row rule columns"
+                "per-row REGEX patterns are not yet produced by the benchmark "
+                "rule generator (literal patterns are benchmarked as CONTEXT_REGEX)"
             )
 
         rules_dict, metadata = generate_rules(

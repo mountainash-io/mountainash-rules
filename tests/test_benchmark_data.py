@@ -36,11 +36,11 @@ class TestAssignStrategies:
         assert MatchStrategy.EXACT in strategy_set
 
     def test_single_strategy_override(self):
-        result = assign_strategies(5, {MatchStrategy.REGEX: 1.0})
+        result = assign_strategies(5, {MatchStrategy.CONTEXT_REGEX: 1.0})
         assert len(result) == 5
         # All should be REGEX (padded with EXACT if proportional count < 5 but
         # since weight is 1.0 and round(5 * 1.0) == 5, all should be REGEX)
-        assert all(s == MatchStrategy.REGEX for s in result)
+        assert all(s == MatchStrategy.CONTEXT_REGEX for s in result)
 
     def test_deterministic_output(self):
         """Same inputs always produce the same strategy list."""
@@ -131,10 +131,10 @@ class TestGenerateRules:
         _, metadata = generate_rules(
             rule_count=10,
             dim_count=1,
-            strategy_mix={MatchStrategy.REGEX: 1.0},
+            strategy_mix={MatchStrategy.CONTEXT_REGEX: 1.0},
         )
         dim = metadata.dimensions[0]
-        assert dim.match_strategy == MatchStrategy.REGEX
+        assert dim.match_strategy == MatchStrategy.CONTEXT_REGEX
         assert dim.regex_pattern is not None
         assert len(dim.regex_pattern) > 0
 

@@ -213,7 +213,7 @@ def basic_metadata() -> DimensionsMetadata:
         ),
         Dimension(
             dimension_name="code",
-            match_strategy=MatchStrategy.REGEX,
+            match_strategy=MatchStrategy.CONTEXT_REGEX,
             data_type=str,
             regex_pattern="^PRE.*",
         ),

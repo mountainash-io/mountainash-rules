@@ -68,7 +68,8 @@ print(result.explain("fallback"))    # {"region": 0, "spend": 0} — both wildca
 | `PREFIX` | String | Context value starts with rule value |
 | `SUFFIX` | String | Context value ends with rule value |
 | `CONTAINS` | Substring | Context value contains rule value |
-| `REGEX` | Pattern | Context value matches rule pattern |
+| `REGEX` | Pattern column | Rule column holds a per-row pattern; search semantics |
+| `CONTEXT_REGEX` | Literal pattern on Dimension metadata | Global context validator shared by all rules |
 | `SET_MEMBERSHIP` | List | Context value is in rule's list |
 | `SET_EXCLUSION` | List | Context value is not in rule's list |
 
