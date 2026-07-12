@@ -1,29 +1,30 @@
 """Constants for the expression-based rules engine."""
 
-from enum import Enum, auto
+from enum import StrEnum
 
 
-class MatchStrategy(Enum):
+class MatchStrategy(StrEnum):
     """How a dimension matches context values against rule values."""
 
-    EXACT = auto()
-    NOT_EQUAL = auto()
-    RANGE = auto()
-    GREATER_THAN = auto()
-    LESS_THAN = auto()
-    PREFIX = auto()
-    SUFFIX = auto()
-    CONTAINS = auto()
-    REGEX = auto()
-    SET_MEMBERSHIP = auto()
-    SET_EXCLUSION = auto()
+    EXACT = "exact"
+    NOT_EQUAL = "not_equal"
+    RANGE = "range"
+    GREATER_THAN = "greater_than"
+    LESS_THAN = "less_than"
+    PREFIX = "prefix"
+    SUFFIX = "suffix"
+    CONTAINS = "contains"
+    REGEX = "regex"
+    CONTEXT_REGEX = "context_regex"
+    SET_MEMBERSHIP = "set_membership"
+    SET_EXCLUSION = "set_exclusion"
 
 
-class DimensionRole(Enum):
+class DimensionRole(StrEnum):
     """Whether a dimension partitions the lattice or participates in coalesce."""
 
-    CONSTRAINT = auto()
-    CONTEXT_KEY = auto()
+    CONSTRAINT = "constraint"
+    CONTEXT_KEY = "context_key"
 
 
 # Sentinel values for unknown/unset rule and context fields.
