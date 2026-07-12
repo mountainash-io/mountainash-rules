@@ -9,7 +9,7 @@ from pydantic import BaseModel
 
 import mountainash.expressions as ma
 from mountainash.expressions import BaseExpressionAPI
-from mountainash.relations import relation
+from mountainash.relations import concat, relation
 
 import dataclasses
 
@@ -214,14 +214,33 @@ class ExpressionRulesEngine:
             self._metadata, priority_field, include_observability
         )
 
-        if chunk_size is not None:
-            raise NotImplementedError("chunk_size lands in a later task")
-
         prepared = self._prepare_contexts(contexts, active_dims, context_id_field)
-        result_df = self._evaluate_batch_frame(
-            prepared, active_dims, hit_policy, info,
-            top_n_per_context, min_specificity, include_observability,
-        )
+        if chunk_size is None:
+            result_df = self._evaluate_batch_frame(
+                prepared, active_dims, hit_policy, info,
+                top_n_per_context, min_specificity, include_observability,
+            )
+        else:
+            prepared_pl = prepared.to_polars()
+            frames = []
+            violations: list[HitPolicyViolationError] = []
+            for start in range(0, len(prepared_pl), chunk_size):
+                chunk = prepared_pl.slice(start, chunk_size)
+                try:
+                    frames.append(self._evaluate_batch_frame(
+                        relation(chunk), active_dims, hit_policy, info,
+                        top_n_per_context, min_specificity,
+                        include_observability,
+                    ))
+                except HitPolicyViolationError as exc:
+                    violations.append(exc)
+            if violations:
+                combined = concat([relation(v.offending) for v in violations])
+                raise HitPolicyViolationError(
+                    hit_policy, combined.collect(),
+                    "; ".join(str(v) for v in violations),
+                )
+            result_df = concat([relation(f) for f in frames]).collect()
         return BatchRuleResult(
             dataframe=result_df,
             active_dimensions=active_dims,

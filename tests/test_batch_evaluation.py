@@ -177,3 +177,35 @@ class TestBatchHitPolicies:
         surv = relation(batch.survivors).to_polars()
         assert (surv["__rank"] <= 1).all()
         assert surv["__context_id"].n_unique() == 2
+
+
+class TestChunking:
+    def test_chunked_equals_unchunked(self):
+        contexts = pl.DataFrame({
+            "region": ["AU"] * 5 + ["NZ"] * 5,
+            "amount": list(range(0, 1000, 100)),
+            "product_code": [f"X-{i}" for i in range(10)],
+        })
+        engine = _engine()
+        whole = relation(engine.evaluate_batch(contexts).survivors).to_polars()
+        chunked = relation(
+            engine.evaluate_batch(contexts, chunk_size=3).survivors
+        ).to_polars()
+        key = ["__context_id", "__rank"]
+        assert whole.sort(key).equals(chunked.sort(key))
+
+    def test_unique_violations_accumulate_across_chunks(self):
+        from mountainash_rules.hit_policy import HitPolicyViolationError
+        # contexts 0 and 3 both have 2 survivors; chunk_size=2 puts them
+        # in different chunks — both ids must appear in the message
+        contexts = pl.DataFrame({
+            "region": ["AU", "XX", "XX", "AU"],
+            "amount": [50, 1, 1, 50],
+            "product_code": ["X-1", "Q", "Q", "X-1"],
+        })
+        with pytest.raises(HitPolicyViolationError) as exc_info:
+            _engine().evaluate_batch(
+                contexts, hit_policy=HitPolicy.UNIQUE, chunk_size=2
+            )
+        msg = str(exc_info.value)
+        assert "0" in msg and "3" in msg
