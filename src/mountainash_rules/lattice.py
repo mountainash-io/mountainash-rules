@@ -37,6 +37,16 @@ class Lattice:
         return self._partition_key
 
     @property
+    def is_composed(self) -> bool:
+        """True when this lattice came out of AccumulatorEngine.build().
+
+        Keyed on the __prime_product tracking column, which only the build
+        phase creates; importers strip tracking columns, so imported
+        lattices are always flat.
+        """
+        return "__prime_product" in relation(self._df).columns
+
+    @property
     def metadata(self) -> DimensionsMetadata:
         return self._metadata
 

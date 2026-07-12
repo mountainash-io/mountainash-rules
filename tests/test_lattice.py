@@ -58,3 +58,38 @@ class TestLattice:
         ])
         lattice = Lattice(dataframe=df, metadata=metadata, aggregates=[], partition_key=None)
         assert lattice.partition_key is None
+
+
+from mountainash.relations import relation
+
+from mountainash_rules.accumulator_engine import AccumulatorEngine
+
+
+class TestIsComposed:
+    def _metadata(self):
+        return DimensionsMetadata(dimensions=[
+            Dimension(dimension_name="region"),
+        ])
+
+    def test_built_lattice_is_composed(self):
+        engine = AccumulatorEngine(dimension_metadata=self._metadata())
+        rules = pl.DataFrame({"rule_name": ["r"], "region": ["AU"]})
+        assert engine.build(rules).is_composed is True
+
+    def test_hand_constructed_flat_lattice_is_not_composed(self):
+        lattice = Lattice(
+            dataframe=pl.DataFrame({"rule_name": ["r"], "region": ["AU"]}),
+            metadata=self._metadata(),
+            aggregates=[],
+            partition_key=None,
+        )
+        assert lattice.is_composed is False
+
+    def test_empty_build_is_still_composed(self):
+        engine = AccumulatorEngine(dimension_metadata=self._metadata())
+        rules = pl.DataFrame({"rule_name": [], "region": []},
+                             schema={"rule_name": pl.Utf8, "region": pl.Utf8})
+        lattice = engine.build(rules)
+        assert lattice.count == 0
+        assert lattice.is_composed is True
+        assert "co_region" in relation(lattice.combinations).columns

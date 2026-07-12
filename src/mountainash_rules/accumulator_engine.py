@@ -118,9 +118,13 @@ class AccumulatorEngine:
         n_rules = len(rules_pl)
 
         if n_rules == 0:
-            # Return empty lattice
+            # Return an empty lattice that still carries the composed schema
+            empty = rules_pl.with_columns(
+                pl.Series("__prime", [], dtype=pl.Int64)
+            )
+            anchor = self._create_anchor(empty)
             return Lattice(
-                dataframe=rules_pl,
+                dataframe=anchor.collect(),
                 metadata=self._metadata,
                 aggregates=self._aggregates,
                 partition_key=partition_key,
