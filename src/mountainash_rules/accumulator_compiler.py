@@ -18,6 +18,12 @@ class AccumulatorCompiler:
 
     Expressions operate on two rule rows: LHS (coalesced combination, co_ prefix)
     and RHS (candidate rule, _rhs suffix from the cross-join).
+
+    Sentinel semantics: a rule-side don't-care bound is UNKNOWN_NUMERIC only
+    (sentinel min = -inf, sentinel max = +inf). NOT_SET_NUMERIC is a
+    context-side sentinel; the filter engine currently also tolerates it
+    rule-side (NUMERIC_SENTINELS contains both), but the accumulator does
+    not recognise it — rule tables fed to build() must use UNKNOWN_NUMERIC.
     """
 
     def compile_compatible(self, dim: Dimension) -> BaseExpressionAPI:
@@ -92,17 +98,29 @@ class AccumulatorCompiler:
         return co_min_s, co_max_s, rhs_min_s, rhs_max_s
 
     def _compatible_range(self, dim: Dimension) -> BaseExpressionAPI:
+        """True when the two effective intervals overlap.
+
+        A sentinel min is -inf, a sentinel max is +inf, each bound
+        independently. Touching endpoints overlap iff both the min and the
+        max side are inclusive (covers all four flag combinations).
+        """
         co_min_s, co_max_s, rhs_min_s, rhs_max_s = self._range_sentinel_checks(dim)
-        either_sentinel = co_min_s.__or__(rhs_min_s)
-        intervals_overlap = (
-            ma.col(f"co_{dim.range_min_field}")
-            .lt(ma.col(f"{dim.range_max_field}_rhs"))
-            .__and__(
-                ma.col(f"co_{dim.range_max_field}")
-                .gt(ma.col(f"{dim.range_min_field}_rhs"))
-            )
-        )
-        return either_sentinel.__or__(intervals_overlap)
+        co_min = ma.col(f"co_{dim.range_min_field}")
+        co_max = ma.col(f"co_{dim.range_max_field}")
+        rhs_min = ma.col(f"{dim.range_min_field}_rhs")
+        rhs_max = ma.col(f"{dim.range_max_field}_rhs")
+
+        touch_overlaps = dim.range_min_inclusive and dim.range_max_inclusive
+        if touch_overlaps:
+            low = co_min.le(rhs_max)
+            high = co_max.ge(rhs_min)
+        else:
+            low = co_min.lt(rhs_max)
+            high = co_max.gt(rhs_min)
+
+        low_ok = co_min_s.__or__(rhs_max_s).__or__(low)
+        high_ok = co_max_s.__or__(rhs_min_s).__or__(high)
+        return low_ok.__and__(high_ok)
 
     def _coalesce_range(self, dim: Dimension) -> list[BaseExpressionAPI]:
         co_min_s, co_max_s, rhs_min_s, rhs_max_s = self._range_sentinel_checks(dim)
