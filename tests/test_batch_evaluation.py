@@ -86,3 +86,39 @@ class TestPrepareContexts:
         contexts = pl.DataFrame({"__rank": [1], "region": ["AU"]})
         with pytest.raises(ValueError, match="__rank"):
             _engine()._prepare_contexts(contexts, ["region"], None)
+
+
+class TestEvaluateBatchAgreement:
+    """Core invariant: batch == per-context evaluate(), row for row."""
+
+    def _contexts(self):
+        return pl.DataFrame({
+            "region": ["AU", "AU", "NZ", "XX", None],
+            "amount": [50, 500, None, 10, 10],
+            "product_code": ["X-1", "Y-9", "X-2", "X-3", None],
+        })
+
+    def test_batch_agrees_with_single_context_evaluation(self):
+        engine = _engine()
+        batch = engine.evaluate_batch(self._contexts())
+        surv = pl.DataFrame(relation(batch.survivors).to_polars())
+
+        for i, ctx in enumerate(self._contexts().to_dicts()):
+            single = engine.evaluate(
+                {k: v for k, v in ctx.items() if v is not None}
+            )
+            single_rows = relation(single.survivors).to_polars()
+            batch_rows = surv.filter(pl.col("__context_id") == i).sort("__rank")
+            assert batch_rows["rule_name"].to_list() == \
+                single_rows["rule_name"].to_list(), f"context {i}"
+            assert batch_rows["__specificity"].to_list() == \
+                single_rows["__specificity"].to_list(), f"context {i}"
+            assert batch_rows["__rank"].to_list() == \
+                single_rows["__rank"].to_list(), f"context {i}"
+
+    def test_best_matches_one_row_per_surviving_context(self):
+        engine = _engine()
+        batch = engine.evaluate_batch(self._contexts())
+        best = relation(batch.best_matches).to_polars()
+        assert best["__context_id"].n_unique() == len(best)
+        assert set(best["__rank"].to_list()) == {1}

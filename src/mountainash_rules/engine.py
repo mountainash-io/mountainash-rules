@@ -22,6 +22,7 @@ from mountainash_rules.constants import (
 )
 from mountainash_rules.context import extract_context_values
 from mountainash_rules.dimension import DimensionsMetadata
+from mountainash_rules.batch_result import BatchRuleResult
 from mountainash_rules.hit_policy import (
     SelectionInfo,
     apply_cardinality,
@@ -183,6 +184,105 @@ class ExpressionRulesEngine:
             else:
                 ctx_exprs.append(ma.lit(sentinel).alias(alias))
         return rel.select(*ctx_exprs)
+
+    def evaluate_batch(
+        self,
+        contexts: t.Any,
+        *,
+        context_id_field: str | None = None,
+        dimensions: list[str] | None = None,
+        hit_policy: HitPolicy | None = None,
+        priority_field: str | None = None,
+        top_n_per_context: int | None = None,
+        min_specificity: int | None = None,
+        include_observability: bool = True,
+        chunk_size: int | None = None,
+    ) -> BatchRuleResult:
+        """Evaluate every context row against every rule in one pass."""
+        all_dim_names = list(self._expressions.keys()) if self._expressions else []
+        active_dims = dimensions if dimensions else all_dim_names
+        for dim_name in active_dims:
+            if dim_name not in all_dim_names:
+                raise KeyError(f"Dimension '{dim_name}' not found in expressions")
+        if hit_policy is None:
+            hit_policy = (
+                self._metadata.hit_policy if self._metadata else HitPolicy.COLLECT
+            )
+        info = selection_info_from_metadata(
+            self._metadata, priority_field, include_observability
+        )
+
+        if chunk_size is not None:
+            raise NotImplementedError("chunk_size lands in a later task")
+
+        prepared = self._prepare_contexts(contexts, active_dims, context_id_field)
+        result_df = self._evaluate_batch_frame(
+            prepared, active_dims, hit_policy, info,
+            top_n_per_context, min_specificity, include_observability,
+        )
+        return BatchRuleResult(
+            dataframe=result_df,
+            active_dimensions=active_dims,
+            context_id_field=context_id_field or "__context_id",
+            selection_info=info,
+        )
+
+    def _evaluate_batch_frame(
+        self,
+        prepared: t.Any,
+        active_dims: list[str],
+        hit_policy: HitPolicy,
+        info: SelectionInfo,
+        top_n_per_context: int | None,
+        min_specificity: int | None,
+        include_observability: bool,
+    ) -> t.Any:
+        rules_rel = relation(self._rules)
+        self._check_reserved(rules_rel, "Rules")
+        rules_rel = rules_rel.with_row_index(name="__rule_index")
+
+        joined = rules_rel.join(prepared, how="cross")
+
+        # Ternary, survival, specificity — same expressions as _evaluate
+        dim_columns = [
+            self._expressions[d].name.alias(f"__t_{d}") for d in active_dims
+        ]
+        joined = joined.with_columns(*dim_columns)
+        t_cols = [ma.col(f"__t_{d}") for d in active_dims]
+        survived_inner = t_cols[0] if len(t_cols) == 1 else ma.least(*t_cols)
+        survived = survived_inner.ge(ma.lit(0)).alias("__survived")
+        specificity = functools.reduce(
+            lambda a, b: a.add(b),
+            [c.eq(ma.lit(1)).cast(int) for c in t_cols],
+        ).alias("__specificity")
+        joined = joined.with_columns(survived, specificity)
+        joined = joined.filter(ma.col("__survived"))
+
+        # Portable per-context rank: sort, global index, group-min join-back
+        keys = ordering_keys(hit_policy, info.priority_field)
+        sort_cols = ["__context_id"] + [k for k, _ in keys]
+        sort_desc = [False] + [d for _, d in keys]
+        joined = joined.sort(*sort_cols, descending=sort_desc)
+        joined = joined.with_row_index(name="__global_idx")
+        bases = joined.group_by("__context_id").agg(
+            ma.col("__global_idx").min().alias("__grp_base")
+        )
+        joined = joined.join(bases, on="__context_id", how="inner")
+        joined = joined.with_columns(
+            ma.col("__global_idx")
+            .sub(ma.col("__grp_base"))
+            .add(ma.lit(1))
+            .alias("__rank")
+        )
+
+        # Task 4 inserts assertions/min_specificity/top_n/cardinality here.
+
+        drop_cols = ["__survived", "__global_idx", "__grp_base"] + [
+            f"{CTX_PREFIX}{d}" for d in active_dims
+        ]
+        if not include_observability:
+            drop_cols += [f"__t_{d}" for d in active_dims]
+        return joined.drop(*drop_cols).collect()
 
     def _evaluate(
         self,
