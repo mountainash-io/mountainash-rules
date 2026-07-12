@@ -86,8 +86,12 @@ sentinels_for, unknown_sentinel_for, not_set_sentinel_for
 ```
 
 These are promoted into `mountainash_rules.__init__.__all__`. Babel then
-switches every rules import to the package root. This ships **before** the
-move, independently, so the move itself is invisible to babel.
+switches every rules import to the package root — code AND docs: babel's
+`CLAUDE.md` and `docs/lattice-schema.md` currently cite
+`mountainash_rules.constants.sentinels_for` and must cite the package root
+instead (sweep with `grep -rn "mountainash_rules\.[a-z_]*\."` over babel,
+excluding `rules_babel` matches). This ships **before** the move,
+independently, so the move itself is invisible to babel.
 
 ## 4. Deprecation shims
 
@@ -108,7 +112,9 @@ release). A dated removal note lives in each shim's docstring.
 
 Identity guarantee: `mountainash_rules.engine.ExpressionRulesEngine is
 mountainash_rules.engines.filter.engine.ExpressionRulesEngine` — shims
-re-export, never redefine.
+re-export, never redefine. The shim test asserts **exactly one**
+DeprecationWarning per (re)import and identity for **every** public name of
+the new module, not a single representative symbol.
 
 ## 5. Backend-purity expansion
 
@@ -159,6 +165,12 @@ tests/
 └── test_backend_purity.py         # stays at root (whole-package scan)
 ```
 
+CI path filters (audited 2026-07-13): all three workflows
+(`python-run-pytest.yml`, `python-run-ruff.yml`, `python-run-radon.yml`)
+trigger only on `src/mountainash_rules/**` — a pre-existing gap this plan
+would trip over, since Task 5 is tests-only. The filters gain `tests/**`,
+`pyproject.toml`, and `hatch.toml`.
+
 Safety: the conftest `_UPSTREAM_XFAILS` registry matches on
 `ClassName::test_name` substrings of `item.nodeid`, not file paths —
 verified 2026-07-13 — so moves don't break xfails. Test files renamed to
@@ -184,4 +196,13 @@ class names inside are untouched.
    to their new-path counterparts.
 4. Backend purity enforced across every non-shim module in the package.
 5. File history preserved (`git mv`; `git log --follow` works).
-6. CLAUDE.md/README structure trees updated in both repos.
+6. CLAUDE.md/README structure trees updated in both repos, and no
+   `mountainash_rules.<module>` paths remain in babel code or docs.
+7. Installed-wheel smoke test: build the wheel, install into a scratch
+   venv, and import the package root, one new canonical path, and one shim
+   (asserting its DeprecationWarning) — proves packaging picks up the
+   nested subpackages.
+8. CI workflows trigger on `tests/**`, `pyproject.toml`, and `hatch.toml`
+   in addition to `src/mountainash_rules/**`.
+9. The public-API test covers `__version__` and asserts every name in
+   `__all__` actually resolves.

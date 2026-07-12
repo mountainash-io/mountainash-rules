@@ -25,7 +25,8 @@
 **Files:**
 - Modify: `mountainash-rules/src/mountainash_rules/__init__.py`
 - Test: `mountainash-rules/tests/test_public_api.py` (create)
-- Modify (babel): every file listed by `grep -rl "from mountainash_rules\." src tests` — currently `src/mountainash_rules_babel/{exporters/{base,csv_,dmn}.py, importers/csv_.py, manifest.py, validators/round_trip.py, decomposers/base.py (if present)}` and `tests/{test_registry,test_csv_exporter,test_csv_importer,test_dmn_exporter,test_validators,test_protocols,test_lattice_schema_contract}.py` — verify with the grep, don't trust this list.
+- Modify (babel): every file listed by `grep -rln "from mountainash_rules\." src tests` — the known set is `src/mountainash_rules_babel/{__init__.py, manifest.py, exporters/{base,csv_,dmn}.py, importers/{base,csv_}.py, validators/{base,round_trip}.py, decomposers/base.py}` and `tests/{test_registry,test_csv_exporter,test_csv_importer,test_dmn_exporter,test_validators,test_protocols,test_lattice_schema_contract}.py` — but the grep output is authoritative, not this list.
+- Modify (babel docs): `CLAUDE.md` and `docs/lattice-schema.md` cite `mountainash_rules.constants.sentinels_for` — reword to cite the package-root name (`mountainash_rules.sentinels_for`, available after Step 5).
 
 **Interfaces:**
 - Produces: `mountainash_rules` package root additionally exports `UNKNOWN, NOT_SET, UNKNOWN_NUMERIC, NOT_SET_NUMERIC, UNKNOWN_DATE, NOT_SET_DATE, UNKNOWN_DATETIME, NOT_SET_DATETIME, sentinels_for, unknown_sentinel_for, not_set_sentinel_for`. Babel contains zero `from mountainash_rules.<module>` imports.
@@ -55,6 +56,8 @@ PUBLIC_NAMES = (
     "UNKNOWN", "NOT_SET", "UNKNOWN_NUMERIC", "NOT_SET_NUMERIC",
     "UNKNOWN_DATE", "NOT_SET_DATE", "UNKNOWN_DATETIME", "NOT_SET_DATETIME",
     "sentinels_for", "unknown_sentinel_for", "not_set_sentinel_for",
+    # metadata
+    "__version__",
 )
 
 
@@ -66,6 +69,11 @@ def test_all_public_names_importable_from_root():
 def test_all_public_names_in_dunder_all():
     missing = [n for n in PUBLIC_NAMES if n not in mr.__all__]
     assert not missing, f"Missing from __all__: {missing}"
+
+
+def test_every_dunder_all_name_resolves():
+    broken = [n for n in mr.__all__ if not hasattr(mr, n)]
+    assert not broken, f"__all__ names that do not resolve: {broken}"
 ```
 
 - [ ] **Step 2: Run to verify failure**
@@ -106,6 +114,7 @@ Apply the same pattern in every file; multi-line grouped imports collapse the sa
 - [ ] **Step 7: Verify zero deep imports remain**
 
 Run: `grep -rn "from mountainash_rules\." src tests` → no output.
+Run: `grep -rn "mountainash_rules\.[a-z_]*\." CLAUDE.md docs README.md | grep -v rules_babel` → no output (docs swept too).
 Run: `hatch run test:test-quick` → 79 passed.
 
 - [ ] **Step 8: Add the import rule to both CLAUDE.md files.** Rules CLAUDE.md, under "Code Style", and babel CLAUDE.md, under "Dependencies", add: *"`mountainash_rules` module paths are private — import public names from the package root only (`from mountainash_rules import Lattice`)."*
@@ -278,14 +287,24 @@ SHIMS = {
 def test_shim_warns_and_reexports_identical_objects(old_name):
     new_path, attr = SHIMS[old_name]
     new_mod = importlib.import_module(new_path)
+    # import OUTSIDE the catch window (first import would add a second
+    # warning inside it); the reload is then the only execution measured
+    old_mod = importlib.import_module(f"mountainash_rules.{old_name}")
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
-        old_mod = importlib.import_module(f"mountainash_rules.{old_name}")
-        importlib.reload(old_mod)  # guarantee the warning fires this call
+        importlib.reload(old_mod)
     dep = [w for w in caught if issubclass(w.category, DeprecationWarning)]
-    assert dep, f"no DeprecationWarning from mountainash_rules.{old_name}"
+    # exactly one per (re)import — the reload is the only execution in the window
+    assert len(dep) == 1, f"expected exactly 1 DeprecationWarning, got {len(dep)}"
     assert new_path in str(dep[0].message)
-    assert getattr(old_mod, attr) is getattr(new_mod, attr)
+    # identity for EVERY public name of the new module, not one representative
+    public = [n for n in vars(new_mod) if not n.startswith("_")]
+    assert attr in public
+    mismatched = [
+        n for n in public
+        if getattr(old_mod, n, None) is not getattr(new_mod, n)
+    ]
+    assert not mismatched, f"shim re-exports differ for: {mismatched}"
 ```
 
 - [ ] **Step 2: Run to verify failure** — `hatch run test:test-target tests/test_deprecation_shims.py` → FAIL (ModuleNotFoundError).
@@ -312,7 +331,7 @@ warnings.warn(
 )
 ```
 
-The explicit second import line names everything a consumer is known to use (use the SHIMS table's attr, plus any other public classes in that module — e.g. `constants` re-exports the full sentinel/enums set, `hit_policy` re-exports `SelectionInfo, HitPolicyViolationError, selection_info_from_metadata, ordering_keys, default_output_fields, check_assertions, apply_cardinality`). `import *` without a defined `__all__` skips underscore names only, so most modules need no extra line — add explicit lines wherever the shim test or a grep of real usage shows a gap.
+`import *` without a defined `__all__` re-exports every non-underscore name, so the star import alone usually satisfies the full-namespace identity test; the explicit second line exists for modules that DO define `__all__` (where `*` honours it and may omit names) and as greppable documentation of the primary export. The shim test in Step 1 checks identity for every public name — let it, not a hand-list, tell you if a shim is incomplete.
 
 - [ ] **Step 4: Run** shim test → PASS; full suite → green with **zero DeprecationWarnings in the run output** (proves Task 2 Step 3 caught every internal/test import; if warnings appear, fix the importer, not the filter).
 
@@ -435,11 +454,21 @@ Then `: > tests/core/__init__.py` etc. for the four new dirs (the suite already 
 
 - [ ] **Step 3: Run the full suite** — `hatch run test:test-quick` → identical counts to Task 4's run (same tests, new node ids). Spot-check that the 31 xfails still register: `hatch run test:test-target "tests/filter/test_engine.py" | tail -3` should show xfails on the ibis-polars param, not failures.
 
-- [ ] **Step 4: Commit**
+- [ ] **Step 4: Widen the CI path filters** (pre-existing gap this task would trip: all three workflows trigger only on `src/mountainash_rules/**`, so a tests-only change runs no CI). In each of `.github/workflows/python-run-pytest.yml`, `python-run-ruff.yml`, `python-run-radon.yml`, extend the `paths:` list:
+
+```yaml
+    paths:
+      - "src/mountainash_rules/**"
+      - "tests/**"
+      - "pyproject.toml"
+      - "hatch.toml"
+```
+
+- [ ] **Step 5: Commit**
 
 ```bash
-git add -A tests
-git commit -m "test: mirror the test tree onto the package layout
+git add -A tests .github/workflows
+git commit -m "test: mirror the test tree onto the package layout; CI runs on test changes
 
 Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 ```
@@ -456,15 +485,35 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 **Interfaces:**
 - Produces: shipped reorganisation on rules develop; babel verified green against it; backlog card DONE.
 
-- [ ] **Step 1: Update rules CLAUDE.md.** Replace the "Package Structure" tree with the spec §2 tree (including shim note: *"top-level `<old>.py` files are deprecation shims, removal note inside; do not add code to them"*). Confirm the private-module-paths rule from Task 1 Step 8 is present.
+- [ ] **Step 1: Update rules CLAUDE.md.** Replace the "Package Structure" tree with the spec §2 tree (including shim note: *"top-level `<old>.py` files are deprecation shims, removal note inside; do not add code to them"*). Confirm the private-module-paths rule from Task 1 Step 8 is present. Then confirm babel's docs are already clean from Task 1 Step 7's sweep (`grep -rn "mountainash_rules\.[a-z_]*\." ../mountainash-rules-babel/CLAUDE.md ../mountainash-rules-babel/docs ../mountainash-rules-babel/README.md | grep -v rules_babel` → no output); if anything slipped through, fix it in the babel repo now.
 
 - [ ] **Step 2: Full rules verification**
 
 ```bash
 hatch run test:test-quick     # green
 hatch run ruff:check          # clean (shims may need noqa as shown in the template)
-hatch build                   # wheel builds — confirms package discovery picks up subpackages
+hatch build                   # wheel builds
 ```
+
+Then smoke-test the built wheel in a scratch venv — proves packaging actually ships the nested subpackages and shims (source-tree tests can't):
+
+```bash
+python3 -m venv /tmp/wheel-smoke && /tmp/wheel-smoke/bin/pip -q install dist/*.whl
+/tmp/wheel-smoke/bin/python - <<'PY'
+import warnings
+import mountainash_rules as mr
+from mountainash_rules.engines.filter.engine import ExpressionRulesEngine
+assert mr.ExpressionRulesEngine is ExpressionRulesEngine
+with warnings.catch_warnings(record=True) as w:
+    warnings.simplefilter("always")
+    import mountainash_rules.engine  # shim
+assert any(issubclass(x.category, DeprecationWarning) for x in w)
+print("wheel smoke OK")
+PY
+rm -rf /tmp/wheel-smoke
+```
+
+(Dependency imports inside the wheel need the mountainash siblings installed; if the scratch venv can't resolve them, run the smoke test inside the hatch env instead: `hatch run python - <<'PY' ...` after `pip install --force-reinstall --no-deps dist/*.whl` into it, and restore with `hatch env prune` afterwards.)
 
 - [ ] **Step 3: Commit and push rules**
 
