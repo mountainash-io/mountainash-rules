@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 import typing as t
 
 import polars as pl
@@ -23,7 +24,12 @@ from mountainash_rules.constants import (
 from mountainash_rules.dimension import Dimension, DimensionsMetadata
 from mountainash_rules.engine import ExpressionRulesEngine
 from mountainash_rules.lattice import Lattice
-from mountainash_rules.primes import get_prime
+from mountainash_rules.primes import (
+    _INT64_MAX,
+    LatticeWidthExceededError,
+    checked_multiply,
+    get_prime,
+)
 
 
 class AccumulatorEngine:
@@ -120,6 +126,10 @@ class AccumulatorEngine:
         primes = [get_prime(i) for i in range(n_rules)]
         rules_pl = rules_pl.with_columns(pl.Series("__prime", primes))
 
+        # Tier 1: if the product of ALL assigned primes fits int64, no
+        # combination can ever overflow — skip per-level verification.
+        overflow_possible = math.prod(primes) > _INT64_MAX
+
         # Step 3: Create anchor (level 0) — each rule is a singleton combination
         anchor = self._create_anchor(rules_pl)
 
@@ -131,7 +141,11 @@ class AccumulatorEngine:
         current_level = anchor
 
         for level_num in range(1, n_rules):
-            new_combos = self._expand_level(current_level, rhs_rules, level_num)
+            new_combos = self._expand_level(
+                current_level, rhs_rules, level_num,
+                overflow_possible=overflow_possible,
+                partition_key=partition_key,
+            )
             if new_combos is None:
                 break
             all_levels.append(new_combos)
@@ -251,6 +265,8 @@ class AccumulatorEngine:
         current_level: t.Any,
         rhs_rules: t.Any,
         level_num: int,
+        overflow_possible: bool = False,
+        partition_key: dict[str, t.Any] | None = None,
     ) -> t.Any | None:
         """Expand current level by cross-joining with rules and filtering compatible pairs."""
         # Cross-join current level with RHS rules
@@ -269,12 +285,17 @@ class AccumulatorEngine:
         for expr in compat_exprs:
             all_guards = all_guards.__and__(expr)
 
-        filtered = joined.filter(all_guards)
+        # Materialise each level: without this the lazy plan re-derives every
+        # prior level on each expansion, which is exponential in level depth.
+        filtered = relation(joined.filter(all_guards).collect())
 
         # Check if any new combinations were produced
         count = filtered.count_rows()
         if count == 0:
             return None
+
+        if overflow_possible:
+            self._check_overflow(filtered, level_num, partition_key)
 
         # Coalesce dimensions
         coalesce_all = []
@@ -313,6 +334,39 @@ class AccumulatorEngine:
         updated = updated.select(*[ma.col(c) for c in keep_cols])
 
         return updated
+
+    def _check_overflow(
+        self,
+        filtered: t.Any,
+        level_num: int,
+        partition_key: dict[str, t.Any] | None,
+    ) -> None:
+        """Raise LatticeWidthExceededError if any pending multiply overflows int64.
+
+        Screen with two aggregates (exact Python-int arithmetic on the maxima
+        is conservative); only a suspect level pays the exact per-row check,
+        which materialises just the two tracking columns.
+        """
+        maxima = filtered.select(
+            ma.col("__prime_product").max().alias("__max_pp"),
+            ma.col("__prime_rhs").max().alias("__max_prhs"),
+        ).to_dict()
+        if maxima["__max_pp"][0] * maxima["__max_prhs"][0] <= _INT64_MAX:
+            return
+        pairs = filtered.select(
+            ma.col("__prime_product"), ma.col("__prime_rhs")
+        ).to_polars()
+        for pp, prhs in zip(pairs["__prime_product"], pairs["__prime_rhs"]):
+            try:
+                checked_multiply(pp, prhs)
+            except OverflowError as exc:
+                raise LatticeWidthExceededError(
+                    f"Prime-product overflow at level {level_num} "
+                    f"(clique size {level_num + 1}) for partition "
+                    f"{partition_key!r}: {exc} "
+                    f"Split the partition with a CONTEXT_KEY dimension or "
+                    f"reduce the mutually compatible rule clique."
+                ) from exc
 
     def _columns_to_keep(self, level_rel: t.Any) -> list[str]:
         """Columns to retain after each expansion step."""

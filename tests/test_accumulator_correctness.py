@@ -100,3 +100,56 @@ class TestAnchorNaFlags:
         lattice = engine.build(rules)
         rows = relation(lattice.combinations).to_dict()
         assert rows["co_x_na"][0] == 1
+
+
+import mountainash_rules.accumulator_engine as acc_mod
+from mountainash_rules.primes import LatticeWidthExceededError
+
+
+def _all_wildcard_rules(n):
+    """n mutually compatible rules (every bound sentinel)."""
+    return pl.DataFrame({
+        "rule_name": [f"R{i}" for i in range(n)],
+        "x_min": [S] * n,
+        "x_max": [S] * n,
+    })
+
+
+class TestOverflowGuard:
+    def test_sixteen_rule_clique_raises(self):
+        engine = AccumulatorEngine(dimension_metadata=_range_metadata())
+        with pytest.raises(LatticeWidthExceededError) as exc_info:
+            engine.build(_all_wildcard_rules(16))
+        msg = str(exc_info.value)
+        assert "level" in msg
+        assert "CONTEXT_KEY" in msg
+
+    def test_unsafe_partition_with_small_clique_builds_with_exact_product(self):
+        # 16 rules trips the tier-1 screen (full prime product > int64), but
+        # the only real clique is 6 identical-range rules — tier-2 exact
+        # verification must pass and the clique's exact product must appear.
+        # (A literal 15-wildcard clique is infeasible: its 32k-row lattice
+        # makes the frontier dominance join quadratic.)
+        import math
+        from mountainash_rules.primes import get_prime
+        engine = AccumulatorEngine(dimension_metadata=_range_metadata())
+        rules = pl.DataFrame({
+            "rule_name": [f"R{i}" for i in range(16)],
+            "x_min": [0] * 6 + [100 + 2 * i for i in range(10)],
+            "x_max": [10] * 6 + [101 + 2 * i for i in range(10)],
+        })
+        lattice = engine.build(rules)
+        rows = relation(lattice.combinations).to_dict()
+        expected = math.prod(get_prime(i) for i in range(6))  # 2*3*5*7*11*13
+        assert expected in set(rows["__prime_product"])
+
+    def test_safe_partition_skips_verification(self, monkeypatch):
+        calls = []
+        real = acc_mod.checked_multiply
+        monkeypatch.setattr(
+            acc_mod, "checked_multiply",
+            lambda a, b: calls.append((a, b)) or real(a, b),
+        )
+        engine = AccumulatorEngine(dimension_metadata=_range_metadata())
+        engine.build(_all_wildcard_rules(5))  # prod(2..11) = 2310, tier-1 safe
+        assert calls == []
