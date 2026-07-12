@@ -40,3 +40,13 @@ def checked_multiply(a: int, b: int) -> int:
             f"Partition has too many mutually compatible rules for int64 representation."
         )
     return result
+
+
+class LatticeWidthExceededError(OverflowError):
+    """A partition contains a compatible rule clique too large for int64 prime products.
+
+    Raised by the accumulator build phase when combining one more rule would
+    overflow the int64 ``__prime_product`` combination identity. Remediation:
+    split the partition with a CONTEXT_KEY dimension, or reduce the size of
+    the mutually compatible rule clique.
+    """

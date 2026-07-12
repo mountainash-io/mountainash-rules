@@ -4,6 +4,7 @@ import pytest
 
 from mountainash_rules.primes import (
     PRIME_TABLE,
+    LatticeWidthExceededError,
     get_prime,
     checked_multiply,
 )
@@ -63,3 +64,12 @@ class TestCheckedMultiply:
             product = checked_multiply(product, get_prime(i))
         with pytest.raises(OverflowError):
             checked_multiply(product, get_prime(15))
+
+
+class TestLatticeWidthExceededError:
+    def test_is_an_overflow_error(self):
+        assert issubclass(LatticeWidthExceededError, OverflowError)
+
+    def test_carries_message(self):
+        err = LatticeWidthExceededError("partition ('AU',) level 15")
+        assert "partition" in str(err)
