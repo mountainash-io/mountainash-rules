@@ -18,7 +18,6 @@ from mountainash_rules.aggregate import Aggregate
 from mountainash_rules.constants import (
     DimensionRole,
     MatchStrategy,
-    UNKNOWN_NUMERIC,
     unknown_sentinel_for,
 )
 from mountainash_rules.dimension import Dimension, DimensionsMetadata
@@ -227,7 +226,7 @@ class AccumulatorEngine:
         na_exprs = []
         for dim in self._constraint_dims:
             if dim.match_strategy == MatchStrategy.RANGE:
-                sentinel = UNKNOWN_NUMERIC
+                sentinel = unknown_sentinel_for(dim.data_type)
                 na_exprs.append(
                     ma.col(dim.range_min_field).eq(ma.lit(sentinel))
                     .__and__(ma.col(dim.range_max_field).eq(ma.lit(sentinel)))

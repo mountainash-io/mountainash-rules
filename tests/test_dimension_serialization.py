@@ -143,3 +143,86 @@ class TestYamlRoundTrip:
         md = self._full_metadata()
         p = md.to_yaml_file(tmp_path / "md.yaml")
         assert DimensionsMetadata.from_yaml_file(p) == md
+
+
+import polars as pl
+
+from mountainash_rules.constants import UNKNOWN_DATE
+from mountainash_rules.engine import ExpressionRulesEngine
+
+
+def _effective_dated_metadata():
+    return DimensionsMetadata(dimensions=[
+        Dimension(
+            dimension_name="asof", match_strategy=MatchStrategy.RANGE,
+            data_type=DataType.DATE,
+            range_min_field="eff_from", range_max_field="eff_to",
+        ),
+    ])
+
+
+class TestTemporalRange:
+    def _rules(self):
+        return pl.DataFrame({
+            "rule_name": ["current", "expired", "open_ended"],
+            "eff_from": [
+                datetime.date(2026, 1, 1),
+                datetime.date(2024, 1, 1),
+                datetime.date(2026, 6, 1),
+            ],
+            "eff_to": [
+                datetime.date(2026, 12, 31),
+                datetime.date(2024, 12, 31),
+                UNKNOWN_DATE,  # no expiry
+            ],
+        })
+
+    def test_filter_engine_matches_by_date(self):
+        engine = ExpressionRulesEngine(
+            rules=self._rules(), dimension_metadata=_effective_dated_metadata()
+        )
+        result = engine.evaluate({"asof": datetime.date(2026, 7, 12)})
+        assert result.count == 2  # current + open_ended, not expired
+
+    def test_sentinel_bound_is_unconstrained_ternary_zero(self):
+        engine = ExpressionRulesEngine(
+            rules=self._rules(), dimension_metadata=_effective_dated_metadata()
+        )
+        result = engine.evaluate({"asof": datetime.date(2027, 6, 1)})
+        # only open_ended survives; its sentinel max yields UNKNOWN (0)
+        assert result.explain("open_ended") == {"asof": 0}
+
+    def test_missing_date_context_is_unknown(self):
+        engine = ExpressionRulesEngine(
+            rules=self._rules(), dimension_metadata=_effective_dated_metadata()
+        )
+        result = engine.evaluate({})
+        assert result.count == 3  # NOT_SET_DATE -> all UNKNOWN wildcards
+
+    def test_accumulator_combines_overlapping_date_ranges(self):
+        from mountainash.relations import relation
+        from mountainash_rules.accumulator_engine import AccumulatorEngine
+        engine = AccumulatorEngine(dimension_metadata=_effective_dated_metadata())
+        rules = pl.DataFrame({
+            "rule_name": ["A", "B"],
+            "eff_from": [datetime.date(2026, 1, 1), datetime.date(2026, 6, 1)],
+            "eff_to": [datetime.date(2026, 12, 31), UNKNOWN_DATE],
+        })
+        lattice = engine.build(rules)
+        rows = relation(lattice.combinations).to_dict()
+        assert 6 in set(rows["__prime_product"])
+
+
+class TestTemporalBackendRegression:
+    def test_duckdb_backend_stores_and_compares_sentinel_dates(self):
+        from tests.conftest import build_backend_df
+        rules = build_backend_df("ibis-duckdb", {
+            "rule_name": ["r"],
+            "eff_from": [datetime.date(2026, 1, 1)],
+            "eff_to": [UNKNOWN_DATE],
+        }, table_name="temporal_rules_tmp")
+        engine = ExpressionRulesEngine(
+            rules=rules, dimension_metadata=_effective_dated_metadata()
+        )
+        result = engine.evaluate({"asof": datetime.date(2026, 7, 12)})
+        assert result.count == 1

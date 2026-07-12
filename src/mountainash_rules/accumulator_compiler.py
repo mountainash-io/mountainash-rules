@@ -6,7 +6,6 @@ import mountainash.expressions as ma
 from mountainash.expressions import BaseExpressionAPI
 
 from mountainash_rules.constants import (
-    UNKNOWN_NUMERIC,
     MatchStrategy,
     unknown_sentinel_for,
 )
@@ -94,7 +93,7 @@ class AccumulatorCompiler:
     def _range_sentinel_checks(
         self, dim: Dimension,
     ) -> tuple[BaseExpressionAPI, BaseExpressionAPI, BaseExpressionAPI, BaseExpressionAPI]:
-        sentinel = UNKNOWN_NUMERIC
+        sentinel = unknown_sentinel_for(dim.data_type)
         co_min_s = ma.col(f"co_{dim.range_min_field}").eq(ma.lit(sentinel))
         co_max_s = ma.col(f"co_{dim.range_max_field}").eq(ma.lit(sentinel))
         rhs_min_s = ma.col(f"{dim.range_min_field}_rhs").eq(ma.lit(sentinel))
@@ -128,10 +127,11 @@ class AccumulatorCompiler:
 
     def _coalesce_range(self, dim: Dimension) -> list[BaseExpressionAPI]:
         co_min_s, co_max_s, rhs_min_s, rhs_max_s = self._range_sentinel_checks(dim)
+        sentinel = unknown_sentinel_for(dim.data_type)
 
         new_min = (
             ma.when(co_min_s.__and__(rhs_min_s))
-              .then(ma.lit(UNKNOWN_NUMERIC))
+              .then(ma.lit(sentinel))
             .when(co_min_s)
               .then(ma.col(f"{dim.range_min_field}_rhs"))
             .when(rhs_min_s)
@@ -144,7 +144,7 @@ class AccumulatorCompiler:
 
         new_max = (
             ma.when(co_max_s.__and__(rhs_max_s))
-              .then(ma.lit(UNKNOWN_NUMERIC))
+              .then(ma.lit(sentinel))
             .when(co_max_s)
               .then(ma.col(f"{dim.range_max_field}_rhs"))
             .when(rhs_max_s)
@@ -163,9 +163,10 @@ class AccumulatorCompiler:
     def _coalesce_threshold(self, dim: Dimension, combine_fn) -> list[BaseExpressionAPI]:
         co_sentinel, rhs_sentinel = self._sentinel_checks(dim)
         field = dim.resolved_rule_field
+        sentinel = unknown_sentinel_for(dim.data_type)
         new_val = (
             ma.when(co_sentinel.__and__(rhs_sentinel))
-              .then(ma.lit(UNKNOWN_NUMERIC))
+              .then(ma.lit(sentinel))
             .when(co_sentinel)
               .then(ma.col(f"{field}_rhs"))
             .when(rhs_sentinel)
