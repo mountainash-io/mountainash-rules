@@ -148,3 +148,32 @@ class TestBatchAccessors:
         single = batch.for_context(0)
         assert single.count == 2
         assert single.explain("au_low")["region"] == 1
+
+
+class TestBatchHitPolicies:
+    def _contexts(self):
+        return pl.DataFrame({
+            "region": ["AU", "NZ"], "amount": [50, 500],
+            "product_code": ["X-1", "Z"],
+        })
+
+    def test_first_keeps_one_row_per_context(self):
+        batch = _engine().evaluate_batch(
+            self._contexts(), hit_policy=HitPolicy.FIRST
+        )
+        surv = relation(batch.survivors).to_polars()
+        assert surv.group_by("__context_id").len()["len"].to_list() == [1, 1]
+
+    def test_unique_violation_lists_context_ids(self):
+        from mountainash_rules.hit_policy import HitPolicyViolationError
+        with pytest.raises(HitPolicyViolationError) as exc_info:
+            _engine().evaluate_batch(
+                self._contexts(), hit_policy=HitPolicy.UNIQUE
+            )
+        assert "0" in str(exc_info.value)  # context 0 has >1 survivor
+
+    def test_top_n_per_context_truncates_per_context_not_globally(self):
+        batch = _engine().evaluate_batch(self._contexts(), top_n_per_context=1)
+        surv = relation(batch.survivors).to_polars()
+        assert (surv["__rank"] <= 1).all()
+        assert surv["__context_id"].n_unique() == 2

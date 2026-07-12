@@ -24,9 +24,11 @@ from mountainash_rules.context import extract_context_values
 from mountainash_rules.dimension import DimensionsMetadata
 from mountainash_rules.batch_result import BatchRuleResult
 from mountainash_rules.hit_policy import (
+    HitPolicyViolationError,
     SelectionInfo,
     apply_cardinality,
     check_assertions,
+    default_output_fields,
     ordering_keys,
     selection_info_from_metadata,
 )
@@ -275,7 +277,54 @@ class ExpressionRulesEngine:
             .alias("__rank")
         )
 
-        # Task 4 inserts assertions/min_specificity/top_n/cardinality here.
+        # Assertions over full per-context survivor sets (pre-truncation)
+        if hit_policy == HitPolicy.UNIQUE:
+            offenders = (
+                joined.group_by("__context_id")
+                .agg(ma.col("__rank").count().alias("__n"))
+                .filter(ma.col("__n").gt(ma.lit(1)))
+            )
+            if offenders.count_rows() > 0:
+                ids = offenders.to_dict()["__context_id"]
+                raise HitPolicyViolationError(
+                    hit_policy, offenders.collect(),
+                    f"hit_policy=unique violated for context ids "
+                    f"{sorted(ids)[:20]}"
+                    + (" (truncated)" if len(ids) > 20 else ""),
+                )
+        elif hit_policy == HitPolicy.ANY:
+            outputs = default_output_fields(joined.columns, info)
+            if not outputs:
+                raise ValueError(
+                    "hit_policy=any requires output_fields when no metadata "
+                    "is available to infer them"
+                )
+            disagree = (
+                joined.select(
+                    ma.col("__context_id"), *[ma.col(c) for c in outputs]
+                )
+                .unique()
+                .group_by("__context_id")
+                .agg(ma.col(outputs[0]).count().alias("__n"))
+                .filter(ma.col("__n").gt(ma.lit(1)))
+            )
+            if disagree.count_rows() > 0:
+                ids = disagree.to_dict()["__context_id"]
+                raise HitPolicyViolationError(
+                    hit_policy, disagree.collect(),
+                    f"hit_policy=any violated for context ids {sorted(ids)[:20]}",
+                )
+
+        if min_specificity is not None:
+            joined = joined.filter(
+                ma.col("__specificity").ge(ma.lit(min_specificity))
+            )
+        if top_n_per_context is not None:
+            joined = joined.filter(
+                ma.col("__rank").le(ma.lit(top_n_per_context))
+            )
+        if hit_policy in (HitPolicy.FIRST, HitPolicy.PRIORITY, HitPolicy.ANY):
+            joined = joined.filter(ma.col("__rank").eq(ma.lit(1)))
 
         drop_cols = ["__survived", "__global_idx", "__grp_base"] + [
             f"{CTX_PREFIX}{d}" for d in active_dims
