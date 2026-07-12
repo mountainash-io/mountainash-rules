@@ -122,3 +122,29 @@ class TestEvaluateBatchAgreement:
         best = relation(batch.best_matches).to_polars()
         assert best["__context_id"].n_unique() == len(best)
         assert set(best["__rank"].to_list()) == {1}
+
+
+class TestBatchAccessors:
+    def _batch(self):
+        contexts = pl.DataFrame({
+            "region": ["AU", "XX"], "amount": [50, 1],
+            "product_code": ["X-1", "Q"],
+        })
+        return _engine().evaluate_batch(contexts), contexts
+
+    def test_counts_per_context(self):
+        batch, _ = self._batch()
+        counts = relation(batch.counts_per_context).to_polars()
+        # context 0 (AU/50/X-1): au_low + prefix_x survive; context 1: none
+        assert dict(zip(counts["__context_id"], counts["__n"])) == {0: 2}
+
+    def test_matched_and_unmatched(self):
+        batch, contexts = self._batch()
+        assert batch.matched_context_ids == [0]
+        assert batch.unmatched_context_ids(contexts) == [1]
+
+    def test_for_context_returns_rule_result(self):
+        batch, _ = self._batch()
+        single = batch.for_context(0)
+        assert single.count == 2
+        assert single.explain("au_low")["region"] == 1
