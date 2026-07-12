@@ -248,6 +248,29 @@ class ExpressionRulesEngine:
             selection_info=info,
         )
 
+    def _conform_to_rules_backend(self, prepared: t.Any) -> t.Any:
+        """Rehost the prepared contexts in the rules frame's backend.
+
+        The cross-join requires both sides in one backend; contexts arrive
+        as whatever the caller built (typically polars). Detection and
+        conversion go through mountainash only.
+        """
+        from mountainash.core.backend_detection import (
+            CONST_BACKEND,
+            identify_backend,
+        )
+
+        backend = identify_backend(self._rules)
+        if backend is CONST_BACKEND.IBIS:
+            return relation(prepared.to_ibis())
+        if backend in (CONST_BACKEND.NARWHALS, CONST_BACKEND.PANDAS):
+            module = type(self._rules).__module__
+            impl = str(getattr(self._rules, "implementation", "")).lower()
+            if "pandas" in module or "pandas" in impl:
+                return relation(prepared.to_pandas())
+            return relation(prepared.to_polars())
+        return relation(prepared.to_polars())
+
     def _evaluate_batch_frame(
         self,
         prepared: t.Any,
@@ -262,7 +285,7 @@ class ExpressionRulesEngine:
         self._check_reserved(rules_rel, "Rules")
         rules_rel = rules_rel.with_row_index(name="__rule_index")
 
-        joined = rules_rel.join(prepared, how="cross")
+        joined = rules_rel.join(self._conform_to_rules_backend(prepared), how="cross")
 
         # Ternary, survival, specificity — same expressions as _evaluate
         dim_columns = [

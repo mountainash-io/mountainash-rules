@@ -259,3 +259,52 @@ class TestApplyCaching:
         batch = index.apply_batch(contexts)
         surv = relation(batch.survivors).to_polars()
         assert surv["__context_id"].n_unique() == 2
+
+
+from tests.conftest import ALL_BACKENDS, build_backend_df
+
+
+class TestBatchBackendSweep:
+    """Task 2's agreement oracle across backends (EXACT + RANGE dims only;
+    per-row string-match strategies are broken on pandas/narwhals upstream,
+    mountainash-io/mountainash#89, and are swept in test_compiler instead)."""
+
+    _RULE_DATA = {
+        "rule_name": ["au_low", "au_high", "nz_any"],
+        "region": ["AU", "AU", "NZ"],
+        "amt_min": [0, 100, -999999999],
+        "amt_max": [99, 999, -999999999],
+        "price": [1.0, 2.0, 3.0],
+    }
+
+    def _md(self):
+        return DimensionsMetadata(dimensions=[
+            Dimension(dimension_name="region"),
+            Dimension(
+                dimension_name="amount", match_strategy=MatchStrategy.RANGE,
+                data_type=int, range_min_field="amt_min",
+                range_max_field="amt_max",
+            ),
+        ])
+
+    @pytest.mark.parametrize("backend_name", ALL_BACKENDS)
+    def test_batch_agrees_with_single_context_evaluation(self, backend_name):
+        rules = build_backend_df(backend_name, self._RULE_DATA, "batch_sweep_rules")
+        engine = ExpressionRulesEngine(rules=rules, dimension_metadata=self._md())
+        contexts = pl.DataFrame({
+            "region": ["AU", "AU", "NZ", "XX", None],
+            "amount": [50, 500, None, 10, 10],
+        })
+        batch = engine.evaluate_batch(contexts)
+        surv = pl.DataFrame(relation(batch.survivors).to_polars())
+
+        for i, ctx in enumerate(contexts.to_dicts()):
+            single = engine.evaluate(
+                {k: v for k, v in ctx.items() if v is not None}
+            )
+            single_rows = pl.DataFrame(relation(single.survivors).to_polars())
+            batch_rows = surv.filter(pl.col("__context_id") == i).sort("__rank")
+            assert batch_rows["rule_name"].to_list() == \
+                single_rows["rule_name"].to_list(), f"context {i}"
+            assert batch_rows["__rank"].to_list() == \
+                single_rows["__rank"].to_list(), f"context {i}"

@@ -94,6 +94,8 @@ _UPSTREAM_XFAILS: list[tuple[set[str], str, list[str]]] = [
             "TestMixedStrategyFraudDetection::test_high_value_review",
             "TestMixedStrategyFraudDetection::test_blacklist_merchant_blocks",
             "TestMixedStrategyFraudDetection::test_specific_txn_most_specific",
+            # test_batch_evaluation.py
+            "TestBatchBackendSweep::test_batch_agrees_with_single_context_evaluation",
             # test_accumulator_backends.py
             "TestApplyCrossBackend::test_apply_correct_count",
             "TestApplyCrossBackend::test_apply_accumulated_margin",
