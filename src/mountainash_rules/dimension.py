@@ -13,6 +13,7 @@ from mountainash_rules.constants import (
     PYTHON_TO_DATATYPE,
     DataType,
     DimensionRole,
+    HitPolicy,
     MatchStrategy,
 )
 
@@ -137,6 +138,15 @@ class DimensionsMetadata(BaseModel):
     """Collection of dimension definitions for a rule set."""
 
     dimensions: list[Dimension]
+    hit_policy: HitPolicy = HitPolicy.COLLECT
+    priority_field: t.Optional[str] = None
+    output_fields: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _validate_hit_policy(self) -> "DimensionsMetadata":
+        if self.hit_policy == HitPolicy.PRIORITY and not self.priority_field:
+            raise ValueError("hit_policy=priority requires priority_field")
+        return self
 
     @model_validator(mode="after")
     def _validate_unique_names(self) -> "DimensionsMetadata":

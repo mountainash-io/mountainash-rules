@@ -21,6 +21,17 @@ class MatchStrategy(StrEnum):
     SET_EXCLUSION = "set_exclusion"
 
 
+class HitPolicy(StrEnum):
+    """Selection semantics applied over surviving rules."""
+
+    COLLECT = "collect"        # all survivors, specificity order (default)
+    UNIQUE = "unique"          # assert <= 1 survivor
+    FIRST = "first"            # single survivor, rule order wins
+    PRIORITY = "priority"      # single survivor, priority_field wins
+    ANY = "any"                # survivors must agree on outputs; return one
+    RULE_ORDER = "rule_order"  # all survivors, rule order
+
+
 class DimensionRole(StrEnum):
     """Whether a dimension partitions the lattice or participates in coalesce."""
 
