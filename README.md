@@ -1,4 +1,4 @@
-# mountainash-utils-rules
+# mountainash-rules
 
 ![Python](https://img.shields.io/badge/python-3.12-blue) ![License](https://img.shields.io/badge/license-MIT-green) ![Backend](https://img.shields.io/badge/backends-7-purple)
 
@@ -73,7 +73,56 @@ print(result.explain("fallback"))    # {"region": 0, "spend": 0} — both wildca
 | `SET_MEMBERSHIP` | List | Context value is in rule's list |
 | `SET_EXCLUSION` | List | Context value is not in rule's list |
 
-Wildcard values (`<NA>` for strings, `-999999999` for numerics) produce an UNKNOWN result — the rule is not eliminated but scores lower on specificity.
+Wildcard values (`<NA>` for strings, `-999999999` for numerics, and typed date/datetime sentinels) produce an UNKNOWN result — the rule is not eliminated but scores lower on specificity.
+
+## Hit Policies
+
+How many survivors come back, and in what order, is a **hit policy** (DMN-aligned, `HitPolicy` enum): `collect` (default — all survivors ranked by specificity), `unique` (exactly one or `HitPolicyViolationError`), `first` / `rule_order` (rule-definition order), `priority` (rank by a priority column), `any` (all survivors must agree on outputs). Set it on `DimensionsMetadata`, per `evaluate()` call, or re-select post-hoc with `result.select(policy)`.
+
+```python
+result = engine.evaluate(context, hit_policy=HitPolicy.FIRST)
+```
+
+## Batch Evaluation
+
+Score thousands of contexts in one vectorised pass instead of looping:
+
+```python
+contexts = pl.DataFrame({"customer_id": [...], "region": [...], "spend": [...]})
+batch = engine.evaluate_batch(contexts, context_id_field="customer_id")
+
+batch.best_matches          # rank-1 rule per context
+batch.counts_per_context    # survivors per context
+batch.for_context("C042")   # single-context RuleResult
+```
+
+Contexts are automatically conformed to whatever backend the rules live in, and large batches can be chunked (`chunk_size=`).
+
+## Accumulator Engine
+
+Where the filter engine picks the best *single* rule, `AccumulatorEngine` precomputes every **maximal consistent combination** of rules — coalescing dimension values and accumulating numerics (sum/min/max/product) — into a `Lattice`, then applies contexts against it:
+
+```python
+from mountainash_rules import AccumulatorEngine, Aggregate
+
+engine = AccumulatorEngine(dimension_metadata=metadata,
+                           aggregates=[Aggregate(column_name="margin")])
+lattice = engine.build(rules)          # build once
+result = engine.apply(lattice, context)  # apply many times
+```
+
+Dimensions marked `DimensionRole.CONTEXT_KEY` partition the rule space into separate lattices; `engine.index(lattices)` routes single or batched contexts to the right one. Combination provenance is tracked with prime products, and impossible widths fail fast with a sized `LatticeWidthExceededError`.
+
+## Serialisable Metadata
+
+`DimensionsMetadata` round-trips through YAML, so dimension definitions can live beside the rule data instead of in code:
+
+```python
+metadata.to_yaml_file("dimensions.yaml")
+metadata = DimensionsMetadata.from_yaml_file("dimensions.yaml")
+```
+
+The [mountainash-rules-babel](https://github.com/mountainash-io/mountainash-rules-babel) package builds on this to import/export lattices as CSV (with a metadata manifest sidecar) and DMN.
 
 ## Backend Support
 
@@ -95,8 +144,8 @@ All backends produce identical results. Polars is recommended for performance.
 
 ```bash
 # Development install with hatch
-git clone https://github.com/mountainash-io/mountainash-utils-rules.git
-cd mountainash-utils-rules
+git clone https://github.com/mountainash-io/mountainash-rules.git
+cd mountainash-rules
 hatch env create
 ```
 
