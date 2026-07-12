@@ -104,6 +104,18 @@ class ExpressionRulesEngine:
         """Run the single-pass evaluation pipeline via mountainash.relations.Relation."""
         rel = relation(self._rules)
 
+        # Step 0: Reserved-column guard + stable input row order
+        reserved = ("__rule_index", "__rank", "__specificity", "__survived")
+        colliding = [
+            c for c in rel.columns
+            if c in reserved or c.startswith(("__t_", CTX_PREFIX))
+        ]
+        if colliding:
+            raise ValueError(
+                f"Rules frame contains reserved engine columns: {colliding}"
+            )
+        rel = rel.with_row_index(name="__rule_index")
+
         # Step 1: Bind context values as literal columns
         ctx_columns = [
             ma.lit(value).alias(f"{CTX_PREFIX}{name}")
@@ -132,11 +144,12 @@ class ExpressionRulesEngine:
         ).alias("__specificity")
         rel = rel.with_columns(survived, specificity)
 
-        # Step 4: Filter survivors, sort by specificity, add 1-based rank
+        # Step 4: Filter survivors, sort by specificity with deterministic
+        # rule-order tie-break, add 1-based rank
         rel = (
             rel
             .filter(ma.col("__survived"))
-            .sort("__specificity", descending=True)
+            .sort("__specificity", "__rule_index", descending=[True, False])
             .with_row_index(name="__rank")
             .with_columns(ma.col("__rank").add(ma.lit(1)).alias("__rank"))
         )

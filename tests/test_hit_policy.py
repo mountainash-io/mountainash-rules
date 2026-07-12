@@ -70,3 +70,33 @@ class TestDefaultOutputFields:
     def test_explicit_output_fields_win(self):
         info = SelectionInfo((), None, ("price",), False, True)
         assert default_output_fields(["price", "code"], info) == ["price"]
+
+
+def _region_md(**kwargs):
+    return DimensionsMetadata(
+        dimensions=[Dimension(dimension_name="region")], **kwargs
+    )
+
+
+class TestDeterministicTieBreak:
+    def test_collect_ties_broken_by_rule_order(self):
+        rules = pl.DataFrame({
+            "rule_name": ["r_late", "r_early"],
+            "region": ["AU", "AU"],
+        })
+        engine = ExpressionRulesEngine(rules=rules, dimension_metadata=_region_md())
+        result = engine.evaluate({"region": "AU"})
+        rows = result.survivors.to_dicts()
+        assert [r["rule_name"] for r in rows] == ["r_late", "r_early"]
+        assert [r["__rule_index"] for r in rows] == [0, 1]
+        assert [r["__rank"] for r in rows] == [1, 2]
+
+
+class TestReservedColumns:
+    def test_reserved_column_in_rules_raises(self):
+        rules = pl.DataFrame({
+            "rule_name": ["r"], "region": ["AU"], "__rank": [9],
+        })
+        engine = ExpressionRulesEngine(rules=rules, dimension_metadata=_region_md())
+        with pytest.raises(ValueError, match="__rank"):
+            engine.evaluate({"region": "AU"})
