@@ -153,3 +153,65 @@ class TestOverflowGuard:
         engine = AccumulatorEngine(dimension_metadata=_range_metadata())
         engine.build(_all_wildcard_rules(5))  # prod(2..11) = 2310, tier-1 safe
         assert calls == []
+
+
+import itertools
+
+from mountainash_rules.engine import ExpressionRulesEngine
+
+BOUNDS = [S, 0, 5, 10]
+PROBES = [-1, 0, 2, 5, 7, 10, 11]
+FLAG_COMBOS = [(True, True), (True, False), (False, True), (False, False)]
+
+
+def _valid_interval(lo, hi, min_inc=True, max_inc=True):
+    # A rule interval must be non-empty as a set: finite lo > hi is always
+    # invalid, and a finite point lo == hi is only non-empty when both
+    # endpoints are inclusive (e.g. (0, 0] is the empty set).
+    if lo == S or hi == S:
+        return True
+    if lo == hi:
+        return min_inc and max_inc
+    return lo < hi
+
+
+def _coalesced_nonempty(a, b, min_inc, max_inc):
+    """Python-side oracle: intersection of a and b is non-empty."""
+    finite_los = [v for v in (a[0], b[0]) if v != S]
+    finite_his = [v for v in (a[1], b[1]) if v != S]
+    if not finite_los or not finite_his:
+        return True
+    lo, hi = max(finite_los), min(finite_his)
+    return lo <= hi if (min_inc and max_inc) else lo < hi
+
+
+class TestThreeWayEquivalence:
+    @pytest.mark.parametrize("min_inc,max_inc", FLAG_COMBOS)
+    def test_compatible_iff_nonempty_iff_joint_match(self, min_inc, max_inc):
+        metadata = _range_metadata(min_inc, max_inc)
+        intervals = [
+            (lo, hi)
+            for lo, hi in itertools.product(BOUNDS, BOUNDS)
+            if _valid_interval(lo, hi, min_inc, max_inc)
+        ]
+        for a, b in itertools.combinations_with_replacement(intervals, 2):
+            products, _ = _build_pair(a, b, min_inc, max_inc)
+            combined = 6 in products
+
+            nonempty = _coalesced_nonempty(a, b, min_inc, max_inc)
+
+            rules = pl.DataFrame({
+                "rule_name": ["A", "B"],
+                "x_min": [a[0], b[0]],
+                "x_max": [a[1], b[1]],
+            })
+            filter_engine = ExpressionRulesEngine(
+                rules=rules, dimension_metadata=metadata
+            )
+            joint = any(
+                filter_engine.evaluate({"x": v}).count == 2 for v in PROBES
+            )
+
+            label = f"A={a} B={b} min_inc={min_inc} max_inc={max_inc}"
+            assert combined == nonempty, f"lattice vs interval oracle: {label}"
+            assert combined == joint, f"lattice vs filter-engine oracle: {label}"
