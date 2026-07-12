@@ -109,3 +109,37 @@ class TestDataTypeMigration:
                 data_type=DataType.BOOL,
                 range_min_field="a", range_max_field="b",
             )
+
+
+class TestYamlRoundTrip:
+    def _full_metadata(self):
+        return DimensionsMetadata(dimensions=[
+            Dimension(dimension_name="region", valid_values=["AU", "NZ"]),
+            Dimension(
+                dimension_name="amount", match_strategy=MatchStrategy.RANGE,
+                data_type=DataType.INT,
+                range_min_field="amt_min", range_max_field="amt_max",
+                range_max_inclusive=False,
+            ),
+            Dimension(
+                dimension_name="chan", context_field="channel",
+                rule_field="chan_rule", match_strategy=MatchStrategy.PREFIX,
+            ),
+            Dimension(
+                dimension_name="segment", role="context_key",
+            ),
+        ])
+
+    def test_round_trip_equality(self, tmp_path):
+        md = self._full_metadata()
+        assert DimensionsMetadata.from_yaml(md.to_yaml()) == md
+
+    def test_yaml_contains_string_values_not_ints(self):
+        text = self._full_metadata().to_yaml()
+        assert "range" in text
+        assert "context_key" in text
+
+    def test_file_round_trip(self, tmp_path):
+        md = self._full_metadata()
+        p = md.to_yaml_file(tmp_path / "md.yaml")
+        assert DimensionsMetadata.from_yaml_file(p) == md

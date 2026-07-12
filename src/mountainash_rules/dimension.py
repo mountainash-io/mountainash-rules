@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import pathlib
 import typing as t
 import warnings
 
+import yaml
 from pydantic import BaseModel, field_validator, model_validator
 
 from mountainash_rules.constants import (
@@ -140,3 +142,23 @@ class DimensionsMetadata(BaseModel):
             if d.dimension_name == name:
                 return d
         raise KeyError(f"Dimension '{name}' not found")
+
+    def to_yaml(self) -> str:
+        """Serialise to YAML (defaults omitted for forward compatibility)."""
+        return yaml.safe_dump(
+            self.model_dump(mode="json", exclude_defaults=True),
+            sort_keys=False,
+        )
+
+    @classmethod
+    def from_yaml(cls, text: str) -> "DimensionsMetadata":
+        return cls.model_validate(yaml.safe_load(text))
+
+    def to_yaml_file(self, path: str | pathlib.Path) -> pathlib.Path:
+        path = pathlib.Path(path)
+        path.write_text(self.to_yaml(), encoding="utf-8")
+        return path
+
+    @classmethod
+    def from_yaml_file(cls, path: str | pathlib.Path) -> "DimensionsMetadata":
+        return cls.from_yaml(pathlib.Path(path).read_text(encoding="utf-8"))
