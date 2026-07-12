@@ -27,3 +27,46 @@ class TestMetadataFields:
                 dimensions=[Dimension(dimension_name="x")],
                 hit_policy=HitPolicy.PRIORITY,
             )
+
+
+from mountainash_rules.hit_policy import (
+    HitPolicyViolationError,
+    SelectionInfo,
+    default_output_fields,
+    ordering_keys,
+)
+
+
+class TestOrderingKeys:
+    def test_collect(self):
+        assert ordering_keys(HitPolicy.COLLECT, None) == [
+            ("__specificity", True), ("__rule_index", False),
+        ]
+
+    def test_first_and_rule_order_ignore_specificity(self):
+        assert ordering_keys(HitPolicy.FIRST, None) == [("__rule_index", False)]
+        assert ordering_keys(HitPolicy.RULE_ORDER, None) == [("__rule_index", False)]
+
+    def test_priority(self):
+        assert ordering_keys(HitPolicy.PRIORITY, "salience") == [
+            ("salience", True), ("__specificity", True), ("__rule_index", False),
+        ]
+
+
+class TestDefaultOutputFields:
+    def test_excludes_rule_condition_and_internal_columns(self):
+        info = SelectionInfo(
+            dimension_rule_fields=("region", "amt_min", "amt_max"),
+            priority_field="salience",
+            output_fields=(),
+            truncated=False,
+            observability=True,
+        )
+        cols = ["rule_name", "region", "amt_min", "amt_max", "salience",
+                "price", "code", "__rank", "__specificity", "__rule_index",
+                "__t_region"]
+        assert default_output_fields(cols, info) == ["price", "code"]
+
+    def test_explicit_output_fields_win(self):
+        info = SelectionInfo((), None, ("price",), False, True)
+        assert default_output_fields(["price", "code"], info) == ["price"]
