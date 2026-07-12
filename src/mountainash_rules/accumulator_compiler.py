@@ -59,9 +59,13 @@ class AccumulatorCompiler:
     def compile_coalesce_na_flag(self, dim: Dimension) -> BaseExpressionAPI:
         """Expression for the coalesced NA flag (1 = both sides don't-care)."""
         if dim.match_strategy == MatchStrategy.RANGE:
-            co_s = ma.col(f"co_{dim.range_min_field}").eq(ma.lit(UNKNOWN_NUMERIC))
-            rhs_s = ma.col(f"{dim.range_min_field}_rhs").eq(ma.lit(UNKNOWN_NUMERIC))
-            return co_s.__and__(rhs_s).cast(int).alias(f"co_{dim.dimension_name}_na")
+            co_min_s, co_max_s, rhs_min_s, rhs_max_s = self._range_sentinel_checks(dim)
+            all_sentinel = (
+                co_min_s.__and__(rhs_min_s)
+                .__and__(co_max_s)
+                .__and__(rhs_max_s)
+            )
+            return all_sentinel.cast(int).alias(f"co_{dim.dimension_name}_na")
         co_sentinel, rhs_sentinel = self._sentinel_checks(dim)
         field = dim.resolved_rule_field
         return co_sentinel.__and__(rhs_sentinel).cast(int).alias(f"co_{field}_na")

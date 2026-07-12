@@ -71,3 +71,16 @@ class TestInclusivityFlags:
     def test_touching_exclusive_max_ranges_do_not_combine(self):
         products, _ = _build_pair((0, 10), (10, 20), max_inc=False)
         assert 6 not in products
+
+
+class TestRangeNaFlags:
+    def test_combined_upper_bounded_ranges_not_flagged_na(self):
+        # (-inf, 10] + (-inf, 20]: bounded above, so NOT fully don't-care
+        products, rows = _build_pair((S, 10), (S, 20))
+        by_product = {p: i for i, p in enumerate(rows["__prime_product"])}
+        assert rows["co_x_na"][by_product[6]] == 0
+
+    def test_combined_all_sentinel_ranges_flagged_na(self):
+        products, rows = _build_pair((S, S), (S, S))
+        by_product = {p: i for i, p in enumerate(rows["__prime_product"])}
+        assert rows["co_x_na"][by_product[6]] == 1
