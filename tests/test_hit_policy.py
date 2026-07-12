@@ -203,3 +203,30 @@ class TestResultSelect:
         result = self._collect_result(top_n=1)
         with pytest.raises(ValueError, match="truncated"):
             result.select(HitPolicy.UNIQUE)
+
+
+class TestAccumulatorCollectPin:
+    def test_apply_metadata_pins_collect(self):
+        from mountainash_rules.accumulator_engine import AccumulatorEngine
+        md = DimensionsMetadata(
+            dimensions=[Dimension(dimension_name="x")],
+            hit_policy=HitPolicy.FIRST,
+        )
+        engine = AccumulatorEngine(dimension_metadata=md)
+        assert engine._build_apply_metadata().hit_policy is HitPolicy.COLLECT
+
+
+def test_hit_policy_yaml_round_trip():
+    md = DimensionsMetadata(
+        dimensions=[Dimension(dimension_name="x")],
+        hit_policy=HitPolicy.PRIORITY,
+        priority_field="salience",
+        output_fields=["price"],
+    )
+    assert DimensionsMetadata.from_yaml(md.to_yaml()) == md
+
+
+def test_package_exports():
+    from mountainash_rules import HitPolicy as HP
+    from mountainash_rules import HitPolicyViolationError, SelectionInfo  # noqa: F401
+    assert HP("first") is HP.FIRST

@@ -17,6 +17,7 @@ from mountainash_rules.accumulator_result import AccumulatorResult
 from mountainash_rules.aggregate import Aggregate
 from mountainash_rules.constants import (
     DimensionRole,
+    HitPolicy,
     MatchStrategy,
     unknown_sentinel_for,
 )
@@ -483,7 +484,10 @@ class AccumulatorEngine:
                     match_strategy=d.match_strategy,
                     data_type=d.data_type,
                 ))
-        return DimensionsMetadata(dimensions=dims)
+        return DimensionsMetadata(
+            dimensions=dims,
+            hit_policy=HitPolicy.COLLECT,  # never inherit a table policy here
+        )
 
     def apply(
         self,

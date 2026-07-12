@@ -5,9 +5,10 @@ from mountainash_rules.accumulator_engine import AccumulatorEngine
 from mountainash_rules.accumulator_result import AccumulatorResult
 from mountainash_rules.aggregate import Aggregate
 from mountainash_rules.compiler import DimensionCompiler
-from mountainash_rules.constants import DimensionRole, MatchStrategy
+from mountainash_rules.constants import DataType, DimensionRole, HitPolicy, MatchStrategy
 from mountainash_rules.dimension import Dimension, DimensionsMetadata
 from mountainash_rules.engine import ExpressionRulesEngine
+from mountainash_rules.hit_policy import HitPolicyViolationError, SelectionInfo
 from mountainash_rules.lattice import Lattice
 from mountainash_rules.result import RuleResult
 
@@ -16,12 +17,16 @@ __all__ = (
     "AccumulatorEngine",
     "AccumulatorResult",
     "Aggregate",
+    "DataType",
     "DimensionCompiler",
     "Dimension",
     "DimensionRole",
     "DimensionsMetadata",
     "ExpressionRulesEngine",
+    "HitPolicy",
+    "HitPolicyViolationError",
     "Lattice",
     "MatchStrategy",
     "RuleResult",
+    "SelectionInfo",
 )
