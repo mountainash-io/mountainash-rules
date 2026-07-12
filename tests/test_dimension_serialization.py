@@ -277,3 +277,21 @@ class TestBoolDimensions:
         result = engine.evaluate({})
         assert result.count == 1
         assert result.explain("on") == {"active": 0}
+
+
+class TestValidValues:
+    def test_default_is_not_shared(self):
+        a = Dimension(dimension_name="a")
+        b = Dimension(dimension_name="b")
+        a.valid_values.append("X")
+        assert b.valid_values == []
+
+    def test_non_scalar_rejected(self):
+        with pytest.raises(ValueError):
+            Dimension(dimension_name="a", valid_values=[object()])
+
+    def test_serialises(self):
+        md = DimensionsMetadata(dimensions=[
+            Dimension(dimension_name="a", valid_values=["AU", "NZ"]),
+        ])
+        assert DimensionsMetadata.from_yaml(md.to_yaml()) == md

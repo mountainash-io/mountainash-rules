@@ -7,7 +7,7 @@ import typing as t
 import warnings
 
 import yaml
-from pydantic import BaseModel, field_validator, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from mountainash_rules.constants import (
     PYTHON_TO_DATATYPE,
@@ -26,7 +26,14 @@ class Dimension(BaseModel):
     match_strategy: MatchStrategy = MatchStrategy.EXACT
     data_type: DataType = DataType.STR
     role: DimensionRole = DimensionRole.CONSTRAINT
-    valid_values: list[t.Any] = []
+    valid_values: list[str | int | float | bool] = Field(
+        default_factory=list,
+        description=(
+            "Declarative domain of context values for this dimension. "
+            "Ignored by the engines; consumed by babel's coverage "
+            "validation. Temporal domains are declared as ISO strings."
+        ),
+    )
 
     # RANGE strategy fields
     range_min_field: t.Optional[str] = None
