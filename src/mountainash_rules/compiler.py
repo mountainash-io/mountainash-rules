@@ -9,6 +9,7 @@ from mountainash_rules.constants import (
     CTX_PREFIX,
     UNKNOWN,
     NOT_SET,
+    DataType,
     MatchStrategy,
     sentinels_for,
 )
@@ -60,16 +61,32 @@ class DimensionCompiler:
                 raise ValueError(f"Unknown match strategy: {dim.match_strategy}")
 
     def _compile_exact(self, dim: Dimension) -> BaseExpressionAPI:
+        if dim.data_type is DataType.BOOL:
+            return self._compile_bool_ternary(dim, "__eq__")
         sentinels = sentinels_for(dim.data_type)
         rule_col = ma.t_col(dim.resolved_rule_field, unknown=sentinels)
         ctx_col = ma.t_col(CTX_PREFIX + dim.dimension_name, unknown=sentinels)
         return rule_col.t_eq(ctx_col)
 
     def _compile_not_equal(self, dim: Dimension) -> BaseExpressionAPI:
+        if dim.data_type is DataType.BOOL:
+            return self._compile_bool_ternary(dim, "__ne__")
         sentinels = sentinels_for(dim.data_type)
         rule_col = ma.t_col(dim.resolved_rule_field, unknown=sentinels)
         ctx_col = ma.t_col(CTX_PREFIX + dim.dimension_name, unknown=sentinels)
         return rule_col.t_ne(ctx_col)
+
+    def _compile_bool_ternary(self, dim: Dimension, op_name: str) -> BaseExpressionAPI:
+        """Bool dimensions: null (rule or context) is the don't-care state."""
+        rule_col = ma.col(dim.resolved_rule_field)
+        ctx_col = ma.col(CTX_PREFIX + dim.dimension_name)
+        either_null = rule_col.is_null().__or__(ctx_col.is_null())
+        compared = getattr(rule_col, op_name)(ctx_col)
+        return (
+            ma.when(either_null).then(0)
+            .when(compared).then(1)
+            .otherwise(-1)
+        )
 
     def _compile_greater_than(self, dim: Dimension) -> BaseExpressionAPI:
         sentinels = sentinels_for(dim.data_type)

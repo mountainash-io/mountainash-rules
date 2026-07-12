@@ -254,3 +254,26 @@ class TestRegexSplit:
         assert result.count == 2  # au (match) + any (sentinel wildcard)
         assert result.explain("au") == {"x": 1}
         assert result.explain("any") == {"x": 0}
+
+
+class TestBoolDimensions:
+    def _md(self):
+        return DimensionsMetadata(dimensions=[
+            Dimension(dimension_name="active", data_type=DataType.BOOL),
+        ])
+
+    def test_bool_exact_match(self):
+        rules = pl.DataFrame({"rule_name": ["on", "off", "any"],
+                              "active": [True, False, None]})
+        engine = ExpressionRulesEngine(rules=rules, dimension_metadata=self._md())
+        result = engine.evaluate({"active": True})
+        assert result.count == 2
+        assert result.explain("on") == {"active": 1}
+        assert result.explain("any") == {"active": 0}
+
+    def test_missing_bool_context_preserved_as_null_wildcard(self):
+        rules = pl.DataFrame({"rule_name": ["on"], "active": [True]})
+        engine = ExpressionRulesEngine(rules=rules, dimension_metadata=self._md())
+        result = engine.evaluate({})
+        assert result.count == 1
+        assert result.explain("on") == {"active": 0}

@@ -142,3 +142,12 @@ def test_engine_context_field_remap_end_to_end():
     # A hard match (1), not a missing-context wildcard (0): proves the value
     # was read from cust_region, not from the dimension name.
     assert result.explain("au_rule") == {"region": 1}
+
+
+def test_bool_dimension_missing_context_stays_none():
+    from mountainash_rules.constants import DataType
+    md = DimensionsMetadata(dimensions=[
+        Dimension(dimension_name="active", data_type=DataType.BOOL),
+    ])
+    values = extract_context_values({}, ["active"], metadata=md)
+    assert values["active"] is None
