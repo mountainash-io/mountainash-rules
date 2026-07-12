@@ -9,9 +9,8 @@ from mountainash_rules.constants import (
     CTX_PREFIX,
     UNKNOWN,
     NOT_SET,
-    STRING_SENTINELS,
-    NUMERIC_SENTINELS,
     MatchStrategy,
+    sentinels_for,
 )
 from mountainash_rules.dimension import Dimension, DimensionsMetadata
 
@@ -58,38 +57,32 @@ class DimensionCompiler:
             case _:
                 raise ValueError(f"Unknown match strategy: {dim.match_strategy}")
 
-    def _sentinels_for_type(self, data_type: type) -> set:
-        """Return the appropriate sentinel set for a data type."""
-        if data_type in (int, float):
-            return NUMERIC_SENTINELS
-        return STRING_SENTINELS
-
     def _compile_exact(self, dim: Dimension) -> BaseExpressionAPI:
-        sentinels = self._sentinels_for_type(dim.data_type)
+        sentinels = sentinels_for(dim.data_type)
         rule_col = ma.t_col(dim.resolved_rule_field, unknown=sentinels)
         ctx_col = ma.t_col(CTX_PREFIX + dim.dimension_name, unknown=sentinels)
         return rule_col.t_eq(ctx_col)
 
     def _compile_not_equal(self, dim: Dimension) -> BaseExpressionAPI:
-        sentinels = self._sentinels_for_type(dim.data_type)
+        sentinels = sentinels_for(dim.data_type)
         rule_col = ma.t_col(dim.resolved_rule_field, unknown=sentinels)
         ctx_col = ma.t_col(CTX_PREFIX + dim.dimension_name, unknown=sentinels)
         return rule_col.t_ne(ctx_col)
 
     def _compile_greater_than(self, dim: Dimension) -> BaseExpressionAPI:
-        sentinels = self._sentinels_for_type(dim.data_type)
+        sentinels = sentinels_for(dim.data_type)
         rule_col = ma.t_col(dim.resolved_rule_field, unknown=sentinels)
         ctx_col = ma.t_col(CTX_PREFIX + dim.dimension_name, unknown=sentinels)
         return ctx_col.t_gt(rule_col)
 
     def _compile_less_than(self, dim: Dimension) -> BaseExpressionAPI:
-        sentinels = self._sentinels_for_type(dim.data_type)
+        sentinels = sentinels_for(dim.data_type)
         rule_col = ma.t_col(dim.resolved_rule_field, unknown=sentinels)
         ctx_col = ma.t_col(CTX_PREFIX + dim.dimension_name, unknown=sentinels)
         return ctx_col.t_lt(rule_col)
 
     def _compile_range(self, dim: Dimension) -> BaseExpressionAPI:
-        sentinels = self._sentinels_for_type(dim.data_type)
+        sentinels = sentinels_for(dim.data_type)
         ctx_col = ma.t_col(CTX_PREFIX + dim.dimension_name, unknown=sentinels)
         min_col = ma.t_col(dim.range_min_field, unknown=sentinels)
         max_col = ma.t_col(dim.range_max_field, unknown=sentinels)
@@ -142,14 +135,14 @@ class DimensionCompiler:
 
     def _compile_set_membership(self, dim: Dimension) -> BaseExpressionAPI:
         """SET_MEMBERSHIP: context value is in the rule's list column."""
-        sentinels = self._sentinels_for_type(dim.data_type)
+        sentinels = sentinels_for(dim.data_type)
         rule_col = ma.col(dim.resolved_rule_field)
         ctx_col = ma.t_col(CTX_PREFIX + dim.dimension_name, unknown=sentinels)
         return ctx_col.t_is_in(rule_col)
 
     def _compile_set_exclusion(self, dim: Dimension) -> BaseExpressionAPI:
         """SET_EXCLUSION: context value is NOT in the rule's list column."""
-        sentinels = self._sentinels_for_type(dim.data_type)
+        sentinels = sentinels_for(dim.data_type)
         rule_col = ma.col(dim.resolved_rule_field)
         ctx_col = ma.t_col(CTX_PREFIX + dim.dimension_name, unknown=sentinels)
         return ctx_col.t_is_not_in(rule_col)

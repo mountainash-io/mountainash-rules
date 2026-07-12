@@ -8,7 +8,7 @@ from mountainash_rules.dimension import Dimension, DimensionsMetadata
 
 class TestNumericStrategyValidation:
     def test_greater_than_requires_numeric(self):
-        with pytest.raises(ValueError, match="GREATER_THAN"):
+        with pytest.raises(ValueError, match="greater_than"):
             Dimension(
                 dimension_name="x",
                 match_strategy=MatchStrategy.GREATER_THAN,
@@ -32,7 +32,7 @@ class TestNumericStrategyValidation:
         assert d.match_strategy == MatchStrategy.GREATER_THAN
 
     def test_less_than_requires_numeric(self):
-        with pytest.raises(ValueError, match="LESS_THAN"):
+        with pytest.raises(ValueError, match="less_than"):
             Dimension(
                 dimension_name="x",
                 match_strategy=MatchStrategy.LESS_THAN,
@@ -42,7 +42,7 @@ class TestNumericStrategyValidation:
 
 class TestStringStrategyValidation:
     def test_prefix_requires_string(self):
-        with pytest.raises(ValueError, match="PREFIX"):
+        with pytest.raises(ValueError, match="prefix"):
             Dimension(
                 dimension_name="x",
                 match_strategy=MatchStrategy.PREFIX,
@@ -58,7 +58,7 @@ class TestStringStrategyValidation:
         assert d.match_strategy == MatchStrategy.PREFIX
 
     def test_suffix_requires_string(self):
-        with pytest.raises(ValueError, match="SUFFIX"):
+        with pytest.raises(ValueError, match="suffix"):
             Dimension(
                 dimension_name="x",
                 match_strategy=MatchStrategy.SUFFIX,
@@ -66,7 +66,7 @@ class TestStringStrategyValidation:
             )
 
     def test_contains_requires_string(self):
-        with pytest.raises(ValueError, match="CONTAINS"):
+        with pytest.raises(ValueError, match="contains"):
             Dimension(
                 dimension_name="x",
                 match_strategy=MatchStrategy.CONTAINS,
@@ -74,7 +74,7 @@ class TestStringStrategyValidation:
             )
 
     def test_regex_requires_string(self):
-        with pytest.raises(ValueError, match="REGEX"):
+        with pytest.raises(ValueError, match="regex"):
             Dimension(
                 dimension_name="x",
                 match_strategy=MatchStrategy.REGEX,

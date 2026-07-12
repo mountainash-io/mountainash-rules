@@ -18,8 +18,8 @@ from mountainash_rules.aggregate import Aggregate
 from mountainash_rules.constants import (
     DimensionRole,
     MatchStrategy,
-    UNKNOWN,
     UNKNOWN_NUMERIC,
+    unknown_sentinel_for,
 )
 from mountainash_rules.dimension import Dimension, DimensionsMetadata
 from mountainash_rules.engine import ExpressionRulesEngine
@@ -236,7 +236,7 @@ class AccumulatorEngine:
                 )
             else:
                 field = dim.resolved_rule_field
-                sentinel = UNKNOWN_NUMERIC if dim.data_type in (int, float) else UNKNOWN
+                sentinel = unknown_sentinel_for(dim.data_type)
                 na_exprs.append(
                     ma.col(field).eq(ma.lit(sentinel))
                     .cast(int)

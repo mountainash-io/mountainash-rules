@@ -6,7 +6,7 @@ import typing as t
 
 from pydantic import BaseModel
 
-from mountainash_rules.constants import NOT_SET, NOT_SET_NUMERIC
+from mountainash_rules.constants import NOT_SET, not_set_sentinel_for
 
 if t.TYPE_CHECKING:
     from mountainash_rules.dimension import DimensionsMetadata
@@ -44,8 +44,8 @@ def extract_context_values(
         field = dim.resolved_context_field if dim is not None else name
         value = raw.get(field)
         if value is None:
-            if dim is not None and dim.data_type in (int, float):
-                result[name] = NOT_SET_NUMERIC
+            if dim is not None:
+                result[name] = not_set_sentinel_for(dim.data_type)
             else:
                 result[name] = NOT_SET
         else:

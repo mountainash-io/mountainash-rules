@@ -6,9 +6,9 @@ import mountainash.expressions as ma
 from mountainash.expressions import BaseExpressionAPI
 
 from mountainash_rules.constants import (
-    UNKNOWN,
     UNKNOWN_NUMERIC,
     MatchStrategy,
+    unknown_sentinel_for,
 )
 from mountainash_rules.dimension import Dimension
 
@@ -73,7 +73,7 @@ class AccumulatorCompiler:
     def _sentinel_checks(self, dim: Dimension) -> tuple[BaseExpressionAPI, BaseExpressionAPI]:
         """Return (co_is_sentinel, rhs_is_sentinel) expressions."""
         field = dim.resolved_rule_field
-        sentinel = UNKNOWN_NUMERIC if dim.data_type in (int, float) else UNKNOWN
+        sentinel = unknown_sentinel_for(dim.data_type)
         co_is_sentinel = ma.col(f"co_{field}").eq(ma.lit(sentinel))
         rhs_is_sentinel = ma.col(f"{field}_rhs").eq(ma.lit(sentinel))
         return co_is_sentinel, rhs_is_sentinel

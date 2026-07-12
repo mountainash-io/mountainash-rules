@@ -75,3 +75,37 @@ class TestSentinelSelection:
         assert not_set_sentinel_for(DataType.FLOAT) == NOT_SET_NUMERIC
         assert not_set_sentinel_for(DataType.STR) == NOT_SET
         assert unknown_sentinel_for(DataType.DATE) == UNKNOWN_DATE
+
+
+from mountainash_rules.dimension import Dimension, DimensionsMetadata
+
+
+class TestDataTypeMigration:
+    def test_enum_accepted_directly(self):
+        d = Dimension(dimension_name="x", data_type=DataType.INT)
+        assert d.data_type is DataType.INT
+
+    def test_string_value_accepted(self):
+        d = Dimension(dimension_name="x", data_type="float")
+        assert d.data_type is DataType.FLOAT
+
+    def test_python_type_accepted_with_deprecation_warning(self):
+        with pytest.warns(DeprecationWarning):
+            d = Dimension(dimension_name="x", data_type=int)
+        assert d.data_type is DataType.INT
+
+    def test_range_accepts_temporal(self):
+        d = Dimension(
+            dimension_name="eff", match_strategy=MatchStrategy.RANGE,
+            data_type=DataType.DATE,
+            range_min_field="eff_from", range_max_field="eff_to",
+        )
+        assert d.data_type is DataType.DATE
+
+    def test_range_rejects_bool(self):
+        with pytest.raises(ValueError, match="range"):
+            Dimension(
+                dimension_name="x", match_strategy=MatchStrategy.RANGE,
+                data_type=DataType.BOOL,
+                range_min_field="a", range_max_field="b",
+            )
