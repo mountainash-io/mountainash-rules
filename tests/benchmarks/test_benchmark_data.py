@@ -1,4 +1,4 @@
-"""Tests for the synthetic benchmark data generator (tests/benchmark_data.py)."""
+"""Tests for the synthetic benchmark data generator (tests/benchmarks/benchmark_data.py)."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from pydantic import BaseModel
 from mountainash_rules.core.constants import UNKNOWN, UNKNOWN_NUMERIC, MatchStrategy
 from mountainash_rules.engines.filter.engine import ExpressionRulesEngine
 
-from tests.benchmark_data import (
+from tests.benchmarks.benchmark_data import (
     assign_strategies,
     build_engine,
     generate_context,

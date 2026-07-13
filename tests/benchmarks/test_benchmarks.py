@@ -13,7 +13,7 @@ import pytest
 pytestmark = pytest.mark.benchmark
 
 from tests.conftest import ALL_BACKENDS, LIST_CAPABLE_BACKENDS
-from tests.benchmark_data import build_engine, generate_context, generate_rules
+from tests.benchmarks.benchmark_data import build_engine, generate_context, generate_rules
 from mountainash_rules.core.constants import MatchStrategy
 
 # ibis-polars excluded: upstream bug mountainash-io/mountainash#78

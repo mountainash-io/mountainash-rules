@@ -4,6 +4,9 @@ on:
   pull_request:
     paths:
       - "src/mountainash_rules/**"
+      - "tests/**"
+      - "pyproject.toml"
+      - "hatch.toml"
   workflow_dispatch:
 
 permissions:
