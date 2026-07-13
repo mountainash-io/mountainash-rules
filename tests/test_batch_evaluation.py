@@ -4,14 +4,14 @@ import polars as pl
 import pytest
 from mountainash.relations import relation
 
-from mountainash_rules.constants import (
+from mountainash_rules.core.constants import (
     NOT_SET,
     NOT_SET_NUMERIC,
     HitPolicy,
     MatchStrategy,
 )
-from mountainash_rules.dimension import Dimension, DimensionsMetadata
-from mountainash_rules.engine import ExpressionRulesEngine
+from mountainash_rules.core.dimension import Dimension, DimensionsMetadata
+from mountainash_rules.engines.filter.engine import ExpressionRulesEngine
 
 
 def _metadata():
@@ -165,7 +165,7 @@ class TestBatchHitPolicies:
         assert surv.group_by("__context_id").len()["len"].to_list() == [1, 1]
 
     def test_unique_violation_lists_context_ids(self):
-        from mountainash_rules.hit_policy import HitPolicyViolationError
+        from mountainash_rules.core.hit_policy import HitPolicyViolationError
         with pytest.raises(HitPolicyViolationError) as exc_info:
             _engine().evaluate_batch(
                 self._contexts(), hit_policy=HitPolicy.UNIQUE
@@ -195,7 +195,7 @@ class TestChunking:
         assert whole.sort(key).equals(chunked.sort(key))
 
     def test_unique_violations_accumulate_across_chunks(self):
-        from mountainash_rules.hit_policy import HitPolicyViolationError
+        from mountainash_rules.core.hit_policy import HitPolicyViolationError
         # contexts 0 and 3 both have 2 survivors; chunk_size=2 puts them
         # in different chunks — both ids must appear in the message
         contexts = pl.DataFrame({
@@ -213,8 +213,8 @@ class TestChunking:
 
 class TestApplyCaching:
     def _setup(self):
-        from mountainash_rules.accumulator_engine import AccumulatorEngine
-        from mountainash_rules.constants import DimensionRole
+        from mountainash_rules.engines.accumulator.engine import AccumulatorEngine
+        from mountainash_rules.core.constants import DimensionRole
         md = DimensionsMetadata(dimensions=[
             Dimension(dimension_name="segment", role=DimensionRole.CONTEXT_KEY),
             Dimension(dimension_name="region"),
@@ -228,7 +228,7 @@ class TestApplyCaching:
         return engine, engine.build_all(rules)
 
     def test_apply_compiles_engine_once_per_lattice(self, monkeypatch):
-        import mountainash_rules.engine as eng_mod
+        import mountainash_rules.engines.filter.engine as eng_mod
         engine, lattices = self._setup()
         calls = []
         original = eng_mod.DimensionCompiler.compile_dimensions

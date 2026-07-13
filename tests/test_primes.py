@@ -2,7 +2,7 @@
 
 import pytest
 
-from mountainash_rules.primes import (
+from mountainash_rules.engines.accumulator.primes import (
     PRIME_TABLE,
     LatticeWidthExceededError,
     get_prime,

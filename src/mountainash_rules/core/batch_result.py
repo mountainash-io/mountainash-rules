@@ -7,8 +7,8 @@ import typing as t
 import mountainash.expressions as ma
 from mountainash.relations import relation
 
-from mountainash_rules.hit_policy import SelectionInfo
-from mountainash_rules.result import RuleResult
+from mountainash_rules.core.hit_policy import SelectionInfo
+from mountainash_rules.core.result import RuleResult
 
 
 class BatchRuleResult:

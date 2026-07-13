@@ -7,10 +7,10 @@ from dataclasses import dataclass
 
 import mountainash.expressions as ma
 
-from mountainash_rules.constants import HitPolicy, MatchStrategy
+from mountainash_rules.core.constants import HitPolicy, MatchStrategy
 
 if t.TYPE_CHECKING:
-    from mountainash_rules.dimension import DimensionsMetadata
+    from mountainash_rules.core.dimension import DimensionsMetadata
 
 
 @dataclass(frozen=True)

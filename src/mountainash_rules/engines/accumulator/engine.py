@@ -13,19 +13,19 @@ from mountainash.relations import relation, concat
 
 from pydantic import BaseModel
 
-from mountainash_rules.accumulator_compiler import AccumulatorCompiler
-from mountainash_rules.accumulator_result import AccumulatorResult
-from mountainash_rules.aggregate import Aggregate
-from mountainash_rules.constants import (
+from mountainash_rules.engines.accumulator.compiler import AccumulatorCompiler
+from mountainash_rules.engines.accumulator.result import AccumulatorResult
+from mountainash_rules.engines.accumulator.aggregate import Aggregate
+from mountainash_rules.core.constants import (
     DimensionRole,
     HitPolicy,
     MatchStrategy,
     unknown_sentinel_for,
 )
-from mountainash_rules.dimension import Dimension, DimensionsMetadata
-from mountainash_rules.engine import ExpressionRulesEngine
-from mountainash_rules.lattice import Lattice
-from mountainash_rules.primes import (
+from mountainash_rules.core.dimension import Dimension, DimensionsMetadata
+from mountainash_rules.engines.filter.engine import ExpressionRulesEngine
+from mountainash_rules.engines.accumulator.lattice import Lattice
+from mountainash_rules.engines.accumulator.primes import (
     _INT64_MAX,
     LatticeWidthExceededError,
     checked_multiply,
@@ -33,7 +33,7 @@ from mountainash_rules.primes import (
 )
 
 if t.TYPE_CHECKING:
-    from mountainash_rules.lattice import LatticeIndex
+    from mountainash_rules.engines.accumulator.lattice import LatticeIndex
 
 
 class AccumulatorEngine:
@@ -542,7 +542,7 @@ class AccumulatorEngine:
 
     def index(self, lattices: list[Lattice]) -> LatticeIndex:
         """Build a partition-key routing index over pre-built lattices."""
-        from mountainash_rules.lattice import LatticeIndex
+        from mountainash_rules.engines.accumulator.lattice import LatticeIndex
         return LatticeIndex(self, lattices, self._context_key_dims)
 
     def _extract_partition_key(self, context: t.Any) -> tuple:

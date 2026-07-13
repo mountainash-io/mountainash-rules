@@ -5,8 +5,8 @@ from __future__ import annotations
 import pytest
 from pydantic import BaseModel
 
-from mountainash_rules.constants import UNKNOWN, UNKNOWN_NUMERIC, MatchStrategy
-from mountainash_rules.engine import ExpressionRulesEngine
+from mountainash_rules.core.constants import UNKNOWN, UNKNOWN_NUMERIC, MatchStrategy
+from mountainash_rules.engines.filter.engine import ExpressionRulesEngine
 
 from tests.benchmark_data import (
     assign_strategies,

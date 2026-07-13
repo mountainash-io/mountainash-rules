@@ -13,14 +13,14 @@ import pandas as pd
 import mountainash.expressions as ma
 from mountainash.relations import relation
 
-from mountainash_rules.compiler import DimensionCompiler
-from mountainash_rules.constants import (
+from mountainash_rules.core.compiler import DimensionCompiler
+from mountainash_rules.core.constants import (
     CTX_PREFIX,
     UNKNOWN,
     UNKNOWN_NUMERIC,
     MatchStrategy,
 )
-from mountainash_rules.dimension import Dimension, DimensionsMetadata
+from mountainash_rules.core.dimension import Dimension, DimensionsMetadata
 
 
 class TestNarwhalsDuplicateLiteralInWithColumns:

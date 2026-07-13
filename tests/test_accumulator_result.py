@@ -4,11 +4,11 @@ import polars as pl
 import pytest
 from mountainash.relations import relation
 
-from mountainash_rules.accumulator_result import AccumulatorResult
-from mountainash_rules.aggregate import Aggregate
-from mountainash_rules.lattice import Lattice
-from mountainash_rules.constants import MatchStrategy
-from mountainash_rules.dimension import Dimension, DimensionsMetadata
+from mountainash_rules.engines.accumulator.result import AccumulatorResult
+from mountainash_rules.engines.accumulator.aggregate import Aggregate
+from mountainash_rules.engines.accumulator.lattice import Lattice
+from mountainash_rules.core.constants import MatchStrategy
+from mountainash_rules.core.dimension import Dimension, DimensionsMetadata
 
 
 def _make_result():

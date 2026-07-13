@@ -4,7 +4,7 @@ import warnings
 
 import pytest
 
-from mountainash_rules.constants import DimensionRole, MatchStrategy
+from mountainash_rules.core.constants import DimensionRole, MatchStrategy
 
 
 class TestStrEnums:
@@ -26,7 +26,7 @@ class TestStrEnums:
 
 import datetime
 
-from mountainash_rules.constants import (
+from mountainash_rules.core.constants import (
     DataType,
     NOT_SET,
     NOT_SET_DATE,
@@ -77,7 +77,7 @@ class TestSentinelSelection:
         assert unknown_sentinel_for(DataType.DATE) == UNKNOWN_DATE
 
 
-from mountainash_rules.dimension import Dimension, DimensionsMetadata
+from mountainash_rules.core.dimension import Dimension, DimensionsMetadata
 
 
 class TestDataTypeMigration:
@@ -147,8 +147,8 @@ class TestYamlRoundTrip:
 
 import polars as pl
 
-from mountainash_rules.constants import UNKNOWN_DATE
-from mountainash_rules.engine import ExpressionRulesEngine
+from mountainash_rules.core.constants import UNKNOWN_DATE
+from mountainash_rules.engines.filter.engine import ExpressionRulesEngine
 
 
 def _effective_dated_metadata():
@@ -201,7 +201,7 @@ class TestTemporalRange:
 
     def test_accumulator_combines_overlapping_date_ranges(self):
         from mountainash.relations import relation
-        from mountainash_rules.accumulator_engine import AccumulatorEngine
+        from mountainash_rules.engines.accumulator.engine import AccumulatorEngine
         engine = AccumulatorEngine(dimension_metadata=_effective_dated_metadata())
         rules = pl.DataFrame({
             "rule_name": ["A", "B"],
@@ -241,7 +241,7 @@ class TestRegexSplit:
             Dimension(dimension_name="x", match_strategy=MatchStrategy.CONTEXT_REGEX)
 
     def test_per_row_regex_matches_per_rule(self):
-        from mountainash_rules.constants import UNKNOWN
+        from mountainash_rules.core.constants import UNKNOWN
         rules = pl.DataFrame({
             "rule_name": ["au", "nz", "any"],
             "x": ["^AU-", "^NZ-", UNKNOWN],

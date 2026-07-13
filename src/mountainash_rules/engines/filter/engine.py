@@ -13,17 +13,17 @@ from mountainash.relations import concat, relation
 
 import dataclasses
 
-from mountainash_rules.compiler import DimensionCompiler
-from mountainash_rules.constants import (
+from mountainash_rules.core.compiler import DimensionCompiler
+from mountainash_rules.core.constants import (
     CTX_PREFIX,
     NOT_SET,
     HitPolicy,
     not_set_sentinel_for,
 )
-from mountainash_rules.context import extract_context_values
-from mountainash_rules.dimension import DimensionsMetadata
-from mountainash_rules.batch_result import BatchRuleResult
-from mountainash_rules.hit_policy import (
+from mountainash_rules.core.context import extract_context_values
+from mountainash_rules.core.dimension import DimensionsMetadata
+from mountainash_rules.core.batch_result import BatchRuleResult
+from mountainash_rules.core.hit_policy import (
     HitPolicyViolationError,
     SelectionInfo,
     apply_cardinality,
@@ -32,7 +32,7 @@ from mountainash_rules.hit_policy import (
     ordering_keys,
     selection_info_from_metadata,
 )
-from mountainash_rules.result import RuleResult
+from mountainash_rules.core.result import RuleResult
 
 
 class ExpressionRulesEngine:

@@ -3,10 +3,10 @@
 import polars as pl
 import pytest
 
-from mountainash_rules.aggregate import Aggregate
-from mountainash_rules.lattice import Lattice
-from mountainash_rules.constants import MatchStrategy
-from mountainash_rules.dimension import Dimension, DimensionsMetadata
+from mountainash_rules.engines.accumulator.aggregate import Aggregate
+from mountainash_rules.engines.accumulator.lattice import Lattice
+from mountainash_rules.core.constants import MatchStrategy
+from mountainash_rules.core.dimension import Dimension, DimensionsMetadata
 
 
 class TestAggregate:
@@ -62,7 +62,7 @@ class TestLattice:
 
 from mountainash.relations import relation
 
-from mountainash_rules.accumulator_engine import AccumulatorEngine
+from mountainash_rules.engines.accumulator.engine import AccumulatorEngine
 
 
 class TestIsComposed:

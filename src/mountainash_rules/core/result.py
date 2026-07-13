@@ -7,8 +7,8 @@ import typing as t
 import mountainash.expressions as ma
 from mountainash.relations import relation
 
-from mountainash_rules.constants import HitPolicy
-from mountainash_rules.hit_policy import (
+from mountainash_rules.core.constants import HitPolicy
+from mountainash_rules.core.hit_policy import (
     SelectionInfo,
     apply_cardinality,
     check_assertions,

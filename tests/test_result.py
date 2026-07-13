@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 from mountainash.relations import relation
 
-from mountainash_rules.result import RuleResult
+from mountainash_rules.core.result import RuleResult
 
 from tests.conftest import build_backend_df
 

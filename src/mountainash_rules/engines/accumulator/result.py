@@ -6,9 +6,9 @@ import typing as t
 
 from mountainash.relations import relation
 
-from mountainash_rules.aggregate import Aggregate
-from mountainash_rules.lattice import Lattice
-from mountainash_rules.result import RuleResult
+from mountainash_rules.engines.accumulator.aggregate import Aggregate
+from mountainash_rules.engines.accumulator.lattice import Lattice
+from mountainash_rules.core.result import RuleResult
 
 
 class AccumulatorResult(RuleResult):

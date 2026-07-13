@@ -4,9 +4,9 @@ import polars as pl
 import pytest
 from mountainash.relations import relation
 
-from mountainash_rules.accumulator_engine import AccumulatorEngine
-from mountainash_rules.constants import UNKNOWN_NUMERIC, MatchStrategy
-from mountainash_rules.dimension import Dimension, DimensionsMetadata
+from mountainash_rules.engines.accumulator.engine import AccumulatorEngine
+from mountainash_rules.core.constants import UNKNOWN_NUMERIC, MatchStrategy
+from mountainash_rules.core.dimension import Dimension, DimensionsMetadata
 
 S = UNKNOWN_NUMERIC
 
@@ -102,8 +102,8 @@ class TestAnchorNaFlags:
         assert rows["co_x_na"][0] == 1
 
 
-import mountainash_rules.accumulator_engine as acc_mod
-from mountainash_rules.primes import LatticeWidthExceededError
+import mountainash_rules.engines.accumulator.engine as acc_mod
+from mountainash_rules.engines.accumulator.primes import LatticeWidthExceededError
 
 
 def _all_wildcard_rules(n):
@@ -131,7 +131,7 @@ class TestOverflowGuard:
         # (A literal 15-wildcard clique is infeasible: its 32k-row lattice
         # makes the frontier dominance join quadratic.)
         import math
-        from mountainash_rules.primes import get_prime
+        from mountainash_rules.engines.accumulator.primes import get_prime
         engine = AccumulatorEngine(dimension_metadata=_range_metadata())
         rules = pl.DataFrame({
             "rule_name": [f"R{i}" for i in range(16)],
@@ -157,7 +157,7 @@ class TestOverflowGuard:
 
 import itertools
 
-from mountainash_rules.engine import ExpressionRulesEngine
+from mountainash_rules.engines.filter.engine import ExpressionRulesEngine
 
 BOUNDS = [S, 0, 5, 10]
 PROBES = [-1, 0, 2, 5, 7, 10, 11]

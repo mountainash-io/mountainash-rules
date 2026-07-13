@@ -4,10 +4,10 @@ import polars as pl
 import pytest
 from pydantic import BaseModel
 
-from mountainash_rules.context import extract_context_values
-from mountainash_rules.constants import NOT_SET, NOT_SET_NUMERIC, MatchStrategy
-from mountainash_rules.dimension import Dimension, DimensionsMetadata
-from mountainash_rules.engine import ExpressionRulesEngine
+from mountainash_rules.core.context import extract_context_values
+from mountainash_rules.core.constants import NOT_SET, NOT_SET_NUMERIC, MatchStrategy
+from mountainash_rules.core.dimension import Dimension, DimensionsMetadata
+from mountainash_rules.engines.filter.engine import ExpressionRulesEngine
 
 
 class SampleContext(BaseModel):
@@ -145,7 +145,7 @@ def test_engine_context_field_remap_end_to_end():
 
 
 def test_bool_dimension_missing_context_stays_none():
-    from mountainash_rules.constants import DataType
+    from mountainash_rules.core.constants import DataType
     md = DimensionsMetadata(dimensions=[
         Dimension(dimension_name="active", data_type=DataType.BOOL),
     ])

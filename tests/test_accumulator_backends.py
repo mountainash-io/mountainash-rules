@@ -5,12 +5,12 @@ import pytest
 from pydantic import BaseModel
 from mountainash.relations import relation
 
-from mountainash_rules.accumulator_engine import AccumulatorEngine
-from mountainash_rules.accumulator_result import AccumulatorResult
-from mountainash_rules.aggregate import Aggregate
-from mountainash_rules.constants import UNKNOWN, UNKNOWN_NUMERIC, MatchStrategy
-from mountainash_rules.dimension import Dimension, DimensionsMetadata
-from mountainash_rules.lattice import Lattice
+from mountainash_rules.engines.accumulator.engine import AccumulatorEngine
+from mountainash_rules.engines.accumulator.result import AccumulatorResult
+from mountainash_rules.engines.accumulator.aggregate import Aggregate
+from mountainash_rules.core.constants import UNKNOWN, UNKNOWN_NUMERIC, MatchStrategy
+from mountainash_rules.core.dimension import Dimension, DimensionsMetadata
+from mountainash_rules.engines.accumulator.lattice import Lattice
 from tests.conftest import ALL_BACKENDS, build_backend_df
 
 

@@ -2,8 +2,8 @@
 
 import pytest
 
-from mountainash_rules.constants import DimensionRole, MatchStrategy
-from mountainash_rules.dimension import Dimension, DimensionsMetadata
+from mountainash_rules.core.constants import DimensionRole, MatchStrategy
+from mountainash_rules.core.dimension import Dimension, DimensionsMetadata
 
 
 class TestNumericStrategyValidation:

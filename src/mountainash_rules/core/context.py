@@ -6,10 +6,10 @@ import typing as t
 
 from pydantic import BaseModel
 
-from mountainash_rules.constants import NOT_SET, DataType, not_set_sentinel_for
+from mountainash_rules.core.constants import NOT_SET, DataType, not_set_sentinel_for
 
 if t.TYPE_CHECKING:
-    from mountainash_rules.dimension import DimensionsMetadata
+    from mountainash_rules.core.dimension import DimensionsMetadata
 
 
 def extract_context_values(

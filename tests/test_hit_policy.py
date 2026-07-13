@@ -3,9 +3,9 @@
 import polars as pl
 import pytest
 
-from mountainash_rules.constants import HitPolicy, MatchStrategy
-from mountainash_rules.dimension import Dimension, DimensionsMetadata
-from mountainash_rules.engine import ExpressionRulesEngine
+from mountainash_rules.core.constants import HitPolicy, MatchStrategy
+from mountainash_rules.core.dimension import Dimension, DimensionsMetadata
+from mountainash_rules.engines.filter.engine import ExpressionRulesEngine
 
 
 class TestHitPolicyEnum:
@@ -29,7 +29,7 @@ class TestMetadataFields:
             )
 
 
-from mountainash_rules.hit_policy import (
+from mountainash_rules.core.hit_policy import (
     HitPolicyViolationError,
     SelectionInfo,
     default_output_fields,
@@ -130,7 +130,7 @@ class TestPolicySemantics:
         assert result.best_match.to_dicts()[0]["rule_name"] == "generic"
 
     def test_unique_violation(self):
-        from mountainash_rules.hit_policy import HitPolicyViolationError
+        from mountainash_rules.core.hit_policy import HitPolicyViolationError
         engine = ExpressionRulesEngine(
             rules=self._rules(), dimension_metadata=_region_md()
         )
@@ -156,7 +156,7 @@ class TestPolicySemantics:
         assert result.count == 1
 
     def test_any_disagreeing_outputs_raises(self):
-        from mountainash_rules.hit_policy import HitPolicyViolationError
+        from mountainash_rules.core.hit_policy import HitPolicyViolationError
         engine = ExpressionRulesEngine(
             rules=self._rules(), dimension_metadata=_region_md()
         )
@@ -195,7 +195,7 @@ class TestResultSelect:
         assert best.best_match.to_dicts()[0]["rule_name"] == "generic"
 
     def test_select_unique_raises_on_two_survivors(self):
-        from mountainash_rules.hit_policy import HitPolicyViolationError
+        from mountainash_rules.core.hit_policy import HitPolicyViolationError
         with pytest.raises(HitPolicyViolationError):
             self._collect_result().select(HitPolicy.UNIQUE)
 
@@ -207,7 +207,7 @@ class TestResultSelect:
 
 class TestAccumulatorCollectPin:
     def test_apply_metadata_pins_collect(self):
-        from mountainash_rules.accumulator_engine import AccumulatorEngine
+        from mountainash_rules.engines.accumulator.engine import AccumulatorEngine
         md = DimensionsMetadata(
             dimensions=[Dimension(dimension_name="x")],
             hit_policy=HitPolicy.FIRST,

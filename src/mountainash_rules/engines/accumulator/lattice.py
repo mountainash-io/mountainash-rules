@@ -2,8 +2,8 @@ import typing as t
 
 from mountainash.relations import relation
 
-from mountainash_rules.aggregate import Aggregate
-from mountainash_rules.dimension import DimensionsMetadata
+from mountainash_rules.engines.accumulator.aggregate import Aggregate
+from mountainash_rules.core.dimension import DimensionsMetadata
 
 
 class Lattice:
@@ -113,7 +113,7 @@ class LatticeIndex:
             ).survivors))
         merged = concat(frames).collect()
 
-        from mountainash_rules.batch_result import BatchRuleResult
+        from mountainash_rules.core.batch_result import BatchRuleResult
         return BatchRuleResult(
             dataframe=merged,
             active_dimensions=[

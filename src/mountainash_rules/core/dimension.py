@@ -9,7 +9,7 @@ import warnings
 import yaml
 from pydantic import BaseModel, Field, field_validator, model_validator
 
-from mountainash_rules.constants import (
+from mountainash_rules.core.constants import (
     PYTHON_TO_DATATYPE,
     DataType,
     DimensionRole,

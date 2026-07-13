@@ -5,11 +5,11 @@ from __future__ import annotations
 import mountainash.expressions as ma
 from mountainash.expressions import BaseExpressionAPI
 
-from mountainash_rules.constants import (
+from mountainash_rules.core.constants import (
     MatchStrategy,
     unknown_sentinel_for,
 )
-from mountainash_rules.dimension import Dimension
+from mountainash_rules.core.dimension import Dimension
 
 
 class AccumulatorCompiler:
