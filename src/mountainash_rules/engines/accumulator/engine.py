@@ -6,7 +6,7 @@ import math
 import typing as t
 import weakref
 
-import polars as pl
+import polars as pl  # allow: empty-build schema seed pending backend-agnostic empty-frame support
 
 import mountainash.expressions as ma
 from mountainash.relations import relation, concat

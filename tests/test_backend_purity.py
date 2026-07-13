@@ -13,11 +13,26 @@ import pytest
 
 SRC_ROOT = Path(__file__).parent.parent / "src" / "mountainash_rules"
 PROHIBITED_PACKAGES = ("polars", "ibis", "narwhals")
-PURE_FILES = ("engines/filter/engine.py", "core/result.py", "core/compiler.py")
+SHIM_FILES = {  # deprecation shims, removed next cycle — exempt
+    "constants.py", "dimension.py", "context.py", "compiler.py",
+    "result.py", "hit_policy.py", "batch_result.py", "engine.py",
+    "accumulator_engine.py", "accumulator_compiler.py",
+    "accumulator_result.py", "lattice.py", "aggregate.py", "primes.py",
+}
 ALLOW_PATTERN = re.compile(r"#\s*allow:\s*\w+")
 
 
-@pytest.mark.parametrize("filename", PURE_FILES)
+def _pure_files():
+    for path in sorted(SRC_ROOT.rglob("*.py")):
+        rel = path.relative_to(SRC_ROOT)
+        if rel.name.startswith("__"):
+            continue
+        if len(rel.parts) == 1 and rel.name in SHIM_FILES:
+            continue
+        yield str(rel)
+
+
+@pytest.mark.parametrize("filename", list(_pure_files()))
 def test_no_direct_backend_imports(filename: str):
     source = (SRC_ROOT / filename).read_text()
     violations = []
