@@ -46,7 +46,7 @@ Wildcards are in-band typed sentinels (see `constants.sentinels_for(data_type)`)
 
 ### Backend purity (ENFORCED)
 
-`engine.py`, `result.py`, `compiler.py` must not import polars/ibis/narwhals directly — only `mountainash.relations` / `mountainash.expressions`. `tests/test_backend_purity.py` enforces this; a genuinely unavoidable native escape must be tagged `# allow: <reason>` on the import line (currently only the per-row REGEX fallback pending upstream column-pattern `regex_contains`).
+No module under `src/mountainash_rules/` may import polars/ibis/narwhals directly — only `mountainash.relations` / `mountainash.expressions`. `tests/test_backend_purity.py` enforces this across the whole package (every non-shim, non-dunder module is parametrised; the 14 top-level shims are exempt via `SHIM_FILES`). A genuinely unavoidable native escape must be tagged `# allow: <reason>` on the import line — currently two: the per-row REGEX fallback in `core/compiler.py` (pending upstream column-pattern `regex_contains`) and the empty-build schema seed in `engines/accumulator/engine.py` (pending backend-agnostic empty-frame support).
 
 ## Match Strategies
 
@@ -62,28 +62,36 @@ Wildcards are in-band typed sentinels (see `constants.sentinels_for(data_type)`)
 | `context_regex` | literal `regex_pattern` on the Dimension | global context validator |
 | `set_membership` / `set_exclusion` | list column | Polars-native fallback |
 
-**Adding a strategy:** add enum value in `constants.py`, validation in `dimension.py`, `_compile_<strategy>` in `compiler.py`, test class in `tests/test_compiler.py`.
+**Adding a strategy:** add enum value in `core/constants.py`, validation in `core/dimension.py`, `_compile_<strategy>` in `core/compiler.py`, test class in `tests/core/test_compiler.py`.
 
 ## Package Structure
 
 ```
 src/mountainash_rules/
-├── __init__.py              # Public API (see __all__)
-├── accumulator_compiler.py  # coalesce / compatible / NA-flag expressions
-├── accumulator_engine.py    # AccumulatorEngine build/apply
-├── accumulator_result.py    # AccumulatorResult (extends RuleResult)
-├── aggregate.py             # Aggregate model (sum/min/max/product monoids)
-├── batch_result.py          # BatchRuleResult
-├── compiler.py              # DimensionCompiler (ternary expressions)
-├── constants.py             # MatchStrategy, DimensionRole, HitPolicy, DataType, sentinels
-├── context.py               # context extraction + sentinel fill
-├── dimension.py             # Dimension / DimensionsMetadata (+ YAML round-trip)
-├── engine.py                # ExpressionRulesEngine (evaluate / evaluate_batch)
-├── hit_policy.py            # SelectionInfo, ordering, assertions, cardinality
-├── lattice.py               # Lattice, LatticeIndex
-├── primes.py                # prime table, checked_multiply, LatticeWidthExceededError
-└── result.py                # RuleResult (+ select())
+├── __init__.py                  # Public API (see __all__) — the only public import surface
+├── core/                        # backend-agnostic building blocks (never imports from engines/)
+│   ├── constants.py             # MatchStrategy, DimensionRole, HitPolicy, DataType, sentinels
+│   ├── dimension.py             # Dimension / DimensionsMetadata (+ YAML round-trip)
+│   ├── context.py               # context extraction + sentinel fill
+│   ├── compiler.py              # DimensionCompiler (ternary expressions)
+│   ├── result.py                # RuleResult (+ select())
+│   ├── hit_policy.py            # SelectionInfo, ordering, assertions, cardinality
+│   └── batch_result.py          # BatchRuleResult
+├── engines/
+│   ├── filter/
+│   │   └── engine.py            # ExpressionRulesEngine (evaluate / evaluate_batch)
+│   └── accumulator/             # build/apply engine (depends on filter + core)
+│       ├── engine.py            # AccumulatorEngine build/apply
+│       ├── compiler.py          # coalesce / compatible / NA-flag expressions
+│       ├── result.py            # AccumulatorResult (extends RuleResult)
+│       ├── lattice.py           # Lattice, LatticeIndex
+│       ├── aggregate.py         # Aggregate model (sum/min/max/product monoids)
+│       └── primes.py            # prime table, checked_multiply, LatticeWidthExceededError
+└── <old>.py                     # deprecation shims (constants.py, engine.py, …) — removal note
+                                 # inside each; do not add code to them
 ```
+
+Dependency direction is one-way: `engines/accumulator` → `engines/filter` → `core`; `core` never imports from `engines/`. The 14 top-level `<old>.py` files are deprecation shims that re-export from the new paths and warn; they are removed one CalVer cycle after 2026-07.
 
 `Dimension.data_type` is a `DataType` StrEnum (`str/int/float/bool/date/datetime`); passing a Python type still works but emits a `DeprecationWarning`. `DimensionsMetadata` serialises via `to_yaml/from_yaml/to_yaml_file/from_yaml_file`.
 
