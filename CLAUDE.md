@@ -115,6 +115,7 @@ Core: `mountainash` (expressions/relations — the only DataFrame API the engine
 - ValueError for validation errors; custom exceptions (`HitPolicyViolationError`, `LatticeWidthExceededError`) where callers need to catch.
 - TDD: failing test first. Test markers: unit, integration, performance, benchmark.
 - Keep engine core backend-pure (see above); use ternary encoding for match values.
+- `mountainash_rules` module paths are private — import public names from the package root only (`from mountainash_rules import Lattice`).
 
 ## Related Documentation
 
