@@ -5,7 +5,23 @@ from mountainash_rules.accumulator_engine import AccumulatorEngine
 from mountainash_rules.accumulator_result import AccumulatorResult
 from mountainash_rules.aggregate import Aggregate
 from mountainash_rules.compiler import DimensionCompiler
-from mountainash_rules.constants import DataType, DimensionRole, HitPolicy, MatchStrategy
+from mountainash_rules.constants import (
+    NOT_SET,
+    NOT_SET_DATE,
+    NOT_SET_DATETIME,
+    NOT_SET_NUMERIC,
+    UNKNOWN,
+    UNKNOWN_DATE,
+    UNKNOWN_DATETIME,
+    UNKNOWN_NUMERIC,
+    DataType,
+    DimensionRole,
+    HitPolicy,
+    MatchStrategy,
+    not_set_sentinel_for,
+    sentinels_for,
+    unknown_sentinel_for,
+)
 from mountainash_rules.dimension import Dimension, DimensionsMetadata
 from mountainash_rules.batch_result import BatchRuleResult
 from mountainash_rules.engine import ExpressionRulesEngine
@@ -30,6 +46,17 @@ __all__ = (
     "Lattice",
     "LatticeIndex",
     "MatchStrategy",
+    "NOT_SET",
+    "NOT_SET_DATE",
+    "NOT_SET_DATETIME",
+    "NOT_SET_NUMERIC",
     "RuleResult",
     "SelectionInfo",
+    "UNKNOWN",
+    "UNKNOWN_DATE",
+    "UNKNOWN_DATETIME",
+    "UNKNOWN_NUMERIC",
+    "not_set_sentinel_for",
+    "sentinels_for",
+    "unknown_sentinel_for",
 )
