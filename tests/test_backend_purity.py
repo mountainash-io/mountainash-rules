@@ -2,8 +2,8 @@
 
 The engine reaches DataFrames only through mountainash.relations and per-row
 data only through mountainash.expressions. Direct backend imports are forbidden
-in engine.py, result.py, and compiler.py — except for explicitly-allowed lines
-marked with `# allow: <reason>`.
+in every module under src/mountainash_rules/ — except for explicitly-allowed
+lines marked with `# allow: <reason>`.
 """
 
 import re
@@ -13,12 +13,6 @@ import pytest
 
 SRC_ROOT = Path(__file__).parent.parent / "src" / "mountainash_rules"
 PROHIBITED_PACKAGES = ("polars", "ibis", "narwhals")
-SHIM_FILES = {  # deprecation shims, removed next cycle — exempt
-    "constants.py", "dimension.py", "context.py", "compiler.py",
-    "result.py", "hit_policy.py", "batch_result.py", "engine.py",
-    "accumulator_engine.py", "accumulator_compiler.py",
-    "accumulator_result.py", "lattice.py", "aggregate.py", "primes.py",
-}
 ALLOW_PATTERN = re.compile(r"#\s*allow:\s*\w+")
 
 
@@ -26,8 +20,6 @@ def _pure_files():
     for path in sorted(SRC_ROOT.rglob("*.py")):
         rel = path.relative_to(SRC_ROOT)
         if rel.name.startswith("__"):
-            continue
-        if len(rel.parts) == 1 and rel.name in SHIM_FILES:
             continue
         yield str(rel)
 

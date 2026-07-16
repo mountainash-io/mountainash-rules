@@ -46,7 +46,7 @@ Wildcards are in-band typed sentinels (see `constants.sentinels_for(data_type)`)
 
 ### Backend purity (ENFORCED)
 
-No module under `src/mountainash_rules/` may import polars/ibis/narwhals directly — only `mountainash.relations` / `mountainash.expressions`. `tests/test_backend_purity.py` enforces this across the whole package (every non-shim, non-dunder module is parametrised; the 14 top-level shims are exempt via `SHIM_FILES`). A genuinely unavoidable native escape must be tagged `# allow: <reason>` on the import line — currently two: the per-row REGEX fallback in `core/compiler.py` (pending upstream column-pattern `regex_contains`) and the empty-build schema seed in `engines/accumulator/engine.py` (pending backend-agnostic empty-frame support).
+No module under `src/mountainash_rules/` may import polars/ibis/narwhals directly — only `mountainash.relations` / `mountainash.expressions`. `tests/test_backend_purity.py` enforces this across the whole package (every non-dunder module is parametrised, no exemptions). A genuinely unavoidable native escape must be tagged `# allow: <reason>` on the import line — currently two: the per-row REGEX fallback in `core/compiler.py` (pending upstream column-pattern `regex_contains`) and the empty-build schema seed in `engines/accumulator/engine.py` (pending backend-agnostic empty-frame support).
 
 ## Match Strategies
 
@@ -87,11 +87,9 @@ src/mountainash_rules/
 │       ├── lattice.py           # Lattice, LatticeIndex
 │       ├── aggregate.py         # Aggregate model (sum/min/max/product monoids)
 │       └── primes.py            # prime table, checked_multiply, LatticeWidthExceededError
-└── <old>.py                     # deprecation shims (constants.py, engine.py, …) — removal note
-                                 # inside each; do not add code to them
 ```
 
-Dependency direction is one-way: `engines/accumulator` → `engines/filter` → `core`; `core` never imports from `engines/`. The 14 top-level `<old>.py` files are deprecation shims that re-export from the new paths and warn; they are removed one CalVer cycle after 2026-07.
+Dependency direction is one-way: `engines/accumulator` → `engines/filter` → `core`; `core` never imports from `engines/`. The pre-reorganisation top-level module paths (and their deprecation shims) were removed 2026-07-16 — babel, the only downstream consumer, already imports from the package root only.
 
 `Dimension.data_type` is a `DataType` StrEnum (`str/int/float/bool/date/datetime`); passing a Python type still works but emits a `DeprecationWarning`. `DimensionsMetadata` serialises via `to_yaml/from_yaml/to_yaml_file/from_yaml_file`.
 
