@@ -4,7 +4,7 @@
 
 **Goal:** `Lattice.save(dir)` / `Lattice.load(dir)` — faithful build-offline/serve-online persistence (parquet combinations frame + manifest.yaml sidecar).
 
-**Architecture:** `save` writes `relation(df).to_polars().write_parquet(...)` (purity-clean — no backend import) plus a YAML manifest (DimensionsMetadata JSON-mode dump, aggregates, partition_key — a strict superset of babel's `LatticeManifest`, which pydantic-ignores the extra key). `load` reads them back through the public `Lattice` constructor; its `import polars` line carries the package's third `# allow:` tag.
+**Architecture:** `save` writes `relation(df).to_polars().write_parquet(...)` (purity-clean — no backend import) plus a YAML manifest (DimensionsMetadata JSON-mode dump, aggregates, partition_key — babel's `LatticeManifest` reads it, ignoring the extra `partition_key`; babel cannot re-emit that key, which is fine while snapshots are unpartitioned). `load` reads them back through the public `Lattice` constructor; its `import polars` line carries the package's third `# allow:` tag (after `core/compiler.py` REGEX fallback and `engines/accumulator/engine.py` empty-build seed).
 
 **Tech Stack:** mountainash relations, pydantic, pyyaml; polars only behind the allow-tag in `load`.
 

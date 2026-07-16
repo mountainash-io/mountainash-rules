@@ -91,7 +91,7 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 
 **Interfaces:**
 - Consumes: `_scored_relation` (Task 1); `extract_context_values(context, active_dims, metadata=...)`; `CTX_PREFIX`.
-- Produces: `ExplainResult(dataframe, active_dimensions)` with `.frame`, `.count`, `.active_dimensions`, `.survivors`, `.non_survivors`; `ExpressionRulesEngine.explain(context, dimensions=None) -> ExplainResult`. Task 3 exports `ExplainResult` from the root.
+- Produces: `ExplainResult(dataframe, active_dimensions)` with `.frame`, `.count`, `.active_dimensions`, `.survivors`, `.non_survivors`; `ExpressionRulesEngine.explain(context, dimensions=None) -> ExplainResult` (raises `ValueError` on an empty active-dimension list). Output frame keeps `__rule_index` deliberately (stable rule identity). Task 3 exports `ExplainResult` from the root.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -164,6 +164,17 @@ class TestExplain:
         cols = result.frame.columns
         assert "__rank" not in cols
         assert not any(c.startswith("__ctx_") for c in cols)
+        assert "__rule_index" in cols  # kept: stable rule identity
+
+    def test_zero_dimension_engine_raises(self):
+        # dimensions=[] is falsy and expands to all dims (evaluate's existing
+        # semantics); the genuinely-empty case is an engine with no dimensions.
+        empty_engine = ExpressionRulesEngine(
+            rules=pl.DataFrame({"rule_name": ["r1"]}),
+            dimension_metadata=DimensionsMetadata(dimensions=[]),
+        )
+        with pytest.raises(ValueError, match="at least one"):
+            empty_engine.explain({})
 
     def test_agrees_with_evaluate_survivor_set(self, engine):
         ctx = {"region": "AU", "channel": "BROKER"}
@@ -195,8 +206,9 @@ class ExplainResult:
     """Every rule scored against a context — ternaries, __survived, __specificity.
 
     No selection has been applied: there is no __rank and hit policies are
-    not consulted. Not a RuleResult subclass — RuleResult accessors assume
-    ranked survivor frames.
+    not consulted. Not a RuleResult subclass — RuleResult's selection
+    surface (best_match, select(), SelectionInfo) assumes ranked survivor
+    frames, and inheriting the frame accessors would drag that API along.
     """
 
     def __init__(self, dataframe: t.Any, active_dimensions: list[str]) -> None:
@@ -246,6 +258,8 @@ class ExplainResult:
         """
         all_dim_names = list(self._expressions.keys()) if self._expressions else []
         active_dims = dimensions if dimensions else all_dim_names
+        if not active_dims:
+            raise ValueError("explain requires at least one active dimension")
         for dim_name in active_dims:
             if dim_name not in all_dim_names:
                 raise KeyError(f"Dimension '{dim_name}' not found in expressions")
@@ -272,7 +286,7 @@ in `src/mountainash_rules/__init__.py`, import `ExplainResult` from
 - [ ] **Step 4: Run tests — new file, then full suite**
 
 Run: `cd /Users/nathanielramm/git/mountainash-io/mountainash-rules && hatch run test:test-target tests/filter/test_explain.py -v`
-Expected: all 7 PASS. Then `hatch run test:test-quick`: 752 passed (745 + 7) / 36 skipped / 31 xfailed, and `hatch run ruff:check` clean.
+Expected: all 8 PASS. Then `hatch run test:test-quick`: 753 passed (745 + 8) / 36 skipped / 31 xfailed, and `hatch run ruff:check` clean.
 
 - [ ] **Step 5: Commit**
 

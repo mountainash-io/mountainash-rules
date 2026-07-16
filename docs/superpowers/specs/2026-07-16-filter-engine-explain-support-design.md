@@ -31,11 +31,21 @@ cannot drift — then: drop `__ctx_*`, **no** survival filter, **no** ranking
 `ExplainResult` (new, `core/result.py`, exported from the package root):
 wraps the frame with `.frame`, `.count` (all rules), `.active_dimensions`,
 `.survivors` (rows where `__survived`), `.non_survivors`. Not a `RuleResult`
-subclass — `RuleResult` accessors assume `__rank` exists.
+subclass — `RuleResult`'s selection-related surface (`best_match`,
+`select()`, anything reading `__rank`/`SelectionInfo`) assumes a ranked
+survivor frame, which explain output deliberately is not; the frame-level
+accessors would work, but inheriting them would drag the selection API
+along.
 
-Output columns: original rule columns + `__t_<dim>` per active dimension +
-`__survived` (bool) + `__specificity`. Ternary semantics unchanged:
-1 match / 0 wildcard-unknown / −1 non-match.
+Output columns: original rule columns + `__rule_index` (stable rule
+identity — the row order of the rules frame, kept deliberately so explain
+rows can be joined back to `evaluate` output) + `__t_<dim>` per active
+dimension + `__survived` (bool) + `__specificity`. Ternary semantics
+unchanged: 1 match / 0 wildcard-unknown / −1 non-match.
+
+Edge case: `explain` raises `ValueError` when the active dimension list is
+empty (explicit guard — the scoring expressions are undefined over zero
+dimensions; `evaluate` has the same latent limitation, unchanged here).
 
 ## Non-goals
 
