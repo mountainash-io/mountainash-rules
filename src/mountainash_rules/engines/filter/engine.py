@@ -375,6 +375,36 @@ class ExpressionRulesEngine:
             drop_cols += [f"__t_{d}" for d in active_dims]
         return joined.drop(*drop_cols).collect()
 
+    def _scored_relation(self, active_dims: list[str], context_values: dict[str, t.Any]) -> t.Any:
+        """Rules frame scored against a context: ternaries + __survived + __specificity, unfiltered."""
+        rel = relation(self._rules)
+        self._check_reserved(rel, "Rules")
+        rel = rel.with_row_index(name="__rule_index")
+
+        ctx_columns = [
+            ma.lit(value).alias(f"{CTX_PREFIX}{name}")
+            for name, value in context_values.items()
+        ]
+        rel = rel.with_columns(*ctx_columns)
+
+        dim_columns = [
+            self._expressions[dim_name].name.alias(f"__t_{dim_name}")
+            for dim_name in active_dims
+        ] if self._expressions else []
+        rel = rel.with_columns(*dim_columns)
+
+        t_cols = [ma.col(f"__t_{d}") for d in active_dims]
+        if len(t_cols) == 1:
+            survived_inner = t_cols[0]
+        else:
+            survived_inner = ma.least(*t_cols)
+        survived = survived_inner.ge(ma.lit(0)).alias("__survived")
+        specificity = functools.reduce(
+            lambda a, b: a.add(b),
+            [c.eq(ma.lit(1)).cast(int) for c in t_cols],
+        ).alias("__specificity")
+        return rel.with_columns(survived, specificity)
+
     def _evaluate(
         self,
         active_dims: list[str],
@@ -386,39 +416,7 @@ class ExpressionRulesEngine:
         info: SelectionInfo,
     ) -> tuple[t.Any, bool]:
         """Run the single-pass evaluation pipeline via mountainash.relations.Relation."""
-        rel = relation(self._rules)
-
-        # Step 0: Reserved-column guard + stable input row order
-        self._check_reserved(rel, "Rules")
-        rel = rel.with_row_index(name="__rule_index")
-
-        # Step 1: Bind context values as literal columns
-        ctx_columns = [
-            ma.lit(value).alias(f"{CTX_PREFIX}{name}")
-            for name, value in context_values.items()
-        ]
-        rel = rel.with_columns(*ctx_columns)
-
-        # Step 2: Apply each dimension expression as a named ternary column
-        dim_columns = [
-            self._expressions[dim_name].name.alias(f"__t_{dim_name}")
-            for dim_name in active_dims
-        ] if self._expressions else []
-        rel = rel.with_columns(*dim_columns)
-
-        # Step 3: Compute survival and specificity via mountainash expressions
-        t_cols = [ma.col(f"__t_{d}") for d in active_dims]
-        if len(t_cols) == 1:
-            survived_inner = t_cols[0]
-        else:
-            survived_inner = ma.least(*t_cols)
-        survived = survived_inner.ge(ma.lit(0)).alias("__survived")
-
-        specificity = functools.reduce(
-            lambda a, b: a.add(b),
-            [c.eq(ma.lit(1)).cast(int) for c in t_cols],
-        ).alias("__specificity")
-        rel = rel.with_columns(survived, specificity)
+        rel = self._scored_relation(active_dims, context_values)
 
         # Step 4: Filter survivors, apply the policy's ordering, add 1-based rank
         keys = ordering_keys(hit_policy, info.priority_field)
