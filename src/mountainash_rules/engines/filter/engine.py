@@ -406,6 +406,9 @@ class ExpressionRulesEngine:
 
     def _scored_relation(self, active_dims: list[str], context_values: dict[str, t.Any]) -> t.Any:
         """Rules frame scored against a context: ternaries + __survived + __specificity, unfiltered."""
+        # Steps 0-3: reserved-column guard + row index, bind ctx literals,
+        # ternary columns, survival + specificity. Steps 4-7 (filter, rank,
+        # assertions, cardinality, drop) stay in the callers.
         rel = relation(self._rules)
         self._check_reserved(rel, "Rules")
         rel = rel.with_row_index(name="__rule_index")
