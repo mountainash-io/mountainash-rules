@@ -32,7 +32,7 @@ from mountainash_rules.core.hit_policy import (
     ordering_keys,
     selection_info_from_metadata,
 )
-from mountainash_rules.core.result import RuleResult
+from mountainash_rules.core.result import ExplainResult, RuleResult
 
 
 class ExpressionRulesEngine:
@@ -128,6 +128,35 @@ class ExpressionRulesEngine:
             dataframe=result_df,
             active_dimensions=active_dims,
             selection_info=dataclasses.replace(info, truncated=truncated),
+        )
+
+    def explain(
+        self,
+        context: BaseModel | dict,
+        dimensions: list[str] | None = None,
+    ) -> ExplainResult:
+        """Score every rule against a context without filtering or ranking.
+
+        Returns all rules with __t_<dim> ternaries, __survived, and
+        __specificity. Hit policies are not consulted — explain answers
+        "why did/didn't each rule match", not "which rule wins".
+        """
+        all_dim_names = list(self._expressions.keys()) if self._expressions else []
+        active_dims = dimensions if dimensions else all_dim_names
+        if not active_dims:
+            raise ValueError("explain requires at least one active dimension")
+        for dim_name in active_dims:
+            if dim_name not in all_dim_names:
+                raise KeyError(f"Dimension '{dim_name}' not found in expressions")
+
+        context_values = extract_context_values(
+            context, active_dims, metadata=self._metadata
+        )
+        rel = self._scored_relation(active_dims, context_values)
+        rel = rel.drop(*[f"{CTX_PREFIX}{d}" for d in active_dims])
+        return ExplainResult(
+            dataframe=rel.collect(),
+            active_dimensions=active_dims,
         )
 
     _BATCH_RESERVED = (

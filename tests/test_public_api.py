@@ -6,7 +6,7 @@ import mountainash_rules as mr
 PUBLIC_NAMES = (
     # engines & results
     "ExpressionRulesEngine", "AccumulatorEngine", "RuleResult",
-    "AccumulatorResult", "BatchRuleResult",
+    "AccumulatorResult", "BatchRuleResult", "ExplainResult",
     # metadata
     "Dimension", "DimensionsMetadata", "Aggregate",
     "MatchStrategy", "DimensionRole", "HitPolicy", "DataType",

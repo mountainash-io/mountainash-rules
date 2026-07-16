@@ -137,3 +137,41 @@ class RuleResult:
             .filter(ma.col("__specificity").ge(ma.lit(n)))
             .collect()
         )
+
+
+class ExplainResult:
+    """Every rule scored against a context — ternaries, __survived, __specificity.
+
+    No selection has been applied: there is no __rank and hit policies are
+    not consulted. Not a RuleResult subclass — RuleResult's selection
+    surface (best_match, select(), SelectionInfo) assumes ranked survivor
+    frames, and inheriting the frame accessors would drag that API along.
+    """
+
+    def __init__(self, dataframe: t.Any, active_dimensions: list[str]) -> None:
+        self._df = dataframe
+        self._active_dimensions = active_dimensions
+
+    @property
+    def frame(self) -> t.Any:
+        return self._df
+
+    @property
+    def active_dimensions(self) -> list[str]:
+        return self._active_dimensions
+
+    @property
+    def count(self) -> int:
+        return relation(self._df).count_rows()
+
+    @property
+    def survivors(self) -> t.Any:
+        return relation(self._df).filter(ma.col("__survived")).collect()
+
+    @property
+    def non_survivors(self) -> t.Any:
+        return (
+            relation(self._df)
+            .filter(ma.col("__survived").eq(ma.lit(False)))
+            .collect()
+        )

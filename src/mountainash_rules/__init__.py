@@ -27,7 +27,7 @@ from mountainash_rules.core.batch_result import BatchRuleResult
 from mountainash_rules.engines.filter.engine import ExpressionRulesEngine
 from mountainash_rules.core.hit_policy import HitPolicyViolationError, SelectionInfo
 from mountainash_rules.engines.accumulator.lattice import Lattice, LatticeIndex
-from mountainash_rules.core.result import RuleResult
+from mountainash_rules.core.result import ExplainResult, RuleResult
 
 __all__ = (
     "__version__",
@@ -40,6 +40,7 @@ __all__ = (
     "Dimension",
     "DimensionRole",
     "DimensionsMetadata",
+    "ExplainResult",
     "ExpressionRulesEngine",
     "HitPolicy",
     "HitPolicyViolationError",
