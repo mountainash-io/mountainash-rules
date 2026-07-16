@@ -31,6 +31,11 @@ Wildcards are in-band typed sentinels (see `constants.sentinels_for(data_type)`)
 3. **Evaluate** — all `__t_<dim>` ternary columns computed in one pass; survival filter `least(*t) >= 0`; `__specificity` = sum of matches.
 4. **Select** — sort by hit-policy ordering keys, compute `__rank`, run hit-policy assertions, apply cardinality (`hit_policy.py`).
 
+`explain(context, dimensions=None)` → `ExplainResult`: every rule scored
+(ternaries + `__survived` + `__specificity`), no survival filter, no rank,
+no hit-policy interaction. Shares Steps 1–3 with `evaluate` via
+`_scored_relation`.
+
 `evaluate_batch(contexts, ...)` cross-joins a contexts frame against the rules, computes the same ternary columns, and ranks **per context id** portably (no window functions). Contexts are conformed to the rules' backend before the join (`_conform_to_rules_backend`). Returns `BatchRuleResult` (`batch_result.py`).
 
 ### Hit policies (`hit_policy.py`, `constants.HitPolicy`)
