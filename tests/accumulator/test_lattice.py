@@ -93,3 +93,83 @@ class TestIsComposed:
         assert lattice.count == 0
         assert lattice.is_composed is True
         assert "co_region" in relation(lattice.combinations).columns
+
+
+from mountainash_rules import (
+    AccumulatorEngine,
+    Aggregate,
+    Dimension,
+    DimensionsMetadata,
+    Lattice,
+    MatchStrategy,
+    UNKNOWN,
+)
+
+
+@pytest.fixture
+def built_lattice_and_engine():
+    import polars as pl
+
+    metadata = DimensionsMetadata(
+        dimensions=[
+            Dimension(dimension_name="region", match_strategy=MatchStrategy.EXACT, data_type="str"),
+            Dimension(dimension_name="channel", match_strategy=MatchStrategy.EXACT, data_type="str"),
+        ]
+    )
+    rules = pl.DataFrame(
+        {
+            "rule_name": ["au_base", "broker_bonus", "au_broker"],
+            "region": ["AU", UNKNOWN, "AU"],
+            "channel": [UNKNOWN, "BROKER", "BROKER"],
+            "discount": [5.0, 2.5, 10.0],
+        }
+    )
+    engine = AccumulatorEngine(
+        dimension_metadata=metadata,
+        aggregates=[Aggregate(column_name="discount", operation="sum")],
+    )
+    return engine.build(rules), engine
+
+
+class TestLatticeSaveLoad:
+    def test_round_trip_identity(self, built_lattice_and_engine, tmp_path):
+        lattice, _ = built_lattice_and_engine
+        out = lattice.save(tmp_path / "snap")
+        loaded = Lattice.load(out)
+        assert loaded.count == lattice.count
+        assert loaded.is_composed is True  # __prime_product travels
+        assert loaded.metadata == lattice.metadata
+        assert loaded.aggregates == lattice.aggregates
+        assert loaded.partition_key == lattice.partition_key
+
+    def test_apply_equivalence(self, built_lattice_and_engine, tmp_path):
+        lattice, engine = built_lattice_and_engine
+        loaded = Lattice.load(lattice.save(tmp_path / "snap"))
+        ctx = {"region": "AU", "channel": "BROKER"}
+        original = engine.apply(lattice, ctx)
+        reloaded = engine.apply(loaded, ctx)
+        assert reloaded.count == original.count
+        assert (
+            reloaded.accumulated("discount").to_dicts()
+            == original.accumulated("discount").to_dicts()
+        )
+
+    def test_save_creates_expected_files(self, built_lattice_and_engine, tmp_path):
+        lattice, _ = built_lattice_and_engine
+        out = lattice.save(tmp_path / "snap")
+        assert (out / "lattice.parquet").exists()
+        assert (out / "manifest.yaml").exists()
+
+    def test_manifest_is_babel_superset(self, built_lattice_and_engine, tmp_path):
+        import yaml
+
+        lattice, _ = built_lattice_and_engine
+        out = lattice.save(tmp_path / "snap")
+        raw = yaml.safe_load((out / "manifest.yaml").read_text())
+        assert set(raw) == {"dimensions", "aggregates", "partition_key"}
+        assert raw["aggregates"] == [{"column_name": "discount", "operation": "sum"}]
+
+    def test_load_missing_manifest_raises(self, tmp_path):
+        (tmp_path / "empty").mkdir()
+        with pytest.raises(FileNotFoundError):
+            Lattice.load(tmp_path / "empty")

@@ -48,10 +48,11 @@ no hit-policy interaction. Shares Steps 1–3 with `evaluate` via
 - `apply(lattice, context)` → `AccumulatorResult`. Apply-phase filter engines are memoised per lattice (WeakKeyDictionary).
 - `DimensionRole.CONTEXT_KEY` dimensions partition the rule space; `build_all` + `index(lattices)` → `LatticeIndex` routes contexts (single or batch) to the right lattice.
 - `Lattice.is_composed` distinguishes build output (has `__prime_product`) from flat/imported lattices.
+- `Lattice.save(dir)` / `Lattice.load(dir)` — snapshot persistence (`lattice.parquet` + `manifest.yaml`, a superset of babel's LatticeManifest). `load` carries the package's third `# allow:` tag (parquet read). Build offline, `save`, serve `apply` from `load`.
 
 ### Backend purity (ENFORCED)
 
-No module under `src/mountainash_rules/` may import polars/ibis/narwhals directly — only `mountainash.relations` / `mountainash.expressions`. `tests/test_backend_purity.py` enforces this across the whole package (every non-dunder module is parametrised, no exemptions). A genuinely unavoidable native escape must be tagged `# allow: <reason>` on the import line — currently two: the per-row REGEX fallback in `core/compiler.py` (pending upstream column-pattern `regex_contains`) and the empty-build schema seed in `engines/accumulator/engine.py` (pending backend-agnostic empty-frame support).
+No module under `src/mountainash_rules/` may import polars/ibis/narwhals directly — only `mountainash.relations` / `mountainash.expressions`. `tests/test_backend_purity.py` enforces this across the whole package (every non-dunder module is parametrised, no exemptions). A genuinely unavoidable native escape must be tagged `# allow: <reason>` on the import line — currently three: the per-row REGEX fallback in `core/compiler.py` (pending upstream column-pattern `regex_contains`), the empty-build schema seed in `engines/accumulator/engine.py` (pending backend-agnostic empty-frame support), and the snapshot parquet read in `engines/accumulator/lattice.py` (pending backend-agnostic `parquet.read_table`).
 
 ## Match Strategies
 
