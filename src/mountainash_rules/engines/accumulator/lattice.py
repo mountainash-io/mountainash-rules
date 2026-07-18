@@ -1,4 +1,6 @@
+import pathlib
 import typing as t
+import yaml
 
 from mountainash.relations import relation
 
@@ -53,6 +55,49 @@ class Lattice:
     @property
     def aggregates(self) -> list[Aggregate]:
         return self._aggregates
+
+    def save(self, dir_path: "str | pathlib.Path") -> "pathlib.Path":
+        """Persist this lattice as a snapshot directory (parquet + manifest).
+
+        The manifest is a strict superset of babel's LatticeManifest YAML,
+        so babel/service tooling can read it unchanged.
+        """
+        dir_path = pathlib.Path(dir_path)
+        dir_path.mkdir(parents=True, exist_ok=True)
+        relation(self._df).to_polars().write_parquet(dir_path / "lattice.parquet")
+        manifest = {
+            "dimensions": self._metadata.model_dump(
+                mode="json", exclude_defaults=True
+            ),
+            "aggregates": [
+                a.model_dump(mode="json") for a in self._aggregates
+            ],
+            "partition_key": self._partition_key,
+        }
+        (dir_path / "manifest.yaml").write_text(
+            yaml.safe_dump(manifest, sort_keys=False), encoding="utf-8"
+        )
+        return dir_path
+
+    @classmethod
+    def load(cls, dir_path: "str | pathlib.Path") -> "Lattice":
+        """Rehydrate a snapshot written by save(). Preserves __agg_* and
+        __prime_product verbatim (is_composed round-trips honestly)."""
+        import polars as pl  # allow: lattice snapshot parquet read pending backend-agnostic file IO
+
+        dir_path = pathlib.Path(dir_path)
+        manifest_path = dir_path / "manifest.yaml"
+        if not manifest_path.exists():
+            raise FileNotFoundError(f"No manifest.yaml in {dir_path}")
+        raw = yaml.safe_load(manifest_path.read_text(encoding="utf-8"))
+        return cls(
+            dataframe=pl.read_parquet(dir_path / "lattice.parquet"),
+            metadata=DimensionsMetadata.model_validate(raw["dimensions"]),
+            aggregates=[
+                Aggregate.model_validate(a) for a in raw.get("aggregates", [])
+            ],
+            partition_key=raw.get("partition_key"),
+        )
 
 
 class LatticeIndex:
