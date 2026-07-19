@@ -183,10 +183,10 @@ class LatticeIndex:
         }
         columns["__partition_idx"] = []
         for idx, lattice in enumerate(self._lattices):
+            pk = lattice.partition_key
+            assert pk is not None  # key dims present ⇒ structural check guarantees this
             for d in self._context_key_dims:
-                columns[d.dimension_name].append(
-                    lattice.partition_key[d.dimension_name]
-                )
+                columns[d.dimension_name].append(pk[d.dimension_name])
             columns["__partition_idx"].append(idx)
         meta_metadata = DimensionsMetadata(
             dimensions=[
@@ -217,6 +217,7 @@ class LatticeIndex:
         classes is routed through the meta-engine in chunks; any witness
         with >= 2 top-specificity survivors is a reachable runtime tie.
         """
+        assert self._meta_engine is not None  # only called when key dims exist
         classes: list[list] = []
         for i, d in enumerate(self._context_key_dims):
             if d.data_type is DataType.BOOL:
@@ -274,13 +275,16 @@ class LatticeIndex:
             for wid, parts in tied.items():
                 if len(parts) > 1:
                     witness_ctx = dict(zip(fields, chunk[wid]))
-                    tied_keys = [
-                        tuple(
-                            self._lattices[p].partition_key[d.dimension_name]
-                            for d in self._context_key_dims
+                    tied_keys = []
+                    for p in parts:
+                        pk = self._lattices[p].partition_key
+                        assert pk is not None
+                        tied_keys.append(
+                            tuple(
+                                pk[d.dimension_name]
+                                for d in self._context_key_dims
+                            )
                         )
-                        for p in parts
-                    ]
                     raise AmbiguousPartitionError(
                         f"Partition suite is ambiguous: witness context "
                         f"{witness_ctx!r} ties partitions {tied_keys!r}"
@@ -292,6 +296,7 @@ class LatticeIndex:
             d.resolved_context_field: key[i]
             for i, d in enumerate(self._context_key_dims)
         }
+        assert self._meta_engine is not None  # dict miss with key dims ⇒ non-None
         rows = relation(self._meta_engine.evaluate(ctx).survivors).to_dict()
         idxs = rows["__partition_idx"]
         if not idxs:
@@ -304,13 +309,16 @@ class LatticeIndex:
             i for i, s in zip(idxs, rows["__specificity"]) if s == top
         ]
         if len(tied) > 1:
-            tied_keys = [
-                tuple(
-                    self._lattices[i].partition_key[d.dimension_name]
-                    for d in self._context_key_dims
+            tied_keys = []
+            for i in tied:
+                pk = self._lattices[i].partition_key
+                assert pk is not None
+                tied_keys.append(
+                    tuple(
+                        pk[d.dimension_name]
+                        for d in self._context_key_dims
+                    )
                 )
-                for i in tied
-            ]
             raise AmbiguousPartitionError(
                 f"Context key {key!r} ties {len(tied)} partitions at "
                 f"specificity {top}: {tied_keys!r}"
