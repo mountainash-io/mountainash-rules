@@ -26,7 +26,11 @@ from mountainash_rules.core.dimension import Dimension, DimensionsMetadata
 from mountainash_rules.core.batch_result import BatchRuleResult
 from mountainash_rules.engines.filter.engine import ExpressionRulesEngine
 from mountainash_rules.core.hit_policy import HitPolicyViolationError, SelectionInfo
-from mountainash_rules.engines.accumulator.lattice import Lattice, LatticeIndex
+from mountainash_rules.engines.accumulator.lattice import (
+    AmbiguousPartitionError,
+    Lattice,
+    LatticeIndex,
+)
 from mountainash_rules.core.result import ExplainResult, RuleResult
 
 __all__ = (
@@ -34,6 +38,7 @@ __all__ = (
     "AccumulatorEngine",
     "AccumulatorResult",
     "Aggregate",
+    "AmbiguousPartitionError",
     "BatchRuleResult",
     "DataType",
     "DimensionCompiler",

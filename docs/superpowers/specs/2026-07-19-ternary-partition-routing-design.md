@@ -1,6 +1,7 @@
 # Ternary Partition Routing — Design Spec
 
-> **Status:** APPROVED (design walkthrough 2026-07-19)
+> **Status:** APPROVED (design walkthrough 2026-07-19; amended same day after
+> Codex adversarial review — see §9 Review adjudication)
 > **Source:** `mountainash-central/01.principles/mountainash-rules/h.backlog/ternary-partition-routing.md`
 > **Repo:** `mountainash-rules`, branch `feature/ternary-partition-routing` (off `develop` @ `496f84a`)
 
@@ -47,15 +48,35 @@ Per CONTEXT_KEY dimension, context value vs partition key value:
 - **All-wildcard key = default/overflow partition**: survives every context
   at specificity 0, wins only when nothing more specific survives.
 - A context value equal to the dim's UNKNOWN sentinel is treated as unknown:
-  it matches wildcard keys (0), never specific keys (−1) — consistent with
-  the expression layer's in-band sentinel handling.
+  it matches wildcard keys (0), never specific keys (−1).
+- **These semantics are asymmetric** — only the *rule side* (partition key)
+  has a wildcard; a context-side sentinel is a non-match against any specific
+  key. The stock EXACT compile does **not** deliver this: `_compile_exact`
+  uses `t_eq` with both UNKNOWN and NOT_SET in the sentinel set on *both*
+  sides, so a NOT_SET-filled context field would score 0 against every
+  specific key — every partition would survive missing-field contexts and
+  tie spuriously. Routing therefore uses a dedicated strategy, §2's
+  `EXACT_KEY`.
+- **Bool key dims:** the wildcard is `null` on the key side (bools have no
+  in-band sentinel; `_compile_bool_ternary` already uses null as don't-care).
+  A context-side `None` is wildcard-only, mirroring NOT_SET.
 
 **Missing context key fields.** `_extract_partition_key` fills a missing
 context field with the typed NOT_SET sentinel
-(`not_set_sentinel_for(d.data_type)`) instead of raising `KeyError` —
-mirroring `core/context.py`'s fill for constraint dims. A NOT_SET value
-matches wildcard keys only, so a context with no `region` routes to the
-default partition if one exists, else raises the no-partition error.
+(`not_set_sentinel_for(d.data_type)`; `None` for bool) instead of raising
+`KeyError` — mirroring `core/context.py`'s fill for constraint dims. An
+**explicitly-null** context value (`region: None`, backend null/NaN) is
+treated identically to an absent field. A NOT_SET value matches wildcard
+keys only, so a context with no `region` routes to the default partition if
+one exists, else raises the no-partition error.
+
+**Partition keys may not contain NOT_SET sentinels.** `index()` rejects any
+lattice whose key contains a NOT_SET sentinel (`ValueError`, always-on —
+independent of the `validate` flag). Without this, a NOT_SET-filled context
+tuple could exact-dict-hit such a key and route a missing-field context to a
+specific partition, violating the semantics above. NOT_SET keys cannot arise
+from `build_all` (it groups on rule values, and NOT_SET is a context-side
+sentinel); this guards hand-assembled suites.
 
 **Outcomes of routing one context:**
 
@@ -81,10 +102,31 @@ no-survivor case deliberately stays a plain `KeyError` (same type as today).
   means wildcard in-band — no encoding step); plus a `__partition_idx`
   integer payload column mapping a surviving row back to its `Lattice`.
 - **Meta-engine** — an internal `ExpressionRulesEngine` over the meta-table.
-  Each CONTEXT_KEY dim is recast as an EXACT-strategy CONSTRAINT dimension:
-  same `dimension_name` and `data_type`, `rule_field` = the meta-table
-  column, `context_field` = the original dim's `resolved_context_field`.
-  Hit policy COLLECT (selection is done by the resolver, not a policy).
+  Each CONTEXT_KEY dim is recast as an **`EXACT_KEY`**-strategy CONSTRAINT
+  dimension: same `dimension_name` and `data_type`, `rule_field` = the
+  meta-table column, `context_field` = the original dim's
+  `resolved_context_field`. Hit policy COLLECT (selection is done by the
+  resolver, not a policy).
+
+**`MatchStrategy.EXACT_KEY`** — a new strategy added via the established
+extension path (enum member in `core/constants.py`, validation in
+`core/dimension.py`, `_compile_exact_key` in `core/compiler.py`, test class
+in `tests/core/test_compiler.py`). Semantics: **rule-side wildcard only** —
+
+```
+rule value == UNKNOWN sentinel  → 0
+rule value == context value     → 1
+otherwise                       → −1
+```
+
+i.e. `t_col(rule_field, unknown={unknown_sentinel_for(dt)}).t_eq(col(ctx))`
+— the rule side recognises only the UNKNOWN sentinel (not NOT_SET, which is
+forbidden in keys anyway), and the context side is a plain column, so
+context-side sentinels compare as ordinary non-matching values → −1. Bool
+variant mirrors `_compile_bool_ternary` but tests **rule-side null only**.
+This is the same one-engine architecture — `EXACT_KEY` is a first-class
+strategy any consumer may use, compiled and evaluated by the single
+constraint pipeline; routing just happens to be its first consumer.
 
 Routing = `meta_engine.evaluate(context)`; the survivor frame's
 `__specificity` column drives winner / tie / miss detection. There is **one**
@@ -106,11 +148,17 @@ lattice = self._route(context)                    # meta-engine evaluate
 return engine.apply(lattice, context, dimensions=...)
 ```
 
-The exact fast path is semantics-preserving: an exact hit matches every key
-dim at 1, which is provably maximal specificity, and duplicate exact keys
-cannot coexist (validation §5 / dict construction). A wildcard-free index
-never reaches `_route`, so today's behaviour is byte-identical for existing
-users.
+The exact fast path is semantics-preserving, including for keys containing
+UNKNOWN wildcards. Proof sketch: a dict hit means the context tuple equals
+key `K` exactly (keys cannot contain NOT_SET — §1 — so NOT_SET-filled
+contexts never false-hit). Partition `K` scores 1 on each of its specific
+dims and 0 on its wildcard dims → specificity = |specific dims of K|. Any
+competitor must be wildcard on every dim where `K` is wildcard (the context
+carries the UNKNOWN sentinel there, which kills specific keys at −1), and
+scores ≤ 1 elsewhere — so its specificity ≤ `K`'s, with equality only for an
+identical key, which the dict (plus §5 duplicate detection) rules out. `K`
+is the unique top-specificity survivor. A wildcard-free index never reaches
+`_route`, so today's behaviour is byte-identical for existing users.
 
 `_route(context)` — the shared resolver: evaluate on the meta-engine; apply
 the outcome table from §1.
@@ -131,6 +179,18 @@ The no-key-dims early path (single flat lattice) is unchanged.
 
 `engine.index(lattices, validate=True)` — **on by default**.
 
+**Structural checks — always on, independent of `validate` (O(n), no
+matrix):** run over the input *list* before dict construction, because the
+dict silently collapses duplicates and can never see them afterwards:
+
+- `index([])` → `ValueError` (no lattices; also removes any ambiguity about
+  the meta-table's schema seed).
+- Duplicate partition keys across the input list → `ValueError` naming the
+  key (previously one lattice was silently discarded by the dict).
+- Any key containing a NOT_SET sentinel → `ValueError` (§1).
+
+**Ambiguity check (`validate=True`):**
+
 Naïve pairwise overlap detection would false-positive the legitimate
 "more specific partition covers the crossing" pattern: `(AU, *)` vs
 `(*, BROKER)` is genuinely ambiguous **unless** `(AU, BROKER)` also exists,
@@ -139,8 +199,14 @@ The check is therefore exact, built on a finite abstraction:
 
 1. Per key dim, reachable context values fall into finitely many
    equivalence classes: each specific value appearing in any partition key,
-   plus one OTHER representative (a fresh value matching no specific key —
-   derived per `data_type`). Routing behaviour depends only on the class.
+   plus one OTHER representative — **the dim's typed NOT_SET sentinel
+   (`None` for bool)**. This is always constructible (no "fresh value"
+   derivation, no finite-domain problem for bool) and provably matches no
+   specific key: NOT_SET is forbidden in keys (§1) and under `EXACT_KEY` a
+   context-side sentinel scores −1 against every specific value and 0
+   against wildcards — exactly the OTHER class's behaviour. It also *is* a
+   reachable context (a missing field), so every witness is a realisable
+   input. Routing behaviour depends only on the class.
 2. The cross-product of classes forms a **witness-context matrix** that
    provably exercises every distinguishable routing case.
 3. Route the whole matrix through the meta-engine as one `evaluate_batch` —
@@ -152,12 +218,20 @@ The check is therefore exact, built on a finite abstraction:
 
 Properties:
 
-- **Duplicate keys** are the degenerate tie — caught by the same mechanism
-  (dict construction also collapses them; validation makes it loud).
-- Matrix size = `∏(distinct specific values per dim + 1)`; vectorised in one
-  batch, trivial at realistic sizes. `validate=False` is the opt-out for
-  pathological indexes; the runtime tie check in `_route` remains as a
-  backstop reachable only via that opt-out.
+- **Duplicate keys** are caught by the structural pre-check above, *not* by
+  the matrix — dict construction collapses them before the meta-table
+  exists, so the matrix could never see a duplicate.
+- Matrix size = `∏(distinct specific values per dim + 1)` — bounded by
+  `(P+1)^D` for `P` partitions over `D` key dims, so it can explode for
+  many-dimensional suites. Two guards: (a) the matrix is **evaluated in
+  fixed-size chunks** (default 100 000 witnesses per `evaluate_batch`), so
+  memory stays bounded regardless of total size; (b) a **witness-count cap**
+  (default 1 000 000, exposed as `max_witnesses` on `index()`) above which
+  `index()` raises `ValueError` telling the caller to pass `validate=False`
+  (accepting the runtime backstop) or restructure the key dims. No silent
+  sampling — validation is exact or explicitly declined.
+- `validate=False` is the opt-out; the runtime tie check in `_route` remains
+  as a backstop reachable only via that opt-out.
 - **Service inherits load-time detection with no change:**
   `_load_partitioned` calls `engine.index(lattices)` inside its per-slug
   try/except, so an ambiguous suite is skipped with a warning at startup.
@@ -175,8 +249,9 @@ instead of dead weight. The footgun is resolved by routing, not building.
 |---|---|
 | `LatticeIndex.apply` | wildcard + specificity routing; `KeyError` message now lists served partitions; may raise `AmbiguousPartitionError` |
 | `LatticeIndex.apply_batch` | same routing per unique combo |
-| `AccumulatorEngine.index` | gains `validate: bool = True` |
-| `AccumulatorEngine._extract_partition_key` | missing context field → typed NOT_SET fill (was `KeyError`) |
+| `AccumulatorEngine.index` | gains `validate: bool = True`, `max_witnesses: int = 1_000_000`; raises `ValueError` on empty list, duplicate keys, NOT_SET-bearing keys, or witness-cap overflow |
+| `AccumulatorEngine._extract_partition_key` | missing **or explicitly-null** context field → typed NOT_SET fill (`None` for bool) (was `KeyError`) |
+| `MatchStrategy.EXACT_KEY` | new enum member — rule-side-wildcard-only exact match (§2); first-class strategy, usable by any consumer |
 | `AmbiguousPartitionError` | new, subclasses `KeyError`, exported from package root `__all__` |
 | `apply_auto` | inherits all of the above (delegates to `index().apply`) |
 
@@ -203,17 +278,48 @@ In `tests/accumulator/test_lattice.py` (new `TestTernaryRouting` /
 specific + default partitions in one batch with correct per-context groups;
 a batch containing an unroutable combo raises.
 
+**Compiler (`tests/core/test_compiler.py`, new `TestExactKey` class):**
+- rule UNKNOWN sentinel → 0 against any context value;
+- rule specific vs equal context → 1; vs different → −1;
+- rule specific vs context NOT_SET sentinel → **−1** (the asymmetry that
+  distinguishes `EXACT_KEY` from `EXACT`);
+- rule specific vs context UNKNOWN sentinel → −1;
+- bool: rule null → 0; rule specific vs context null → −1.
+
 **Validation (`index()`):**
 - crossing pair, no cover → `AmbiguousPartitionError` at `index()`, message
   carries a witness context;
 - crossing pair + covering `(AU, BROKER)` partition → validates clean AND
   routes correctly at runtime (the false-positive guard);
-- duplicate partition keys → caught;
+- duplicate partition keys in the input list → `ValueError` (even with
+  `validate=False` — structural check);
+- key containing a NOT_SET sentinel → `ValueError`;
+- `index([])` → `ValueError`;
+- witness count over `max_witnesses` → `ValueError` naming the opt-outs;
+- bool key dim with both `True` and `False` as specific keys + a wildcard →
+  validates clean; context `{flag: None}` routes to the wildcard (OTHER
+  representative exists for finite domains);
 - `validate=False` defers the crossing pair to the runtime error.
 
 **Persistence:** `save` → `load` a wildcard-keyed partition suite →
 `index()` → default routing works (sentinel round-trips through parquet +
 manifest).
+
+## 9. Review adjudication (Codex adversarial review, 2026-07-19)
+
+Nine findings; eight accepted and folded into the sections above:
+
+| Finding | Disposition |
+|---|---|
+| NOT_SET partition key can false-hit the fast path (critical) | Accepted — NOT_SET forbidden in keys, always-on check (§1, §5) |
+| Duplicate keys collapse in the dict before validation | Accepted — structural pre-check over the input list (§5) |
+| Wildcard routing via stock EXACT is unspecified | Accepted & confirmed against code (`_compile_exact` t_eq scores context NOT_SET as 0, not −1) — new `EXACT_KEY` strategy (§1, §2) |
+| Witness matrix unbounded | Accepted — chunked evaluation + `max_witnesses` cap (§5) |
+| OTHER representative undefined for bool | Accepted — OTHER = typed NOT_SET sentinel / `None` (§5) |
+| Null context values unspecified | Accepted — explicit null ≡ missing (§1) |
+| `index([])` undefined | Accepted — `ValueError` (§5) |
+| Exact-hit specificity claim too broad | Accepted — proof rewritten to cover UNKNOWN-bearing keys (§3) |
+| `AmbiguousPartitionError(KeyError)` → HTTP 422 misclassifies a config defect; startup skip hides it | **Rejected — deliberate tradeoff.** With `validate=True` default, ambiguity surfaces at `index()`/startup inside the service's existing per-slug skip-and-warn envelope (its standing failure mode for any bad suite). Runtime ambiguity is reachable only via explicit `validate=False`, at which point 422-on-tie is the same contract as today's partition miss. Zero-service-change wins; revisit if the service ever grows a config-health endpoint. |
 
 ## Non-goals
 

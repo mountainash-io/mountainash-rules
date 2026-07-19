@@ -7,7 +7,7 @@ import pytest
 import mountainash.expressions as ma
 
 from mountainash_rules.core.compiler import DimensionCompiler
-from mountainash_rules.core.constants import CTX_PREFIX, UNKNOWN, UNKNOWN_NUMERIC, MatchStrategy
+from mountainash_rules.core.constants import CTX_PREFIX, NOT_SET, UNKNOWN, UNKNOWN_NUMERIC, MatchStrategy
 from mountainash_rules.core.dimension import Dimension
 from tests.conftest import (
     ALL_BACKENDS,
@@ -647,3 +647,80 @@ class TestBackendAgnosticism:
         df = build_backend_df(backend_name, self._SAMPLE_DATA)
         compiled = expr.compile(df, booleanizer=None)
         assert compiled is not None
+
+
+class TestExactKeyCompilation:
+    """EXACT_KEY: rule-side wildcard only — context sentinels are non-matches."""
+
+    def test_rule_unknown_is_wildcard(self, compiler):
+        dim = Dimension(
+            dimension_name="region",
+            match_strategy=MatchStrategy.EXACT_KEY,
+            data_type="str",
+        )
+        expr = compiler.compile_dimension(dim)
+        df = pl.DataFrame({
+            "region": ["AU", UNKNOWN, "UK"],
+            f"{CTX_PREFIX}region": ["AU", "AU", "AU"],
+        })
+        result = df.with_columns(expr.name.alias("__t_region").compile(df, booleanizer=None))
+        assert result["__t_region"].to_list() == [1, 0, -1]
+
+    def test_context_not_set_never_matches_specific(self, compiler):
+        # The asymmetry that distinguishes EXACT_KEY from EXACT:
+        # a NOT_SET context is -1 against specific keys (EXACT gives 0).
+        dim = Dimension(
+            dimension_name="region",
+            match_strategy=MatchStrategy.EXACT_KEY,
+            data_type="str",
+        )
+        expr = compiler.compile_dimension(dim)
+        df = pl.DataFrame({
+            "region": ["AU", UNKNOWN],
+            f"{CTX_PREFIX}region": [NOT_SET, NOT_SET],
+        })
+        result = df.with_columns(expr.name.alias("__t_region").compile(df, booleanizer=None))
+        assert result["__t_region"].to_list() == [-1, 0]
+
+    def test_context_unknown_never_matches_specific(self, compiler):
+        dim = Dimension(
+            dimension_name="region",
+            match_strategy=MatchStrategy.EXACT_KEY,
+            data_type="str",
+        )
+        expr = compiler.compile_dimension(dim)
+        df = pl.DataFrame({
+            "region": ["AU", UNKNOWN],
+            f"{CTX_PREFIX}region": [UNKNOWN, UNKNOWN],
+        })
+        result = df.with_columns(expr.name.alias("__t_region").compile(df, booleanizer=None))
+        assert result["__t_region"].to_list() == [-1, 0]
+
+    def test_numeric_sentinels(self, compiler):
+        dim = Dimension(
+            dimension_name="product_id",
+            match_strategy=MatchStrategy.EXACT_KEY,
+            data_type="int",
+        )
+        expr = compiler.compile_dimension(dim)
+        df = pl.DataFrame({
+            "product_id": [1, UNKNOWN_NUMERIC, 2],
+            f"{CTX_PREFIX}product_id": [1, 1, 1],
+        })
+        result = df.with_columns(expr.name.alias("__t_product_id").compile(df, booleanizer=None))
+        assert result["__t_product_id"].to_list() == [1, 0, -1]
+
+    def test_bool_rule_null_is_wildcard_context_null_is_not(self, compiler):
+        dim = Dimension(
+            dimension_name="flag",
+            match_strategy=MatchStrategy.EXACT_KEY,
+            data_type="bool",
+        )
+        expr = compiler.compile_dimension(dim)
+        df = pl.DataFrame({
+            "flag": [True, None, True, None],
+            f"{CTX_PREFIX}flag": [True, True, None, None],
+        })
+        result = df.with_columns(expr.name.alias("__t_flag").compile(df, booleanizer=None))
+        # rule null -> 0 regardless of context; context null vs specific -> -1
+        assert result["__t_flag"].to_list() == [1, 0, -1, 0]

@@ -17,9 +17,11 @@ from mountainash_rules.engines.accumulator.compiler import AccumulatorCompiler
 from mountainash_rules.engines.accumulator.result import AccumulatorResult
 from mountainash_rules.engines.accumulator.aggregate import Aggregate
 from mountainash_rules.core.constants import (
+    DataType,
     DimensionRole,
     HitPolicy,
     MatchStrategy,
+    not_set_sentinel_for,
     unknown_sentinel_for,
 )
 from mountainash_rules.core.dimension import Dimension, DimensionsMetadata
@@ -540,13 +542,35 @@ class AccumulatorEngine:
             self._apply_engines[lattice] = engine
         return engine
 
-    def index(self, lattices: list[Lattice]) -> LatticeIndex:
-        """Build a partition-key routing index over pre-built lattices."""
+    def index(
+        self,
+        lattices: list[Lattice],
+        validate: bool = True,
+        max_witnesses: int = 1_000_000,
+    ) -> LatticeIndex:
+        """Build a partition-key routing index over pre-built lattices.
+
+        Args:
+            lattices: List of Lattice objects from build_all() or load().
+            validate: Run the exhaustive load-time ambiguity check
+                (structural checks — empty/duplicate/NOT_SET keys — run
+                regardless).
+            max_witnesses: Ceiling on the validation matrix size; above
+                it index() raises ValueError rather than sampling.
+        """
         from mountainash_rules.engines.accumulator.lattice import LatticeIndex
-        return LatticeIndex(self, lattices, self._context_key_dims)
+        return LatticeIndex(
+            self, lattices, self._context_key_dims,
+            validate=validate, max_witnesses=max_witnesses,
+        )
 
     def _extract_partition_key(self, context: t.Any) -> tuple:
-        """Extract the partition key tuple from a context object."""
+        """Extract the partition key tuple from a context object.
+
+        Missing or explicitly-null key fields become the typed NOT_SET
+        sentinel (None for bool) so the context can still route — a
+        NOT_SET value matches wildcard partitions only.
+        """
         if isinstance(context, BaseModel):
             raw = context.model_dump()
         elif isinstance(context, dict):
@@ -555,10 +579,27 @@ class AccumulatorEngine:
             raise TypeError(
                 f"Context must be a BaseModel or dict, got {type(context).__name__}"
             )
-        return tuple(
-            raw[d.resolved_context_field]
+        return self._normalize_partition_key(tuple(
+            raw.get(d.resolved_context_field)
             for d in self._context_key_dims
-        )
+        ))
+
+    def _normalize_partition_key(self, key: tuple) -> tuple:
+        """Map missing key values to the typed NOT_SET sentinel (None for bool).
+
+        A value counts as missing when it is None or a float NaN — backend
+        nulls and NaN are treated identically to an absent field (spec §1).
+        """
+        out = []
+        for v, d in zip(key, self._context_key_dims):
+            missing = v is None or (isinstance(v, float) and v != v)
+            if not missing:
+                out.append(v)
+            elif d.data_type is DataType.BOOL:
+                out.append(None)
+            else:
+                out.append(not_set_sentinel_for(d.data_type))
+        return tuple(out)
 
     def apply_auto(
         self,
@@ -581,5 +622,10 @@ class AccumulatorEngine:
 
         Note:
             Convenience wrapper; hot paths should hold a LatticeIndex.
+            Load-time ambiguity validation is skipped here (it would rerun
+            the witness matrix every call); routing still raises
+            AmbiguousPartitionError at apply time on a genuine tie.
         """
-        return self.index(lattices).apply(context, dimensions=dimensions)
+        return self.index(lattices, validate=False).apply(
+            context, dimensions=dimensions
+        )

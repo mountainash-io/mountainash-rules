@@ -8,6 +8,7 @@ class MatchStrategy(StrEnum):
     """How a dimension matches context values against rule values."""
 
     EXACT = "exact"
+    EXACT_KEY = "exact_key"
     NOT_EQUAL = "not_equal"
     RANGE = "range"
     GREATER_THAN = "greater_than"
