@@ -138,4 +138,4 @@ Core: `mountainash` (expressions/relations — the only DataFrame API the engine
 
 ## License
 
-MIT
+Apache-2.0
