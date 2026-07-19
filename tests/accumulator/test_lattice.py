@@ -173,3 +173,144 @@ class TestLatticeSaveLoad:
         (tmp_path / "empty").mkdir()
         with pytest.raises(FileNotFoundError):
             Lattice.load(tmp_path / "empty")
+
+
+from pydantic import BaseModel
+
+from mountainash_rules import AmbiguousPartitionError
+from mountainash_rules.engines.accumulator.engine import AccumulatorEngine
+from mountainash_rules.engines.accumulator.aggregate import Aggregate
+from mountainash_rules.core.constants import (
+    UNKNOWN,
+    UNKNOWN_NUMERIC,
+    NOT_SET,
+    DimensionRole,
+    MatchStrategy,
+)
+from mountainash_rules.core.dimension import Dimension, DimensionsMetadata
+
+
+class RoutingContext(BaseModel):
+    region: str | None = None
+    channel: str | None = None
+    product: str
+
+
+def _routing_engine():
+    metadata = DimensionsMetadata(dimensions=[
+        Dimension(
+            dimension_name="region",
+            match_strategy=MatchStrategy.EXACT,
+            role=DimensionRole.CONTEXT_KEY,
+        ),
+        Dimension(
+            dimension_name="channel",
+            match_strategy=MatchStrategy.EXACT,
+            role=DimensionRole.CONTEXT_KEY,
+        ),
+        Dimension(dimension_name="product", match_strategy=MatchStrategy.EXACT),
+    ])
+    return AccumulatorEngine(
+        dimension_metadata=metadata,
+        aggregates=[Aggregate(column_name="margin")],
+    )
+
+
+def _routing_rules(keys: list[tuple[str, str]]) -> pl.DataFrame:
+    """One rule per (region, channel) partition key; UNKNOWN = wildcard."""
+    return pl.DataFrame({
+        "region": [k[0] for k in keys],
+        "channel": [k[1] for k in keys],
+        "rule_name": [f"r{i}" for i in range(len(keys))],
+        "product": ["GOLD"] * len(keys),
+        "margin": [1.0] * len(keys),
+    })
+
+
+def _index_for(keys, validate=True):
+    engine = _routing_engine()
+    lattices = engine.build_all(_routing_rules(keys))
+    return engine, engine.index(lattices, validate=validate)
+
+
+class TestTernaryRouting:
+    def test_default_partition_catches_unmatched_context(self):
+        engine, index = _index_for([("AU", "BROKER"), (UNKNOWN, UNKNOWN)])
+        result = index.apply(RoutingContext(region="NZ", channel="DIRECT", product="GOLD"))
+        assert result.count >= 1  # routed to the all-wildcard default
+
+    def test_partial_specific_miss_falls_to_default(self):
+        engine, index = _index_for([("AU", "BROKER"), (UNKNOWN, UNKNOWN)])
+        # Exercise _route (not the dict fast path): (AU, DIRECT) is not an
+        # exact key; (AU, BROKER) dies on channel; default survives.
+        result = index.apply(RoutingContext(region="AU", channel="DIRECT", product="GOLD"))
+        assert result.count >= 1
+
+    def test_exact_hit_uses_fast_path_and_wins(self):
+        engine, index = _index_for([("AU", "BROKER"), (UNKNOWN, UNKNOWN)])
+        result = index.apply(RoutingContext(region="AU", channel="BROKER", product="GOLD"))
+        assert result.count >= 1
+
+    def test_runtime_ambiguity_raises(self):
+        engine, index = _index_for(
+            [("AU", UNKNOWN), (UNKNOWN, "BROKER")], validate=False
+        )
+        with pytest.raises(AmbiguousPartitionError):
+            index.apply(RoutingContext(region="AU", channel="BROKER", product="GOLD"))
+
+    def test_missing_key_field_routes_to_default(self):
+        engine, index = _index_for([("AU", "BROKER"), (UNKNOWN, UNKNOWN)])
+        result = index.apply(RoutingContext(product="GOLD"))  # region/channel None
+        assert result.count >= 1
+
+    def test_missing_key_field_without_default_raises(self):
+        engine, index = _index_for([("AU", "BROKER")])
+        with pytest.raises(KeyError, match="No lattice"):
+            index.apply(RoutingContext(product="GOLD"))
+
+    def test_context_unknown_sentinel_is_wildcard_only(self):
+        engine, index = _index_for([("AU", "BROKER"), (UNKNOWN, UNKNOWN)])
+        result = index.apply(
+            RoutingContext(region=UNKNOWN, channel="BROKER", product="GOLD")
+        )
+        # UNKNOWN region kills (AU, BROKER); only the default survives.
+        assert result.count >= 1
+
+    def test_wildcard_free_index_miss_raises_keyerror(self):
+        engine, index = _index_for([("AU", "BROKER")])
+        with pytest.raises(KeyError, match="No lattice"):
+            index.apply(RoutingContext(region="US", channel="X", product="GOLD"))
+
+    def test_ambiguous_is_a_keyerror(self):
+        assert issubclass(AmbiguousPartitionError, KeyError)
+
+
+class TestIndexStructuralChecks:
+    def test_empty_index_raises(self):
+        engine = _routing_engine()
+        with pytest.raises(ValueError, match="at least one lattice"):
+            engine.index([])
+
+    def test_duplicate_keys_raise(self):
+        engine = _routing_engine()
+        lattices = engine.build_all(_routing_rules([("AU", "BROKER")]))
+        with pytest.raises(ValueError, match="[Dd]uplicate"):
+            engine.index(lattices + lattices)
+
+    def test_not_set_key_raises(self):
+        engine = _routing_engine()
+        lattices = engine.build_all(_routing_rules([(NOT_SET, "BROKER")]))
+        with pytest.raises(ValueError, match="NOT_SET"):
+            engine.index(lattices)
+
+    def test_keyless_lattice_with_key_dims_raises(self):
+        engine = _routing_engine()
+        (good,) = engine.build_all(_routing_rules([("AU", "BROKER")]))
+        flat = Lattice(
+            dataframe=good.combinations,
+            metadata=good.metadata,
+            aggregates=good.aggregates,
+            partition_key=None,
+        )
+        with pytest.raises(ValueError, match="partition_key"):
+            engine.index([good, flat])

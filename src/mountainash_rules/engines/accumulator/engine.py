@@ -542,7 +542,12 @@ class AccumulatorEngine:
             self._apply_engines[lattice] = engine
         return engine
 
-    def index(self, lattices: list[Lattice]) -> LatticeIndex:
+    def index(
+        self,
+        lattices: list[Lattice],
+        validate: bool = True,
+        max_witnesses: int = 1_000_000,
+    ) -> LatticeIndex:
         """Build a partition-key routing index over pre-built lattices."""
         from mountainash_rules.engines.accumulator.lattice import LatticeIndex
         return LatticeIndex(self, lattices, self._context_key_dims)

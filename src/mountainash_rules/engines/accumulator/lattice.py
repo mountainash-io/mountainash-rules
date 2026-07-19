@@ -5,7 +5,14 @@ import yaml
 from mountainash.relations import relation
 
 from mountainash_rules.engines.accumulator.aggregate import Aggregate
-from mountainash_rules.core.dimension import DimensionsMetadata
+from mountainash_rules.core.constants import (
+    DataType,
+    HitPolicy,
+    MatchStrategy,
+    not_set_sentinel_for,
+)
+from mountainash_rules.core.dimension import Dimension, DimensionsMetadata
+from mountainash_rules.engines.filter.engine import ExpressionRulesEngine
 
 
 class Lattice:
@@ -100,28 +107,129 @@ class Lattice:
         )
 
 
+class AmbiguousPartitionError(KeyError):
+    """Two or more partitions tie at top specificity for a context.
+
+    Subclasses KeyError so existing partition-miss handlers keep working;
+    reachable at runtime only when index() validation was opted out.
+    """
+
+
 class LatticeIndex:
-    """Partition-key routing over a set of built lattices, built once."""
+    """Partition-key routing over a set of built lattices, built once.
+
+    Routing uses the same ternary + specificity semantics as the
+    constraint layer, evaluated by an embedded ExpressionRulesEngine over
+    a meta rules-table (one row per partition). Exact key hits keep an
+    O(1) dict fast path.
+    """
 
     def __init__(self, engine, lattices: list["Lattice"], context_key_dims) -> None:
         self._engine = engine
         self._context_key_dims = list(context_key_dims)
+        self._lattices = list(lattices)
+        if not self._lattices:
+            raise ValueError("index() requires at least one lattice")
+
         self._map: dict[tuple, Lattice] = {}
-        for lattice in lattices:
+        for lattice in self._lattices:
             if lattice.partition_key is not None:
                 key = tuple(
                     lattice.partition_key[d.dimension_name]
                     for d in self._context_key_dims
                 )
+            elif self._context_key_dims:
+                raise ValueError(
+                    "Lattice without a partition_key cannot be indexed "
+                    "alongside CONTEXT_KEY dimensions"
+                )
             else:
                 key = ()
+            for d, v in zip(self._context_key_dims, key):
+                if (
+                    d.data_type is not DataType.BOOL
+                    and v == not_set_sentinel_for(d.data_type)
+                ):
+                    raise ValueError(
+                        f"Partition key {key!r} contains the NOT_SET "
+                        f"sentinel for dimension '{d.dimension_name}'; "
+                        f"NOT_SET is a context-side sentinel and would "
+                        f"collide with missing-field routing"
+                    )
+            if key in self._map:
+                raise ValueError(f"Duplicate partition key {key!r}")
             self._map[key] = lattice
+
+        self._meta_engine = (
+            self._build_meta_engine() if self._context_key_dims else None
+        )
+
+    def _build_meta_engine(self) -> "ExpressionRulesEngine":
+        """One meta-rule row per partition; EXACT_KEY per key dim."""
+        columns: dict[str, list] = {
+            d.dimension_name: [] for d in self._context_key_dims
+        }
+        columns["__partition_idx"] = []
+        for idx, lattice in enumerate(self._lattices):
+            for d in self._context_key_dims:
+                columns[d.dimension_name].append(
+                    lattice.partition_key[d.dimension_name]
+                )
+            columns["__partition_idx"].append(idx)
+        meta_metadata = DimensionsMetadata(
+            dimensions=[
+                Dimension(
+                    dimension_name=d.dimension_name,
+                    context_field=d.resolved_context_field,
+                    match_strategy=MatchStrategy.EXACT_KEY,
+                    data_type=d.data_type,
+                )
+                for d in self._context_key_dims
+            ],
+            hit_policy=HitPolicy.COLLECT,
+        )
+        return ExpressionRulesEngine(
+            rules=relation(columns).collect(),
+            dimension_metadata=meta_metadata,
+        )
+
+    def _route(self, key: tuple) -> "Lattice":
+        """Ternary + specificity routing for a normalised key tuple."""
+        ctx = {
+            d.resolved_context_field: key[i]
+            for i, d in enumerate(self._context_key_dims)
+        }
+        rows = relation(self._meta_engine.evaluate(ctx).survivors).to_dict()
+        idxs = rows["__partition_idx"]
+        if not idxs:
+            raise KeyError(
+                f"No lattice for partition key {key!r}; served partition "
+                f"keys: {sorted(self._map)!r}"
+            )
+        top = rows["__specificity"][0]  # survivors are rank-sorted
+        tied = [
+            i for i, s in zip(idxs, rows["__specificity"]) if s == top
+        ]
+        if len(tied) > 1:
+            tied_keys = [
+                tuple(
+                    self._lattices[i].partition_key[d.dimension_name]
+                    for d in self._context_key_dims
+                )
+                for i in tied
+            ]
+            raise AmbiguousPartitionError(
+                f"Context key {key!r} ties {len(tied)} partitions at "
+                f"specificity {top}: {tied_keys!r}"
+            )
+        return self._lattices[tied[0]]
 
     def apply(self, context, dimensions=None):
         key = self._engine._extract_partition_key(context)
-        if key not in self._map:
-            raise KeyError(f"No lattice for partition key {key!r}")
-        return self._engine.apply(self._map[key], context, dimensions=dimensions)
+        lattice = self._map.get(key)
+        if lattice is None:
+            lattice = self._route(key)
+        return self._engine.apply(lattice, context, dimensions=dimensions)
 
     def apply_batch(self, contexts, **kwargs):
         """Partition contexts by CONTEXT_KEY fields; evaluate_batch per lattice."""
