@@ -254,13 +254,18 @@ class LatticeIndex:
         frames = []
         n = len(combos[key_fields[0]])
         for i in range(n):
-            key = tuple(combos[f][i] for f in key_fields)
-            if key not in self._map:
-                raise KeyError(f"No lattice for partition key {key!r}")
+            raw_key = tuple(combos[f][i] for f in key_fields)
+            key = self._engine._normalize_partition_key(raw_key)
+            lattice = self._map.get(key)
+            if lattice is None:
+                lattice = self._route(key)
             part = rel
-            for f, v in zip(key_fields, key):
-                part = part.filter(ma.col(f).eq(ma.lit(v)))
-            engine = self._engine._filter_engine_for(self._map[key])
+            for f, v in zip(key_fields, raw_key):
+                part = part.filter(
+                    ma.col(f).is_null() if v is None
+                    else ma.col(f).eq(ma.lit(v))
+                )
+            engine = self._engine._filter_engine_for(lattice)
             frames.append(relation(engine.evaluate_batch(
                 part.collect(), **kwargs
             ).survivors))

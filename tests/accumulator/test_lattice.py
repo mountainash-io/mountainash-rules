@@ -314,3 +314,39 @@ class TestIndexStructuralChecks:
         )
         with pytest.raises(ValueError, match="partition_key"):
             engine.index([good, flat])
+
+
+class TestTernaryRoutingBatch:
+    def test_batch_mixes_specific_and_default(self):
+        engine, index = _index_for([("AU", "BROKER"), (UNKNOWN, UNKNOWN)])
+        contexts = pl.DataFrame({
+            "region": ["AU", "NZ", None],
+            "channel": ["BROKER", "DIRECT", None],
+            "product": ["GOLD", "GOLD", "GOLD"],
+        })
+        result = index.apply_batch(contexts)
+        rows = relation(result.survivors).to_dict()
+        # every context produced at least one survivor row
+        assert set(rows["__context_id"]) == {0, 1, 2}
+
+    def test_batch_unroutable_combo_raises(self):
+        engine, index = _index_for([("AU", "BROKER")])
+        contexts = pl.DataFrame({
+            "region": ["AU", "US"],
+            "channel": ["BROKER", "X"],
+            "product": ["GOLD", "GOLD"],
+        })
+        with pytest.raises(KeyError, match="No lattice"):
+            index.apply_batch(contexts)
+
+    def test_batch_ambiguous_combo_raises(self):
+        engine, index = _index_for(
+            [("AU", UNKNOWN), (UNKNOWN, "BROKER")], validate=False
+        )
+        contexts = pl.DataFrame({
+            "region": ["AU"],
+            "channel": ["BROKER"],
+            "product": ["GOLD"],
+        })
+        with pytest.raises(AmbiguousPartitionError):
+            index.apply_batch(contexts)
