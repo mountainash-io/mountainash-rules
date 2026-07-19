@@ -415,3 +415,20 @@ class TestIndexValidation:
         index = engine.index(engine.build_all(rules))  # OTHER = None, no raise
         result = index.apply({"product": "GOLD"})      # flag missing -> wildcard
         assert result.count >= 1
+
+
+class TestRoutingPersistence:
+    def test_saved_wildcard_suite_routes_after_load(self, tmp_path):
+        engine = _routing_engine()
+        built = engine.build_all(
+            _routing_rules([("AU", "BROKER"), (UNKNOWN, UNKNOWN)])
+        )
+        loaded = [
+            Lattice.load(lattice.save(tmp_path / f"part{i}"))
+            for i, lattice in enumerate(built)
+        ]
+        index = engine.index(loaded)
+        result = index.apply(
+            RoutingContext(region="NZ", channel="DIRECT", product="GOLD")
+        )
+        assert result.count >= 1  # sentinel key survived the round-trip

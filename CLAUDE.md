@@ -46,7 +46,7 @@ no hit-policy interaction. Shares Steps 1–3 with `evaluate` via
 
 - `build(rules)` → `Lattice`: level-wise expansion of compatible rule combinations, coalescing dimension values (`co_<field>` columns + `co_*_na` flags, `accumulator_compiler.py`), accumulating `Aggregate` numerics (`__agg_<name>`), identifying combinations by prime products (`primes.py`; overflow → `LatticeWidthExceededError` with remediation), and pruning dominated combinations (frontier filter). Each level is **materialised** via `relation(...).collect()` — do not re-chain lazily (exponential plan blow-up).
 - `apply(lattice, context)` → `AccumulatorResult`. Apply-phase filter engines are memoised per lattice (WeakKeyDictionary).
-- `DimensionRole.CONTEXT_KEY` dimensions partition the rule space; `build_all` + `index(lattices)` → `LatticeIndex` routes contexts (single or batch) to the right lattice.
+- `DimensionRole.CONTEXT_KEY` dimensions partition the rule space; `build_all` + `index(lattices)` → `LatticeIndex` routes contexts (single or batch) to the right lattice using ternary + specificity semantics via an embedded meta-engine (`EXACT_KEY` dims): an all-wildcard key is the default/overflow partition, exact hits keep an O(1) dict fast path, ties raise `AmbiguousPartitionError` (a `KeyError` subclass, exported from the package root). `index(lattices, validate=True, max_witnesses=1_000_000)` runs an exhaustive witness-matrix ambiguity check at load time; empty/duplicate/NOT_SET-bearing keys are always rejected. See `docs/superpowers/specs/2026-07-19-ternary-partition-routing-design.md`.
 - `Lattice.is_composed` distinguishes build output (has `__prime_product`) from flat/imported lattices.
 - `Lattice.save(dir)` / `Lattice.load(dir)` — snapshot persistence (`lattice.parquet` + `manifest.yaml`, a superset of babel's LatticeManifest). `load` carries the package's third `# allow:` tag (parquet read). Build offline, `save`, serve `apply` from `load`.
 
@@ -61,6 +61,7 @@ No module under `src/mountainash_rules/` may import polars/ibis/narwhals directl
 | Strategy | Rule column format | Notes |
 |---|---|---|
 | `exact` / `not_equal` | scalar | any data_type |
+| `exact_key` | scalar | rule-side wildcard only (UNKNOWN → 0; context sentinel vs specific → −1); powers partition routing |
 | `range` | two columns (`range_min_field`/`range_max_field`) | numeric/temporal; `range_min_inclusive`/`range_max_inclusive` flags |
 | `greater_than` / `less_than` | threshold | numeric/temporal |
 | `prefix` / `suffix` / `contains` | string | |
