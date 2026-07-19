@@ -350,3 +350,68 @@ class TestTernaryRoutingBatch:
         })
         with pytest.raises(AmbiguousPartitionError):
             index.apply_batch(contexts)
+
+
+class TestIndexValidation:
+    def test_crossing_pair_without_cover_raises_at_index(self):
+        engine = _routing_engine()
+        lattices = engine.build_all(
+            _routing_rules([("AU", UNKNOWN), (UNKNOWN, "BROKER")])
+        )
+        with pytest.raises(AmbiguousPartitionError) as exc:
+            engine.index(lattices)
+        # message carries a witness context
+        assert "AU" in str(exc.value) and "BROKER" in str(exc.value)
+
+    def test_crossing_pair_with_cover_validates_and_routes(self):
+        engine = _routing_engine()
+        lattices = engine.build_all(_routing_rules([
+            ("AU", UNKNOWN), (UNKNOWN, "BROKER"), ("AU", "BROKER"),
+        ]))
+        index = engine.index(lattices)  # must NOT raise (false-positive guard)
+        result = index.apply(
+            RoutingContext(region="AU", channel="BROKER", product="GOLD")
+        )
+        assert result.count >= 1
+
+    def test_validate_false_defers_to_runtime(self):
+        engine = _routing_engine()
+        lattices = engine.build_all(
+            _routing_rules([("AU", UNKNOWN), (UNKNOWN, "BROKER")])
+        )
+        index = engine.index(lattices, validate=False)  # no raise here
+        with pytest.raises(AmbiguousPartitionError):
+            index.apply(RoutingContext(region="AU", channel="BROKER", product="GOLD"))
+
+    def test_witness_cap_overflow_raises(self):
+        engine = _routing_engine()
+        lattices = engine.build_all(
+            _routing_rules([("AU", "BROKER"), ("NZ", "DIRECT")])
+        )
+        # 3 classes per dim (AU, NZ, OTHER) x (BROKER, DIRECT, OTHER) = 9 > 4
+        with pytest.raises(ValueError, match="max_witnesses"):
+            engine.index(lattices, max_witnesses=4)
+
+    def test_bool_key_dim_full_domain_validates(self):
+        metadata = DimensionsMetadata(dimensions=[
+            Dimension(
+                dimension_name="flag",
+                match_strategy=MatchStrategy.EXACT,
+                data_type="bool",
+                role=DimensionRole.CONTEXT_KEY,
+            ),
+            Dimension(dimension_name="product", match_strategy=MatchStrategy.EXACT),
+        ])
+        engine = AccumulatorEngine(
+            dimension_metadata=metadata,
+            aggregates=[Aggregate(column_name="margin")],
+        )
+        rules = pl.DataFrame({
+            "flag": [True, False, None],   # null rule value = bool wildcard
+            "rule_name": ["r0", "r1", "r2"],
+            "product": ["GOLD"] * 3,
+            "margin": [1.0] * 3,
+        })
+        index = engine.index(engine.build_all(rules))  # OTHER = None, no raise
+        result = index.apply({"product": "GOLD"})      # flag missing -> wildcard
+        assert result.count >= 1

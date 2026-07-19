@@ -548,9 +548,21 @@ class AccumulatorEngine:
         validate: bool = True,
         max_witnesses: int = 1_000_000,
     ) -> LatticeIndex:
-        """Build a partition-key routing index over pre-built lattices."""
+        """Build a partition-key routing index over pre-built lattices.
+
+        Args:
+            lattices: List of Lattice objects from build_all() or load().
+            validate: Run the exhaustive load-time ambiguity check
+                (structural checks — empty/duplicate/NOT_SET keys — run
+                regardless).
+            max_witnesses: Ceiling on the validation matrix size; above
+                it index() raises ValueError rather than sampling.
+        """
         from mountainash_rules.engines.accumulator.lattice import LatticeIndex
-        return LatticeIndex(self, lattices, self._context_key_dims)
+        return LatticeIndex(
+            self, lattices, self._context_key_dims,
+            validate=validate, max_witnesses=max_witnesses,
+        )
 
     def _extract_partition_key(self, context: t.Any) -> tuple:
         """Extract the partition key tuple from a context object.

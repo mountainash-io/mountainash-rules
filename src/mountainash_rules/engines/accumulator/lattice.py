@@ -1,3 +1,4 @@
+import itertools
 import pathlib
 import typing as t
 import yaml
@@ -10,6 +11,7 @@ from mountainash_rules.core.constants import (
     HitPolicy,
     MatchStrategy,
     not_set_sentinel_for,
+    unknown_sentinel_for,
 )
 from mountainash_rules.core.dimension import Dimension, DimensionsMetadata
 from mountainash_rules.engines.filter.engine import ExpressionRulesEngine
@@ -124,7 +126,14 @@ class LatticeIndex:
     O(1) dict fast path.
     """
 
-    def __init__(self, engine, lattices: list["Lattice"], context_key_dims) -> None:
+    def __init__(
+        self,
+        engine,
+        lattices: list["Lattice"],
+        context_key_dims,
+        validate: bool = True,
+        max_witnesses: int = 1_000_000,
+    ) -> None:
         self._engine = engine
         self._context_key_dims = list(context_key_dims)
         self._lattices = list(lattices)
@@ -164,6 +173,9 @@ class LatticeIndex:
             self._build_meta_engine() if self._context_key_dims else None
         )
 
+        if validate and self._meta_engine is not None:
+            self._validate_ambiguity(max_witnesses)
+
     def _build_meta_engine(self) -> "ExpressionRulesEngine":
         """One meta-rule row per partition; EXACT_KEY per key dim."""
         columns: dict[str, list] = {
@@ -192,6 +204,87 @@ class LatticeIndex:
             rules=relation(columns).collect(),
             dimension_metadata=meta_metadata,
         )
+
+    _WITNESS_CHUNK = 100_000
+
+    def _validate_ambiguity(self, max_witnesses: int) -> None:
+        """Exhaustive witness-matrix ambiguity check (spec §5).
+
+        Per key dim the reachable context values collapse into finitely
+        many equivalence classes: each specific key value, plus OTHER —
+        represented by the typed NOT_SET sentinel (None for bool), which
+        matches no specific key and every wildcard. The cross-product of
+        classes is routed through the meta-engine in chunks; any witness
+        with >= 2 top-specificity survivors is a reachable runtime tie.
+        """
+        classes: list[list] = []
+        for i, d in enumerate(self._context_key_dims):
+            if d.data_type is DataType.BOOL:
+                wildcard, other = None, None
+            else:
+                wildcard = unknown_sentinel_for(d.data_type)
+                other = not_set_sentinel_for(d.data_type)
+            specifics = sorted(
+                {key[i] for key in self._map if key[i] != wildcard},
+                key=repr,
+            )
+            classes.append(specifics + [other])
+
+        total = 1
+        for c in classes:
+            total *= len(c)
+        if total > max_witnesses:
+            raise ValueError(
+                f"Ambiguity validation needs {total} witness contexts, "
+                f"over max_witnesses={max_witnesses}; pass a higher "
+                f"max_witnesses, validate=False (accepting the runtime "
+                f"tie check), or restructure the key dimensions"
+            )
+
+        fields = [d.resolved_context_field for d in self._context_key_dims]
+        witnesses = itertools.product(*classes)
+        while True:
+            chunk = list(itertools.islice(witnesses, self._WITNESS_CHUNK))
+            if not chunk:
+                return
+            contexts = relation({
+                "__witness_id": list(range(len(chunk))),
+                **{
+                    f: [w[i] for w in chunk]
+                    for i, f in enumerate(fields)
+                },
+            }).collect()
+            survivors = relation(
+                self._meta_engine.evaluate_batch(
+                    contexts, context_id_field="__witness_id"
+                ).survivors
+            ).to_dict()
+            best: dict[int, int] = {}
+            tied: dict[int, list[int]] = {}
+            for wid, spec, pidx in zip(
+                survivors["__context_id"],
+                survivors["__specificity"],
+                survivors["__partition_idx"],
+            ):
+                if wid not in best or spec > best[wid]:
+                    best[wid] = spec
+                    tied[wid] = [pidx]
+                elif spec == best[wid]:
+                    tied[wid].append(pidx)
+            for wid, parts in tied.items():
+                if len(parts) > 1:
+                    witness_ctx = dict(zip(fields, chunk[wid]))
+                    tied_keys = [
+                        tuple(
+                            self._lattices[p].partition_key[d.dimension_name]
+                            for d in self._context_key_dims
+                        )
+                        for p in parts
+                    ]
+                    raise AmbiguousPartitionError(
+                        f"Partition suite is ambiguous: witness context "
+                        f"{witness_ctx!r} ties partitions {tied_keys!r}"
+                    )
 
     def _route(self, key: tuple) -> "Lattice":
         """Ternary + specificity routing for a normalised key tuple."""
