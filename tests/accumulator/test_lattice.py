@@ -351,6 +351,46 @@ class TestTernaryRoutingBatch:
         with pytest.raises(AmbiguousPartitionError):
             index.apply_batch(contexts)
 
+    def test_batch_absent_key_column_routes_to_default(self):
+        # region & channel columns entirely absent -> both rows treated as
+        # missing (NOT_SET) -> routed to the all-wildcard default, mirroring
+        # single apply(); must not raise a column-not-found error.
+        engine, index = _index_for([("AU", "BROKER"), (UNKNOWN, UNKNOWN)])
+        contexts = pl.DataFrame({"product": ["GOLD", "GOLD"]})
+        result = index.apply_batch(contexts)
+        rows = relation(result.survivors).to_dict()
+        assert set(rows["__context_id"]) == {0, 1}
+
+    def test_batch_nan_key_value_routes_to_default_not_dropped(self):
+        metadata = DimensionsMetadata(dimensions=[
+            Dimension(
+                dimension_name="score",
+                match_strategy=MatchStrategy.EXACT,
+                data_type="float",
+                role=DimensionRole.CONTEXT_KEY,
+            ),
+            Dimension(dimension_name="product", match_strategy=MatchStrategy.EXACT),
+        ])
+        engine = AccumulatorEngine(
+            dimension_metadata=metadata,
+            aggregates=[Aggregate(column_name="margin")],
+        )
+        rules = pl.DataFrame({
+            "score": [1.5, float(UNKNOWN_NUMERIC)],  # specific + float wildcard
+            "rule_name": ["r0", "r1"],
+            "product": ["GOLD", "GOLD"],
+            "margin": [1.0, 1.0],
+        })
+        index = engine.index(engine.build_all(rules))
+        contexts = pl.DataFrame({
+            "score": [1.5, float("nan")],   # second row NaN -> NOT_SET -> default
+            "product": ["GOLD", "GOLD"],
+        })
+        result = index.apply_batch(contexts)
+        rows = relation(result.survivors).to_dict()
+        # BOTH context ids present: the NaN row must be routed, not silently dropped.
+        assert set(rows["__context_id"]) == {0, 1}
+
 
 class TestIndexValidation:
     def test_crossing_pair_without_cover_raises_at_index(self):

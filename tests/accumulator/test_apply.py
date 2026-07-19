@@ -192,3 +192,57 @@ class TestExtractPartitionKey:
         engine = self._engine()
         assert engine._normalize_partition_key((None,)) == (NOT_SET_NUMERIC,)
         assert engine._normalize_partition_key((7,)) == (7,)
+
+
+class TestApplyAutoAndNaN:
+    def _float_engine(self):
+        metadata = DimensionsMetadata(dimensions=[
+            Dimension(
+                dimension_name="score",
+                match_strategy=MatchStrategy.EXACT,
+                data_type="float",
+                role=DimensionRole.CONTEXT_KEY,
+            ),
+            Dimension(dimension_name="channel", match_strategy=MatchStrategy.EXACT),
+        ])
+        return AccumulatorEngine(
+            dimension_metadata=metadata,
+            aggregates=[Aggregate(column_name="margin")],
+        )
+
+    def test_nan_key_field_normalizes_to_not_set(self):
+        engine = self._float_engine()
+        key = engine._extract_partition_key({"score": float("nan"), "channel": "BROKER"})
+        assert key == (NOT_SET_NUMERIC,)
+
+    def test_normalize_partition_key_handles_nan(self):
+        engine = self._float_engine()
+        assert engine._normalize_partition_key((float("nan"),)) == (NOT_SET_NUMERIC,)
+        assert engine._normalize_partition_key((2.5,)) == (2.5,)
+
+    def test_apply_auto_skips_load_validation(self):
+        # A crossing pair (AU,*)/(*,BROKER) is ambiguous -> index(validate=True)
+        # would raise. apply_auto must not pay that: a context that routes
+        # unambiguously still succeeds.
+        metadata = DimensionsMetadata(dimensions=[
+            Dimension(dimension_name="region", match_strategy=MatchStrategy.EXACT, role=DimensionRole.CONTEXT_KEY),
+            Dimension(dimension_name="channel", match_strategy=MatchStrategy.EXACT, role=DimensionRole.CONTEXT_KEY),
+            Dimension(dimension_name="product", match_strategy=MatchStrategy.EXACT),
+        ])
+        engine = AccumulatorEngine(
+            dimension_metadata=metadata,
+            aggregates=[Aggregate(column_name="margin")],
+        )
+        rules = pl.DataFrame({
+            "region": ["AU", UNKNOWN],
+            "channel": [UNKNOWN, "BROKER"],
+            "rule_name": ["r0", "r1"],
+            "product": ["GOLD", "GOLD"],
+            "margin": [1.0, 1.0],
+        })
+        lattices = engine.build_all(rules)
+        # (AU, DIRECT): only (AU,*) survives -> unambiguous route, no raise.
+        result = engine.apply_auto(
+            lattices, {"region": "AU", "channel": "DIRECT", "product": "GOLD"}
+        )
+        assert result.count >= 1

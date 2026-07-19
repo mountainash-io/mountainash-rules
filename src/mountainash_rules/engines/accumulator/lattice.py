@@ -348,28 +348,81 @@ class LatticeIndex:
         # Synthesise a GLOBAL context id before partitioning: per-partition
         # batches would otherwise restart ids at 0 and collide after concat.
         if not kwargs.get("context_id_field"):
-            rel = rel.with_row_index(name="__lattice_ctx_id")
+            # relation(...collect()) (not just .collect()): `.columns` on a
+            # lazy relation doesn't reflect a just-added with_row_index
+            # column until materialised, and `passthrough` below reads
+            # `.columns`. A bare `.collect()` also degrades to a raw
+            # DataFrame that no longer dispatches with_columns() through the
+            # mountainash expression layer — re-wrapping keeps that intact.
+            rel = relation(rel.with_row_index(name="__lattice_ctx_id").collect())
             kwargs["context_id_field"] = "__lattice_ctx_id"
 
-        combos = rel.select(*[ma.col(f) for f in key_fields]).unique().to_dict()
+        # Normalise the key columns once so batch routing mirrors single
+        # apply(): a key column absent from the whole batch is treated as
+        # missing; null/NaN coalesce to the typed NOT_SET sentinel (bool keeps
+        # null — its don't-care). Combo grouping AND per-partition filtering
+        # both use these normalised columns, so a missing/NaN context routes
+        # exactly as _extract_partition_key would, and no row is silently
+        # dropped or double-counted.
+        passthrough = list(rel.columns)
+        existing = set(passthrough)
+        norm_fields: list[str] = []
+        norm_exprs = []
+        for d in self._context_key_dims:
+            f = d.resolved_context_field
+            nf = "__key_" + f
+            norm_fields.append(nf)
+            if f not in existing:
+                fill = (
+                    None
+                    if d.data_type is DataType.BOOL
+                    else not_set_sentinel_for(d.data_type)
+                )
+                norm_exprs.append(ma.lit(fill).alias(nf))
+            elif d.data_type is DataType.BOOL:
+                norm_exprs.append(ma.col(f).alias(nf))
+            elif d.data_type is DataType.FLOAT:
+                sentinel = not_set_sentinel_for(d.data_type)
+                norm_exprs.append(
+                    ma.when(ma.col(f).is_null() | ma.col(f).is_nan())
+                    .then(ma.lit(sentinel))
+                    .otherwise(ma.col(f))
+                    .alias(nf)
+                )
+            else:
+                sentinel = not_set_sentinel_for(d.data_type)
+                norm_exprs.append(
+                    ma.coalesce(ma.col(f), ma.lit(sentinel)).alias(nf)
+                )
+        rel = rel.with_columns(*norm_exprs)
+
+        combos = (
+            rel.select(*[ma.col(nf) for nf in norm_fields]).unique().to_dict()
+        )
         frames = []
-        n = len(combos[key_fields[0]])
+        n = len(combos[norm_fields[0]])
         for i in range(n):
-            raw_key = tuple(combos[f][i] for f in key_fields)
-            key = self._engine._normalize_partition_key(raw_key)
+            # Combos are already normalised; only bool positions can be None.
+            key = tuple(combos[nf][i] for nf in norm_fields)
             lattice = self._map.get(key)
             if lattice is None:
                 lattice = self._route(key)
             part = rel
-            for f, v in zip(key_fields, raw_key):
+            for nf, v in zip(norm_fields, key):
                 part = part.filter(
-                    ma.col(f).is_null() if v is None
-                    else ma.col(f).eq(ma.lit(v))
+                    ma.col(nf).is_null()
+                    if v is None
+                    else ma.col(nf).eq(ma.lit(v))
                 )
+            # Drop the transient __key_* columns so the filter engine sees the
+            # original context frame unchanged.
+            part = part.select(*[ma.col(c) for c in passthrough])
             engine = self._engine._filter_engine_for(lattice)
-            frames.append(relation(engine.evaluate_batch(
-                part.collect(), **kwargs
-            ).survivors))
+            frames.append(
+                relation(
+                    engine.evaluate_batch(part.collect(), **kwargs).survivors
+                )
+            )
         merged = concat(frames).collect()
 
         from mountainash_rules.core.batch_result import BatchRuleResult

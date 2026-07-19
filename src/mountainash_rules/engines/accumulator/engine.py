@@ -585,12 +585,21 @@ class AccumulatorEngine:
         ))
 
     def _normalize_partition_key(self, key: tuple) -> tuple:
-        """Map None key values to the typed NOT_SET sentinel (None for bool)."""
-        return tuple(
-            v if v is not None or d.data_type is DataType.BOOL
-            else not_set_sentinel_for(d.data_type)
-            for v, d in zip(key, self._context_key_dims)
-        )
+        """Map missing key values to the typed NOT_SET sentinel (None for bool).
+
+        A value counts as missing when it is None or a float NaN — backend
+        nulls and NaN are treated identically to an absent field (spec §1).
+        """
+        out = []
+        for v, d in zip(key, self._context_key_dims):
+            missing = v is None or (isinstance(v, float) and v != v)
+            if not missing:
+                out.append(v)
+            elif d.data_type is DataType.BOOL:
+                out.append(None)
+            else:
+                out.append(not_set_sentinel_for(d.data_type))
+        return tuple(out)
 
     def apply_auto(
         self,
@@ -613,5 +622,10 @@ class AccumulatorEngine:
 
         Note:
             Convenience wrapper; hot paths should hold a LatticeIndex.
+            Load-time ambiguity validation is skipped here (it would rerun
+            the witness matrix every call); routing still raises
+            AmbiguousPartitionError at apply time on a genuine tie.
         """
-        return self.index(lattices).apply(context, dimensions=dimensions)
+        return self.index(lattices, validate=False).apply(
+            context, dimensions=dimensions
+        )
