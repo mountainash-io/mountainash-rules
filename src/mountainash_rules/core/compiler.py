@@ -81,6 +81,12 @@ class DimensionCompiler:
         rule_col = ma.col(dim.resolved_rule_field)
         ctx_col = ma.col(CTX_PREFIX + dim.dimension_name)
         if dim.data_type is DataType.BOOL:
+            # Bool: rule null is the wildcard (checked above), unlike other
+            # data types the rule-side wildcard has no sentinel value to
+            # compare against. The equality check below then compares
+            # rule_col and ctx_col as native Booleans directly (both are
+            # true/false/null here, never the string sentinels) — there is
+            # no stringification involved for this data type.
             wildcard = rule_col.is_null()
         else:
             wildcard = rule_col.__eq__(

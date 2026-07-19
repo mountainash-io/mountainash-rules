@@ -432,3 +432,101 @@ class TestRoutingPersistence:
             RoutingContext(region="NZ", channel="DIRECT", product="GOLD")
         )
         assert result.count >= 1  # sentinel key survived the round-trip
+
+    def test_saved_numeric_wildcard_suite_routes_after_load(self, tmp_path):
+        metadata = DimensionsMetadata(dimensions=[
+            Dimension(
+                dimension_name="tier",
+                match_strategy=MatchStrategy.EXACT,
+                data_type="int",
+                role=DimensionRole.CONTEXT_KEY,
+            ),
+            Dimension(dimension_name="product", match_strategy=MatchStrategy.EXACT),
+        ])
+        engine = AccumulatorEngine(
+            dimension_metadata=metadata,
+            aggregates=[Aggregate(column_name="margin")],
+        )
+        rules = pl.DataFrame({
+            "tier": [1, UNKNOWN_NUMERIC],   # specific + numeric wildcard
+            "rule_name": ["r0", "r1"],
+            "product": ["GOLD", "GOLD"],
+            "margin": [1.0, 1.0],
+        })
+        built = engine.build_all(rules)
+        loaded = [
+            Lattice.load(lattice.save(tmp_path / f"part{i}"))
+            for i, lattice in enumerate(built)
+        ]
+        index = engine.index(loaded)
+        result = index.apply({"tier": 999, "product": "GOLD"})  # -> wildcard
+        assert result.count >= 1
+
+    def test_saved_bool_wildcard_suite_routes_after_load(self, tmp_path):
+        metadata = DimensionsMetadata(dimensions=[
+            Dimension(
+                dimension_name="flag",
+                match_strategy=MatchStrategy.EXACT,
+                data_type="bool",
+                role=DimensionRole.CONTEXT_KEY,
+            ),
+            Dimension(dimension_name="product", match_strategy=MatchStrategy.EXACT),
+        ])
+        engine = AccumulatorEngine(
+            dimension_metadata=metadata,
+            aggregates=[Aggregate(column_name="margin")],
+        )
+        rules = pl.DataFrame({
+            "flag": [True, None],   # specific + bool wildcard (null)
+            "rule_name": ["r0", "r1"],
+            "product": ["GOLD", "GOLD"],
+            "margin": [1.0, 1.0],
+        })
+        built = engine.build_all(rules)
+        loaded = [
+            Lattice.load(lattice.save(tmp_path / f"part{i}"))
+            for i, lattice in enumerate(built)
+        ]
+        index = engine.index(loaded)
+        result = index.apply({"flag": False, "product": "GOLD"})  # -> wildcard
+        assert result.count >= 1
+
+
+class TestRoutingErrorContract:
+    """A no-survivor miss must raise KeyError (not TypeError) even when a
+    bool key dim puts None alongside non-None values in the served keys —
+    so the service's `except KeyError -> 422` handler still catches it."""
+
+    def test_bool_wildcard_miss_raises_keyerror_not_typeerror(self):
+        metadata = DimensionsMetadata(dimensions=[
+            Dimension(
+                dimension_name="region",
+                match_strategy=MatchStrategy.EXACT,
+                role=DimensionRole.CONTEXT_KEY,
+            ),
+            Dimension(
+                dimension_name="flag",
+                match_strategy=MatchStrategy.EXACT,
+                data_type="bool",
+                role=DimensionRole.CONTEXT_KEY,
+            ),
+            Dimension(dimension_name="product", match_strategy=MatchStrategy.EXACT),
+        ])
+        engine = AccumulatorEngine(
+            dimension_metadata=metadata,
+            aggregates=[Aggregate(column_name="margin")],
+        )
+        # Two partitions sharing region 'AU': one specific flag, one bool
+        # wildcard (null). served-keys list therefore mixes None and True.
+        rules = pl.DataFrame({
+            "region": ["AU", "AU"],
+            "flag": [True, None],
+            "rule_name": ["r0", "r1"],
+            "product": ["GOLD", "GOLD"],
+            "margin": [1.0, 1.0],
+        })
+        index = engine.index(engine.build_all(rules))  # validate=True default
+        # region 'US' misses both partitions -> no survivor -> the served-keys
+        # message sorts {('AU', True), ('AU', None)}; must not TypeError.
+        with pytest.raises(KeyError, match="No lattice"):
+            index.apply({"region": "US", "flag": True, "product": "GOLD"})

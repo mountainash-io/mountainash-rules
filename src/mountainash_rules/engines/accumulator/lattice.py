@@ -302,7 +302,7 @@ class LatticeIndex:
         if not idxs:
             raise KeyError(
                 f"No lattice for partition key {key!r}; served partition "
-                f"keys: {sorted(self._map)!r}"
+                f"keys: {sorted(self._map, key=repr)!r}"
             )
         top = rows["__specificity"][0]  # survivors are rank-sorted
         tied = [
