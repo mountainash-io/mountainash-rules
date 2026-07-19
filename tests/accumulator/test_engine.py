@@ -184,3 +184,49 @@ class TestBuildWithPartitionKey:
         })
         with pytest.raises(ValueError, match="partition_key"):
             engine.build(rules)
+
+
+class TestAggregateOperations:
+    """A2 — min/max/product folds across a combination.
+
+    Rules R1 and R2 are mutually compatible (R2 wildcards channel and its
+    range overlaps R1), so the combination {R1,R2} has prime product 2*3=6
+    and folds both margins. Singleton combinations carry each rule's own
+    value.
+    """
+
+    def _rules(self):
+        return pl.DataFrame({
+            "rule_name": ["R1", "R2"],
+            "channel": ["BROKER", UNKNOWN],
+            "lvr_min": [60, 70],
+            "lvr_max": [90, 80],
+            "foreign_resident": [UNKNOWN, UNKNOWN],
+            "value": [10.0, 4.0],
+        })
+
+    def _build(self, operation):
+        engine = AccumulatorEngine(
+            dimension_metadata=_worked_example_metadata(),
+            aggregates=[Aggregate(column_name="value", operation=operation)],
+        )
+        rows = _rows(engine.build(self._rules()).combinations)
+        return dict(zip(rows["__prime_product"], rows["__agg_value"]))
+
+    def test_min_fold(self):
+        agg = self._build("min")
+        assert agg[6] == pytest.approx(4.0)   # min(10, 4)
+        assert agg[2] == pytest.approx(10.0)  # singleton R1
+        assert agg[3] == pytest.approx(4.0)   # singleton R2
+
+    def test_max_fold(self):
+        agg = self._build("max")
+        assert agg[6] == pytest.approx(10.0)  # max(10, 4)
+
+    def test_product_fold(self):
+        agg = self._build("product")
+        assert agg[6] == pytest.approx(40.0)  # 10 * 4
+
+    def test_sum_fold_unchanged(self):
+        agg = self._build("sum")
+        assert agg[6] == pytest.approx(14.0)  # 10 + 4

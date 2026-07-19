@@ -2,6 +2,7 @@
 
 import polars as pl
 import pytest
+from pydantic import ValidationError
 from mountainash.relations import relation
 
 from mountainash_rules.engines.accumulator.engine import AccumulatorEngine
@@ -92,7 +93,7 @@ class TestMultipleAggregates:
 
 class TestUnsupportedAggregateOperation:
     def test_unsupported_operation_raises_on_build(self):
-        """An unsupported aggregate operation should raise ValueError during expansion."""
+        """An unsupported aggregate operation should raise ValidationError at construction."""
         rules = pl.DataFrame({
             "rule_name": ["r1", "r2"],
             "channel": [UNKNOWN, UNKNOWN],
@@ -101,12 +102,11 @@ class TestUnsupportedAggregateOperation:
         metadata = DimensionsMetadata(dimensions=[
             Dimension(dimension_name="channel", match_strategy=MatchStrategy.EXACT),
         ])
-        engine = AccumulatorEngine(
-            dimension_metadata=metadata,
-            aggregates=[Aggregate(column_name="margin", operation="median")],
-        )
-        with pytest.raises(ValueError, match="Unsupported aggregate"):
-            engine.build(rules)
+        with pytest.raises(ValidationError):
+            AccumulatorEngine(
+                dimension_metadata=metadata,
+                aggregates=[Aggregate(column_name="margin", operation="median")],
+            )
 
 
 class TestFrontierFilterIsolation:
