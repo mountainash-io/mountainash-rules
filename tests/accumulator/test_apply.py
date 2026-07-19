@@ -8,7 +8,7 @@ from mountainash.relations import relation
 from mountainash_rules.engines.accumulator.engine import AccumulatorEngine
 from mountainash_rules.engines.accumulator.result import AccumulatorResult
 from mountainash_rules.engines.accumulator.aggregate import Aggregate
-from mountainash_rules.core.constants import UNKNOWN, UNKNOWN_NUMERIC, MatchStrategy, DimensionRole
+from mountainash_rules.core.constants import UNKNOWN, UNKNOWN_NUMERIC, NOT_SET_NUMERIC, MatchStrategy, DimensionRole
 from mountainash_rules.core.dimension import Dimension, DimensionsMetadata
 
 
@@ -154,3 +154,41 @@ class TestApplyAutoWithPartitions:
 
         with pytest.raises(KeyError, match="No lattice"):
             engine.apply_auto(lattices, PartitionedContext(product_id=99, channel="X"))
+
+
+class TestExtractPartitionKey:
+    def _engine(self):
+        metadata = DimensionsMetadata(dimensions=[
+            Dimension(
+                dimension_name="product_id",
+                match_strategy=MatchStrategy.EXACT,
+                data_type=int,
+                role=DimensionRole.CONTEXT_KEY,
+            ),
+            Dimension(dimension_name="channel", match_strategy=MatchStrategy.EXACT),
+        ])
+        return AccumulatorEngine(
+            dimension_metadata=metadata,
+            aggregates=[Aggregate(column_name="margin")],
+        )
+
+    def test_missing_key_field_fills_not_set(self):
+        key = self._engine()._extract_partition_key({"channel": "BROKER"})
+        assert key == (NOT_SET_NUMERIC,)
+
+    def test_explicit_none_fills_not_set(self):
+        key = self._engine()._extract_partition_key(
+            {"product_id": None, "channel": "BROKER"}
+        )
+        assert key == (NOT_SET_NUMERIC,)
+
+    def test_present_value_passes_through(self):
+        key = self._engine()._extract_partition_key(
+            {"product_id": 7, "channel": "BROKER"}
+        )
+        assert key == (7,)
+
+    def test_normalize_partition_key(self):
+        engine = self._engine()
+        assert engine._normalize_partition_key((None,)) == (NOT_SET_NUMERIC,)
+        assert engine._normalize_partition_key((7,)) == (7,)

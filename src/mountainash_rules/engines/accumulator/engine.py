@@ -17,9 +17,11 @@ from mountainash_rules.engines.accumulator.compiler import AccumulatorCompiler
 from mountainash_rules.engines.accumulator.result import AccumulatorResult
 from mountainash_rules.engines.accumulator.aggregate import Aggregate
 from mountainash_rules.core.constants import (
+    DataType,
     DimensionRole,
     HitPolicy,
     MatchStrategy,
+    not_set_sentinel_for,
     unknown_sentinel_for,
 )
 from mountainash_rules.core.dimension import Dimension, DimensionsMetadata
@@ -546,7 +548,12 @@ class AccumulatorEngine:
         return LatticeIndex(self, lattices, self._context_key_dims)
 
     def _extract_partition_key(self, context: t.Any) -> tuple:
-        """Extract the partition key tuple from a context object."""
+        """Extract the partition key tuple from a context object.
+
+        Missing or explicitly-null key fields become the typed NOT_SET
+        sentinel (None for bool) so the context can still route — a
+        NOT_SET value matches wildcard partitions only.
+        """
         if isinstance(context, BaseModel):
             raw = context.model_dump()
         elif isinstance(context, dict):
@@ -555,9 +562,17 @@ class AccumulatorEngine:
             raise TypeError(
                 f"Context must be a BaseModel or dict, got {type(context).__name__}"
             )
-        return tuple(
-            raw[d.resolved_context_field]
+        return self._normalize_partition_key(tuple(
+            raw.get(d.resolved_context_field)
             for d in self._context_key_dims
+        ))
+
+    def _normalize_partition_key(self, key: tuple) -> tuple:
+        """Map None key values to the typed NOT_SET sentinel (None for bool)."""
+        return tuple(
+            v if v is not None or d.data_type is DataType.BOOL
+            else not_set_sentinel_for(d.data_type)
+            for v, d in zip(key, self._context_key_dims)
         )
 
     def apply_auto(
