@@ -12,6 +12,7 @@ from mountainash_rules.core.constants import (
     DataType,
     MatchStrategy,
     sentinels_for,
+    unknown_sentinel_for,
 )
 from mountainash_rules.core.dimension import Dimension, DimensionsMetadata
 
@@ -35,6 +36,8 @@ class DimensionCompiler:
         match dim.match_strategy:
             case MatchStrategy.EXACT:
                 return self._compile_exact(dim)
+            case MatchStrategy.EXACT_KEY:
+                return self._compile_exact_key(dim)
             case MatchStrategy.RANGE:
                 return self._compile_range(dim)
             case MatchStrategy.REGEX:
@@ -67,6 +70,27 @@ class DimensionCompiler:
         rule_col = ma.t_col(dim.resolved_rule_field, unknown=sentinels)
         ctx_col = ma.t_col(CTX_PREFIX + dim.dimension_name, unknown=sentinels)
         return rule_col.t_eq(ctx_col)
+
+    def _compile_exact_key(self, dim: Dimension) -> BaseExpressionAPI:
+        """Rule-side-wildcard-only exact match (partition-key routing).
+
+        Only the rule side has a wildcard (UNKNOWN sentinel; null for
+        bool). A context-side sentinel is an ordinary non-matching value:
+        specific keys must never match an unknown/unset context.
+        """
+        rule_col = ma.col(dim.resolved_rule_field)
+        ctx_col = ma.col(CTX_PREFIX + dim.dimension_name)
+        if dim.data_type is DataType.BOOL:
+            wildcard = rule_col.is_null()
+        else:
+            wildcard = rule_col.__eq__(
+                ma.lit(unknown_sentinel_for(dim.data_type))
+            )
+        return (
+            ma.when(wildcard).then(0)
+            .when(rule_col.__eq__(ctx_col)).then(1)
+            .otherwise(-1)
+        )
 
     def _compile_not_equal(self, dim: Dimension) -> BaseExpressionAPI:
         if dim.data_type is DataType.BOOL:
