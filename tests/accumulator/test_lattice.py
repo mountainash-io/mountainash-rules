@@ -391,6 +391,21 @@ class TestTernaryRoutingBatch:
         # BOTH context ids present: the NaN row must be routed, not silently dropped.
         assert set(rows["__context_id"]) == {0, 1}
 
+    def test_batch_respects_caller_context_id_field(self):
+        # The caller-supplied context_id_field branch skips the internal
+        # __lattice_ctx_id synthesis; the caller's ids must still survive
+        # routing (specific + default + missing) through a partitioned index.
+        engine, index = _index_for([("AU", "BROKER"), (UNKNOWN, UNKNOWN)])
+        contexts = pl.DataFrame({
+            "my_id": [100, 200, 300],
+            "region": ["AU", "NZ", None],
+            "channel": ["BROKER", "DIRECT", None],
+            "product": ["GOLD", "GOLD", "GOLD"],
+        })
+        result = index.apply_batch(contexts, context_id_field="my_id")
+        rows = relation(result.survivors).to_dict()
+        assert set(rows["__context_id"]) == {100, 200, 300}
+
 
 class TestIndexValidation:
     def test_crossing_pair_without_cover_raises_at_index(self):
