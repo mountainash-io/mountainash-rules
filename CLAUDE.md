@@ -91,7 +91,7 @@ src/mountainash_rules/
 │       ├── compiler.py          # coalesce / compatible / NA-flag expressions
 │       ├── result.py            # AccumulatorResult (extends RuleResult)
 │       ├── lattice.py           # Lattice, LatticeIndex
-│       ├── aggregate.py         # Aggregate model (sum/min/max/product monoids)
+│       ├── aggregate.py         # Aggregate model (only "sum" implemented; engine raises on other operations)
 │       └── primes.py            # prime table, checked_multiply, LatticeWidthExceededError
 ```
 
