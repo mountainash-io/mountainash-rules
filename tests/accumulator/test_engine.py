@@ -6,7 +6,7 @@ from mountainash.relations import relation
 
 from mountainash_rules.engines.accumulator.engine import AccumulatorEngine
 from mountainash_rules.engines.accumulator.aggregate import Aggregate
-from mountainash_rules.core.constants import UNKNOWN, UNKNOWN_NUMERIC, MatchStrategy, DimensionRole
+from mountainash_rules.core.constants import DataType, UNKNOWN, UNKNOWN_NUMERIC, MatchStrategy, DimensionRole
 from mountainash_rules.core.dimension import Dimension, DimensionsMetadata
 
 
@@ -137,6 +137,82 @@ class TestBuildEdgeCases:
         assert lattice.count == 1
         rows = _rows(lattice.combinations)
         assert rows["__agg_margin"][0] == pytest.approx(6.0)
+
+
+class TestSetMembershipBuildFrontier:
+    def _metadata(self):
+        return DimensionsMetadata(dimensions=[
+            Dimension(dimension_name="region", match_strategy=MatchStrategy.SET_MEMBERSHIP, data_type=DataType.STR),
+        ])
+
+    def test_three_wildcard_rules_collapse_to_single_maximal(self):
+        # THE anchor regression: 3 wildcard-set rules must dedupe to pp=30, NOT 7 combos.
+        rules = pl.DataFrame({
+            "rule_name": ["R1", "R2", "R3"],
+            "region": pl.Series("region", [None, None, None], dtype=pl.List(pl.Utf8)),
+        })
+        engine = AccumulatorEngine(dimension_metadata=self._metadata())
+        rows = _rows(engine.build(rules).combinations)
+        assert set(rows["__prime_product"]) == {30}
+
+    def test_two_membership_rules_coalesce_to_intersection(self):
+        rules = pl.DataFrame({
+            "rule_name": ["R1", "R2"],
+            "region": pl.Series("region", [["AU", "NZ", "UK"], ["NZ", "UK", "US"]], dtype=pl.List(pl.Utf8)),
+        })
+        engine = AccumulatorEngine(dimension_metadata=self._metadata())
+        rows = _rows(engine.build(rules).combinations)
+        by_pp = dict(zip(rows["__prime_product"], rows["co_region"]))
+        assert sorted(by_pp[6]) == ["NZ", "UK"]
+
+    def test_same_set_different_order_dedupes(self):
+        # Ordering: two rules whose sets are equal up to order must dedupe to the
+        # single maximal combination — assert the EXACT surviving prime-product set.
+        rules = pl.DataFrame({
+            "rule_name": ["R1", "R2"],
+            "region": pl.Series("region", [["UK", "NZ"], ["NZ", "UK"]], dtype=pl.List(pl.Utf8)),
+        })
+        engine = AccumulatorEngine(dimension_metadata=self._metadata())
+        rows = _rows(engine.build(rules).combinations)
+        # R1 and R2 have equal (canonicalized) sets, are compatible (non-empty
+        # intersection), so {R1,R2} (pp=6) dominates both singletons {2},{3}.
+        assert set(rows["__prime_product"]) == {6}
+        by_pp = dict(zip(rows["__prime_product"], rows["co_region"]))
+        assert by_pp[6] == ["NZ", "UK"]  # canonical (sorted-unique)
+
+
+class TestSetExclusionBuild:
+    def _metadata(self):
+        return DimensionsMetadata(dimensions=[
+            Dimension(dimension_name="region", match_strategy=MatchStrategy.SET_EXCLUSION, data_type=DataType.STR),
+        ])
+
+    def test_two_exclusion_rules_coalesce_to_union(self):
+        rules = pl.DataFrame({
+            "rule_name": ["R1", "R2"],
+            "region": pl.Series("region", [["AU", "NZ"], ["NZ", "US"]], dtype=pl.List(pl.Utf8)),
+        })
+        engine = AccumulatorEngine(dimension_metadata=self._metadata())
+        rows = _rows(engine.build(rules).combinations)
+        by_pp = dict(zip(rows["__prime_product"], rows["co_region"]))
+        assert by_pp[6] == ["AU", "NZ", "US"]
+
+
+class TestSetBuildValidation:
+    def _metadata(self):
+        return DimensionsMetadata(dimensions=[
+            Dimension(dimension_name="region", match_strategy=MatchStrategy.SET_MEMBERSHIP, data_type=DataType.STR),
+        ])
+
+    def test_embedded_sentinel_rejected(self):
+        import pytest
+        rules = pl.DataFrame({
+            "rule_name": ["R1"],
+            "region": pl.Series("region", [["AU", "<NA>"]], dtype=pl.List(pl.Utf8)),
+        })
+        engine = AccumulatorEngine(dimension_metadata=self._metadata())
+        with pytest.raises(ValueError, match="sentinel"):
+            engine.build(rules)
 
 
 class TestBuildWithPartitionKey:
