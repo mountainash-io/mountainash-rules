@@ -190,3 +190,33 @@ class TestDimensionRole:
             ),
         ])
         assert all(d.role == DimensionRole.CONSTRAINT for d in metadata.dimensions)
+
+
+class TestSetDimensionBoolRejected:
+    def test_bool_set_membership_rejected(self):
+        import pytest
+        from pydantic import ValidationError
+        from mountainash_rules import Dimension
+        from mountainash_rules.core.constants import MatchStrategy, DataType
+        with pytest.raises(ValidationError, match="bool"):
+            Dimension(dimension_name="flags", match_strategy=MatchStrategy.SET_MEMBERSHIP, data_type=DataType.BOOL)
+
+    def test_bool_set_exclusion_rejected(self):
+        import pytest
+        from pydantic import ValidationError
+        from mountainash_rules import Dimension
+        from mountainash_rules.core.constants import MatchStrategy, DataType
+        with pytest.raises(ValidationError, match="bool"):
+            Dimension(dimension_name="flags", match_strategy=MatchStrategy.SET_EXCLUSION, data_type=DataType.BOOL)
+
+    def test_str_set_membership_allowed(self):
+        from mountainash_rules import Dimension
+        from mountainash_rules.core.constants import MatchStrategy, DataType
+        d = Dimension(dimension_name="region", match_strategy=MatchStrategy.SET_MEMBERSHIP, data_type=DataType.STR)
+        assert d.data_type is DataType.STR
+
+    def test_int_set_membership_allowed(self):
+        from mountainash_rules import Dimension
+        from mountainash_rules.core.constants import MatchStrategy, DataType
+        d = Dimension(dimension_name="tiers", match_strategy=MatchStrategy.SET_MEMBERSHIP, data_type=DataType.INT)
+        assert d.data_type is DataType.INT

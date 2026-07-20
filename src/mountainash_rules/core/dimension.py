@@ -131,6 +131,18 @@ class Dimension(BaseModel):
                     f"temporal type"
                 )
 
+        if self.match_strategy in (
+            MatchStrategy.SET_MEMBERSHIP,
+            MatchStrategy.SET_EXCLUSION,
+        ):
+            if self.data_type is DataType.BOOL:
+                raise ValueError(
+                    f"Dimension '{self.dimension_name}' uses "
+                    f"{self.match_strategy.value} with data_type bool; boolean "
+                    f"set dimensions are not supported (no typed wildcard sentinel "
+                    f"exists and a set over {{true, false}} is degenerate)"
+                )
+
         return self
 
 
