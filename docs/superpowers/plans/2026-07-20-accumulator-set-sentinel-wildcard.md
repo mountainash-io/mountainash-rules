@@ -119,7 +119,8 @@ git commit -m "feat(dimension): reject bool set dimensions (no typed wildcard se
   - `canonicalize_set_expr(col: BaseExpressionAPI) -> BaseExpressionAPI` — sort + unique.
   - `normalize_set_expr(dim, col) -> BaseExpressionAPI` — null→`[sentinel]`, concrete→sorted-unique.
   - `set_wildcard_predicate(dim, col) -> BaseExpressionAPI` — `col.list.contains(sentinel)` (post-normalization).
-  - `validate_set_columns(rules_rel, set_dims: list[Dimension]) -> None` — raises `ValueError` on embedded-sentinel or element-null rule lists.
+  - `validate_set_columns(rules_rel, set_dims: list[Dimension]) -> None` — **portable** (both engines); raises `ValueError` on embedded-sentinel lists. Uses only `list.contains`/`list.len`.
+  - `validate_set_no_null_elements(rules_rel, set_dims: list[Dimension]) -> None` — **accumulator build only** (uses `list.drop_nulls`, Ibis-unsupported); raises `ValueError` on element-null lists.
 - Consumes: `unknown_sentinel_for`, `DataType` from `core/constants.py`; `Dimension` from `core/dimension.py`.
 
 - [ ] **Step 1: Write the failing helper tests**
@@ -139,6 +140,7 @@ from mountainash_rules.core.set_wildcard import (
     normalize_set_expr,
     set_wildcard_predicate,
     validate_set_columns,
+    validate_set_no_null_elements,
 )
 from mountainash.relations import relation
 
@@ -189,6 +191,26 @@ class TestNormalizeAndDetect:
         twice = once.with_columns(normalize_set_expr(dim, ma.col("region")).alias("region").compile(once, booleanizer=None))
         assert once["region"].to_list() == twice["region"].to_list()
 
+    def test_normalize_idempotent_float_and_date(self):
+        # F9: idempotence must hold across dtypes, not just str.
+        import datetime as _dt
+        import mountainash as ma
+        from mountainash_rules.core.constants import DataType
+        float_dim = _float_dim()
+        fdf = pl.DataFrame({"scores": pl.Series("scores", [None, [2.5, 1.5]], dtype=pl.List(pl.Float64))})
+        f1 = fdf.with_columns(normalize_set_expr(float_dim, ma.col("scores")).alias("scores").compile(fdf, booleanizer=None))
+        f2 = f1.with_columns(normalize_set_expr(float_dim, ma.col("scores")).alias("scores").compile(f1, booleanizer=None))
+        assert f1["scores"].to_list() == f2["scores"].to_list()
+        assert f1["scores"].to_list() == [[-999999999.0], [1.5, 2.5]]
+
+        date_dim = Dimension(dimension_name="days", match_strategy=MatchStrategy.SET_MEMBERSHIP, data_type=DataType.DATE)
+        d = [_dt.date(2020, 1, 2), _dt.date(2020, 1, 1)]
+        ddf = pl.DataFrame({"days": pl.Series("days", [None, d], dtype=pl.List(pl.Date))})
+        d1 = ddf.with_columns(normalize_set_expr(date_dim, ma.col("days")).alias("days").compile(ddf, booleanizer=None))
+        d2 = d1.with_columns(normalize_set_expr(date_dim, ma.col("days")).alias("days").compile(d1, booleanizer=None))
+        assert d1["days"].to_list() == d2["days"].to_list()
+        assert d1["days"].dtype == pl.List(pl.Date)
+
 
 class TestCanonicalize:
     def test_sort_and_dedupe(self):
@@ -205,19 +227,26 @@ class TestValidateSetColumns:
         with pytest.raises(ValueError, match="sentinel"):
             validate_set_columns(relation(rules), [dim])
 
-    def test_null_element_rejected(self):
-        dim = _str_dim()
-        rules = pl.DataFrame({"region": pl.Series("region", [["AU", None]], dtype=pl.List(pl.Utf8))})
-        with pytest.raises(ValueError, match="null element"):
-            validate_set_columns(relation(rules), [dim])
-
-    def test_whole_list_null_is_allowed(self):
+    def test_embedded_sentinel_passes_null_element_check(self):
+        # validate_set_columns is reservation-only; whole-list null + concrete OK.
         dim = _str_dim()
         rules = pl.DataFrame({"region": pl.Series("region", [None, ["AU"], ["<NA>"]], dtype=pl.List(pl.Utf8))})
         validate_set_columns(relation(rules), [dim])  # no raise
 
+    def test_null_element_rejected_by_dedicated_check(self):
+        dim = _str_dim()
+        rules = pl.DataFrame({"region": pl.Series("region", [["AU", None]], dtype=pl.List(pl.Utf8))})
+        with pytest.raises(ValueError, match="null element"):
+            validate_set_no_null_elements(relation(rules), [dim])
+
+    def test_null_element_check_allows_whole_list_null(self):
+        dim = _str_dim()
+        rules = pl.DataFrame({"region": pl.Series("region", [None, ["AU"]], dtype=pl.List(pl.Utf8))})
+        validate_set_no_null_elements(relation(rules), [dim])  # no raise
+
     def test_no_set_dims_is_noop(self):
         validate_set_columns(relation(pl.DataFrame({"x": [1]})), [])
+        validate_set_no_null_elements(relation(pl.DataFrame({"x": [1]})), [])
 ```
 
 - [ ] **Step 2: Run to verify it fails**
@@ -302,7 +331,12 @@ def _embedded_sentinel_predicate(dim: Dimension, field: str) -> BaseExpressionAP
 
 
 def _null_element_predicate(field: str) -> BaseExpressionAPI:
-    """True for a non-null list that contains a null element."""
+    """True for a non-null list that contains a null element.
+
+    Uses ``list.drop_nulls`` — mountainash's IBIS backend raises
+    ``BackendCapabilityError`` for this op, so callers must only run this on the
+    polars-internal accumulator build path (see ``validate_set_no_null_elements``).
+    """
     col = ma.col(field)
     length = col.list.len()
     non_null_length = col.list.drop_nulls().list.len()
@@ -310,13 +344,12 @@ def _null_element_predicate(field: str) -> BaseExpressionAPI:
 
 
 def validate_set_columns(rules_rel: t.Any, set_dims: list[Dimension]) -> None:
-    """Raise ``ValueError`` if any set-dimension rule list is a data error.
+    """Raise ``ValueError`` if a concrete set-rule list embeds the reserved sentinel.
 
-    A data error is (a) a concrete list embedding the sentinel among other
-    values, or (b) a list with a null element. A whole-list null is valid — it is
-    the wildcard. ``rules_rel`` is a ``mountainash`` relation; the check collects
-    the offending rows and uses builtin ``len`` (backend-pure — ``collect``
-    returns a native frame that supports ``len``).
+    Portable — uses only ``list.contains`` + ``list.len`` (Ibis/Narwhals-safe), so
+    it runs in BOTH engines on any backend. A whole-list null is valid (the
+    wildcard). ``rules_rel`` is a ``mountainash`` relation; ``collect`` returns a
+    native frame that supports builtin ``len`` (backend-pure — no native import).
     """
     for dim in set_dims:
         field = dim.resolved_rule_field
@@ -327,6 +360,18 @@ def validate_set_columns(rules_rel: t.Any, set_dims: list[Dimension]) -> None:
                 f"reserved wildcard sentinel {unknown_sentinel_for(dim.data_type)!r}. "
                 f"The sentinel is only valid as the sole element (the wildcard)."
             )
+
+
+def validate_set_no_null_elements(rules_rel: t.Any, set_dims: list[Dimension]) -> None:
+    """Raise ``ValueError`` if a set-rule list contains a null element.
+
+    Uses ``list.drop_nulls`` (Ibis-unsupported), so this is called ONLY on the
+    polars-internal accumulator build path. The filter engine does not call it:
+    ``t_is_in`` tolerates a null element (it matches nothing), so a standalone
+    filter engine over Ibis set rules is unaffected.
+    """
+    for dim in set_dims:
+        field = dim.resolved_rule_field
         null_elem = rules_rel.filter(_null_element_predicate(field)).collect()
         if len(null_elem) > 0:
             raise ValueError(
@@ -359,12 +404,12 @@ git commit -m "feat(core): shared in-band sentinel set-wildcard helpers + valida
 
 **Files:**
 - Modify: `src/mountainash_rules/core/compiler.py` (`_compile_set_membership`, `_compile_set_exclusion`)
-- Modify: `src/mountainash_rules/engines/filter/engine.py` (validate set columns once)
-- Test: `tests/core/test_compiler.py` (filter compiler ternary tests)
+- Modify: `src/mountainash_rules/engines/filter/engine.py` (validate set columns once — both single and batch paths)
+- Test: `tests/core/test_compiler.py` (filter compiler ternary tests); `tests/filter/test_engine.py` (engine validation, single + batch)
 
 **Interfaces:**
 - Consumes: `normalize_set_expr`, `set_wildcard_predicate`, `validate_set_columns` (Task 2).
-- Produces: filter set ternaries that short-circuit the wildcard to 0 and normalize null input; the filter engine rejects invalid set rule lists.
+- Produces: filter set ternaries that short-circuit the wildcard to 0 and normalize null input; the filter engine rejects embedded-sentinel set rule lists on **both** `evaluate`/`explain` (via `_scored_relation`) and `evaluate_batch` (via `_evaluate_batch_frame`).
 
 - [ ] **Step 1: Write the failing filter compiler tests**
 
@@ -493,33 +538,49 @@ Replace `_compile_set_membership` and `_compile_set_exclusion` with:
 Run: `hatch run test:test-target tests/core/test_compiler.py::TestSetMembershipTernary tests/core/test_compiler.py::TestSetExclusionTernary -v`
 Expected: PASS.
 
-- [ ] **Step 5: Write the failing filter-engine validation test**
+- [ ] **Step 5: Write the failing filter-engine validation tests (single AND batch)**
 
-Add to `tests/core/test_compiler.py` (or wherever the filter engine is tested — use `tests/test_engine.py` if that is the filter-engine suite; this test uses the public `ExpressionRulesEngine`):
+Add to `tests/filter/test_engine.py` (the filter-engine suite; uses the public `ExpressionRulesEngine`):
 ```python
 class TestFilterEngineRejectsInvalidSetRules:
-    def test_embedded_sentinel_rule_rejected_on_evaluate(self):
-        import polars as pl
-        import pytest
-        from mountainash_rules import ExpressionRulesEngine, Dimension, DimensionsMetadata
+    def _meta(self):
+        from mountainash_rules import Dimension, DimensionsMetadata
         from mountainash_rules.core.constants import MatchStrategy, DataType
-        meta = DimensionsMetadata(dimensions=[
+        return DimensionsMetadata(dimensions=[
             Dimension(dimension_name="region", match_strategy=MatchStrategy.SET_MEMBERSHIP, data_type=DataType.STR),
         ])
-        rules = pl.DataFrame({
+
+    def _rules(self):
+        import polars as pl
+        return pl.DataFrame({
             "rule_name": ["R1"],
             "region": pl.Series("region", [["AU", "<NA>"]], dtype=pl.List(pl.Utf8)),
         })
-        engine = ExpressionRulesEngine(rules=rules, dimension_metadata=meta)
+
+    def test_embedded_sentinel_rejected_on_evaluate(self):
+        import pytest
+        from mountainash_rules import ExpressionRulesEngine
+        engine = ExpressionRulesEngine(rules=self._rules(), dimension_metadata=self._meta())
         with pytest.raises(ValueError, match="sentinel"):
             engine.evaluate({"region": "AU"})
+
+    def test_embedded_sentinel_rejected_on_evaluate_batch(self):
+        # evaluate_batch does NOT route through _scored_relation — this covers the
+        # batch path explicitly (a batch-first call must still validate).
+        import polars as pl
+        import pytest
+        from mountainash_rules import ExpressionRulesEngine
+        engine = ExpressionRulesEngine(rules=self._rules(), dimension_metadata=self._meta())
+        contexts = pl.DataFrame({"region": ["AU"]})
+        with pytest.raises(ValueError, match="sentinel"):
+            engine.evaluate_batch(contexts)
 ```
-> Verified: `ExpressionRulesEngine(rules=..., dimension_metadata=...)` (`engine.py:55`); `evaluate` accepts a dict. Both `ExpressionRulesEngine` and `Dimension`/`DimensionsMetadata` are public root imports.
+> Verified: `ExpressionRulesEngine(rules=..., dimension_metadata=...)` (`engine.py:55`); `evaluate` accepts a dict; `evaluate_batch(contexts)` accepts a frame. All three names are public root imports. Check `tests/filter/test_engine.py`'s existing top-of-file imports and reuse them where present.
 
 - [ ] **Step 6: Run to verify it fails**
 
-Run: `hatch run test:test-target tests/core/test_compiler.py::TestFilterEngineRejectsInvalidSetRules -v`
-Expected: FAIL — no `ValueError` raised (invalid list silently treated as wildcard).
+Run: `hatch run test:test-target tests/filter/test_engine.py::TestFilterEngineRejectsInvalidSetRules -v`
+Expected: BOTH FAIL — no `ValueError` raised (invalid list silently treated as wildcard) on either the single or batch path.
 
 - [ ] **Step 7: Add memoized validation to the filter engine**
 
@@ -528,27 +589,40 @@ In `src/mountainash_rules/engines/filter/engine.py`, add the import near the oth
 from mountainash_rules.core.set_wildcard import validate_set_columns
 from mountainash_rules.core.constants import MatchStrategy
 ```
-In `_scored_relation` (around line 407–412), immediately after it builds the rules relation (`rel = relation(self._rules)`), add a one-time validation guarded by a flag. First, in `__init__` (near `self._rules = rules`, line 74), add:
+In `__init__` (near `self._rules = rules`, line 74), add the memo flag:
 ```python
         self._set_dims_validated = False
 ```
-Then in `_scored_relation`, right after `rel = relation(self._rules)`:
+Add a shared one-time validation method:
 ```python
-        if self._metadata is not None and not self._set_dims_validated:
-            set_dims = [
-                d for d in self._metadata.dimensions
-                if d.match_strategy in (MatchStrategy.SET_MEMBERSHIP, MatchStrategy.SET_EXCLUSION)
-            ]
-            validate_set_columns(rel, set_dims)
-            self._set_dims_validated = True
+    def _validate_set_rules_once(self) -> None:
+        """Reject set rule lists that embed the reserved sentinel — once, portably.
+
+        Called from BOTH scoring entry points (single and batch) because
+        evaluate_batch does not route through _scored_relation. metadata is None
+        when the engine was built from dimension_expressions (no Dimension objects
+        to inspect), so skip that case.
+        """
+        if self._metadata is None or self._set_dims_validated:
+            return
+        set_dims = [
+            d for d in self._metadata.dimensions
+            if d.match_strategy in (MatchStrategy.SET_MEMBERSHIP, MatchStrategy.SET_EXCLUSION)
+        ]
+        validate_set_columns(relation(self._rules), set_dims)
+        self._set_dims_validated = True
 ```
-> Verified: metadata attribute is `self._metadata` (`engine.py:69`), and it is **`None`** when the engine was constructed from `dimension_expressions` instead of metadata — hence the `self._metadata is not None` guard (the expressions path has no `Dimension` objects to inspect). `_scored_relation` is shared by `evaluate`, `explain`, and `evaluate_batch`, so validating here covers all entry points.
+Call it at the top of **`_scored_relation`** (line 407) and at the top of **`_evaluate_batch_frame`** (line 303) — both, because `evaluate_batch` → `_evaluate_batch_frame` (line 248/259) builds its own `rules_rel = relation(self._rules)` at line 313 and never calls `_scored_relation`. In each, add as the first statement:
+```python
+        self._validate_set_rules_once()
+```
+> Verified: metadata attribute is `self._metadata` (`engine.py:69`), `None` on the `dimension_expressions` path. `evaluate`/`explain` go through `_scored_relation`; `evaluate_batch` goes through `_evaluate_batch_frame`. Calling `_validate_set_rules_once` in both covers every entry point; the memo flag makes repeat calls cheap. `relation` is already imported in this module.
 
-- [ ] **Step 8: Run the validation test + the filter suite**
+- [ ] **Step 8: Run the validation tests + the filter suite**
 
-Run: `hatch run test:test-target tests/core/test_compiler.py::TestFilterEngineRejectsInvalidSetRules -v`
-Expected: PASS.
-Run: `hatch run test:test-target tests/core/test_compiler.py tests/test_engine.py -q`
+Run: `hatch run test:test-target tests/filter/test_engine.py::TestFilterEngineRejectsInvalidSetRules -v`
+Expected: PASS (both single and batch).
+Run: `hatch run test:test-target tests/core/test_compiler.py tests/filter/ -q`
 Expected: PASS — existing filter/set tests unaffected (null-list rules still normalize to wildcard; concrete lists unchanged). If a pre-existing set test used a null rule list and asserted wildcard behaviour, it still passes.
 
 - [ ] **Step 9: Ruff + commit**
@@ -786,7 +860,7 @@ git commit -m "feat(accumulator): set coalescing/compatible/NA-flag on in-band s
 - Test: `tests/accumulator/test_engine.py`
 
 **Interfaces:**
-- Consumes: `validate_set_columns`, `normalize_set_expr`, `set_wildcard_predicate` (Task 2); the accumulator compiler set branches (Task 4).
+- Consumes: `validate_set_columns`, `validate_set_no_null_elements`, `normalize_set_expr`, `set_wildcard_predicate` (Task 2); the accumulator compiler set branches (Task 4).
 - Produces: `build(rules)` with any set dimension produces a lattice whose set `co_` columns are non-null and canonical; the frontier dedupes wildcard combinations.
 
 - [ ] **Step 1: Write the failing build regression tests**
@@ -820,17 +894,19 @@ class TestSetMembershipBuildFrontier:
         assert sorted(by_pp[6]) == ["NZ", "UK"]
 
     def test_same_set_different_order_dedupes(self):
-        # Ordering: two rules whose sets are equal up to order must produce one combo.
+        # Ordering: two rules whose sets are equal up to order must dedupe to the
+        # single maximal combination — assert the EXACT surviving prime-product set.
         rules = pl.DataFrame({
             "rule_name": ["R1", "R2"],
             "region": pl.Series("region", [["UK", "NZ"], ["NZ", "UK"]], dtype=pl.List(pl.Utf8)),
         })
         engine = AccumulatorEngine(dimension_metadata=self._metadata())
         rows = _rows(engine.build(rules).combinations)
-        # {R1,R2} intersection == {NZ,UK}; both singletons canonicalize equal, so
-        # the maximal pp=6 combination is present and carries the canonical set.
+        # R1 and R2 have equal (canonicalized) sets, are compatible (non-empty
+        # intersection), so {R1,R2} (pp=6) dominates both singletons {2},{3}.
+        assert set(rows["__prime_product"]) == {6}
         by_pp = dict(zip(rows["__prime_product"], rows["co_region"]))
-        assert by_pp[6] == ["NZ", "UK"]
+        assert by_pp[6] == ["NZ", "UK"]  # canonical (sorted-unique)
 
 
 class TestSetExclusionBuild:
@@ -870,7 +946,7 @@ class TestSetBuildValidation:
 - [ ] **Step 2: Run to verify it fails**
 
 Run: `hatch run test:test-target tests/accumulator/test_engine.py::TestSetMembershipBuildFrontier tests/accumulator/test_engine.py::TestSetExclusionBuild tests/accumulator/test_engine.py::TestSetBuildValidation -v`
-Expected: FAIL — the accumulator does not yet normalize set columns; the compiler set branches exist (Task 4) but `co_region` starts null for wildcards, so `test_three_wildcard_rules_collapse_to_single_maximal` returns `{2,3,5,6,10,15,30}`, and `TestSetBuildValidation` does not raise.
+Expected: FAIL — the accumulator does not yet normalize set columns. With Task 4's compiler but no normalization, wildcard `co_region` is null, so `set_wildcard_predicate` (a `list.contains` on a null list) yields **null**, compatibility becomes null (not true), and `_expand_level`'s filter drops those expansions — `test_three_wildcard_rules_collapse_to_single_maximal` returns **too few** combinations (e.g. only singletons `{2,3,5}`), which is `!= {30}`, so it fails. `test_two_membership_rules_coalesce_to_intersection` (concrete, non-null lists) may already pass — it is an integration check, not a fail-first unit. `TestSetBuildValidation` fails because no validation runs yet. (The point of the anchor test is the post-normalization assertion `== {30}` in Step 7, not the exact pre-normalization value.)
 
 - [ ] **Step 3: Add the normalization stage import**
 
@@ -878,6 +954,7 @@ In `src/mountainash_rules/engines/accumulator/engine.py`, add near the other `mo
 ```python
 from mountainash_rules.core.set_wildcard import (
     validate_set_columns,
+    validate_set_no_null_elements,
     normalize_set_expr,
     set_wildcard_predicate,
 )
@@ -901,7 +978,8 @@ Add this method to `AccumulatorEngine` (near `_create_anchor`):
         if not set_dims:
             return rules_pl
         rel = relation(rules_pl)
-        validate_set_columns(rel, set_dims)
+        validate_set_columns(rel, set_dims)          # reservation (portable)
+        validate_set_no_null_elements(rel, set_dims)  # element-nulls (polars build only)
         rel = rel.with_columns(*[
             normalize_set_expr(dim, ma.col(dim.resolved_rule_field)).alias(dim.resolved_rule_field)
             for dim in set_dims
@@ -963,7 +1041,7 @@ Add the assertion method:
                     f"normalization did not reach every build path"
                 )
 ```
-> `checked[f"__null_{c}"]` indexes a collected native frame (polars/pandas); `sum(...)` over its values is backend-pure (builtin). This is a cheap invariant guard, not hot-path code.
+> `checked[f"__null_{c}"]` indexes a collected native frame (polars/pandas); `sum(...)` over its values is backend-pure (builtin). This is a cheap invariant guard, not hot-path code. **Empty-build path:** `_normalize_set_columns` runs *before* the `n_rules == 0` early return (Step 4), so an empty build already carries normalized (0-row) set columns; the assertion is vacuously satisfied there and need not run on that path. Multi-level builds reach this assertion on `all_combos` (all levels concatenated), covering the "multi-level" case; partition-filtered builds reach it too (the filter happens before `to_polars`, upstream of normalization).
 
 - [ ] **Step 7: Run the build tests to verify they pass**
 
@@ -986,7 +1064,7 @@ git commit -m "feat(accumulator): set-column normalization stage; frontier untou
 
 ---
 
-### Task 6: Apply round-trip, float typing, idempotence, docs
+### Task 6: Apply round-trip, float typing, docs (idempotence covered in Task 2)
 
 **Files:**
 - Test: `tests/accumulator/test_apply.py` (apply round-trip)
@@ -997,9 +1075,9 @@ git commit -m "feat(accumulator): set-column normalization stage; frontier untou
 - Consumes: everything from Tasks 1–5.
 - Produces: end-to-end verification + docs. Nothing downstream.
 
-- [ ] **Step 1: Write the failing apply round-trip test**
+- [ ] **Step 1: Write the apply round-trip verification test**
 
-Add to `tests/accumulator/test_apply.py` (uses `AccumulatorEngine`, `Dimension`, `DimensionsMetadata`, `_rows`, `pl` already present; add `from mountainash_rules.core.constants import DataType` if absent):
+This is an integration **verification** test (expected to PASS on first run — Tasks 2–5 already implement build+apply), not a fail-first unit. Add to `tests/accumulator/test_apply.py` (uses `AccumulatorEngine`, `Dimension`, `DimensionsMetadata`, `_rows`, `pl` already present; add `from mountainash_rules.core.constants import DataType` if absent):
 ```python
 class TestSetMembershipApply:
     def _metadata(self):
@@ -1072,11 +1150,11 @@ In `CLAUDE.md`, the Match Strategies table row for `set_membership` / `set_exclu
 ```
 | `set_membership` / `set_exclusion` | list column | Polars-native fallback |
 ```
-Replace with:
+Replace with (note: the filter path is backend-agnostic `t_is_in`/`t_is_not_in`, polars/ibis, with narwhals under `mountainash#89` — NOT "polars-native fallback"):
 ```
-| `set_membership` / `set_exclusion` | list column | Polars-native fallback; accumulator-coalesceable (membership → list intersection, exclusion → list union). Wildcard = in-band `[unknown_sentinel_for(dtype)]` (never null; bool unsupported); see `null-is-not-a-portable-sentinel` principle. |
+| `set_membership` / `set_exclusion` | list column | Filter via `t_is_in`/`t_is_not_in` (polars/ibis; narwhals list ops under `mountainash#89`). Accumulator-coalesceable (membership → list intersection, exclusion → list union). Wildcard = in-band `[unknown_sentinel_for(dtype)]` (never null; bool unsupported); see `null-is-not-a-portable-sentinel` principle. |
 ```
-And under the "Ternary match logic" / sentinels area, add one line noting that set-dimension wildcards use the in-band `[sentinel]` list (not null), normalized at ingestion in both engines.
+And under the "Ternary match logic" / sentinels area, add one line noting that set-dimension wildcards use the in-band `[sentinel]` list (not null), normalized at ingestion (reservation check in both engines; element-null check in the accumulator build).
 
 - [ ] **Step 6: Full quick suite + purity**
 
