@@ -88,13 +88,14 @@ def validate_set_columns(rules_rel: t.Any, set_dims: list[Dimension]) -> None:
 
     Portable — uses only ``list.contains`` + ``list.len`` (Ibis/Narwhals-safe), so
     it runs in BOTH engines on any backend. A whole-list null is valid (the
-    wildcard). ``rules_rel`` is a ``mountainash`` relation; ``collect`` returns a
-    native frame that supports builtin ``len`` (backend-pure — no native import).
+    wildcard). ``rules_rel`` is a ``mountainash`` relation; row existence is tested
+    with the relation's portable ``count_rows`` (backend-pure — no native import;
+    builtin ``len`` on a collected frame is NOT portable — Ibis rejects it).
     """
     for dim in set_dims:
         field = dim.resolved_rule_field
-        embedded = rules_rel.filter(_embedded_sentinel_predicate(dim, field)).collect()
-        if len(embedded) > 0:
+        n_embedded = rules_rel.filter(_embedded_sentinel_predicate(dim, field)).count_rows()
+        if n_embedded > 0:
             raise ValueError(
                 f"Dimension '{dim.dimension_name}': a concrete rule list embeds the "
                 f"reserved wildcard sentinel {unknown_sentinel_for(dim.data_type)!r}. "
@@ -112,8 +113,8 @@ def validate_set_no_null_elements(rules_rel: t.Any, set_dims: list[Dimension]) -
     """
     for dim in set_dims:
         field = dim.resolved_rule_field
-        null_elem = rules_rel.filter(_null_element_predicate(field)).collect()
-        if len(null_elem) > 0:
+        n_null_elem = rules_rel.filter(_null_element_predicate(field)).count_rows()
+        if n_null_elem > 0:
             raise ValueError(
                 f"Dimension '{dim.dimension_name}': a rule list contains a null "
                 f"element. Element-level nulls are not allowed; use a whole-list "

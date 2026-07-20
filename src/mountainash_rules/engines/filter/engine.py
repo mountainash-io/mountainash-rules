@@ -18,6 +18,7 @@ from mountainash_rules.core.constants import (
     CTX_PREFIX,
     NOT_SET,
     HitPolicy,
+    MatchStrategy,
     not_set_sentinel_for,
 )
 from mountainash_rules.core.context import extract_context_values
@@ -33,6 +34,7 @@ from mountainash_rules.core.hit_policy import (
     selection_info_from_metadata,
 )
 from mountainash_rules.core.result import ExplainResult, RuleResult
+from mountainash_rules.core.set_wildcard import validate_set_columns
 
 
 class ExpressionRulesEngine:
@@ -72,6 +74,24 @@ class ExpressionRulesEngine:
             self._metadata = None
 
         self._rules = rules
+        self._set_dims_validated = False
+
+    def _validate_set_rules_once(self) -> None:
+        """Reject set rule lists that embed the reserved sentinel — once, portably.
+
+        Called from BOTH scoring entry points (single and batch) because
+        evaluate_batch does not route through _scored_relation. metadata is None
+        when the engine was built from dimension_expressions (no Dimension objects
+        to inspect), so skip that case.
+        """
+        if self._metadata is None or self._set_dims_validated:
+            return
+        set_dims = [
+            d for d in self._metadata.dimensions
+            if d.match_strategy in (MatchStrategy.SET_MEMBERSHIP, MatchStrategy.SET_EXCLUSION)
+        ]
+        validate_set_columns(relation(self._rules), set_dims)
+        self._set_dims_validated = True
 
     def evaluate(
         self,
@@ -310,6 +330,7 @@ class ExpressionRulesEngine:
         min_specificity: int | None,
         include_observability: bool,
     ) -> t.Any:
+        self._validate_set_rules_once()
         rules_rel = relation(self._rules)
         self._check_reserved(rules_rel, "Rules")
         rules_rel = rules_rel.with_row_index(name="__rule_index")
@@ -406,6 +427,7 @@ class ExpressionRulesEngine:
 
     def _scored_relation(self, active_dims: list[str], context_values: dict[str, t.Any]) -> t.Any:
         """Rules frame scored against a context: ternaries + __survived + __specificity, unfiltered."""
+        self._validate_set_rules_once()
         # Steps 0-3: reserved-column guard + row index, bind ctx literals,
         # ternary columns, survival + specificity. Steps 4-7 (filter, rank,
         # assertions, cardinality, drop) stay in the callers.
