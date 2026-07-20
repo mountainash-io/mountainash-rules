@@ -15,7 +15,7 @@ from pydantic import BaseModel
 
 from mountainash_rules.engines.accumulator.compiler import AccumulatorCompiler
 from mountainash_rules.engines.accumulator.result import AccumulatorResult
-from mountainash_rules.engines.accumulator.aggregate import Aggregate
+from mountainash_rules.engines.accumulator.aggregate import Aggregate, AggregateOp
 from mountainash_rules.core.constants import (
     DataType,
     DimensionRole,
@@ -332,12 +332,20 @@ class AccumulatorEngine:
         agg_updates = []
         for agg in self._aggregates:
             agg_col = f"__agg_{agg.column_name}"
-            if agg.operation == "sum":
-                agg_updates.append(
-                    ma.col(agg_col).add(ma.col(f"{agg.column_name}_rhs")).alias(agg_col)
-                )
-            else:
-                raise ValueError(f"Unsupported aggregate operation: {agg.operation}")
+            acc = ma.col(agg_col)
+            rhs = ma.col(f"{agg.column_name}_rhs")
+            match agg.operation:
+                case AggregateOp.SUM:
+                    folded = acc.add(rhs)
+                case AggregateOp.MIN:
+                    folded = ma.least(acc, rhs)
+                case AggregateOp.MAX:
+                    folded = ma.greatest(acc, rhs)
+                case AggregateOp.PRODUCT:
+                    folded = acc.mul(rhs)
+                case _:  # pragma: no cover — validation blocks this at construction
+                    raise ValueError(f"Unsupported aggregate operation: {agg.operation}")
+            agg_updates.append(folded.alias(agg_col))
 
         all_updates = coalesce_all + na_flag_all + tracking + agg_updates
         updated = filtered.with_columns(*all_updates)

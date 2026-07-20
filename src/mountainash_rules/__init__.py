@@ -3,7 +3,7 @@
 from mountainash_rules.__version__ import __version__
 from mountainash_rules.engines.accumulator.engine import AccumulatorEngine
 from mountainash_rules.engines.accumulator.result import AccumulatorResult
-from mountainash_rules.engines.accumulator.aggregate import Aggregate
+from mountainash_rules.engines.accumulator.aggregate import Aggregate, AggregateOp
 from mountainash_rules.core.compiler import DimensionCompiler
 from mountainash_rules.core.constants import (
     NOT_SET,
@@ -38,6 +38,7 @@ __all__ = (
     "AccumulatorEngine",
     "AccumulatorResult",
     "Aggregate",
+    "AggregateOp",
     "AmbiguousPartitionError",
     "BatchRuleResult",
     "DataType",
