@@ -7,6 +7,7 @@ import mountainash.expressions as ma
 
 from mountainash_rules.engines.accumulator.compiler import AccumulatorCompiler
 from mountainash_rules.core.constants import UNKNOWN, UNKNOWN_NUMERIC, MatchStrategy
+from mountainash_rules.core.constants import DataType
 from mountainash_rules.core.dimension import Dimension
 
 
@@ -279,3 +280,98 @@ class TestLessThanCoalesce:
         df = pl.DataFrame({"co_cap": [100], "cap_rhs": [UNKNOWN_NUMERIC]})
         result = df.with_columns(exprs[0].compile(df, booleanizer=None))
         assert result["co_cap"].to_list() == [100]
+
+
+class TestSetMembershipCompatible:
+    def _dim(self):
+        return Dimension(dimension_name="region", match_strategy=MatchStrategy.SET_MEMBERSHIP, data_type=DataType.STR)
+
+    def test_non_empty_intersection_compatible(self, compiler):
+        expr = compiler.compile_compatible(self._dim())
+        df = pl.DataFrame({
+            "co_region": pl.Series("co_region", [["AU", "NZ"], ["AU", "NZ"]], dtype=pl.List(pl.Utf8)),
+            "region_rhs": pl.Series("region_rhs", [["NZ", "UK"], ["US", "CA"]], dtype=pl.List(pl.Utf8)),
+        })
+        out = df.with_columns(expr.alias("c").compile(df, booleanizer=None))
+        assert out["c"].to_list() == [True, False]
+
+    def test_wildcard_either_side_compatible(self, compiler):
+        expr = compiler.compile_compatible(self._dim())
+        df = pl.DataFrame({
+            "co_region": pl.Series("co_region", [["<NA>"], ["AU"]], dtype=pl.List(pl.Utf8)),
+            "region_rhs": pl.Series("region_rhs", [["US"], ["<NA>"]], dtype=pl.List(pl.Utf8)),
+        })
+        out = df.with_columns(expr.alias("c").compile(df, booleanizer=None))
+        assert out["c"].to_list() == [True, True]
+
+
+class TestSetMembershipCoalesce:
+    def _dim(self):
+        return Dimension(dimension_name="region", match_strategy=MatchStrategy.SET_MEMBERSHIP, data_type=DataType.STR)
+
+    def test_intersection_canonicalized(self, compiler):
+        exprs = compiler.compile_coalesce(self._dim())
+        assert len(exprs) == 1
+        df = pl.DataFrame({
+            "co_region": pl.Series("co_region", [["AU", "NZ", "UK"]], dtype=pl.List(pl.Utf8)),
+            "region_rhs": pl.Series("region_rhs", [["UK", "NZ", "US"]], dtype=pl.List(pl.Utf8)),
+        })
+        out = df.with_columns(exprs[0].compile(df, booleanizer=None))
+        assert out["co_region"].to_list() == [["NZ", "UK"]]  # sorted-unique
+
+    def test_wildcard_passthrough(self, compiler):
+        exprs = compiler.compile_coalesce(self._dim())
+        df = pl.DataFrame({
+            "co_region": pl.Series("co_region", [["<NA>"], ["AU"]], dtype=pl.List(pl.Utf8)),
+            "region_rhs": pl.Series("region_rhs", [["AU"], ["<NA>"]], dtype=pl.List(pl.Utf8)),
+        })
+        out = df.with_columns(exprs[0].compile(df, booleanizer=None))
+        assert out["co_region"].to_list() == [["AU"], ["AU"]]
+
+    def test_both_wildcard_stays_sentinel(self, compiler):
+        exprs = compiler.compile_coalesce(self._dim())
+        df = pl.DataFrame({
+            "co_region": pl.Series("co_region", [["<NA>"]], dtype=pl.List(pl.Utf8)),
+            "region_rhs": pl.Series("region_rhs", [["<NA>"]], dtype=pl.List(pl.Utf8)),
+        })
+        out = df.with_columns(exprs[0].compile(df, booleanizer=None))
+        assert out["co_region"].to_list() == [["<NA>"]]
+        assert out["co_region"].dtype == pl.List(pl.Utf8)
+
+
+class TestSetExclusionCoalesce:
+    def _dim(self):
+        return Dimension(dimension_name="region", match_strategy=MatchStrategy.SET_EXCLUSION, data_type=DataType.STR)
+
+    def test_union_canonicalized(self, compiler):
+        exprs = compiler.compile_coalesce(self._dim())
+        df = pl.DataFrame({
+            "co_region": pl.Series("co_region", [["AU", "NZ"]], dtype=pl.List(pl.Utf8)),
+            "region_rhs": pl.Series("region_rhs", [["NZ", "US"]], dtype=pl.List(pl.Utf8)),
+        })
+        out = df.with_columns(exprs[0].compile(df, booleanizer=None))
+        assert out["co_region"].to_list() == [["AU", "NZ", "US"]]
+
+    def test_always_compatible(self, compiler):
+        expr = compiler.compile_compatible(self._dim())
+        df = pl.DataFrame({
+            "co_region": pl.Series("co_region", [["AU"], ["<NA>"]], dtype=pl.List(pl.Utf8)),
+            "region_rhs": pl.Series("region_rhs", [["NZ"], ["US"]], dtype=pl.List(pl.Utf8)),
+        })
+        out = df.with_columns(expr.alias("c").compile(df, booleanizer=None))
+        assert out["c"].to_list() == [True, True]
+
+
+class TestSetNaFlag:
+    def _dim(self, strategy):
+        return Dimension(dimension_name="region", match_strategy=strategy, data_type=DataType.STR)
+
+    def test_na_flag_from_final_coalesced_value(self, compiler):
+        # wildcard+wildcard -> 1 ; wildcard+concrete -> 0 ; concrete+concrete -> 0
+        expr = compiler.compile_coalesce_na_flag(self._dim(MatchStrategy.SET_MEMBERSHIP))
+        df = pl.DataFrame({
+            "co_region": pl.Series("co_region", [["<NA>"], ["<NA>"], ["AU"]], dtype=pl.List(pl.Utf8)),
+            "region_rhs": pl.Series("region_rhs", [["<NA>"], ["AU"], ["NZ"]], dtype=pl.List(pl.Utf8)),
+        })
+        out = df.with_columns(expr.compile(df, booleanizer=None))
+        assert out["co_region_na"].to_list() == [1, 0, 0]
