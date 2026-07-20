@@ -24,6 +24,8 @@ Wildcards are in-band typed sentinels (see `constants.sentinels_for(data_type)`)
 | date | `date(1,1,1)` | `date(1,1,2)` |
 | datetime | `datetime(1,1,1)` | `datetime(1,1,2)` |
 
+Set-dimension wildcards use the in-band `[sentinel]` list (not null), normalized at ingestion (reservation check in both engines; element-null check in the accumulator build).
+
 ### Filter engine pipeline (`engine.py`)
 
 1. **Compile** — `DimensionCompiler` (`compiler.py`) turns each `Dimension` into a backend-agnostic ternary expression template at construction.
@@ -67,7 +69,7 @@ No module under `src/mountainash_rules/` may import polars/ibis/narwhals directl
 | `prefix` / `suffix` / `contains` | string | |
 | `regex` | per-row pattern column | Polars-native fallback (`# allow:` tagged) |
 | `context_regex` | literal `regex_pattern` on the Dimension | global context validator |
-| `set_membership` / `set_exclusion` | list column | Polars-native fallback |
+| `set_membership` / `set_exclusion` | list column | Filter via `t_is_in`/`t_is_not_in` (polars/ibis; narwhals list ops under `mountainash#89`). Accumulator-coalesceable (membership → list intersection, exclusion → list union). Wildcard = in-band `[unknown_sentinel_for(dtype)]` (never null; bool unsupported); see `null-is-not-a-portable-sentinel` principle. |
 
 **Adding a strategy:** add enum value in `core/constants.py`, validation in `core/dimension.py`, `_compile_<strategy>` in `core/compiler.py`, test class in `tests/core/test_compiler.py`.
 

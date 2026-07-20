@@ -724,3 +724,93 @@ class TestExactKeyCompilation:
         result = df.with_columns(expr.name.alias("__t_flag").compile(df, booleanizer=None))
         # rule null -> 0 regardless of context; context null vs specific -> -1
         assert result["__t_flag"].to_list() == [1, 0, -1, 0]
+
+
+class TestSetMembershipTernary:
+    def _compile(self, dim):
+        from mountainash_rules.core.compiler import DimensionCompiler
+        return DimensionCompiler().compile_dimension(dim)
+
+    def _dim(self):
+        from mountainash_rules.core.constants import DataType
+        return Dimension(dimension_name="region", match_strategy=MatchStrategy.SET_MEMBERSHIP, data_type=DataType.STR)
+
+    def test_wildcard_rule_is_ternary_zero(self):
+        from mountainash_rules.core.constants import CTX_PREFIX
+        expr = self._compile(self._dim())
+        df = pl.DataFrame({
+            "region": pl.Series("region", [["<NA>"]], dtype=pl.List(pl.Utf8)),
+            CTX_PREFIX + "region": ["AU"],
+        })
+        out = df.with_columns(expr.alias("t").compile(df, booleanizer=None))
+        assert out["t"].to_list() == [0]
+
+    def test_context_in_set_is_one(self):
+        from mountainash_rules.core.constants import CTX_PREFIX
+        expr = self._compile(self._dim())
+        df = pl.DataFrame({
+            "region": pl.Series("region", [["AU", "NZ"]], dtype=pl.List(pl.Utf8)),
+            CTX_PREFIX + "region": ["AU"],
+        })
+        out = df.with_columns(expr.alias("t").compile(df, booleanizer=None))
+        assert out["t"].to_list() == [1]
+
+    def test_context_out_of_set_is_minus_one(self):
+        from mountainash_rules.core.constants import CTX_PREFIX
+        expr = self._compile(self._dim())
+        df = pl.DataFrame({
+            "region": pl.Series("region", [["AU", "NZ"]], dtype=pl.List(pl.Utf8)),
+            CTX_PREFIX + "region": ["US"],
+        })
+        out = df.with_columns(expr.alias("t").compile(df, booleanizer=None))
+        assert out["t"].to_list() == [-1]
+
+    def test_null_rule_list_normalizes_to_wildcard(self):
+        from mountainash_rules.core.constants import CTX_PREFIX
+        expr = self._compile(self._dim())
+        df = pl.DataFrame({
+            "region": pl.Series("region", [None], dtype=pl.List(pl.Utf8)),
+            CTX_PREFIX + "region": ["AU"],
+        })
+        out = df.with_columns(expr.alias("t").compile(df, booleanizer=None))
+        assert out["t"].to_list() == [0]
+
+
+class TestSetExclusionTernary:
+    def _compile(self, dim):
+        from mountainash_rules.core.compiler import DimensionCompiler
+        return DimensionCompiler().compile_dimension(dim)
+
+    def _dim(self):
+        from mountainash_rules.core.constants import DataType
+        return Dimension(dimension_name="region", match_strategy=MatchStrategy.SET_EXCLUSION, data_type=DataType.STR)
+
+    def test_wildcard_rule_is_zero(self):
+        from mountainash_rules.core.constants import CTX_PREFIX
+        expr = self._compile(self._dim())
+        df = pl.DataFrame({
+            "region": pl.Series("region", [["<NA>"]], dtype=pl.List(pl.Utf8)),
+            CTX_PREFIX + "region": ["AU"],
+        })
+        out = df.with_columns(expr.alias("t").compile(df, booleanizer=None))
+        assert out["t"].to_list() == [0]
+
+    def test_context_in_excluded_set_is_minus_one(self):
+        from mountainash_rules.core.constants import CTX_PREFIX
+        expr = self._compile(self._dim())
+        df = pl.DataFrame({
+            "region": pl.Series("region", [["AU"]], dtype=pl.List(pl.Utf8)),
+            CTX_PREFIX + "region": ["AU"],
+        })
+        out = df.with_columns(expr.alias("t").compile(df, booleanizer=None))
+        assert out["t"].to_list() == [-1]
+
+    def test_context_not_in_excluded_set_is_one(self):
+        from mountainash_rules.core.constants import CTX_PREFIX
+        expr = self._compile(self._dim())
+        df = pl.DataFrame({
+            "region": pl.Series("region", [["AU"]], dtype=pl.List(pl.Utf8)),
+            CTX_PREFIX + "region": ["NZ"],
+        })
+        out = df.with_columns(expr.alias("t").compile(df, booleanizer=None))
+        assert out["t"].to_list() == [1]

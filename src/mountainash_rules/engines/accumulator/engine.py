@@ -25,6 +25,12 @@ from mountainash_rules.core.constants import (
     unknown_sentinel_for,
 )
 from mountainash_rules.core.dimension import Dimension, DimensionsMetadata
+from mountainash_rules.core.set_wildcard import (
+    validate_set_columns,
+    validate_set_no_null_elements,
+    normalize_set_expr,
+    set_wildcard_predicate,
+)
 from mountainash_rules.engines.filter.engine import ExpressionRulesEngine
 from mountainash_rules.engines.accumulator.lattice import Lattice
 from mountainash_rules.engines.accumulator.primes import (
@@ -120,6 +126,7 @@ class AccumulatorEngine:
 
         # Materialize to polars for prime injection
         rules_pl = rel.to_polars()
+        rules_pl = self._normalize_set_columns(rules_pl)
         n_rules = len(rules_pl)
 
         if n_rules == 0:
@@ -168,6 +175,7 @@ class AccumulatorEngine:
         all_combos = concat(all_levels)
 
         # Step 5: Frontier filter — remove dominated combinations
+        self._assert_set_columns_non_null(all_combos)
         result = self._frontier_filter(all_combos)
 
         return Lattice(
@@ -217,6 +225,45 @@ class AccumulatorEngine:
         """All tracking column names."""
         return ["__prime", "__prime_product", "__level"] + self._agg_fields()
 
+    def _set_dims(self) -> list[Dimension]:
+        return [
+            d for d in self._constraint_dims
+            if d.match_strategy in (MatchStrategy.SET_MEMBERSHIP, MatchStrategy.SET_EXCLUSION)
+        ]
+
+    def _normalize_set_columns(self, rules_pl: t.Any) -> t.Any:
+        """Validate + normalize every set-dimension rule column to the non-null,
+        canonical in-band-sentinel form. Runs for EVERY build path before the
+        empty-frame branch and the anchor, so set co_ columns are never null."""
+        set_dims = self._set_dims()
+        if not set_dims:
+            return rules_pl
+        rel = relation(rules_pl)
+        validate_set_columns(rel, set_dims)          # reservation (portable)
+        validate_set_no_null_elements(rel, set_dims)  # element-nulls (polars build only)
+        rel = rel.with_columns(*[
+            normalize_set_expr(dim, ma.col(dim.resolved_rule_field)).alias(dim.resolved_rule_field)
+            for dim in set_dims
+        ])
+        return rel.to_polars()
+
+    def _assert_set_columns_non_null(self, all_combos: t.Any) -> None:
+        """Safety net for the frontier 'no change' invariant: every set co_ column
+        must be non-null before the dominance self-join (null keys silently defeat
+        pruning). Runs only when set dims are present."""
+        set_dims = self._set_dims()
+        if not set_dims:
+            return
+        # all_combos is already a mountainash Relation (concat of levels); do not
+        # re-wrap it. count_rows() is the portable row count (backend-pure).
+        cols = [f"co_{d.resolved_rule_field}" for d in set_dims]
+        for c in cols:
+            if all_combos.filter(ma.col(c).is_null()).count_rows() > 0:
+                raise AssertionError(
+                    f"set co_ column {c!r} contains null before frontier filter — "
+                    f"normalization did not reach every build path"
+                )
+
     def _create_anchor(self, rules_pl: pl.DataFrame) -> t.Any:
         """Create level-0 singleton combinations from rules."""
         # Start with all original columns plus __prime
@@ -249,12 +296,19 @@ class AccumulatorEngine:
                 )
             else:
                 field = dim.resolved_rule_field
-                sentinel = unknown_sentinel_for(dim.data_type)
-                na_exprs.append(
-                    ma.col(field).eq(ma.lit(sentinel))
-                    .cast(int)
-                    .alias(f"co_{field}_na")
-                )
+                if dim.match_strategy in (MatchStrategy.SET_MEMBERSHIP, MatchStrategy.SET_EXCLUSION):
+                    na_exprs.append(
+                        set_wildcard_predicate(dim, ma.col(field))
+                        .cast(int)
+                        .alias(f"co_{field}_na")
+                    )
+                else:
+                    sentinel = unknown_sentinel_for(dim.data_type)
+                    na_exprs.append(
+                        ma.col(field).eq(ma.lit(sentinel))
+                        .cast(int)
+                        .alias(f"co_{field}_na")
+                    )
 
         # Add tracking columns
         tracking_exprs = [

@@ -210,3 +210,37 @@ class TestCustomExpressions:
         rules = build_backend_df(backend_name, {"rule_name": ["r1"]}, table_name="neither")
         with pytest.raises(ValueError, match="Must provide"):
             ExpressionRulesEngine(rules=rules)
+
+
+class TestFilterEngineRejectsInvalidSetRules:
+    def _meta(self):
+        from mountainash_rules import Dimension, DimensionsMetadata
+        from mountainash_rules.core.constants import MatchStrategy, DataType
+        return DimensionsMetadata(dimensions=[
+            Dimension(dimension_name="region", match_strategy=MatchStrategy.SET_MEMBERSHIP, data_type=DataType.STR),
+        ])
+
+    def _rules(self):
+        import polars as pl
+        return pl.DataFrame({
+            "rule_name": ["R1"],
+            "region": pl.Series("region", [["AU", "<NA>"]], dtype=pl.List(pl.Utf8)),
+        })
+
+    def test_embedded_sentinel_rejected_on_evaluate(self):
+        import pytest
+        from mountainash_rules import ExpressionRulesEngine
+        engine = ExpressionRulesEngine(rules=self._rules(), dimension_metadata=self._meta())
+        with pytest.raises(ValueError, match="sentinel"):
+            engine.evaluate({"region": "AU"})
+
+    def test_embedded_sentinel_rejected_on_evaluate_batch(self):
+        # evaluate_batch does NOT route through _scored_relation — this covers the
+        # batch path explicitly (a batch-first call must still validate).
+        import polars as pl
+        import pytest
+        from mountainash_rules import ExpressionRulesEngine
+        engine = ExpressionRulesEngine(rules=self._rules(), dimension_metadata=self._meta())
+        contexts = pl.DataFrame({"region": ["AU"]})
+        with pytest.raises(ValueError, match="sentinel"):
+            engine.evaluate_batch(contexts)

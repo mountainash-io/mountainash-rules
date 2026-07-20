@@ -15,6 +15,7 @@ from mountainash_rules.core.constants import (
     unknown_sentinel_for,
 )
 from mountainash_rules.core.dimension import Dimension, DimensionsMetadata
+from mountainash_rules.core.set_wildcard import normalize_set_expr, set_wildcard_predicate
 
 
 class DimensionCompiler:
@@ -208,15 +209,15 @@ class DimensionCompiler:
         return ma.when(match).then(1).otherwise(-1)
 
     def _compile_set_membership(self, dim: Dimension) -> BaseExpressionAPI:
-        """SET_MEMBERSHIP: context value is in the rule's list column."""
-        sentinels = sentinels_for(dim.data_type)
-        rule_col = ma.col(dim.resolved_rule_field)
-        ctx_col = ma.t_col(CTX_PREFIX + dim.dimension_name, unknown=sentinels)
-        return ctx_col.t_is_in(rule_col)
+        """SET_MEMBERSHIP: context value in the rule list; wildcard rule -> ternary 0."""
+        rule_col = normalize_set_expr(dim, ma.col(dim.resolved_rule_field))
+        ctx_col = ma.t_col(CTX_PREFIX + dim.dimension_name, unknown=sentinels_for(dim.data_type))
+        is_wild = set_wildcard_predicate(dim, rule_col)
+        return ma.when(is_wild).then(0).otherwise(ctx_col.t_is_in(rule_col))
 
     def _compile_set_exclusion(self, dim: Dimension) -> BaseExpressionAPI:
-        """SET_EXCLUSION: context value is NOT in the rule's list column."""
-        sentinels = sentinels_for(dim.data_type)
-        rule_col = ma.col(dim.resolved_rule_field)
-        ctx_col = ma.t_col(CTX_PREFIX + dim.dimension_name, unknown=sentinels)
-        return ctx_col.t_is_not_in(rule_col)
+        """SET_EXCLUSION: context value NOT in the rule list; wildcard rule -> ternary 0."""
+        rule_col = normalize_set_expr(dim, ma.col(dim.resolved_rule_field))
+        ctx_col = ma.t_col(CTX_PREFIX + dim.dimension_name, unknown=sentinels_for(dim.data_type))
+        is_wild = set_wildcard_predicate(dim, rule_col)
+        return ma.when(is_wild).then(0).otherwise(ctx_col.t_is_not_in(rule_col))

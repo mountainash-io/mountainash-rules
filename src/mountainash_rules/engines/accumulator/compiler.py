@@ -10,6 +10,11 @@ from mountainash_rules.core.constants import (
     unknown_sentinel_for,
 )
 from mountainash_rules.core.dimension import Dimension
+from mountainash_rules.core.set_wildcard import (
+    set_wildcard_predicate,
+    canonicalize_set_expr,
+    sentinel_list_expr,
+)
 
 
 class AccumulatorCompiler:
@@ -34,6 +39,10 @@ class AccumulatorCompiler:
                 return self._compatible_range(dim)
             case MatchStrategy.GREATER_THAN | MatchStrategy.LESS_THAN:
                 return self._compatible_threshold(dim)
+            case MatchStrategy.SET_MEMBERSHIP:
+                return self._compatible_set_membership(dim)
+            case MatchStrategy.SET_EXCLUSION:
+                return ma.lit(True)
             case _:
                 raise ValueError(
                     f"Strategy {dim.match_strategy.name} not supported by accumulator"
@@ -50,13 +59,17 @@ class AccumulatorCompiler:
                 return self._coalesce_threshold(dim, ma.greatest)
             case MatchStrategy.LESS_THAN:
                 return self._coalesce_threshold(dim, ma.least)
+            case MatchStrategy.SET_MEMBERSHIP:
+                return self._coalesce_set(dim, "intersection")
+            case MatchStrategy.SET_EXCLUSION:
+                return self._coalesce_set(dim, "union")
             case _:
                 raise ValueError(
                     f"Strategy {dim.match_strategy.name} not supported by accumulator"
                 )
 
     def compile_coalesce_na_flag(self, dim: Dimension) -> BaseExpressionAPI:
-        """Expression for the coalesced NA flag (1 = both sides don't-care)."""
+        """Expression for the coalesced NA flag (1 = combination leaves dim unconstrained)."""
         if dim.match_strategy == MatchStrategy.RANGE:
             co_min_s, co_max_s, rhs_min_s, rhs_max_s = self._range_sentinel_checks(dim)
             all_sentinel = (
@@ -65,6 +78,10 @@ class AccumulatorCompiler:
                 .__and__(rhs_max_s)
             )
             return all_sentinel.cast(int).alias(f"co_{dim.dimension_name}_na")
+        if dim.match_strategy in (MatchStrategy.SET_MEMBERSHIP, MatchStrategy.SET_EXCLUSION):
+            co_w, rhs_w = self._set_wild_checks(dim)
+            field = dim.resolved_rule_field
+            return co_w.__and__(rhs_w).cast(int).alias(f"co_{field}_na")
         co_sentinel, rhs_sentinel = self._sentinel_checks(dim)
         field = dim.resolved_rule_field
         return co_sentinel.__and__(rhs_sentinel).cast(int).alias(f"co_{field}_na")
@@ -174,6 +191,40 @@ class AccumulatorCompiler:
             .otherwise(
               combine_fn(ma.col(f"co_{field}"), ma.col(f"{field}_rhs"))
             )
+            .alias(f"co_{field}")
+        )
+        return [new_val]
+
+    def _set_wild_checks(self, dim: Dimension) -> tuple[BaseExpressionAPI, BaseExpressionAPI]:
+        field = dim.resolved_rule_field
+        co_w = set_wildcard_predicate(dim, ma.col(f"co_{field}"))
+        rhs_w = set_wildcard_predicate(dim, ma.col(f"{field}_rhs"))
+        return co_w, rhs_w
+
+    def _compatible_set_membership(self, dim: Dimension) -> BaseExpressionAPI:
+        co_w, rhs_w = self._set_wild_checks(dim)
+        field = dim.resolved_rule_field
+        intersection_nonempty = (
+            ma.col(f"co_{field}")
+            .list.set_intersection(ma.col(f"{field}_rhs"))
+            .list.len()
+            .gt(ma.lit(0))
+        )
+        return co_w.__or__(rhs_w).__or__(intersection_nonempty)
+
+    def _coalesce_set(self, dim: Dimension, op: str) -> list[BaseExpressionAPI]:
+        co_w, rhs_w = self._set_wild_checks(dim)
+        field = dim.resolved_rule_field
+        co = ma.col(f"co_{field}")
+        rhs = ma.col(f"{field}_rhs")
+        combined = (
+            co.list.set_intersection(rhs) if op == "intersection" else co.list.set_union(rhs)
+        )
+        new_val = (
+            ma.when(co_w.__and__(rhs_w)).then(sentinel_list_expr(dim))
+            .when(co_w).then(rhs)
+            .when(rhs_w).then(co)
+            .otherwise(canonicalize_set_expr(combined))
             .alias(f"co_{field}")
         )
         return [new_val]
