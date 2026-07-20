@@ -215,6 +215,29 @@ class TestSetBuildValidation:
             engine.build(rules)
 
 
+class TestFloatSetDimensionBuild:
+    def _metadata(self):
+        return DimensionsMetadata(dimensions=[
+            Dimension(dimension_name="scores", match_strategy=MatchStrategy.SET_MEMBERSHIP, data_type=DataType.FLOAT),
+        ])
+
+    def test_float_set_wildcard_and_coalesce(self):
+        rules = pl.DataFrame({
+            "rule_name": ["R1", "R2"],
+            "scores": pl.Series("scores", [[1.5, 2.5, 3.5], None], dtype=pl.List(pl.Float64)),
+        })
+        engine = AccumulatorEngine(dimension_metadata=self._metadata())
+        lattice = engine.build(rules)
+        rows = _rows(lattice.combinations)
+        by_pp = dict(zip(rows["__prime_product"], rows["co_scores"]))
+        # R2 is a wildcard; {R1,R2} coalesces to R1's concrete set (wildcard passthrough).
+        assert by_pp[6] == [1.5, 2.5, 3.5]
+        # Column stays a Float list — verify no dtype collapse.
+        import polars as _pl
+        mat = relation(lattice.combinations).to_polars()
+        assert mat.schema["co_scores"] == _pl.List(_pl.Float64)
+
+
 class TestBuildWithPartitionKey:
     def test_partition_filters_rules(self):
         rules = pl.DataFrame({

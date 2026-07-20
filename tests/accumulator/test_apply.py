@@ -8,7 +8,7 @@ from mountainash.relations import relation
 from mountainash_rules.engines.accumulator.engine import AccumulatorEngine
 from mountainash_rules.engines.accumulator.result import AccumulatorResult
 from mountainash_rules.engines.accumulator.aggregate import Aggregate
-from mountainash_rules.core.constants import UNKNOWN, UNKNOWN_NUMERIC, NOT_SET_NUMERIC, MatchStrategy, DimensionRole
+from mountainash_rules.core.constants import DataType, UNKNOWN, UNKNOWN_NUMERIC, NOT_SET_NUMERIC, MatchStrategy, DimensionRole
 from mountainash_rules.core.dimension import Dimension, DimensionsMetadata
 
 
@@ -246,3 +246,30 @@ class TestApplyAutoAndNaN:
             lattices, {"region": "AU", "channel": "DIRECT", "product": "GOLD"}
         )
         assert result.count >= 1
+
+
+class TestSetMembershipApply:
+    def _metadata(self):
+        return DimensionsMetadata(dimensions=[
+            Dimension(dimension_name="region", match_strategy=MatchStrategy.SET_MEMBERSHIP, data_type=DataType.STR),
+        ])
+
+    def test_context_in_intersection_matches_combination(self):
+        rules = pl.DataFrame({
+            "rule_name": ["R1", "R2"],
+            "region": pl.Series("region", [["AU", "NZ", "UK"], ["NZ", "UK", "US"]], dtype=pl.List(pl.Utf8)),
+        })
+        engine = AccumulatorEngine(dimension_metadata=self._metadata())
+        lattice = engine.build(rules)
+        result = engine.apply(lattice, {"region": "NZ"})
+        assert 6 in set(_rows(result.provenance)["__prime_product"])
+
+    def test_wildcard_combination_matches_any_context_exact_count(self):
+        rules = pl.DataFrame({
+            "rule_name": ["R1"],
+            "region": pl.Series("region", [None], dtype=pl.List(pl.Utf8)),
+        })
+        engine = AccumulatorEngine(dimension_metadata=self._metadata())
+        lattice = engine.build(rules)
+        result = engine.apply(lattice, {"region": "ANYTHING"})
+        assert result.count == 1  # exactly the single wildcard combination
