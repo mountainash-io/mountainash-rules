@@ -44,7 +44,7 @@ no hit-policy interaction. Shares Steps 1–3 with `evaluate` via
 
 ### Accumulator engine
 
-- `build(rules)` → `Lattice`: level-wise expansion of compatible rule combinations, coalescing dimension values (`co_<field>` columns + `co_*_na` flags, `accumulator_compiler.py`), accumulating `Aggregate` numerics (`__agg_<name>`), identifying combinations by prime products (`primes.py`; overflow → `LatticeWidthExceededError` with remediation), and pruning dominated combinations (frontier filter). Each level is **materialised** via `relation(...).collect()` — do not re-chain lazily (exponential plan blow-up).
+- `build(rules)` → `Lattice`: level-wise expansion of compatible rule combinations, coalescing dimension values (`co_<field>` columns + `co_*_na` flags, `accumulator_compiler.py`), accumulating `Aggregate` numerics (`__agg_<name>`) with `sum`/`min`/`max`/`product` commutative reducers (`replace`/`coalesce` remain non-goals), identifying combinations by prime products (`primes.py`; overflow → `LatticeWidthExceededError` with remediation), and pruning dominated combinations (frontier filter). Each level is **materialised** via `relation(...).collect()` — do not re-chain lazily (exponential plan blow-up).
 - `apply(lattice, context)` → `AccumulatorResult`. Apply-phase filter engines are memoised per lattice (WeakKeyDictionary).
 - `DimensionRole.CONTEXT_KEY` dimensions partition the rule space; `build_all` + `index(lattices)` → `LatticeIndex` routes contexts (single or batch) to the right lattice using ternary + specificity semantics via an embedded meta-engine (`EXACT_KEY` dims): an all-wildcard key is the default/overflow partition, exact hits keep an O(1) dict fast path, ties raise `AmbiguousPartitionError` (a `KeyError` subclass, exported from the package root). `index(lattices, validate=True, max_witnesses=1_000_000)` runs an exhaustive witness-matrix ambiguity check at load time; empty/duplicate/NOT_SET-bearing keys are always rejected. See `docs/superpowers/specs/2026-07-19-ternary-partition-routing-design.md`.
 - `Lattice.is_composed` distinguishes build output (has `__prime_product`) from flat/imported lattices.
@@ -92,7 +92,7 @@ src/mountainash_rules/
 │       ├── compiler.py          # coalesce / compatible / NA-flag expressions
 │       ├── result.py            # AccumulatorResult (extends RuleResult)
 │       ├── lattice.py           # Lattice, LatticeIndex
-│       ├── aggregate.py         # Aggregate model (only "sum" implemented; engine raises on other operations)
+│       ├── aggregate.py         # Aggregate model + AggregateOp (sum/min/max/product commutative folds)
 │       └── primes.py            # prime table, checked_multiply, LatticeWidthExceededError
 ```
 
