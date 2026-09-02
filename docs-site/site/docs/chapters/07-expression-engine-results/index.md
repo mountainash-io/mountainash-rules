@@ -1,16 +1,17 @@
 ---
-title: "Chapter 6: Expression Engine Results"
-description: "The RuleResult class and its accessors for survivors, best match, explanations, and post-evaluation filtering."
+title: "Chapter 7: Expression Engine Results"
+description: "The RuleResult and ExplainResult classes, engine-level diagnostics, and safe post-evaluation filtering and hit-policy selection."
 generated_by: claude skill chapter-content-generator
-date: 2026-06-03
-version: 0.08
+refreshed_by: claude skill textbook-refresh
+date: 2026-09-02
+version: 0.09
 ---
 
-# Chapter 6: Expression Engine Results
+# Chapter 7: Expression Engine Results
 
 ## Summary
 
-This chapter covers the RuleResult class that wraps the output of the ExpressionRulesEngine. You will learn how to access survivors, retrieve the best match, inspect active dimensions, generate per-rule explanations, and apply post-evaluation filters including at_least, top_n, and min_specificity. The chapter also covers observability columns for debugging.
+This chapter covers the result objects returned by the `ExpressionRulesEngine`. You will learn how `RuleResult` exposes surviving rules, how `ExplainResult` preserves every scored rule for diagnostics, how engine-level explanation differs from per-rule explanation, and how to apply post-evaluation filters and hit-policy selection safely.
 
 ---
 
@@ -25,16 +26,23 @@ The RuleResult is also designed as a base class. The accumulator engine (Chapter
 <!-- concept:49 -->
 ## RuleResult Class
 
-The `RuleResult` class is constructed by the engine at the end of evaluation. It receives two inputs:
+The `RuleResult` class is constructed by the engine at the end of evaluation. It receives the materialized result DataFrame, the active dimension names, and optional selection metadata used by post-hoc policy selection:
 
-- **`dataframe`**: the materialized result DataFrame (all survivors, ranked)
+- **`dataframe`**: the materialized result DataFrame (survivors, ranked)
 - **`active_dimensions`**: the list of dimension names that were evaluated
+- **`selection_info`**: optional `SelectionInfo` metadata describing policy-related fields and whether evaluation truncated the result
 
 ```python
 class RuleResult:
-    def __init__(self, dataframe, active_dimensions: list[str]) -> None:
+    def __init__(
+        self,
+        dataframe,
+        active_dimensions: list[str],
+        selection_info: SelectionInfo | None = None,
+    ) -> None:
         self._df = dataframe
         self._active_dimensions = active_dimensions
+        self._selection_info = selection_info
 ```
 
 All accessors on RuleResult reach the underlying DataFrame through `mountainash.relations.relation()`, maintaining backend agnosticism. The only exception is the `survivors` property, which returns the raw DataFrame directly for callers who want backend-specific operations.
@@ -44,7 +52,7 @@ All accessors on RuleResult reach the underlying DataFrame through `mountainash.
 <!-- concept:52 -->
 ## Survivors Accessor
 
-The `survivors` property returns the complete result DataFrame — all rules that passed the survival filter, sorted by specificity descending, with rank assignments.
+The `survivors` property returns the complete result DataFrame — all rules that passed the survival filter, ordered according to the active hit policy (specificity descending with deterministic input-order tie-breaking by default), with rank assignments.
 
 ```python
 result = engine.evaluate(context)
@@ -55,14 +63,14 @@ The returned DataFrame contains:
 
 - All original rule columns (rule_name, payload fields, dimension columns)
 - `__specificity`: integer count of hard-match dimensions
-- `__rank`: 1-based rank by specificity
+- `__rank`: 1-based rank under the active hit-policy ordering
 - `__t_{dim_name}` columns (if observability was enabled): per-dimension ternary values
 
 The DataFrame is in the same backend as the input rules. If you passed a Polars DataFrame to the engine constructor, `survivors` returns a Polars DataFrame. This allows callers to chain backend-specific operations (filtering, aggregation, export) on the result.
 
 ## Best Match Accessor
 
-The `best_match` property returns just the single most specific surviving rule — the rule at rank 1. It returns a one-row DataFrame (not a scalar), preserving all columns.
+The `best_match` property returns the single surviving rule at rank 1 under the active hit-policy ordering. With the default `COLLECT` ordering, this is the most specific surviving rule. It returns a one-row DataFrame (not a scalar), preserving all columns.
 
 ```python
 best = result.best_match  # Single-row DataFrame
@@ -70,7 +78,7 @@ best = result.best_match  # Single-row DataFrame
 
 Internally, this takes the first row via `relation(self._df).head(1).collect()`. If no rules survived (empty result), `best_match` returns an empty DataFrame rather than raising an error.
 
-This accessor is the most common entry point for callers who need a single definitive answer: "given this context, which rule applies?"
+This accessor is the most common entry point for callers who need a single definitive answer: "given this context and hit policy, which rule is ranked first?"
 
 ## Count Accessor
 
@@ -101,7 +109,7 @@ Type: diagram
 **Components:**
 - Central node: RuleResult class
 - Property nodes: survivors, best_match, count, active_dimensions (with return type labels)
-- Method nodes: explain(rule_name), at_least(n) (with parameter and return type labels)
+- Method nodes: explain(rule_name), at_least(n), select(policy, priority_field=None) (with parameter and return type labels)
 - Edge labels showing data flow from internal _df to each accessor
 
 **Interactions:** Click any accessor node to see a code example and sample output. Hover for a tooltip with the docstring. Click "show internals" to reveal the relation() calls inside each accessor.
@@ -121,9 +129,9 @@ dims = result.active_dimensions  # ["region", "tier"]
 This property is primarily used by the `explain()` method to know which ternary columns to inspect, but it is also useful for logging and debugging — confirming which dimensions contributed to the evaluation.
 
 <!-- concept:54 -->
-## Explain Method
+## RuleResult Explain Method
 
-The `explain()` method provides per-dimension ternary values for a specific rule, identified by its `rule_name` column value. This is the primary debugging tool for understanding *why* a rule received its specificity score.
+The `RuleResult.explain()` method provides per-dimension ternary values for a specific rule, identified by its `rule_name` column value. This is the primary debugging tool for understanding *why* an already-surviving rule received its specificity score.
 
 ```python
 explanation = result.explain("au_premium")
@@ -140,15 +148,97 @@ The method:
 3. Returns a dictionary mapping dimension names to ternary integers (1, 0, or -1)
 4. Raises `KeyError` if the rule name is not found in the survivors
 
+This per-rule method is deliberately narrower than the engine-level `explain(context)` introduced below: it answers one question about one rule that has already survived, while the engine-level API scores and reports on the whole table.
+
 The explain output provides immediate diagnostic value:
 
 | Ternary Value | Meaning | Implication |
 |--------------|---------|-------------|
 | 1 | Hard match | Dimension explicitly matched context — contributed to specificity |
 | 0 | Unknown/wildcard | Dimension did not constrain — neither helped nor hurt |
-| -1 | Non-match | Should not appear (rule would not have survived) |
+| -1 | Non-match | Should not appear in a surviving RuleResult row |
 
-A -1 value in an explain result indicates an internal inconsistency — it should never appear because survival filtering removes all rules with any -1 dimension. If you see it, the evaluation pipeline has a bug.
+A -1 value in a `RuleResult.explain()` result indicates an internal inconsistency — it should never appear because survival filtering removes all rules with any -1 dimension. The engine-level `ExplainResult` is different: it intentionally includes non-survivors, so -1 values are expected there.
+
+<!-- concept:109 -->
+## ExplainResult Class
+
+`ExplainResult` wraps every rule scored against one context. Its unfiltered frame retains the original rule columns plus one ternary column per active dimension (`__t_<dimension>`), the boolean `__survived` flag, and the integer `__specificity` score. The frame also retains `__rule_index` as a stable rule identity, but it has no `__rank`.
+
+```python
+diagnostic = engine.explain({"region": "AU", "channel": "BROKER"})
+all_scored_rules = diagnostic.frame
+```
+
+Every row remains in `frame`, including rules that contain a non-match. The convenience properties provide filtered views without changing that complete frame:
+
+- `frame`: all scored rules, whether they survived or not
+- `survivors`: rows where `__survived` is `True`
+- `non_survivors`: rows where `__survived` is `False`
+- `count`: the number of rows in the complete frame
+- `active_dimensions`: the dimensions used for scoring
+
+For example, a two-dimension diagnostic can expose the exact failing dimension instead of silently dropping that rule:
+
+| Rule | `__t_region` | `__t_channel` | `__survived` | `__specificity` |
+|------|-------------:|--------------:|-------------:|----------------:|
+| `both_match` | 1 | 1 | `True` | 2 |
+| `one_miss` | 1 | -1 | `False` | 1 |
+| `wildcard` | 0 | 0 | `True` | 0 |
+
+`ExplainResult` does not perform a survival filter, ranking, hit-policy assertion, or cardinality selection. Those are `RuleResult` responsibilities after evaluation. Thus `ExplainResult` is a diagnostic scoring record for the whole table, whereas `RuleResult` is a selected result over surviving rows.
+
+`ExplainResult` is intentionally not a `RuleResult` subclass: `RuleResult`'s selection surface (`best_match`, `select()`, and selection metadata) assumes a ranked survivor frame, while `ExplainResult` must preserve the complete unranked diagnostic frame.
+
+<!-- concept:110 -->
+## Engine-Level Explain
+
+`ExpressionRulesEngine.explain()` answers the table-wide diagnostic question: **why did or did not each rule match this context?** It returns an `ExplainResult`, so a caller can inspect both survivors and non-survivors in one pass.
+
+Its signature accepts the same context shape as `evaluate()` and an optional subset of dimensions:
+
+```python
+def explain(
+    self,
+    context: BaseModel | dict,
+    dimensions: list[str] | None = None,
+) -> ExplainResult:
+```
+
+With `dimensions=None`, all compiled dimensions are scored. Passing `dimensions=["region", "channel"]` limits both the ternary columns and the specificity calculation to that subset. Unknown dimension names raise `KeyError`; an engine with no active dimensions raises `ValueError`.
+
+```python
+diagnostic = engine.explain(
+    {"region": "AU", "channel": "BROKER"},
+    dimensions=["region", "channel"],
+)
+
+for row in diagnostic.non_survivors.to_dicts():
+    print(row["rule_name"], row["__t_region"], row["__t_channel"])
+```
+
+The engine-level method shares the scoring work of `evaluate()` through the private `_scored_relation(active_dims, context_values)` helper. This helper performs the common early pipeline: it guards reserved columns and adds `__rule_index`, binds context literals as `__ctx_<dimension>` columns, computes all `__t_<dimension>` ternaries, and derives `__survived` plus `__specificity`. `evaluate()` then filters survivors, orders and ranks them, checks hit-policy assertions, applies cardinality and optional truncation, and drops temporary columns. `explain()` instead drops the temporary context columns and collects the complete scored relation immediately.
+
+Sharing `_scored_relation` means explanation and evaluation cannot silently grow different matching or specificity logic: both report the same ternary values and the same survival calculation. Their difference is intentional and begins after scoring. `RuleResult.explain(rule_name)` is narrower still: it looks up one already-surviving row, while `ExpressionRulesEngine.explain(context)` explains every rule in the table, including the rows that failed.
+
+<!-- concept:111 -->
+## RuleResult Select Method
+
+`RuleResult.select(policy, priority_field=None)` re-applies a hit policy after evaluation and returns a new `RuleResult`. Use it on an untruncated result produced with the `COLLECT` policy, so the complete survivor set is still available for the new selection.
+
+```python
+from mountainash_rules import HitPolicy
+
+collected = engine.evaluate(context, hit_policy=HitPolicy.COLLECT)
+selected = collected.select(
+    HitPolicy.PRIORITY,
+    priority_field="salience",
+)
+```
+
+The method reorders the retained survivors, recomputes their 1-based `__rank`, runs the policy's assertions, and applies its cardinality rule. `priority_field` overrides the field recorded in the evaluation metadata when the selected policy needs one.
+
+Selection cannot recover rows that were discarded earlier. If `top_n` or `min_specificity` truncated the original result, `select()` raises `ValueError`; re-evaluate without truncation instead. The same principle is why the complete source should be `COLLECT`: a prior non-collecting cardinality decision has already narrowed the rows available for post-hoc selection. See [Chapter 6: Hit Policies](../06-hit-policies/) for the full semantics of each policy; this method only controls when those semantics are re-applied.
 
 <!-- concept:55 -->
 <!-- concept:57 -->
@@ -171,8 +261,7 @@ Use cases for `at_least`:
 
 <!-- concept:56 -->
 ## Top N Filtering
-
-The `top_n` parameter on `evaluate()` limits the result to the N most specific survivors. Unlike `at_least`, this is applied during evaluation (after ranking, before result construction) rather than as a post-evaluation filter.
+The `top_n` parameter on `evaluate()` limits the result to the N highest-ranked survivors under the active hit-policy ordering. Unlike `at_least`, this is applied during evaluation (after ranking, before result construction) rather than as a post-evaluation filter.
 
 ```python
 # Get only the top 3 matches
@@ -375,8 +464,7 @@ Several edge cases merit attention when working with RuleResult:
 **No survivors.** When no rules match the context (all are eliminated by FALSE dimensions), `result.count` is 0, `result.survivors` returns an empty DataFrame with the correct schema, and `result.best_match` returns an empty single-row-attempt that is also empty. Callers should always check `count` before assuming `best_match` contains data.
 
 **All wildcards.** When a rule has sentinels in every dimension, it always survives with specificity 0. This is a valid and common pattern for fallback rules, but it means `result.count` is never 0 as long as a catch-all rule exists. If you need to distinguish "a specific rule matched" from "only the fallback matched," check specificity rather than count.
-
-**Tied specificity.** When multiple survivors have the same specificity score, they receive consecutive ranks in the order they appeared in the original DataFrame. The engine does not break ties — it preserves insertion order. This deterministic behavior means results are reproducible across runs with the same input.
+**Tied specificity.** Under the default `COLLECT` ordering, survivors with the same specificity score receive consecutive ranks in their original DataFrame order. Other hit policies may add policy-specific ordering keys before the stable `__rule_index` tie-breaker. This deterministic behavior means results are reproducible across runs with the same input.
 
 **Single dimension.** When only one dimension is evaluated (via the `dimensions` parameter), specificity can only be 0 or 1, and survival is equivalent to "the dimension did not return FALSE." This degenerates the ranking to a binary classifier on that dimension.
 
@@ -413,7 +501,10 @@ Type: microsim
 - The **survivors** property returns the full result DataFrame for backend-specific operations; **best_match** returns just the rank-1 rule.
 - **count** gives a quick integer for branching logic (0 = no match, 1 = unambiguous, >1 = ambiguous).
 - **active_dimensions** records which dimensions participated in evaluation, supporting partial-evaluation scenarios.
-- **explain()** returns per-dimension ternary values for a named rule, providing immediate diagnostic insight into why a rule has its specificity score.
+- **RuleResult.explain(rule_name)** returns per-dimension ternary values for one named survivor; it does not diagnose rules that were filtered out.
+- **ExplainResult** keeps every rule's ternaries, `__survived`, and `__specificity` in an unfiltered frame, with separate survivor and non-survivor views.
+- **ExpressionRulesEngine.explain(context)** explains the whole table and shares scoring with `evaluate()` through `_scored_relation`; it does not rank or apply hit policies.
 - **at_least(n)** is a post-evaluation filter on specificity; **top_n** and **min_specificity** are evaluation-time filters that affect rank assignment.
+- **RuleResult.select(policy, priority_field=None)** re-applies policy semantics only when the source result retains the complete, untruncated COLLECT survivor set; see Chapter 6 for policy definitions.
 - **Observability columns** (`__t_*`) are retained by default for debugging but can be excluded in production for reduced footprint.
 - The filter application order is: rank all survivors, apply min_specificity, apply top_n — enabling combined filtering with clear semantics.

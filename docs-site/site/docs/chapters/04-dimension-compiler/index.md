@@ -2,8 +2,9 @@
 title: "Chapter 4: Dimension Compiler"
 description: "How the DimensionCompiler translates dimension metadata into backend-agnostic expression templates for each match strategy."
 generated_by: claude skill chapter-content-generator
-date: 2026-06-03
-version: 0.08
+refreshed_by: claude skill textbook-refresh
+date: 2026-09-02
+version: 0.09
 ---
 
 # Chapter 4: Dimension Compiler
@@ -67,7 +68,7 @@ Type: diagram
 **Components:**
 - Input node: Dimension object with strategy highlighted
 - Central node: compile_dimension dispatcher
-- 11 output branches, one per strategy, each showing the resulting expression tree structure
+- 12 output branches, one per strategy, each showing the resulting expression tree structure
 - Color coding: equality strategies (blue), numeric (green), string (orange), set (purple)
 
 **Interactions:** Click any strategy branch to expand the expression tree it produces, showing the specific `ma.*` calls involved. Hover over expression nodes for documentation tooltips. A dropdown selects different example dimensions to show different compiled outputs.
@@ -96,6 +97,8 @@ The key elements are:
 4. **Ternary equality**: `.t_eq()` produces 1 when values are equal, -1 when different, and 0 when either operand is a sentinel
 
 The NOT_EQUAL compilation is identical except it uses `.t_ne()` instead of `.t_eq()`.
+
+The sibling `_compile_exact_key` variant is used when only the rule side may wildcard (partition-key routing); context sentinels remain ordinary non-matches. Chapter 2 explains this strategy-level distinction.
 
 ## Compile Range Expression
 
@@ -157,7 +160,9 @@ Note that this pattern uses `ma.col()` (not `ma.t_col()`) because the sentinel d
 
 ## Compile Regex Expression
 
-REGEX compilation differs from the other string strategies because the pattern is a literal from the dimension metadata, not a value from the rule column. Every rule in the engine receives the same regex result for a given context value — there is no per-rule variation.
+Regex compilation has two sibling paths. For `REGEX`, `_compile_regex_per_row` reads a pattern from each rule row and maps sentinel patterns to UNKNOWN; for `CONTEXT_REGEX`, `_compile_context_regex` applies the metadata's literal `regex_pattern` uniformly as a global context validator. Chapter 2 explains the strategy-level distinction; this section focuses on the resulting expression shapes.
+
+For `CONTEXT_REGEX`, the compiled expression is:
 
 ```python
 ctx_col = ma.col(CTX_PREFIX + dim.dimension_name)
@@ -165,24 +170,54 @@ match = ctx_col.str.regex_contains(dim.regex_pattern)
 expr = ma.when(match).then(1).otherwise(-1)
 ```
 
-There is no UNKNOWN branch because the pattern is always defined (enforced by the Pydantic validator). The result is binary: the context value either matches the regex (1) or does not (-1). This makes REGEX dimensions behave as global filters — they eliminate all rules simultaneously if the context fails the pattern check.
+There is no UNKNOWN branch because the pattern is always defined (enforced by the Pydantic validator). The result is binary: the context value either matches the regex (1) or does not (-1). This makes `CONTEXT_REGEX` dimensions behave as global filters — they eliminate all rules simultaneously if the context fails the pattern check.
 
 ## Compile Set Expression
 
-SET_MEMBERSHIP and SET_EXCLUSION use the ternary-aware `t_is_in` and `t_is_not_in` operators. These operators handle sentinel detection on the context side — if the context value is a sentinel, the result is UNKNOWN (0).
+`SET_MEMBERSHIP` and `SET_EXCLUSION` use the ternary-aware `t_is_in` and `t_is_not_in` operators. These operators handle sentinel detection on the context side — if the context value is a sentinel, the result is UNKNOWN (0). The rule side is normalized first so that its in-band wildcard can be detected before the membership operation:
 
 ```python
+rule_col = normalize_set_expr(dim, ma.col(dim.resolved_rule_field))
+ctx_col = ma.t_col(
+    CTX_PREFIX + dim.dimension_name,
+    unknown=sentinels_for(dim.data_type),
+)
+is_wild = set_wildcard_predicate(dim, rule_col)
+
 # SET_MEMBERSHIP
-sentinels = {"<NA>", "<NOT_SET>"}
-rule_col = ma.col(dim.resolved_rule_field)      # List column (no sentinel handling)
-ctx_col = ma.t_col(CTX_PREFIX + dim.dimension_name, unknown=sentinels)
-expr = ctx_col.t_is_in(rule_col)
+expr = ma.when(is_wild).then(0).otherwise(ctx_col.t_is_in(rule_col))
 
 # SET_EXCLUSION
-expr = ctx_col.t_is_not_in(rule_col)
+expr = ma.when(is_wild).then(0).otherwise(ctx_col.t_is_not_in(rule_col))
 ```
 
-The rule column is referenced with plain `ma.col()` because list columns do not use scalar sentinels. The wildcard behavior for set dimensions must be handled at the data level (the rule row should not exist if it has no constraint for this dimension, or a separate mechanism is needed).
+The rule column starts as a list-valued `ma.col()` reference because set wildcards are represented in-band rather than by scalar `t_col` handling. `normalize_set_expr` canonicalizes concrete lists and converts a null list to the wildcard representation; `set_wildcard_predicate` then turns that wildcard into ternary UNKNOWN (0), while concrete lists use the appropriate membership operator.
+
+<!-- concept:98 -->
+## Set Wildcard Sentinel
+
+A set-typed dimension cannot use a null list as a wildcard portably across backends. The shared `core/set_wildcard.py` protocol therefore represents a wildcard in-band as a single-element list, `[unknown_sentinel_for(dim.data_type)]`, and never as null. This keeps the list's type stable while giving every backend the same value to recognize.
+
+`sentinel_list_expr(dim)` constructs the typed literal with `ma.lit([_typed_sentinel(dim)])`. The helper preserves the dimension's element type; in particular, float sentinels are coerced to Python `float` before creating the list literal rather than relying on a backend-native list cast.
+
+After normalization, `set_wildcard_predicate(dim, col)` checks whether the list contains the typed sentinel. `validate_set_columns` reserves that value for the wildcard, so a concrete list cannot contain it; consequently, the predicate is unambiguous: a sentinel-containing normalized list is exactly the one-element wildcard list.
+
+<!-- concept:99 -->
+## Set Value Normalization
+
+Set values must have one canonical representation before matching, fingerprinting, or accumulator coalescing. `normalize_set_expr(dim, col)` is the single normalizer: a null list becomes `sentinel_list_expr(dim)`, while a concrete list becomes `canonicalize_set_expr(col)`, which applies `col.list.unique().list.sort()`. The operation is idempotent, so applying it to an already normalized column does not change the result.
+
+```python
+def canonicalize_set_expr(col: BaseExpressionAPI) -> BaseExpressionAPI:
+    return col.list.unique().list.sort()
+
+def normalize_set_expr(dim: Dimension, col: BaseExpressionAPI) -> BaseExpressionAPI:
+    return ma.when(col.is_null()).then(sentinel_list_expr(dim)).otherwise(
+        canonicalize_set_expr(col)
+    )
+```
+
+Sorting and deduplicating means lists such as `["gold", "silver", "gold"]` and `["silver", "gold"]` compare and fingerprint identically. Validation enforces the reserved-value contract: `validate_set_columns(rules_rel, set_dims)` rejects a concrete rule list that embeds the reserved sentinel, while `validate_set_no_null_elements(rules_rel, set_dims)` rejects a list containing an element-level null. A whole-list null (or an omitted cell) remains valid wildcard input and is normalized to `[sentinel]`; element-level nulls are not.
 
 #### Diagram: Compiled Expression Gallery
 
@@ -358,9 +393,10 @@ The following table summarizes the expression structure each compile method prod
 | GREATER_THAN | `t_gt` | Column-level (`t_col`) | 1 rule, 1 context | 1/0/-1 |
 | LESS_THAN | `t_lt` | Column-level (`t_col`) | 1 rule, 1 context | 1/0/-1 |
 | PREFIX/SUFFIX/CONTAINS | `when/then/otherwise` | Expression-level | 1 rule, 1 context | 1/0/-1 |
-| REGEX | `when/then/otherwise` | None (pattern fixed) | 0 rule, 1 context | 1/-1 only |
-| SET_MEMBERSHIP | `t_is_in` | Context-side (`t_col`) | 1 rule (list), 1 context | 1/0/-1 |
-| SET_EXCLUSION | `t_is_not_in` | Context-side (`t_col`) | 1 rule (list), 1 context | 1/0/-1 |
+| REGEX | `when/then/otherwise` | Rule-side sentinels | 1 rule (pattern), 1 context | 1/0/-1 |
+| CONTEXT_REGEX | `when/then/otherwise` | None (pattern fixed) | 0 rule, 1 context | 1/-1 only |
+| SET_MEMBERSHIP | `when/then/otherwise` | Rule-side `[sentinel]` + context-side (`t_col`) | 1 rule (list), 1 context | 1/0/-1 |
+| SET_EXCLUSION | `when/then/otherwise` | Rule-side `[sentinel]` + context-side (`t_col`) | 1 rule (list), 1 context | 1/0/-1 |
 
 #### Diagram: Compilation Pipeline End-to-End
 
@@ -389,10 +425,11 @@ Type: workflow
 ## Key Takeaways
 
 - The **DimensionCompiler** is a stateless translator that converts Dimension metadata into backend-agnostic expression templates, dispatching to strategy-specific methods via pattern matching.
-- **Compile Exact** uses `ma.t_col` with sentinel sets and `.t_eq()` to produce a ternary equality comparison with automatic wildcard handling.
+- **Compile Exact** uses `ma.t_col` with sentinel sets and `.t_eq()` to produce a ternary equality comparison with automatic wildcard handling; `_compile_exact_key` is the rule-side-wildcard-only sibling used for partition routing.
 - **Compile Range** produces a compound `t_and` of lower and upper bound checks, supporting configurable inclusive/exclusive boundaries.
 - **Compile String Match** uses an explicit `when/then/otherwise` pattern to convert Boolean string operations into ternary integers, with sentinel detection as the first branch.
-- **Compile Regex** is unique in using a literal pattern from metadata rather than rule column values, producing a binary (no-UNKNOWN) result.
-- **Compile Set** applies `t_is_in` / `t_is_not_in` operators with context-side sentinel awareness.
+- **Compile Regex** separates per-row `REGEX` patterns (`_compile_regex_per_row`) from metadata-literal `CONTEXT_REGEX` validation (`_compile_context_regex`).
+- **Compile Set** normalizes list columns, recognizes the in-band `[sentinel]` wildcard, and applies `t_is_in` / `t_is_not_in` for concrete rules.
+- **Set Value Normalization** sorts and deduplicates concrete lists so equal sets compare and fingerprint identically, while validation rejects reserved sentinels and element-level nulls.
 - **Sentinel-Aware Ternary** operates at two levels: column-level (via `t_col`) for most strategies, and expression-level (via `when/then`) for string operations.
 - **Context Value Extraction** normalizes user input into a sentinel-aware dictionary, substituting `NOT_SET` for missing or None values before they become DataFrame literal columns.

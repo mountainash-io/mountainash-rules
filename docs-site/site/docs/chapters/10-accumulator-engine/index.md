@@ -1,16 +1,16 @@
 ---
-title: "Chapter 8: Accumulator Engine"
+title: "Chapter 10: Accumulator Engine"
 description: "The AccumulatorEngine's lattice-building algorithm including prime encoding, anchor creation, level expansion, canonical ordering, and frontier filtering."
 generated_by: claude skill chapter-content-generator
-date: 2026-06-03
-version: 0.08
+refreshed_by: claude skill textbook-refresh
+date: 2026-09-02
+version: 0.09
 ---
 
-# Chapter 8: Accumulator Engine
+# Chapter 10: Accumulator Engine
 
 ## Summary
-
-This chapter covers the AccumulatorEngine class and its lattice-building algorithm. You will learn how prime number encoding provides unique combination identity and subset detection, the sieve-based prime table, the five-phase build process (partition, prime assignment, anchor creation, level expansion with canonical ordering, and frontier filter for removing dominated combinations), and how checked multiplication guards against overflow.
+This chapter covers the `AccumulatorEngine` class and its lattice-building algorithm. You will learn how prime number encoding provides unique combination identity and subset detection, how the 10,000-entry prime table is generated and bounded, the five-phase build process (partition, prime assignment, anchor creation, level expansion with canonical ordering, and frontier filtering), how checked multiplication guards the int64 combination identity, and how apply-phase caching avoids repeated filter-engine construction.
 
 ---
 
@@ -20,7 +20,7 @@ The ExpressionRulesEngine (Chapter 5) answers point queries at evaluation time: 
 
 The result — a lattice of combinations — can then be queried at runtime just like a rules table. But because the lattice pre-encodes all valid rule interactions, the runtime query is simpler and can aggregate values across contributing rules (e.g., sum discounts from multiple applicable rules).
 
-The AccumulatorEngine uses the compatible and coalesce expressions from Chapter 7 as building blocks, orchestrating them through a five-phase lattice construction algorithm.
+The AccumulatorEngine uses the compatible and coalesce expressions from Chapter 9 as building blocks, orchestrating them through a five-phase lattice construction algorithm.
 
 <!-- concept:68 -->
 ## AccumulatorEngine
@@ -50,11 +50,30 @@ The engine also provides three higher-level methods built on top of `build()`:
 - **`apply(lattice, context)`**: evaluates a context against a pre-built lattice, returning an `AccumulatorResult`
 - **`apply_auto(lattices, context)`**: selects the correct lattice from a list by partition key and evaluates
 
-These convenience methods are covered in detail in Chapter 9. This chapter focuses on the build algorithm itself.
+<!-- concept:122 -->
+## Apply-Phase Caching
+
+`apply()` evaluates a context by filtering the lattice's coalesced columns with an `ExpressionRulesEngine`. Constructing that filter engine requires remapping the metadata to the lattice schema, so the accumulator memoises it per lattice rather than rebuilding it for every query:
+
+```python
+def _filter_engine_for(self, lattice: Lattice) -> ExpressionRulesEngine:
+    engine = self._apply_engines.get(lattice)
+    if engine is None:
+        engine = ExpressionRulesEngine(
+            rules=lattice.combinations,
+            dimension_metadata=self._build_apply_metadata(),
+        )
+        self._apply_engines[lattice] = engine
+    return engine
+```
+
+The cache is a `weakref.WeakKeyDictionary` created by `AccumulatorEngine.__init__`, keyed by lattice identity. Repeated `apply(lattice, context)` calls therefore reuse the same filter engine and its compiled expressions, while entries disappear when the corresponding lattice is no longer strongly referenced. The optional `dimensions` argument is still passed to each `evaluate()` call, so per-query dimension selection does not alter the cached engine.
+
+The cache is local to the `AccumulatorEngine`; it does not merge lattices or change their combinations. `apply_auto()` uses the indexed routing path first and then applies this same per-lattice cache.
+
+The AccumulatorCompiler expressions used during the build are covered in Chapter 9. Partition routing for multiple lattices, including the `LatticeIndex` ternary-partition router, is covered in Chapter 11. This chapter focuses on the build algorithm itself.
 
 <!-- concept:69 -->
-<!-- concept:70 -->
-<!-- concept:71 -->
 ## Prime Number Encoding
 
 The core algorithmic insight of the AccumulatorEngine is using prime numbers to represent combinations. Each rule is assigned a unique prime number. A combination of rules is represented by the *product* of their primes.
@@ -99,11 +118,16 @@ Type: diagram
 **Learning objective:** Verify subset relationships using prime product divisibility (Bloom: Apply)
 </details>
 
+<!-- concept:70 -->
 ## Prime Table Sieve
 
-The engine needs a pre-computed table of prime numbers to assign to rules. The `primes.py` module generates this table at import time using the Sieve of Eratosthenes — a classical algorithm that efficiently finds all primes up to a given limit.
+The engine needs one distinct prime for every rule in a partition. The `primes.py` module computes the first `MAX_RULES_PER_PARTITION` primes once at import time. It sizes a Sieve of Eratosthenes using a prime-counting upper bound and defensively widens the sieve if necessary:
 
 ```python
+import math
+
+MAX_RULES_PER_PARTITION = 10_000
+
 def _sieve(limit: int) -> list[int]:
     is_prime = [True] * (limit + 1)
     is_prime[0] = is_prime[1] = False
@@ -113,28 +137,52 @@ def _sieve(limit: int) -> list[int]:
                 is_prime[j] = False
     return [i for i, v in enumerate(is_prime) if v]
 
-PRIME_TABLE: list[int] = _sieve(3572)
+def _first_n_primes(n: int) -> list[int]:
+    if n < 1:
+        return []
+    limit = 15 if n < 6 else int(
+        n * (math.log(n) + math.log(math.log(n)))
+    ) + 3
+    primes = _sieve(limit)
+    while len(primes) < n:
+        limit *= 2
+        primes = _sieve(limit)
+    return primes[:n]
+
+PRIME_TABLE: list[int] = _first_n_primes(MAX_RULES_PER_PARTITION)
 ```
 
-The sieve runs up to 3572, producing 500 primes (the 500th prime is 3571). This means the engine supports partitions with up to 500 rules. The sieve executes once at module import time, so there is no runtime cost for prime generation.
+The table is the first 10,000 primes, not a table of primes up to a fixed magnitude. Sieve computation happens once during module import and is cheap; runtime builds only look up entries in the resulting list.
 
+<!-- concept:71 -->
 ## Get Prime Function
 
-The `get_prime(index)` function provides bounds-checked access to the prime table:
+The `get_prime(index)` function provides bounds-checked, 0-based access to the prime table:
 
 ```python
 def get_prime(index: int) -> int:
     if index < 0:
-        raise IndexError("Prime index must be non-negative")
+        raise IndexError(f"Prime index must be non-negative, got {index}")
     if index >= len(PRIME_TABLE):
         raise IndexError(
-            f"Prime index {index} exceeds table size {len(PRIME_TABLE)}. "
-            f"Partition has too many rules."
+            f"Prime index {index} exceeds the prime table "
+            f"(MAX_RULES_PER_PARTITION={MAX_RULES_PER_PARTITION}). "
+            f"Partition has too many rules; split it with a CONTEXT_KEY dimension."
         )
     return PRIME_TABLE[index]
 ```
 
-The function uses 0-based indexing: `get_prime(0)` returns 2, `get_prime(1)` returns 3, and so on. The bounds check provides a clear error message when a partition exceeds the supported rule count, rather than failing silently or with a cryptic index error.
+Thus `get_prime(0)` returns 2, `get_prime(1)` returns 3, and so on. A partition with more rules than the table receives a clear `IndexError` during prime assignment instead of silently reusing an identity.
+
+<!-- concept:123 -->
+## Prime Table Size Cap
+
+`MAX_RULES_PER_PARTITION = 10_000` is an explicit, documented policy cap on the number of rules in one partition. It exists because every rule needs a distinct prime; it is the size of the table, not a limit derived from the numeric value of the largest prime. `AccumulatorEngine.build()` assigns `get_prime(i)` for every row, so an over-cap partition fails at that lookup.
+
+The cap is changeable. If a legitimate workload needs more than 10,000 rules in one partition, raising the constant makes `_first_n_primes()` sieve a wider table once at import time; there is no need for a literal data file. This policy cap is **independent** of the intrinsic combination-width bound described in the next section: even with enough table entries, a single combination of roughly 15 mutually compatible primes can exceed the int64 `__prime_product` representation and raise `LatticeWidthExceededError`. Conversely, the table cap concerns rule count, whether or not those rules can coexist in one combination.
+
+The preferred remediation for an over-cap partition is to split it with a `CONTEXT_KEY` dimension so each resulting partition needs fewer rule primes. This is also the remediation suggested by `get_prime()`'s error message and is separate from splitting a mutually compatible clique to avoid int64 overflow.
+
 
 <!-- concept:72 -->
 ## Checked Multiply
@@ -156,10 +204,10 @@ def checked_multiply(a: int, b: int) -> int:
 
 Int64 overflow is a practical concern because DataFrame backends (Polars, Arrow) use fixed-width 64-bit integers for the `__prime_product` column. Python's arbitrary-precision integers would silently exceed this range, producing incorrect results when the value is stored in the DataFrame.
 
-The overflow check triggers when a partition has many mutually compatible rules — typically more than 15-20 rules that are all pairwise compatible. In practice, this indicates the partition should be subdivided further (adding more CONTEXT_KEY dimensions to reduce partition size).
+The combination-width check is about the number of mutually compatible rules in **one combination**, not the total number of rules in the partition. The first 15 (smallest) primes fit in int64, while adding the 16th overflows; combinations containing larger assigned primes can overflow sooner. During a build, `AccumulatorEngine._check_overflow()` turns the `OverflowError` from `checked_multiply` into `LatticeWidthExceededError`.
 
 !!! warning "Overflow in Practice"
-    The first 15 primes multiply to approximately \(6.1 \times 10^{17}\), which is within int64 range. Adding the 16th prime (53) pushes the product to \(3.3 \times 10^{19}\), exceeding int64 max. Partitions with more than 15 mutually compatible rules will trigger the overflow guard.
+    The first 15 primes multiply to approximately \(6.1 \times 10^{17}\), which is within int64 range. Adding the 16th prime (53) pushes the product to \(3.3 \times 10^{19}\), exceeding int64 max. This intrinsic combination-width bound is independent of the 10,000-rule prime-table cap.
 
 <!-- concept:73 -->
 ## Anchor Creation
@@ -178,13 +226,13 @@ The lattice build begins with **anchor creation** — constructing level-0 singl
 # Original: region="AU", age_min=18, age_max=65, discount=0.10, __prime=2
 # Added:    co_region="AU", co_age_min=18, co_age_max=65
 #           co_region_na=0, co_age_na=0
-<!-- concept:74 -->
 #           __prime_product=2, __level=0
 #           __agg_discount=0.10
 ```
 
 The anchor represents each rule as a standalone combination of depth 1. The level expansion phase will attempt to merge these anchors with other rules to build deeper combinations.
 
+<!-- concept:74 -->
 ## Level Expansion
 
 Level expansion is the heart of the lattice-building algorithm. Starting from the anchor (level 0), the engine iteratively constructs deeper combinations by cross-joining the current level with the full rule set and filtering for compatible pairs.
@@ -197,9 +245,7 @@ Each expansion iteration:
 4. **Compatibility filter**: all dimension compatible expressions must be True
 5. **Coalesce**: apply all coalesce expressions to compute merged constraint values
 6. **Update tracking**: multiply prime products, increment level, accumulate aggregates
-
 ```python
-<!-- concept:75 -->
 # Canonical ordering guard
 guard1 = ma.col("__prime").lt(ma.col("__prime_rhs"))
 
@@ -243,6 +289,7 @@ Type: microsim
 **Learning objective:** Trace the breadth-first lattice expansion algorithm through multiple levels (Bloom: Analyze)
 </details>
 
+<!-- concept:75 -->
 ## Canonical Ordering Guard
 
 Without the canonical ordering guard, the expansion algorithm would generate the same combination multiple times in different orderings. For example, combination {R1, R2} could be produced by extending {R1} with R2 *and* by extending {R2} with R1.
@@ -323,7 +370,7 @@ Summarizing the complete build algorithm:
 4. **Level expansion**: iteratively cross-join, filter (canonical ordering + already-included + compatibility), coalesce, and accumulate until no new combinations are produced
 5. **Frontier filter**: remove dominated combinations by fingerprint-based self-join, retaining only outermost nodes
 
-The output is a `Lattice` object wrapping the final DataFrame of maximal consistent combinations. This lattice can then be queried using the `apply()` method (Chapter 9), which internally uses an ExpressionRulesEngine pointed at the lattice's coalesced columns.
+The output is a `Lattice` object wrapping the final DataFrame of maximal consistent combinations. This lattice can then be queried using the `apply()` method (Chapter 11), which internally uses an ExpressionRulesEngine pointed at the lattice's coalesced columns.
 
 ## Complexity and Scalability
 
@@ -336,7 +383,7 @@ Several design decisions keep the build tractable:
 - **Early termination**: expansion stops as soon as a level produces zero new combinations. If all pairwise combinations are found at level 1 but no triples are compatible, the algorithm terminates after level 1.
 - **Frontier filter**: reduces the final lattice to only maximal combinations, discarding intermediate subsets that are dominated by larger ones.
 
-In practice, partitions of up to 15-20 rules with moderate compatibility (most pairs incompatible) build in under a second. The int64 overflow guard (checked multiply) serves as a natural safety valve — it halts the build before the combinatorial explosion consumes excessive memory or produces unpresentable results.
+Build cost depends on compatibility: a partition may contain many rules when most pairs conflict, while one mutually compatible clique is intrinsically limited to roughly 15 primes by the int64 `__prime_product` representation. The checked-multiply guard halts a build before an overflowing combination is stored; this combination-width safety valve is independent of the 10,000-rule prime-table cap.
 
 ## When to Use the Accumulator vs Expression Engine
 
@@ -355,8 +402,9 @@ The accumulator workflow involves a build phase (expensive, done once) and an ap
 
 - The **AccumulatorEngine** pre-computes all valid rule combinations into a lattice structure, enabling multi-rule aggregation that would be expensive to compute at query time.
 - **Prime number encoding** gives each combination a unique identity (prime product) and enables O(1) subset detection via modulo division.
-- The **Prime Table Sieve** pre-computes 500 primes at module import time, supporting partitions of up to 500 rules.
-- **Get Prime** provides bounds-checked access; **Checked Multiply** guards against int64 overflow when products grow too large.
+- The **Prime Table Sieve** computes the first 10,000 primes once at import time; `MAX_RULES_PER_PARTITION` is the explicit rule-count cap and can be raised when needed.
+- **Get Prime** provides bounds-checked access; an over-cap partition should be split with a `CONTEXT_KEY` dimension. **Checked Multiply** instead guards the separate int64 width of one mutually compatible combination and the engine reports `LatticeWidthExceededError`.
+- **Apply-phase caching** memoises one `ExpressionRulesEngine` per lattice in a `WeakKeyDictionary`, so repeated `apply()` calls reuse compiled filter expressions without retaining dead lattices.
 - **Anchor creation** establishes level-0 singletons with all tracking columns (coalesced values, NA flags, prime products, aggregates).
 - **Level expansion** is a breadth-first algorithm that cross-joins the current level with all rules, applies three guards (canonical ordering, already-included, compatibility), then coalesces and accumulates.
 - The **Canonical Ordering Guard** ensures each combination is generated exactly once by requiring increasing prime order.

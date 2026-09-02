@@ -37,10 +37,12 @@ nav:
       - 3. Dimension Model: chapters/03-dimension-model/index.md
       - 4. Dimension Compiler: chapters/04-dimension-compiler/index.md
       - 5. Expression Rules Engine: chapters/05-expression-rules-engine/index.md
-      - 6. Expression Engine Results: chapters/06-expression-engine-results/index.md
-      - 7. Accumulator Compiler: chapters/07-accumulator-compiler/index.md
-      - 8. Accumulator Engine: chapters/08-accumulator-engine/index.md
-      - 9. Lattice Structures and Results: chapters/09-lattice-structures-and-results/index.md
+      - 6. Hit Policies: chapters/06-hit-policies/index.md
+      - 7. Expression Engine Results: chapters/07-expression-engine-results/index.md
+      - 8. Batch Evaluation: chapters/08-batch-evaluation/index.md
+      - 9. Accumulator Compiler: chapters/09-accumulator-compiler/index.md
+      - 10. Accumulator Engine: chapters/10-accumulator-engine/index.md
+      - 11. Lattice Structures and Results: chapters/11-lattice-structures-and-results/index.md
 
   - Learning Graph:
       - Introduction: learning-graph/index.md

@@ -52,7 +52,7 @@ ConceptID,ConceptLabel,Dependencies,TaxonomyID
 51,Best Match Accessor,49|9,RESULT
 52,Count Accessor,49|9,RESULT
 53,Active Dimensions,49,RESULT
-54,Explain Method,49|38,RESULT
+54,RuleResult Explain Method,49|38,RESULT
 55,At Least Filter,49|47,RESULT
 56,Top N Filtering,43,RESULT
 57,Min Specificity Filter,43|47,RESULT
@@ -89,3 +89,43 @@ ConceptID,ConceptLabel,Dependencies,TaxonomyID
 88,Partition Key Filtering,25|9,SUPP
 89,Build All Partitions,68|88,SUPP
 90,Apply Auto Selection,89|83,SUPP
+91,EXACT_KEY Strategy,11|12,DIM
+92,CONTEXT_REGEX Strategy,20,DIM
+93,Bool Ternary Comparison,11|1,DIM
+94,DataType Enum,30,DIM
+95,Temporal Sentinels,94|2,DIM
+96,YAML Round-Trip,27,DIM
+97,Table-Level Hit Policy Fields,27|100,POLICY
+98,Set Wildcard Sentinel,2|21,EXPR
+99,Set Value Normalization,98,EXPR
+100,HitPolicy Enum,11|48,POLICY
+101,Collect Policy,100,POLICY
+102,Unique Policy,100,POLICY
+103,First And Priority Policy,100,POLICY
+104,Any Policy,100,POLICY
+105,Rule Order Policy,100,POLICY
+106,SelectionInfo Dataclass,100,POLICY
+107,HitPolicyViolationError,102|104,POLICY
+108,Cardinality Application,103|106,POLICY
+109,ExplainResult Class,40|43,RESULT
+110,Engine-Level Explain,109|54,RESULT
+111,RuleResult Select Method,49|100,RESULT
+112,BatchRuleResult Class,49,BATCH
+113,Evaluate Batch Method,40|43,BATCH
+114,Batch Context Preparation,113|10,BATCH
+115,Cross-Join Evaluation,114,BATCH
+116,Per-Context Ranking,115|100|47,BATCH
+117,Backend Conforming,114,BATCH
+118,Chunked Batch Evaluation,113,BATCH
+119,For Context Accessor,112|116,BATCH
+120,Set Membership Compatible,59|21|98,ACCUM
+121,Set Membership Coalesce,120,ACCUM
+122,Apply-Phase Caching,68,ACCUM
+123,Prime Table Size Cap,70|71,ACCUM
+124,Lattice Save Method,77,LATT
+125,Lattice Load Method,124,LATT
+126,Lattice Is Composed,77,LATT
+127,Aggregate Min Max Product,87,LATT
+128,LatticeIndex Router,77|89,SUPP
+129,AmbiguousPartitionError,128,SUPP
+130,EXACT_KEY Partition Routing,128|91,SUPP

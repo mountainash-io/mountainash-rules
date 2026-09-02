@@ -2,8 +2,9 @@
 title: "Chapter 1: Foundation Concepts"
 description: "Core abstractions underpinning the mountainash-rules engine including ternary logic, sentinel values, match strategies, vectorized evaluation, and backend-agnostic design."
 generated_by: claude skill chapter-content-generator
-date: 2026-06-03
-version: 0.08
+refreshed_by: claude skill textbook-refresh
+date: 2026-09-02
+version: 0.09
 ---
 
 # Chapter 1: Foundation Concepts
@@ -51,7 +52,7 @@ The rules engine defines four sentinel constants, separated by data type:
 The distinction between `<NA>` and `<NOT_SET>` matters during compilation. A rule cell containing `<NA>` means "this rule does not constrain this dimension" (wildcard). A context field containing `<NOT_SET>` means "the caller did not provide this value" (missing input). Both result in UNKNOWN (0) in the ternary output, but they originate from different sources and serve different conceptual roles.
 
 ```python
-from mountainash_rules.constants import UNKNOWN, NOT_SET, UNKNOWN_NUMERIC, NOT_SET_NUMERIC
+from mountainash_rules import UNKNOWN, NOT_SET, UNKNOWN_NUMERIC, NOT_SET_NUMERIC
 
 # String sentinels
 UNKNOWN         # "<NA>"      — wildcard in rule table
@@ -289,7 +290,10 @@ The **context** represents the set of values that the rules should be evaluated 
 The `extract_context_values()` function handles context normalization. It accepts either a Pydantic model (calling `.model_dump()` to convert it to a dict) or a plain dictionary. For each dimension that the engine evaluates, it looks up the corresponding field name in the context dict. If the field is missing or `None`, the function substitutes the `NOT_SET` sentinel, ensuring that the downstream ternary logic produces the UNKNOWN state.
 
 ```python
-from mountainash_rules.context import extract_context_values
+# extract_context_values is an internal helper (mountainash_rules.core.context) that
+# evaluate()/evaluate_batch() call for you — shown here to illustrate the mechanism,
+# not as a function you import directly. Import public names from the package root only.
+from mountainash_rules.core.context import extract_context_values
 
 # Dictionary context
 context = {"region": "AU", "product_category": "electronics"}

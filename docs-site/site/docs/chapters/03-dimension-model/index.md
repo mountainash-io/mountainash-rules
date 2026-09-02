@@ -1,16 +1,17 @@
 ---
 title: "Chapter 3: Dimension Model"
-description: "The Pydantic metadata layer that describes how rules table columns are interpreted, including roles, field resolution, validation, and data type constraints."
+description: "The Pydantic metadata layer that describes how rules table columns are interpreted, including roles, field resolution, validation, serialisable data types, temporal sentinels, and YAML schemas."
 generated_by: claude skill chapter-content-generator
-date: 2026-06-03
-version: 0.08
+refreshed_by: claude skill textbook-refresh
+date: 2026-09-02
+version: 0.09
 ---
 
 # Chapter 3: Dimension Model
 
 ## Summary
 
-This chapter covers the dimension metadata layer — the Pydantic models that describe how each column in a rules table should be interpreted during evaluation. You will learn about the DimensionRole enum (CONSTRAINT vs CONTEXT_KEY), the Dimension class with its field resolution and validation, the DimensionsMetadata collection, and data type constraints that govern which strategies apply to which column types.
+This chapter covers the dimension metadata layer — the Pydantic models that describe how each column in a rules table should be interpreted during evaluation. You will learn about the `DimensionRole` enum (CONSTRAINT vs CONTEXT_KEY), the `Dimension` class with its field resolution and validation, the `DimensionsMetadata` collection and its YAML round-trip, the `DataType` enum, temporal sentinels, and the data type constraints that govern which strategies apply to which column types.
 
 ---
 
@@ -28,11 +29,11 @@ The metadata layer consists of three key elements: the `DimensionRole` enum (whi
 The `DimensionRole` enum assigns a functional classification to each dimension, controlling how it participates in both the expression rules engine and the accumulator engine. There are exactly two roles.
 
 ```python
-from enum import Enum, auto
+from enum import StrEnum
 
-class DimensionRole(Enum):
-    CONSTRAINT = auto()
-    CONTEXT_KEY = auto()
+class DimensionRole(StrEnum):
+    CONSTRAINT = "constraint"
+    CONTEXT_KEY = "context_key"
 ```
 
 The role determines the dimension's behavior at two different stages: during expression evaluation (Chapter 5) and during lattice construction (Chapters 7-9). Choosing the correct role for each dimension is a fundamental modelling decision.
@@ -70,7 +71,7 @@ The following fields are available on every Dimension:
 - **`context_field`** (optional, str): the field name to look up in the context object (defaults to dimension_name)
 - **`rule_field`** (optional, str): the column name in the rules DataFrame (defaults to dimension_name)
 - **`match_strategy`** (MatchStrategy): the comparison operation (defaults to EXACT)
-- **`data_type`** (type): the Python type of values in this dimension (defaults to str)
+- **`data_type`** (DataType): a serialisable dimension type (`str`, `int`, `float`, `bool`, `date`, or `datetime`; defaults to `DataType.STR`)
 - **`role`** (DimensionRole): CONSTRAINT or CONTEXT_KEY (defaults to CONSTRAINT)
 - **`valid_values`** (list): optional list of allowed values for documentation/validation
 
@@ -81,24 +82,26 @@ Additionally, RANGE-specific fields are available:
 - **`range_min_inclusive`** (bool): whether the lower bound is inclusive (default True)
 - **`range_max_inclusive`** (bool): whether the upper bound is inclusive (default True)
 
-And for REGEX dimensions:
+And for context-regex dimensions:
 
 - **`regex_pattern`** (optional, str): the literal regex pattern for context validation
 
 The `valid_values` field deserves special mention. While it is not enforced during evaluation (the engine does not check context or rule values against this list), it serves as machine-readable documentation and can be used by external tools to generate UI dropdowns, validate rule data at import time, or produce data dictionaries.
 
-The default values are chosen to minimize configuration burden for the most common case. A dimension with only `dimension_name` set uses EXACT strategy, str data type, CONSTRAINT role, and resolves all field names to the dimension name. This means the simplest possible dimension definition is a single line:
+<!-- concept:28 -->
+The default values are chosen to minimize configuration burden for the most common case. A dimension with only `dimension_name` set uses EXACT strategy, `DataType.STR`, CONSTRAINT role, and resolves all field names to the dimension name. This means the simplest possible dimension definition is a single line:
 
 ```python
+from mountainash_rules import DataType, Dimension, DimensionRole, MatchStrategy
+
 dim = Dimension(dimension_name="region")
 # Equivalent to:
 # Dimension(
 #     dimension_name="region",
-<!-- concept:28 -->
 #     context_field=None,          -> resolved_context_field = "region"
 #     rule_field=None,             -> resolved_rule_field = "region"
 #     match_strategy=MatchStrategy.EXACT,
-#     data_type=str,
+#     data_type=DataType.STR,
 #     role=DimensionRole.CONSTRAINT,
 #     valid_values=[],
 # )
@@ -107,25 +110,27 @@ dim = Dimension(dimension_name="region")
 Here is a complete example defining three dimensions with different strategies:
 
 ```python
-from mountainash_rules import Dimension, DimensionsMetadata, MatchStrategy, DimensionRole
+from mountainash_rules import (
+    DataType, Dimension, DimensionsMetadata, MatchStrategy, DimensionRole
+)
 
 metadata = DimensionsMetadata(dimensions=[
     Dimension(
         dimension_name="region",
         match_strategy=MatchStrategy.EXACT,
-        data_type=str,
+        data_type=DataType.STR,
     ),
     Dimension(
         dimension_name="order_value",
         match_strategy=MatchStrategy.RANGE,
-        data_type=float,
+        data_type=DataType.FLOAT,
         range_min_field="order_min",
         range_max_field="order_max",
     ),
     Dimension(
         dimension_name="product_line",
         match_strategy=MatchStrategy.EXACT,
-        data_type=str,
+        data_type=DataType.STR,
         role=DimensionRole.CONTEXT_KEY,
     ),
 ])
@@ -145,7 +150,7 @@ Type: diagram
 
 **Components:**
 - Central node: "Dimension" class
-- Grouped child nodes: Common fields (dimension_name, context_field, rule_field, match_strategy, data_type, role), RANGE fields (range_min_field, range_max_field, range_min_inclusive, range_max_inclusive), REGEX fields (regex_pattern)
+- Grouped child nodes: Common fields (dimension_name, context_field, rule_field, match_strategy, data_type, role), RANGE fields (range_min_field, range_max_field, range_min_inclusive, range_max_inclusive), CONTEXT_REGEX fields (regex_pattern)
 - Edge labels showing type and default value
 
 **Interactions:** Click a strategy name (EXACT, RANGE, REGEX, etc.) in a sidebar to highlight which fields are required/optional for that strategy. Hover over a field node for a tooltip with its description and validation rules.
@@ -156,15 +161,23 @@ Type: diagram
 <!-- concept:27 -->
 ## DimensionsMetadata
 
-The `DimensionsMetadata` class is a validated container for a list of `Dimension` objects. It serves as the engine's configuration input — you construct a `DimensionsMetadata` instance and pass it to the `ExpressionRulesEngine` or `AccumulatorEngine` constructor. It acts as the single source of truth for how the engine interprets the rules DataFrame.
+The `DimensionsMetadata` class is a validated container for a list of `Dimension` objects. It serves as the engine's configuration input — you construct a `DimensionsMetadata` instance and pass it to the `ExpressionRulesEngine` or `AccumulatorEngine` constructor. It acts as the single source of truth for how the engine interprets the rules DataFrame, including table-level hit-policy and output-field settings.
 
 ```python
+from pydantic import BaseModel, Field
+
+from mountainash_rules import Dimension, HitPolicy
+
 class DimensionsMetadata(BaseModel):
     dimensions: list[Dimension]
+    hit_policy: HitPolicy = HitPolicy.COLLECT
+    priority_field: str | None = None
+    output_fields: list[str] = Field(default_factory=list)
 ```
 
 Beyond holding the list, `DimensionsMetadata` provides:
 
+- **Table-level evaluation settings**: `hit_policy`, optional `priority_field`, and `output_fields` configure result selection and payload projection.
 - **Uniqueness validation**: a `model_validator` ensures no two dimensions share the same `dimension_name`. Duplicate names would cause ambiguous column references during compilation, so they are rejected at construction time.
 - **Lookup method**: `get_dimension(name)` retrieves a dimension by its logical name, raising `KeyError` if not found.
 
@@ -217,11 +230,11 @@ The `Dimension` class uses Pydantic's `@model_validator(mode="after")` to enforc
 
 The validator enforces the following rules:
 
-1. **RANGE strategy** requires both `range_min_field` and `range_max_field` to be non-empty strings, and `data_type` must be `int` or `float`
-2. **REGEX, PREFIX, SUFFIX, CONTAINS** strategies require `data_type` to be `str`
-3. **REGEX** strategy requires `regex_pattern` to be a non-empty string
-4. **Non-REGEX** strategies must not set `regex_pattern` (prevents dead configuration)
-5. **GREATER_THAN and LESS_THAN** strategies require `data_type` to be `int` or `float`
+1. **RANGE strategy** requires both `range_min_field` and `range_max_field` to be non-empty strings, and `data_type` must be numeric or temporal (`DataType.INT`, `FLOAT`, `DATE`, or `DATETIME`)
+2. **REGEX, CONTEXT_REGEX, PREFIX, SUFFIX, CONTAINS** strategies require `data_type` to be `DataType.STR`
+3. **CONTEXT_REGEX** strategy requires `regex_pattern` to be a non-empty string
+4. Only `CONTEXT_REGEX` may set `regex_pattern`; per-row `REGEX` reads its pattern from the rule column, while other strategies reject the field
+5. **GREATER_THAN and LESS_THAN** strategies require a numeric or temporal data type
 
 Each constraint produces a descriptive `ValueError` message that identifies the dimension by name and explains exactly which requirement was violated. This makes debugging misconfigured rule sets straightforward — errors surface immediately at metadata construction time with clear diagnostic messages.
 
@@ -251,26 +264,110 @@ Type: workflow
 <!-- concept:30 -->
 ## Data Type Constraints
 
-The `data_type` field on a Dimension serves two purposes: it determines which sentinel set to use (string vs numeric) and it restricts which match strategies are valid for that dimension.
+The `data_type` field on a `Dimension` is a `DataType` StrEnum. It determines which typed sentinel set the compiler uses and restricts which match strategies are valid for that dimension. The enum's values are lowercase strings so metadata can be serialised without inventing a backend-specific type encoding.
 
 The relationship between data type and strategy is not arbitrary — it reflects fundamental semantic requirements:
 
-- **Numeric comparisons** (RANGE, GREATER_THAN, LESS_THAN) require ordered types (`int`, `float`) because they perform less-than/greater-than operations
-- **String operations** (PREFIX, SUFFIX, CONTAINS, REGEX) require `str` because they use string-specific methods (starts_with, ends_with, contains, regex_contains)
-- **Equality operations** (EXACT, NOT_EQUAL) and **set operations** (SET_MEMBERSHIP, SET_EXCLUSION) work with any type because they rely only on equality/membership checks
+- **Ordered comparisons** (`RANGE`, `GREATER_THAN`, `LESS_THAN`) require numeric or temporal types (`int`, `float`, `date`, or `datetime`) because they perform ordering operations.
+- **String operations** (`PREFIX`, `SUFFIX`, `CONTAINS`, `REGEX`, `CONTEXT_REGEX`) require `DataType.STR` because they use string-specific operations.
+- **Equality operations** (`EXACT`, `EXACT_KEY`, `NOT_EQUAL`) work with every `DataType` because they rely on equality checks.
+- **Set operations** (`SET_MEMBERSHIP`, `SET_EXCLUSION`) work with string, numeric, and temporal types. Boolean set dimensions are rejected because there is no typed wildcard sentinel and a set over `{true, false}` is degenerate.
 
-The data type also controls sentinel selection during compilation:
+The data type controls sentinel selection during compilation:
 
 | data_type | Unknown Sentinel | Not-Set Sentinel |
-|-----------|-----------------|------------------|
-| str | `"<NA>"` | `"<NOT_SET>"` |
-| int | -999999999 | -999999998 |
-| float | -999999999 | -999999998 |
+|-----------|------------------|------------------|
+| `DataType.STR` | `"<NA>"` | `"<NOT_SET>"` |
+| `DataType.INT` / `DataType.FLOAT` | `-999999999` | `-999999998` |
+| `DataType.BOOL` | null-aware boolean handling | null-aware boolean handling |
+| `DataType.DATE` | `date(1, 1, 1)` | `date(1, 1, 2)` |
+| `DataType.DATETIME` | `datetime(1, 1, 1)` | `datetime(1, 1, 2)` |
 
-This pairing ensures that ternary-aware columns (`t_col`) are constructed with the correct sentinel set. A numeric dimension will never encounter the string sentinel `"<NA>"` in its column (the DataFrame schema prevents it), and vice versa.
+This pairing ensures that ternary-aware columns (`t_col`) are constructed with the correct sentinel set. A numeric dimension must use numeric sentinel values, while a temporal dimension uses values of the corresponding date or datetime type.
 
 !!! warning "Type Safety at the Data Level"
-    The `data_type` field describes the expected type of values in the DataFrame column. The engine does not perform runtime type casting. If your DataFrame column contains strings but the dimension declares `data_type=int`, the sentinel detection will use numeric sentinels that can never match string values, leading to incorrect ternary results. Always ensure the declared `data_type` matches the actual DataFrame column type.
+    The `data_type` field describes the expected type of values in the DataFrame column. The engine does not perform runtime type casting. If your DataFrame column contains strings but the dimension declares `DataType.INT`, numeric sentinel detection and comparisons cannot correctly interpret those values. Always ensure the declared `data_type` matches the actual DataFrame column type.
+
+<!-- concept:94 -->
+## DataType Enum
+
+`DataType` is a `StrEnum` with six members: `STR`, `INT`, `FLOAT`, `BOOL`, `DATE`, and `DATETIME`. Their serialised values are the lowercase strings `str`, `int`, `float`, `bool`, `date`, and `datetime`, which makes a dimension schema readable in Python and stable in interchange formats.
+
+Each member exposes `python_type`, the corresponding Python runtime class:
+
+```python
+from datetime import date, datetime
+
+from mountainash_rules import DataType
+
+assert DataType.STR.python_type is str
+assert DataType.INT.python_type is int
+assert DataType.FLOAT.python_type is float
+assert DataType.BOOL.python_type is bool
+assert DataType.DATE.python_type is date
+assert DataType.DATETIME.python_type is datetime
+```
+
+Use enum members when constructing dimensions:
+
+```python
+from mountainash_rules import DataType, Dimension, MatchStrategy
+
+effective = Dimension(
+    dimension_name="effective_on",
+    match_strategy=MatchStrategy.RANGE,
+    data_type=DataType.DATE,
+    range_min_field="starts_on",
+    range_max_field="ends_on",
+)
+```
+
+For migration compatibility, passing a raw Python class such as `data_type=str` is still accepted. The `_coerce_data_type` field validator maps it to the corresponding `DataType` member and emits a `DeprecationWarning`; new schemas should use `DataType.STR` (or the serialised value `"str"`) instead.
+
+<!-- concept:95 -->
+## Temporal Sentinels
+
+Date and datetime dimensions use typed sentinels at the proleptic floor of their domains:
+
+| Data type | UNKNOWN | NOT_SET |
+|-----------|---------|---------|
+| `DataType.DATE` | `date(1, 1, 1)` | `date(1, 1, 2)` |
+| `DataType.DATETIME` | `datetime(1, 1, 1)` | `datetime(1, 1, 2)` |
+
+These values are deliberately reserved below the business domain: ordinary business dates and timestamps do not live at year 1. `unknown_sentinel_for(DataType.DATE)` and `not_set_sentinel_for(DataType.DATE)` return the two `date` values; the corresponding `DATETIME` lookups return `datetime` values. The sentinels are therefore portable across supported DataFrame backends and remain orderable, which lets temporal range and threshold strategies use the same ternary comparison model as numeric dimensions.
+
+Using typed floor values also avoids a separate null-handling code path. Unknown and missing context values stay in-band, so the compiler can recognize them through `sentinels_for(data_type)` while ordinary date/datetime comparisons remain typed and predictable.
+
+<!-- concept:96 -->
+## YAML Round-Trip
+
+`DimensionsMetadata` can be defined and version-controlled as YAML rather than only as Python code. `to_yaml()` serialises metadata with defaults omitted, `from_yaml(text)` reconstructs it, and `to_yaml_file(path)` / `from_yaml_file(path)` provide the file-oriented equivalents. These methods use the package's `pyyaml` dependency and preserve enum values as their stable strings.
+
+For example, this YAML schema declares an exact string dimension and a temporal range dimension:
+
+```yaml
+dimensions:
+  - dimension_name: region
+    data_type: str
+    match_strategy: exact
+  - dimension_name: effective_at
+    data_type: datetime
+    match_strategy: range
+    range_min_field: starts_at
+    range_max_field: ends_at
+```
+
+Load it in an application, or round-trip a Python definition for review and persistence:
+
+```python
+from mountainash_rules import DimensionsMetadata
+
+metadata = DimensionsMetadata.from_yaml_file("rules-metadata.yaml")
+yaml_text = metadata.to_yaml()
+metadata.to_yaml_file("rules-metadata.normalized.yaml")
+```
+
+Because `DimensionsMetadata` validates each `Dimension` during loading, malformed strategy/type combinations and duplicate dimension names fail at schema-load time instead of surfacing during evaluation.
 
 ## Practical Example: Multi-Strategy Rule Set
 
@@ -278,28 +375,27 @@ To consolidate the concepts in this chapter, consider a complete metadata defini
 
 ```python
 from mountainash_rules import (
-    Dimension, DimensionsMetadata, MatchStrategy, DimensionRole
+    DataType, Dimension, DimensionsMetadata, MatchStrategy, DimensionRole
 )
 
 shipping_metadata = DimensionsMetadata(dimensions=[
     # Partition dimension — separate lattice per carrier
     Dimension(
         dimension_name="carrier",
-        match_strategy=MatchStrategy.EXACT,
-        data_type=str,
+        data_type=DataType.STR,
         role=DimensionRole.CONTEXT_KEY,
     ),
     # String equality — destination country
     Dimension(
         dimension_name="destination_country",
         match_strategy=MatchStrategy.EXACT,
-        data_type=str,
+        data_type=DataType.STR,
     ),
     # Numeric range — package weight
     Dimension(
         dimension_name="weight",
         match_strategy=MatchStrategy.RANGE,
-        data_type=float,
+        data_type=DataType.FLOAT,
         range_min_field="weight_min",
         range_max_field="weight_max",
     ),
@@ -309,7 +405,7 @@ shipping_metadata = DimensionsMetadata(dimensions=[
         context_field="requested_service",
         rule_field="available_services",
         match_strategy=MatchStrategy.SET_MEMBERSHIP,
-        data_type=str,
+        data_type=DataType.STR,
     ),
 ])
 ```
@@ -386,7 +482,7 @@ Dimension(
     dimension_name="age_bracket",     # Logical name only
     context_field="customer_age",     # Context provides a single age value
     match_strategy=MatchStrategy.RANGE,
-    data_type=int,
+    data_type=DataType.INT,
     range_min_field="age_lower",      # DataFrame column for lower bound
     range_max_field="age_upper",      # DataFrame column for upper bound
 )
@@ -406,9 +502,11 @@ DimensionsMetadata(dimensions=[
 ## Key Takeaways
 
 - **DimensionRole** classifies dimensions as either CONSTRAINT (participates in ternary evaluation and coalesce) or CONTEXT_KEY (partitions the lattice, skipped during expression evaluation).
-- The **Dimension class** is a Pydantic BaseModel capturing all metadata needed to compile and evaluate a single column: name, field mappings, strategy, type, and role.
-- **DimensionsMetadata** validates that dimension names are unique across the collection and provides a lookup method for name-based access.
+- The **Dimension class** is a Pydantic BaseModel capturing all metadata needed to compile and evaluate a single column: name, field mappings, strategy, `DataType`, and role.
+- **DimensionsMetadata** validates unique dimension names, exposes `get_dimension(name)`, and carries table-level hit-policy/output settings.
 - **Field resolution** decouples logical dimension names from physical column names and context field names via `resolved_context_field` and `resolved_rule_field` properties.
-- The **dimension validator** catches strategy-specific configuration errors (missing range fields, wrong data types, orphaned regex patterns) at construction time.
-- **Data type constraints** control both sentinel selection and strategy validity — numeric types get numeric sentinels, string types get string sentinels, and incompatible strategy/type combinations are rejected.
+- The **dimension validator** catches strategy-specific configuration errors (missing range fields, incompatible data types, and invalid regex configuration) at construction time.
+- **DataType** is the serialisable StrEnum for `str`, `int`, `float`, `bool`, `date`, and `datetime`; its `python_type` property maps each member to the corresponding Python class.
+- **Temporal sentinels** reserve `date(1, 1, 1)` / `date(1, 1, 2)` and the corresponding datetime values below business data, preserving portable, orderable, in-band wildcard semantics.
+- **YAML round-trip** methods let `DimensionsMetadata` schemas live in version-controlled YAML files and validate on load.
 - A well-designed metadata definition is the single source of truth for how the rules engine interprets each column in the rules DataFrame.

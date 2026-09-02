@@ -1,67 +1,138 @@
 {
   "schema_version": "1.0",
   "baseline": {
-    "source_commit": "41d584652aa29b09762aa1140ae64fb640473940",
-    "refresh_date": "2026-06-04T12:47:44Z",
+    "source_commit": "7d0e3dcb747949bb2d7172a34135a7872b2ed55f",
+    "refresh_date": "2026-09-02T00:00:00Z",
     "tool_versions": {
       "python": "3.12",
-      "enrich_script": "1.0.0"
+      "enrich_script": "1.0.0",
+      "package_documentation_profile": "n/a (agent-executed, no version pin)",
+      "textbook_refresh": "n/a (agent-executed, no version pin)",
+      "csv_to_json": "0.04"
     }
   },
   "chapter_state": {
     "01-foundation-concepts": {
-      "content_hash": "dd9d4604f75f4cf07e3700533e0892e681b35cb97b60723ceae479609f106ed3",
-      "word_count": 3228,
-      "has_concept_markers": true
+      "content_hash": "670848fd65b7b653d1877389701068993816dae00133c917ef53c59319cb42b5",
+      "word_count": 3256,
+      "has_concept_markers": true,
+      "last_generated": "2026-09-02",
+      "generator_version": "0.09"
     },
     "02-match-strategies": {
-      "content_hash": "b646300c408e7b9541c6006add5573924969442f4a3bd046295f7ad0df4dece5",
-      "word_count": 3207,
-      "has_concept_markers": true
+      "content_hash": "44b54cf75fe27f6132b8b58a71409f64399dac9f20a74f7113c27de188a43883",
+      "word_count": 3826,
+      "has_concept_markers": true,
+      "last_generated": "2026-09-02",
+      "generator_version": "0.09"
     },
     "03-dimension-model": {
-      "content_hash": "a87a9ef78a2208ffe5f4d45f7ade4ad712322ad8f2af057d22b26922c10a0aaa",
-      "word_count": 2820,
-      "has_concept_markers": true
+      "content_hash": "a1f673ac877aee7ee789effaa90f8de6e41d4bc2a5bc5b383a4d9b98ce0ecfa7",
+      "word_count": 3435,
+      "has_concept_markers": true,
+      "last_generated": "2026-09-02",
+      "generator_version": "0.09"
     },
     "04-dimension-compiler": {
-      "content_hash": "d68d9e6ef2d35deade872a294ee35c4a54175782f3f1c8e19f96672b4fa0c6e1",
-      "word_count": 3081,
-      "has_concept_markers": true
+      "content_hash": "5d19bbaf12c3fab001269b657ddc0951e0a82f392621c2abb1147fa08a4ebef4",
+      "word_count": 3421,
+      "has_concept_markers": true,
+      "last_generated": "2026-09-02",
+      "generator_version": "0.09"
     },
     "05-expression-rules-engine": {
-      "content_hash": "061636844c485a862b5673cb61a26499b481a6677dd2cf40a2fdf7d9f8c192f5",
-      "word_count": 3011,
-      "has_concept_markers": true
+      "content_hash": "3dc1225f4b69b153b2520d13ee2e95ace4bca7daeac46e6386b021524d68b88a",
+      "word_count": 3127,
+      "has_concept_markers": true,
+      "last_generated": "2026-09-02",
+      "generator_version": "0.09"
     },
-    "06-expression-engine-results": {
-      "content_hash": "46979c6150abec92bdb2f4eaffcd3d24b337bcf0cad7f064bcc3f056b21ab4b7",
-      "word_count": 2827,
-      "has_concept_markers": true
+    "06-hit-policies": {
+      "content_hash": "1cf4ee107c02adb1083646894bdda24472dae82b88be98ba2ddef20507bb6407",
+      "word_count": 2895,
+      "has_concept_markers": true,
+      "last_generated": "2026-09-02",
+      "generator_version": "0.09"
     },
-    "07-accumulator-compiler": {
-      "content_hash": "3f0ee7261470e38b8f9a37140767ec17800c2d256587a2453ee3e037b41514e4",
-      "word_count": 2823,
-      "has_concept_markers": true
+    "07-expression-engine-results": {
+      "content_hash": "a37f311109d3fbbb7a272b7115171474471407844e5de0164f8a39ba1c19d1fd",
+      "word_count": 3647,
+      "has_concept_markers": true,
+      "last_generated": "2026-09-02",
+      "generator_version": "0.09"
     },
-    "08-accumulator-engine": {
-      "content_hash": "0b9bd360336dfb9c26077328cd8dee474844d881290164b002bff59c24274930",
-      "word_count": 2941,
-      "has_concept_markers": true
+    "08-batch-evaluation": {
+      "content_hash": "9deb3f51f528c7b7fafa1b518f34b1e754be5bfeba457ee36f87168f6d8efb13",
+      "word_count": 3416,
+      "has_concept_markers": true,
+      "last_generated": "2026-09-02",
+      "generator_version": "0.09"
     },
-    "09-lattice-structures-and-results": {
-      "content_hash": "5661944185e18bc3ba743e4e2aafb7d9d48fd1d8137ad0df892b2d6c6411b3e8",
-      "word_count": 3687,
-      "has_concept_markers": true
+    "09-accumulator-compiler": {
+      "content_hash": "115eefe968df4b8b26f5189e2ebe0ff93f19de57682dc2dec06e3d4cb2d9f77a",
+      "word_count": 3303,
+      "has_concept_markers": true,
+      "last_generated": "2026-09-02",
+      "generator_version": "0.09"
+    },
+    "10-accumulator-engine": {
+      "content_hash": "6ceb04229a3353fb59880781b0a696f55a886d4e31cbc43188498578aaad30a4",
+      "word_count": 3412,
+      "has_concept_markers": true,
+      "last_generated": "2026-09-02",
+      "generator_version": "0.09"
+    },
+    "11-lattice-structures-and-results": {
+      "content_hash": "2bc0cac818fdc3b339303a444dcb82853d663016ca46fa88afc1cecafd870daf",
+      "word_count": 4011,
+      "has_concept_markers": true,
+      "last_generated": "2026-09-02",
+      "generator_version": "0.09"
     }
   },
   "learning_graph_state": {
-    "content_hash": "a28361ca162d1ed9c033a4bf918c5420ed397ab5732651c6483c1e5ac912ac6b",
-    "node_count": 90,
-    "edge_count": 169,
-    "enriched_nodes": 90,
-    "low_confidence_count": 50
+    "content_hash": "d6888d936105a919ca53209de7b2cecd66c5aa40325631100ebeabb3add7464f",
+    "node_count": 130,
+    "edge_count": 230,
+    "enriched_nodes": 65,
+    "low_confidence_count": 65
   },
-  "faq_state": null,
-  "refresh_history": []
+  "faq_state": {
+    "question_count": 70,
+    "content_hash": "67a8ea0c99b8866d65b4cef933938f43975594bdcba5484efd500eb11470eeff"
+  },
+  "refresh_history": [
+    {
+      "date": "2026-06-04T12:47:44Z",
+      "from_commit": null,
+      "to_commit": "41d584652aa29b09762aa1140ae64fb640473940",
+      "chapters_updated": [],
+      "sections_regenerated": 0,
+      "faq_questions_updated": 0,
+      "tokens_used": null,
+      "note": "seed"
+    },
+    {
+      "date": "2026-09-02",
+      "from_commit": "41d584652aa29b09762aa1140ae64fb640473940",
+      "to_commit": "7d0e3dcb747949bb2d7172a34135a7872b2ed55f",
+      "chapters_updated": [
+        "01-foundation-concepts (import-path correctness fix, no new concepts)",
+        "02-match-strategies",
+        "03-dimension-model",
+        "04-dimension-compiler",
+        "05-expression-rules-engine (signature accuracy fix, no new concepts)",
+        "06-hit-policies (new chapter)",
+        "07-expression-engine-results",
+        "08-batch-evaluation (new chapter)",
+        "09-accumulator-compiler",
+        "10-accumulator-engine",
+        "11-lattice-structures-and-results"
+      ],
+      "sections_regenerated": 40,
+      "faq_questions_updated": 17,
+      "tokens_used": null,
+      "note": "full refresh: package renamed mountainash_utils_rules->mountainash_rules and reorganised flat->core/+engines/{filter,accumulator}/; profile rebuilt 14->21 modules; learning graph grown 90->130 concepts, 7->9 taxonomy categories, 9->11 chapters (2 new: Hit Policies, Batch Evaluation); FAQ grown 53->70 questions, 6->8 categories"
+    }
+  ]
 }

@@ -1,12 +1,13 @@
 ---
-title: "Chapter 7: Accumulator Compiler"
+title: "Chapter 9: Accumulator Compiler"
 description: "The AccumulatorCompiler and its two expression families — compatible and coalesce — that enable lattice construction from rule pairs."
 generated_by: claude skill chapter-content-generator
-date: 2026-06-03
-version: 0.08
+refreshed_by: claude skill textbook-refresh
+date: 2026-09-02
+version: 0.09
 ---
 
-# Chapter 7: Accumulator Compiler
+# Chapter 9: Accumulator Compiler
 
 ## Summary
 
@@ -23,8 +24,7 @@ Consider a pricing system where multiple discount rules might apply simultaneous
 The compiler produces two families of expressions for each CONSTRAINT dimension:
 
 - **Compatible expressions**: determine whether two rules can coexist on a dimension (they do not contradict each other)
-- **Coalesce expressions**: compute the merged value when two compatible rules are combined (the intersection of their constraints)
-
+- **Coalesce expressions**: compute the merged value when two compatible rules are combined (using the strategy's merge operation)
 <!-- concept:59 -->
 ## AccumulatorCompiler
 
@@ -42,9 +42,9 @@ class AccumulatorCompiler:
     def compile_coalesce_na_flag(self, dim: Dimension) -> BaseExpressionAPI: ...
 ```
 
-Unlike the DimensionCompiler which supports all 11 strategies, the AccumulatorCompiler supports only strategies that have well-defined compatibility and coalesce semantics: EXACT, RANGE, GREATER_THAN, and LESS_THAN. String pattern strategies and set operations are not supported because their intersection semantics are not well-defined in the general case. Attempting to compile an unsupported strategy raises a `ValueError` with a descriptive message identifying the offending strategy.
+Unlike the DimensionCompiler, which handles all 12 match strategies, the AccumulatorCompiler supports strategies that have defined pairwise compatibility and coalesce semantics: EXACT, RANGE, GREATER_THAN, LESS_THAN, SET_MEMBERSHIP, and SET_EXCLUSION. String pattern strategies remain unsupported because their general intersection semantics are not defined here. Attempting to compile an unsupported strategy raises a `ValueError` with a descriptive message identifying the offending strategy.
 
-This restriction means that rule sets using PREFIX, SUFFIX, CONTAINS, REGEX, SET_MEMBERSHIP, or SET_EXCLUSION dimensions can still use the ExpressionRulesEngine for point queries, but those dimensions must be excluded from the accumulator workflow or converted to equivalent EXACT dimensions if lattice construction is needed.
+Set dimensions therefore participate in the accumulator workflow. Set wildcards use the in-band sentinel list described in Chapter 4; they are not null values. Membership dimensions intersect compatible sets, while exclusion dimensions union excluded values. The filter engine and accumulator use the same set-wildcard helpers, so their wildcard interpretation remains aligned.
 
 | Strategy | Compatible | Coalesce | Supported |
 |----------|-----------|----------|-----------|
@@ -52,8 +52,10 @@ This restriction means that rule sets using PREFIX, SUFFIX, CONTAINS, REGEX, SET
 | RANGE | Intervals overlap or either is sentinel | Take the intersection interval | Yes |
 | GREATER_THAN | Always compatible | Take the maximum (stricter bound) | Yes |
 | LESS_THAN | Always compatible | Take the minimum (stricter bound) | Yes |
-| PREFIX, SUFFIX, etc. | N/A | N/A | No |
-| SET_MEMBERSHIP, SET_EXCLUSION | N/A | N/A | No |
+| SET_MEMBERSHIP | Either wildcard or sets intersect | Set intersection | Yes |
+| SET_EXCLUSION | Always compatible | Set union | Yes |
+| PREFIX, SUFFIX, CONTAINS, REGEX, CONTEXT_REGEX | N/A | N/A | No |
+
 
 <!-- concept:60 -->
 <!-- concept:61 -->
@@ -86,7 +88,6 @@ Type: workflow
 - Example traces highlighted along the path
 
 **Interactions:** User enters LHS and RHS values (or selects sentinel). The diagram traces the path through the decision tree, highlighting active nodes. Strategy toggle switches between EXACT and RANGE logic. For RANGE, users can set min/max on both sides.
-
 **Learning objective:** Determine whether two rule values are compatible on a given dimension (Bloom: Apply)
 </details>
 
@@ -96,7 +97,7 @@ Type: workflow
 <!-- concept:67 -->
 ## Coalesce Expression
 
-A coalesce expression computes the merged dimension value when two compatible rules are combined. The merged value represents the *intersection* of both constraints — the tightest constraint that satisfies both rules simultaneously.
+A coalesce expression computes the merged dimension value when two compatible rules are combined. The merged value represents the strategy-defined combination of both constraints — typically their intersection, as with ranges and membership sets, while exclusion sets combine by union.
 
 Coalesce returns a list of expressions (not a single expression) because some strategies produce multiple output columns. EXACT produces one coalesced value column; RANGE produces two (coalesced min and coalesced max).
 
@@ -105,20 +106,33 @@ The coalesce logic follows a priority rule: non-sentinel values take precedence 
 - **EXACT**: both sides must have the same value (guaranteed by compatibility check), so either value is used
 - **RANGE**: the merged interval is the intersection — take the max of the two mins and the min of the two maxes
 - **Threshold (GT/LT)**: take the stricter bound — max for GREATER_THAN, min for LESS_THAN
+- **SET_MEMBERSHIP**: the concrete lists are intersected to retain values satisfying both rules
+- **SET_EXCLUSION**: the concrete lists are unioned to accumulate every excluded value
 
 ## Coalesce NA Flag
 
-Alongside the coalesced values, the compiler produces NA flag columns that track whether the merged dimension is still a wildcard. An NA flag is 1 when *both* sides are sentinels (meaning neither rule constrains this dimension), and 0 otherwise.
+Alongside the coalesced values, the compiler produces NA flag columns that track whether the merged dimension is still a wildcard. An NA flag is 1 when *both* sides are sentinels (for RANGE, all four bounds must be sentinels), meaning neither rule constrains this dimension, and 0 otherwise.
 
 ```python
 def compile_coalesce_na_flag(self, dim: Dimension) -> BaseExpressionAPI:
-    # For EXACT: co_{field}_na = (co_field is sentinel) AND (rhs_field is sentinel)
-    co_sentinel = ma.col(f"co_{field}").eq(ma.lit(sentinel))
-    rhs_sentinel = ma.col(f"{field}_rhs").eq(ma.lit(sentinel))
+    if dim.match_strategy == MatchStrategy.RANGE:
+        co_min_s, co_max_s, rhs_min_s, rhs_max_s = self._range_sentinel_checks(dim)
+        all_sentinel = (
+            co_min_s.__and__(rhs_min_s)
+            .__and__(co_max_s)
+            .__and__(rhs_max_s)
+        )
+        return all_sentinel.cast(int).alias(f"co_{dim.dimension_name}_na")
+    if dim.match_strategy in (MatchStrategy.SET_MEMBERSHIP, MatchStrategy.SET_EXCLUSION):
+        co_w, rhs_w = self._set_wild_checks(dim)
+        field = dim.resolved_rule_field
+        return co_w.__and__(rhs_w).cast(int).alias(f"co_{field}_na")
+    co_sentinel, rhs_sentinel = self._sentinel_checks(dim)
+    field = dim.resolved_rule_field
     return co_sentinel.__and__(rhs_sentinel).cast(int).alias(f"co_{field}_na")
 ```
 
-The NA flag is critical for the frontier filter (Chapter 8): it enables the engine to determine whether two lattice combinations have the same effective constraint pattern, which is necessary for identifying dominated combinations.
+The NA flag is critical for the frontier filter (Chapter 10): it enables the engine to determine whether two lattice combinations have the same effective constraint pattern, which is necessary for identifying dominated combinations.
 
 A dimension's NA flag can only be 1 if every rule contributing to the combination has a sentinel for that dimension. The moment any rule with a non-sentinel value is included, the NA flag becomes 0 (the combination now constrains this dimension).
 
@@ -144,24 +158,36 @@ The intuition is straightforward: if either side does not care (sentinel), they 
 
 ## Compatible Range
 
-For the RANGE strategy, two rules are compatible when their intervals overlap or when either side has sentinel bounds (wildcard range). Interval overlap is defined as: the LHS minimum is less than the RHS maximum, AND the LHS maximum is greater than the RHS minimum.
+For the RANGE strategy, two rules are compatible when their effective intervals overlap. A sentinel minimum acts as negative infinity and a sentinel maximum as positive infinity; each bound is checked independently. The comparison also honors the dimension's endpoint-inclusivity flags, so touching endpoints overlap only when both relevant sides are inclusive.
 
 ```python
 def _compatible_range(self, dim: Dimension) -> BaseExpressionAPI:
+    """True when the two effective intervals overlap.
+
+    A sentinel min is -inf, a sentinel max is +inf, each bound
+    independently. Touching endpoints overlap iff both the min and the
+    max side are inclusive (covers all four flag combinations).
+    """
     co_min_s, co_max_s, rhs_min_s, rhs_max_s = self._range_sentinel_checks(dim)
-    either_sentinel = co_min_s.__or__(rhs_min_s)
-    intervals_overlap = (
-        ma.col(f"co_{dim.range_min_field}")
-        .lt(ma.col(f"{dim.range_max_field}_rhs"))
-        .__and__(
-            ma.col(f"co_{dim.range_max_field}")
-            .gt(ma.col(f"{dim.range_min_field}_rhs"))
-        )
-    )
-    return either_sentinel.__or__(intervals_overlap)
+    co_min = ma.col(f"co_{dim.range_min_field}")
+    co_max = ma.col(f"co_{dim.range_max_field}")
+    rhs_min = ma.col(f"{dim.range_min_field}_rhs")
+    rhs_max = ma.col(f"{dim.range_max_field}_rhs")
+
+    touch_overlaps = dim.range_min_inclusive and dim.range_max_inclusive
+    if touch_overlaps:
+        low = co_min.le(rhs_max)
+        high = co_max.ge(rhs_min)
+    else:
+        low = co_min.lt(rhs_max)
+        high = co_max.gt(rhs_min)
+
+    low_ok = co_min_s.__or__(rhs_max_s).__or__(low)
+    high_ok = co_max_s.__or__(rhs_min_s).__or__(high)
+    return low_ok.__and__(high_ok)
 ```
 
-If either rule has sentinel bounds, they are automatically compatible (a wildcard range overlaps with everything). Otherwise, the standard interval overlap test applies.
+If either effective interval has an unbounded sentinel on the relevant side, that side of the overlap test succeeds automatically. Otherwise, the comparison enforces the configured inclusive or exclusive endpoint behavior.
 
 | LHS Range | RHS Range | Compatible? | Reason |
 |-----------|-----------|-------------|--------|
@@ -169,6 +195,61 @@ If either rule has sentinel bounds, they are automatically compatible (a wildcar
 | [10, 30] | [40, 60] | No | No overlap |
 | [sentinel] | [40, 60] | Yes | LHS is wildcard |
 | [10, 50] | [sentinel] | Yes | RHS is wildcard |
+
+<!-- concept:120 -->
+## Set Membership Compatible
+
+For a `SET_MEMBERSHIP` dimension, `_compatible_set_membership` treats two rule lists as compatible when either list is a wildcard or the lists have a non-empty intersection. The wildcard is the in-band `[sentinel]` list handled by the shared helpers; Chapter 4 explains its representation and normalization mechanics.
+
+```python
+def _compatible_set_membership(self, dim: Dimension) -> BaseExpressionAPI:
+    co_w, rhs_w = self._set_wild_checks(dim)
+    field = dim.resolved_rule_field
+    intersection_nonempty = (
+        ma.col(f"co_{field}")
+        .list.set_intersection(ma.col(f"{field}_rhs"))
+        .list.len()
+        .gt(ma.lit(0))
+    )
+    return co_w.__or__(rhs_w).__or__(intersection_nonempty)
+```
+
+The first two terms make any wildcard pair compatible with a constrained list. When both lists are concrete, `list.set_intersection(...).list.len().gt(ma.lit(0))` is true exactly when at least one member can satisfy both rules. Empty intersection means the candidate rule cannot join this combination. `SET_EXCLUSION` uses a different compatibility rule: its compiler dispatch returns `ma.lit(True)` because overlapping exclusions do not contradict one another.
+
+<!-- concept:121 -->
+## Set Membership Coalesce
+
+The `_coalesce_set` helper merges compatible set values, with the operation selected by the strategy. `compile_coalesce` passes `"intersection"` for `SET_MEMBERSHIP` and `"union"` for `SET_EXCLUSION`:
+
+```python
+case MatchStrategy.SET_MEMBERSHIP:
+    return self._coalesce_set(dim, "intersection")
+case MatchStrategy.SET_EXCLUSION:
+    return self._coalesce_set(dim, "union")
+```
+
+For either strategy, wildcard handling follows the same four cases as the implementation: two wildcards remain the sentinel list, a wildcard on the LHS yields the RHS list, a wildcard on the RHS yields the LHS list, and two concrete lists use the selected operation. Thus membership coalescing narrows allowed values through intersection, while exclusion coalescing accumulates forbidden values through union.
+
+```python
+def _coalesce_set(self, dim: Dimension, op: str) -> list[BaseExpressionAPI]:
+    co_w, rhs_w = self._set_wild_checks(dim)
+    field = dim.resolved_rule_field
+    co = ma.col(f"co_{field}")
+    rhs = ma.col(f"{field}_rhs")
+    combined = (
+        co.list.set_intersection(rhs) if op == "intersection" else co.list.set_union(rhs)
+    )
+    new_val = (
+        ma.when(co_w.__and__(rhs_w)).then(sentinel_list_expr(dim))
+        .when(co_w).then(rhs)
+        .when(rhs_w).then(co)
+        .otherwise(canonicalize_set_expr(combined))
+        .alias(f"co_{field}")
+    )
+    return [new_val]
+```
+
+`canonicalize_set_expr` sorts and deduplicates concrete results, giving equivalent lists a stable representation for later lattice comparisons and fingerprints. The accumulator's set wildcard sentinel remains an in-band list value rather than null.
 
 ## Coalesce Exact
 
@@ -201,18 +282,43 @@ The coalesce handles four cases per bound:
 4. Neither is sentinel: take the tighter bound (`greatest` for min, `least` for max)
 
 ```python
-new_min = (
-    ma.when(co_min_s.__and__(rhs_min_s))
-      .then(ma.lit(UNKNOWN_NUMERIC))      # Both wildcard -> stay wildcard
-    .when(co_min_s)
-      .then(ma.col(f"{dim.range_min_field}_rhs"))  # LHS wildcard -> use RHS
-    .when(rhs_min_s)
-      .then(ma.col(f"co_{dim.range_min_field}"))   # RHS wildcard -> use LHS
-    .otherwise(
-      ma.greatest(co_min, rhs_min)                  # Both constrained -> tighter
+def _coalesce_range(self, dim: Dimension) -> list[BaseExpressionAPI]:
+    co_min_s, co_max_s, rhs_min_s, rhs_max_s = self._range_sentinel_checks(dim)
+    sentinel = unknown_sentinel_for(dim.data_type)
+
+    new_min = (
+        ma.when(co_min_s.__and__(rhs_min_s))
+          .then(ma.lit(sentinel))
+        .when(co_min_s)
+          .then(ma.col(f"{dim.range_min_field}_rhs"))
+        .when(rhs_min_s)
+          .then(ma.col(f"co_{dim.range_min_field}"))
+        .otherwise(
+            ma.greatest(
+                ma.col(f"co_{dim.range_min_field}"),
+                ma.col(f"{dim.range_min_field}_rhs"),
+            )
+        )
+        .alias(f"co_{dim.range_min_field}")
     )
-    .alias(f"co_{dim.range_min_field}")
-)
+
+    new_max = (
+        ma.when(co_max_s.__and__(rhs_max_s))
+          .then(ma.lit(sentinel))
+        .when(co_max_s)
+          .then(ma.col(f"{dim.range_max_field}_rhs"))
+        .when(rhs_max_s)
+          .then(ma.col(f"co_{dim.range_max_field}"))
+        .otherwise(
+            ma.least(
+                ma.col(f"co_{dim.range_max_field}"),
+                ma.col(f"{dim.range_max_field}_rhs"),
+            )
+        )
+        .alias(f"co_{dim.range_max_field}")
+    )
+
+    return [new_min, new_max]
 ```
 
 The same pattern applies to the maximum bound, but using `ma.least` for the "both constrained" case (taking the smaller of the two maxes tightens the upper bound).
@@ -256,15 +362,16 @@ For GREATER_THAN, the coalesced value is the maximum of the two thresholds (a hi
 def _coalesce_threshold(self, dim: Dimension, combine_fn) -> list[BaseExpressionAPI]:
     co_sentinel, rhs_sentinel = self._sentinel_checks(dim)
     field = dim.resolved_rule_field
+    sentinel = unknown_sentinel_for(dim.data_type)
     new_val = (
         ma.when(co_sentinel.__and__(rhs_sentinel))
-          .then(ma.lit(UNKNOWN_NUMERIC))         # Both wildcard
+          .then(ma.lit(sentinel))
         .when(co_sentinel)
-          .then(ma.col(f"{field}_rhs"))           # LHS wildcard -> use RHS
+          .then(ma.col(f"{field}_rhs"))
         .when(rhs_sentinel)
-          .then(ma.col(f"co_{field}"))            # RHS wildcard -> use LHS
+          .then(ma.col(f"co_{field}"))
         .otherwise(
-          combine_fn(ma.col(f"co_{field}"), ma.col(f"{field}_rhs"))  # Tighter
+            combine_fn(ma.col(f"co_{field}"), ma.col(f"{field}_rhs"))
         )
         .alias(f"co_{field}")
     )
@@ -284,7 +391,7 @@ The `combine_fn` parameter is `ma.greatest` for GREATER_THAN and `ma.least` for 
 
 All accumulator expressions reference columns using a naming convention that reflects the cross-join structure of the expansion step. Understanding this convention is essential for reading the compiled expressions correctly.
 
-During level expansion (Chapter 8), the current-level combinations are cross-joined with the candidate rules. The join adds a `_rhs` suffix to all columns from the candidate side. The current-level combinations already have `co_` prefixed columns from the previous coalesce step. This produces two parallel column namespaces:
+During level expansion (Chapter 10), the current-level combinations are cross-joined with the candidate rules. The join adds a `_rhs` suffix to all columns from the candidate side. The current-level combinations already have `co_` prefixed columns from the previous coalesce step. This produces two parallel column namespaces:
 
 | Source | Column Pattern | Example |
 |--------|---------------|---------|
@@ -300,15 +407,17 @@ This convention means that each dimension actually involves up to four columns i
 The `_sentinel_checks` method is a shared utility used by multiple compile methods. It returns a pair of Boolean expressions that detect whether the LHS and RHS values are sentinels:
 
 ```python
-def _sentinel_checks(self, dim: Dimension):
+def _sentinel_checks(
+    self, dim: Dimension,
+) -> tuple[BaseExpressionAPI, BaseExpressionAPI]:
     field = dim.resolved_rule_field
-    sentinel = UNKNOWN_NUMERIC if dim.data_type in (int, float) else UNKNOWN
+    sentinel = unknown_sentinel_for(dim.data_type)
     co_is_sentinel = ma.col(f"co_{field}").eq(ma.lit(sentinel))
     rhs_is_sentinel = ma.col(f"{field}_rhs").eq(ma.lit(sentinel))
     return co_is_sentinel, rhs_is_sentinel
 ```
 
-Note that only the `UNKNOWN` sentinel (not `NOT_SET`) is checked. This is because the accumulator operates on rule data, which uses `UNKNOWN` / `UNKNOWN_NUMERIC` for wildcards. The `NOT_SET` sentinel is specific to context values and does not appear in the rules DataFrame.
+Note that only the `UNKNOWN` sentinel (not `NOT_SET`) is checked. The current implementation obtains the typed value with `unknown_sentinel_for(dim.data_type)`: the accumulator operates on rule data, which uses the UNKNOWN wildcard, while `NOT_SET` is specific to context values and is not recognised here.
 
 For RANGE dimensions, a separate helper `_range_sentinel_checks` returns four expressions — one for each bound on each side (co_min, co_max, rhs_min, rhs_max).
 
@@ -337,7 +446,7 @@ Type: workflow
 
 ## Putting It Together
 
-The AccumulatorCompiler is used by the AccumulatorEngine (Chapter 8) during lattice construction. For each CONSTRAINT dimension, the engine pre-compiles all three expression types at initialization:
+The AccumulatorCompiler is used by the AccumulatorEngine (Chapter 10) during lattice construction. For each CONSTRAINT dimension, the engine pre-compiles all three expression types at initialization:
 
 ```python
 # In AccumulatorEngine.__init__:
@@ -361,10 +470,11 @@ During each expansion step, all compatible expressions are combined with AND to 
 
 - The **AccumulatorCompiler** produces expressions for rule-pair analysis (compatibility and merging), complementing the DimensionCompiler's rule-context expressions.
 - **Compatible expressions** answer "can these two rules coexist?" — sentinels are always compatible, non-sentinel values must not contradict.
-- **Coalesce expressions** compute the intersection of constraints when compatible rules merge — non-sentinel values take priority, and conflicting ranges produce their overlap.
+- **Coalesce expressions** apply strategy-specific merges when compatible rules combine — intersections for ranges and membership sets, union for exclusion sets, and stricter bounds for thresholds.
 - **NA flags** track whether a dimension remains unconstrained (all contributing rules are wildcards) in a lattice combination.
 - **Compatible Exact** requires value equality or sentinel on either side; **Compatible Range** requires interval overlap or sentinel bounds.
 - **Coalesce Exact** uses `ma.coalesce` with sentinel-to-null mapping to select the non-wildcard value.
 - **Coalesce Range** takes `greatest(mins)` for the lower bound and `least(maxes)` for the upper bound, producing the interval intersection.
 - **Coalesce Threshold** is always compatible and takes the stricter bound (max for GT, min for LT) — the simplest coalesce logic.
-- Only EXACT, RANGE, GREATER_THAN, and LESS_THAN strategies support accumulator compilation; string and set strategies are excluded.
+- **Set dimensions are accumulator-compatible**: membership compatibility requires a wildcard or non-empty intersection, membership coalescing intersects sets, and exclusion coalescing unions them.
+- String pattern strategies (PREFIX, SUFFIX, CONTAINS, REGEX, CONTEXT_REGEX) remain unsupported by the accumulator compiler.

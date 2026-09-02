@@ -2,8 +2,9 @@
 title: "Chapter 5: Expression Rules Engine"
 description: "The ExpressionRulesEngine class and its single-pass vectorized evaluation pipeline from construction through context binding, survival computation, and rank assignment."
 generated_by: claude skill chapter-content-generator
-date: 2026-06-03
-version: 0.08
+refreshed_by: claude skill textbook-refresh
+date: 2026-09-02
+version: 0.09
 ---
 
 # Chapter 5: Expression Rules Engine
@@ -108,7 +109,7 @@ The only mutable activity happens during evaluation, where temporary columns are
 <!-- concept:43 -->
 ## Single-Pass Evaluation
 
-The `evaluate()` method is the engine's primary interface. It accepts a context and returns a `RuleResult` containing all surviving rules ranked by specificity. The entire evaluation happens in a single pass through the rules DataFrame — there is no iteration, no recursion, and no multi-stage filtering.
+The `evaluate()` method is the engine's primary interface. It accepts a context and returns a `RuleResult` containing surviving rules ordered according to the active hit policy. The entire evaluation happens in a single pass through the rules DataFrame — there is no iteration, no recursion, and no multi-stage filtering.
 
 The method signature:
 
@@ -120,6 +121,8 @@ def evaluate(
     top_n: int | None = None,
     min_specificity: int | None = None,
     include_observability: bool = True,
+    hit_policy: HitPolicy | None = None,
+    priority_field: str | None = None,
 ) -> RuleResult:
 ```
 
@@ -129,6 +132,10 @@ The optional parameters provide control over the evaluation:
 - **`top_n`**: limit the result to the N most specific survivors
 - **`min_specificity`**: exclude survivors with fewer than N hard matches
 - **`include_observability`**: retain or drop the per-dimension ternary columns in the result
+- **`hit_policy`**: select survivor cardinality and ordering; `None` uses the policy from metadata, or `collect` when using pre-compiled expressions
+- **`priority_field`**: identify the rule column used to order survivors for the `priority` hit policy, overriding the metadata value when supplied
+
+These two selection parameters control which survivors are returned and how they are ordered; their complete semantics are deferred to [Chapter 6: Hit Policies](../06-hit-policies/).
 
 Internally, `evaluate()` performs three preparatory steps before delegating to the pipeline:
 
@@ -218,20 +225,21 @@ Specificity scoring is computed vectorially — no sorting or comparison between
 <!-- concept:48 -->
 ## Rank Assignment
 
-After computing survival and specificity, the pipeline filters out non-survivors, sorts by specificity descending, and assigns a 1-based rank:
+After computing survival and specificity, the pipeline filters out non-survivors, orders the survivors using the active hit policy (specificity descending by default), and assigns a 1-based rank:
 
 ```python
-# Step 4: Filter, sort, rank
+# Step 4: Filter, order, and rank
+keys = ordering_keys(hit_policy, info.priority_field)
 rel = (
     rel
     .filter(ma.col("__survived"))
-    .sort("__specificity", descending=True)
+    .sort(*[k for k, _ in keys], descending=[d for _, d in keys])
     .with_row_index(name="__rank")
     .with_columns(ma.col("__rank").add(ma.lit(1)).alias("__rank"))
 )
 ```
 
-The rank is 1-based (not 0-based) for user convenience — the best match is rank 1. Ties in specificity are resolved by the DataFrame backend's stable sort order, which typically preserves the original row ordering within tied groups.
+The rank is 1-based (not 0-based) for user convenience — the best match under the selected ordering is rank 1. With the default `collect` policy, specificity determines the primary ordering; other policies may use rule order or a priority column.
 
 After ranking, optional post-filters are applied:
 
@@ -400,6 +408,8 @@ result = engine.evaluate({"region": "AU", "tier": "premium"})
 #   catch_all: region=0, tier=0 -> specificity=0, rank=4
 ```
 
+The engine also exposes `evaluate_batch()` for evaluating many contexts at once (see [Chapter 8: Batch Evaluation](../08-batch-evaluation/)) and `explain()` for scoring every rule without filtering (see [Chapter 7: Expression Engine Results](../07-expression-engine-results/)). Their internals are covered in those chapters.
+
 ## Key Takeaways
 
 - The **ExpressionRulesEngine** is the primary entry point — it accepts rules and metadata at construction time, compiles once, and evaluates many contexts against the same compiled expressions.
@@ -409,4 +419,4 @@ result = engine.evaluate({"region": "AU", "tier": "premium"})
 - **Dimension expression application** evaluates all dimensions simultaneously via a single `with_columns` call, producing ternary columns.
 - **Survival computation** uses `ma.least()` across ternary columns — any FALSE eliminates the rule, any UNKNOWN preserves it without claiming a match.
 - **Specificity scoring** counts hard matches (TRUE = 1) per rule, providing a natural ranking criterion without explicit configuration.
-- **Rank assignment** sorts survivors by specificity descending and assigns 1-based ranks, with optional post-filters for top_n and min_specificity.
+- **Rank assignment** orders survivors according to the active hit policy (specificity descending by default) and assigns 1-based ranks, with optional post-filters for top_n and min_specificity.

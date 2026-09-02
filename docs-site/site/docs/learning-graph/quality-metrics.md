@@ -2,12 +2,12 @@
 
 ## Overview
 
-- **Total Concepts**: 90
+- **Total Concepts**: 130
 - **Foundational Concepts** (no prerequisites, other concepts depend on them): 5
-- **Terminal Nodes** (nothing depends on them, but have prerequisites): 25
+- **Terminal Nodes** (nothing depends on them, but have prerequisites): 46
 - **Orphaned Nodes** (completely disconnected, no edges): 0
-- **Concepts with Dependencies**: 85
-- **Average Dependencies per Concept**: 1.99
+- **Concepts with Dependencies**: 125
+- **Average Dependencies per Concept**: 1.84
 
 ## Graph Structure Validation
 
@@ -51,7 +51,7 @@ These concepts have no prerequisites:
 
 Terminal nodes are concepts that nothing else depends on but have prerequisites. They represent natural endpoints of learning paths — culminating or specialized concepts.
 
-- **Total Terminal Nodes**: 25 (27.8% of all concepts)
+- **Total Terminal Nodes**: 46 (35.4% of all concepts)
 - **Healthy Range**: 5-40% of total concepts
 
 Concepts at the end of learning paths:
@@ -60,14 +60,12 @@ Concepts at the end of learning paths:
 - **24**: CONSTRAINT Role
 - **28**: Field Resolution
 - **29**: Dimension Validator
-- **30**: Data Type Constraints
 - **42**: Convenience vs Advanced Path
 - **44**: Context Binding Phase
 - **50**: Survivors Accessor
 - **51**: Best Match Accessor
 - **52**: Count Accessor
 - **53**: Active Dimensions
-- **54**: Explain Method
 - **55**: At Least Filter
 - **56**: Top N Filtering
 - **57**: Min Specificity Filter
@@ -76,8 +74,10 @@ Concepts at the end of learning paths:
 - **78**: Lattice Combinations
 - **79**: Lattice Partition Key
 - **80**: Coalesced Columns
+- **81**: NA Flag Columns
+- **84**: Accumulated Aggregates
 
-*...and 5 more*
+*...and 26 more*
 
 ## Orphaned Nodes Analysis
 
@@ -99,25 +99,25 @@ Top 10 concepts that are prerequisites for the most other concepts:
 
 | Rank | Concept ID | Concept Label | Indegree |
 |------|-----------|---------------|----------|
-| 1 | 11 | MatchStrategy Enum | 12 |
-| 2 | 2 | Sentinel Values | 10 |
-| 3 | 31 | DimensionCompiler | 7 |
-| 4 | 49 | RuleResult Class | 7 |
-| 5 | 77 | Lattice Class | 6 |
-| 6 | 8 | Mountainash Expressions | 5 |
-| 7 | 14 | RANGE Strategy | 5 |
-| 8 | 26 | Dimension Class | 5 |
-| 9 | 43 | Single-Pass Evaluation | 5 |
-| 10 | 9 | Mountainash Relations | 4 |
+| 1 | 11 | MatchStrategy Enum | 15 |
+| 2 | 2 | Sentinel Values | 12 |
+| 3 | 49 | RuleResult Class | 9 |
+| 4 | 77 | Lattice Class | 9 |
+| 5 | 100 | HitPolicy Enum | 9 |
+| 6 | 31 | DimensionCompiler | 7 |
+| 7 | 43 | Single-Pass Evaluation | 7 |
+| 8 | 27 | DimensionsMetadata | 6 |
+| 9 | 8 | Mountainash Expressions | 5 |
+| 10 | 12 | EXACT Strategy | 5 |
 
 ## Outdegree Distribution
 
 | Dependencies | Number of Concepts |
 |--------------|--------------------|
 | 0 | 5 |
-| 1 | 33 |
-| 2 | 35 |
-| 3 | 11 |
+| 1 | 54 |
+| 2 | 52 |
+| 3 | 13 |
 | 4 | 2 |
 | 5 | 1 |
 | 6 | 1 |
@@ -125,7 +125,7 @@ Top 10 concepts that are prerequisites for the most other concepts:
 
 ## Recommendations
 
-- ✅ **Terminal node percentage** (27.8%): Within healthy range (5-40%)
+- ✅ **Terminal node percentage** (35.4%): Within healthy range (5-40%)
 - ✅ **DAG structure verified**: Graph supports valid learning progressions
 
 ---
