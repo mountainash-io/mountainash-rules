@@ -1,0 +1,60 @@
+{
+  "id": "mountainash_rules.engines.accumulator.compiler",
+  "path": "src/mountainash_rules/engines/accumulator/compiler.py",
+  "summary": "AccumulatorCompiler: compile_compatible (can two rules coexist on a dimension?) and compile_coalesce (merge two compatible rules' values) per MatchStrategy, plus coalesced-NA-flag expressions.",
+  "role": "api-builder",
+  "visibility": "public",
+  "stability": "evolving",
+  "audiences": [
+    "maintainers",
+    "contributors",
+    "backend-architecture",
+    "extension-authors"
+  ],
+  "doc_priority": "useful",
+  "confidence": "high",
+  "public_api": [
+    "AccumulatorCompiler"
+  ],
+  "key_classes": [
+    "AccumulatorCompiler"
+  ],
+  "key_functions": [
+    "compile_compatible",
+    "compile_coalesce",
+    "compile_coalesce_na_flag"
+  ],
+  "dependencies": [
+    "mountainash_rules.core.constants",
+    "mountainash_rules.core.dimension",
+    "mountainash_rules.core.set_wildcard"
+  ],
+  "dependents": [
+    "mountainash_rules.engines.accumulator.engine"
+  ],
+  "extension_points": [],
+  "lifecycle_notes": [
+    "Set-membership/set-exclusion compatible+coalesce support added (_compatible_set_membership, _coalesce_set) using the in-band sentinel wildcard helpers \u2014 the prior profile's 'Adding an accumulator strategy' facet only covered EXACT/RANGE/GT/LT."
+  ],
+  "documentation_hooks": [],
+  "examples": [],
+  "tests": [
+    "tests/accumulator/test_compiler.py"
+  ],
+  "risks": [],
+  "open_questions": [],
+  "evidence": [
+    {
+      "kind": "symbol",
+      "path": "src/mountainash_rules/engines/accumulator/compiler.py",
+      "detail": "_compatible_set_membership, _coalesce_set"
+    }
+  ],
+  "source_hash": "7d0e3dcb747949bb2d7172a34135a7872b2ed55f",
+  "manual": {
+    "notes": "",
+    "editorial_status": "",
+    "owner": "",
+    "manual_summary": ""
+  }
+}

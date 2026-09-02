@@ -1,0 +1,53 @@
+{
+  "id": "mountainash_rules.engines.accumulator.primes",
+  "path": "src/mountainash_rules/engines/accumulator/primes.py",
+  "summary": "Prime table (first MAX_RULES_PER_PARTITION=10,000 primes via sieve) and checked_multiply/get_prime for combination-identity encoding; LatticeWidthExceededError for the intrinsic ~15-prime width bound.",
+  "role": "model",
+  "visibility": "internal",
+  "stability": "stable",
+  "audiences": [
+    "maintainers",
+    "backend-architecture"
+  ],
+  "doc_priority": "internal-note",
+  "confidence": "high",
+  "public_api": [
+    "LatticeWidthExceededError"
+  ],
+  "key_classes": [
+    "LatticeWidthExceededError"
+  ],
+  "key_functions": [
+    "get_prime",
+    "checked_multiply"
+  ],
+  "dependencies": [],
+  "dependents": [
+    "mountainash_rules.engines.accumulator.engine"
+  ],
+  "extension_points": [],
+  "lifecycle_notes": [
+    "MAX_RULES_PER_PARTITION made an explicit, documented constant (10,000) distinct from the intrinsic int64 combination-width bound (~15 primes per combination) \u2014 the prior profile's coverage.md said 'partitions exceeding ~500 rules raise IndexError'; the table is now far larger and the two independent bounds are explicitly documented in the module docstring."
+  ],
+  "documentation_hooks": [],
+  "examples": [],
+  "tests": [
+    "tests/accumulator/test_primes.py"
+  ],
+  "risks": [],
+  "open_questions": [],
+  "evidence": [
+    {
+      "kind": "symbol",
+      "path": "src/mountainash_rules/engines/accumulator/primes.py",
+      "detail": "MAX_RULES_PER_PARTITION = 10_000"
+    }
+  ],
+  "source_hash": "7d0e3dcb747949bb2d7172a34135a7872b2ed55f",
+  "manual": {
+    "notes": "",
+    "editorial_status": "",
+    "owner": "",
+    "manual_summary": ""
+  }
+}

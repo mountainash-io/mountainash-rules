@@ -1,49 +1,79 @@
 {
   "profile_version": "1.0",
-  "generated_at": "2026-05-14T00:00:00+00:00",
+  "generated_at": "2026-09-02T00:00:00+00:00",
   "source": {
     "root": ".",
     "git": {
-      "previous_hash": null,
-      "current_hash": "41d584652aa29b09762aa1140ae64fb640473940",
-      "branch": "develop",
+      "previous_hash": "41d584652aa29b09762aa1140ae64fb640473940",
+      "current_hash": "7d0e3dcb747949bb2d7172a34135a7872b2ed55f",
+      "branch": "bugfix/prime-table-explicit-cap",
       "working_tree_dirty": false
     }
   },
   "scope": {
-    "include": ["src/mountainash_utils_rules/**/*.py"],
-    "exclude": [".venv/**", "**/__pycache__/**"],
-    "package_roots": ["src/mountainash_utils_rules"]
+    "include": [
+      "src/mountainash_rules/**/*.py"
+    ],
+    "exclude": [
+      ".venv/**",
+      "**/__pycache__/**"
+    ],
+    "package_roots": [
+      "src/mountainash_rules"
+    ]
   },
-  "audiences": ["users", "maintainers", "contributors", "backend-architecture", "broader-hype"],
+  "audiences": [
+    "users",
+    "maintainers",
+    "contributors",
+    "backend-architecture",
+    "broader-hype"
+  ],
   "counts": {
-    "modules_discovered": 14,
-    "modules_profiled": 14,
+    "modules_discovered": 21,
+    "modules_profiled": 21,
     "profiles_ignored": 0,
     "facets_written": 5
   },
   "changed_scopes": {
-    "files": [],
-    "modules": [],
-    "facets": []
+    "files": [
+      "full refresh: package root renamed src/mountainash_utils_rules -> src/mountainash_rules and reorganised into core/ + engines/{filter,accumulator}/ (23a29d6); all 21 module paths changed relative to the previous_hash profile"
+    ],
+    "modules": [
+      "all (full refresh \u2014 package_roots changed, package structure changed, >1/3 modules changed; see references/update-algorithm.md Full Refresh Triggers)"
+    ],
+    "facets": [
+      "users",
+      "maintainers",
+      "contributors",
+      "backend-architecture",
+      "broader-hype"
+    ]
   },
   "ignored_paths": [],
   "profile_files": {
     "modules": {
-      "mountainash_rules.__init__": "modules/init.json",
-      "mountainash_rules.__version__": "modules/version.json",
-      "mountainash_rules.constants": "modules/constants.json",
-      "mountainash_rules.dimension": "modules/dimension.json",
-      "mountainash_rules.compiler": "modules/compiler.json",
-      "mountainash_rules.engine": "modules/engine.json",
-      "mountainash_rules.result": "modules/result.json",
-      "mountainash_rules.context": "modules/context.json",
-      "mountainash_rules.accumulator_engine": "modules/accumulator_engine.json",
-      "mountainash_rules.accumulator_compiler": "modules/accumulator_compiler.json",
-      "mountainash_rules.accumulator_result": "modules/accumulator_result.json",
-      "mountainash_rules.aggregate": "modules/aggregate.json",
-      "mountainash_rules.lattice": "modules/lattice.json",
-      "mountainash_rules.primes": "modules/primes.json"
+      "mountainash_rules.__init__": "modules/__init__.json",
+      "mountainash_rules.__version__": "modules/__version__.json",
+      "mountainash_rules.core.__init__": "modules/core___init__.json",
+      "mountainash_rules.engines.__init__": "modules/engines___init__.json",
+      "mountainash_rules.engines.filter.__init__": "modules/engines_filter___init__.json",
+      "mountainash_rules.engines.accumulator.__init__": "modules/engines_accumulator___init__.json",
+      "mountainash_rules.core.constants": "modules/core_constants.json",
+      "mountainash_rules.core.dimension": "modules/core_dimension.json",
+      "mountainash_rules.core.context": "modules/core_context.json",
+      "mountainash_rules.core.compiler": "modules/core_compiler.json",
+      "mountainash_rules.core.set_wildcard": "modules/core_set_wildcard.json",
+      "mountainash_rules.core.result": "modules/core_result.json",
+      "mountainash_rules.core.hit_policy": "modules/core_hit_policy.json",
+      "mountainash_rules.core.batch_result": "modules/core_batch_result.json",
+      "mountainash_rules.engines.filter.engine": "modules/engines_filter_engine.json",
+      "mountainash_rules.engines.accumulator.aggregate": "modules/engines_accumulator_aggregate.json",
+      "mountainash_rules.engines.accumulator.compiler": "modules/engines_accumulator_compiler.json",
+      "mountainash_rules.engines.accumulator.engine": "modules/engines_accumulator_engine.json",
+      "mountainash_rules.engines.accumulator.result": "modules/engines_accumulator_result.json",
+      "mountainash_rules.engines.accumulator.lattice": "modules/engines_accumulator_lattice.json",
+      "mountainash_rules.engines.accumulator.primes": "modules/engines_accumulator_primes.json"
     },
     "facets": {
       "users": "facets/users.json",
