@@ -2,7 +2,9 @@
   "FOUND": "Foundation Concepts",
   "DIM": "Dimension Model",
   "EXPR": "Expression Rules Engine",
+  "POLICY": "Hit Policies",
   "RESULT": "Expression Engine Results",
+  "BATCH": "Batch Evaluation",
   "ACCUM": "Accumulator Engine",
   "LATT": "Accumulator Lattice & Results",
   "SUPP": "Supporting Modules"
