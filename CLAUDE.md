@@ -6,6 +6,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Mountain Ash Utils Rules is a high-performance Python package that provides revolutionary rule-based systems with multiple engine architectures. It features signed-integer ternary logic (-1/0/1), vectorized processing, and multiple performance-optimized engines including hybrid numpy/ibis processing and pure vectorized polars processing. The system achieves up to 93.9% performance improvements (16.40x speedup) through advanced mathematical optimization.
 
+## Central Repository — Principles & Backlog
+
+Durable architecture principles and the implementation backlog for this project live in the
+**mountainash-central** repo, not here.
+
+- **Principles:** [`../mountainash-central/01.principles/mountainash-rules/README.md`](../mountainash-central/01.principles/mountainash-rules/README.md) — see [`PRINCIPLES.md`](../mountainash-central/01.principles/mountainash-rules/PRINCIPLES.md) for governance (statuses, category precedence).
+- **Backlog:** [`../mountainash-central/04.planning/mountainash-rules/a.backlog/README.md`](../mountainash-central/04.planning/mountainash-rules/a.backlog/README.md) — prioritized items; see that directory's `CHANGELOG.md` for update history.
+- **Specs & plans:** save new design specs/plans to `../mountainash-central/04.planning/mountainash-rules/superpowers/{specs,plans}/`, not under `docs/superpowers/` in this repo.
+
 ## Architecture
 
 ### Core Components
