@@ -3,8 +3,10 @@
 import pytest
 
 from mountainash_rules.engines.accumulator.primes import (
+    MAX_RULES_PER_PARTITION,
     PRIME_TABLE,
     LatticeWidthExceededError,
+    _first_n_primes,
     get_prime,
     checked_multiply,
 )
@@ -14,8 +16,9 @@ class TestPrimeTable:
     def test_first_primes_correct(self):
         assert PRIME_TABLE[:10] == [2, 3, 5, 7, 11, 13, 17, 19, 23, 29]
 
-    def test_table_has_at_least_500_entries(self):
-        assert len(PRIME_TABLE) >= 500
+    def test_table_size_equals_cap(self):
+        # Invariant: the table is exactly the first MAX_RULES_PER_PARTITION primes.
+        assert len(PRIME_TABLE) == MAX_RULES_PER_PARTITION
 
     def test_500th_prime_is_3571(self):
         assert PRIME_TABLE[499] == 3571
@@ -25,6 +28,23 @@ class TestPrimeTable:
             assert p >= 2
             for d in range(2, int(p**0.5) + 1):
                 assert p % d != 0, f"{p} is not prime"
+
+
+class TestFirstNPrimes:
+    def test_empty_for_non_positive(self):
+        assert _first_n_primes(0) == []
+        assert _first_n_primes(-3) == []
+
+    def test_small_counts(self):
+        assert _first_n_primes(1) == [2]
+        assert _first_n_primes(5) == [2, 3, 5, 7, 11]
+
+    def test_returns_exact_count(self):
+        assert len(_first_n_primes(1000)) == 1000
+
+    def test_boundary_nth_prime_correct(self):
+        # 10000th prime is 104729 — exercises the Rosser sieve-sizing bound.
+        assert _first_n_primes(10000)[-1] == 104729
 
 
 class TestGetPrime:
@@ -40,6 +60,10 @@ class TestGetPrime:
     def test_negative_index_raises(self):
         with pytest.raises(IndexError):
             get_prime(-1)
+
+    def test_index_beyond_cap_raises_with_constant_name(self):
+        with pytest.raises(IndexError, match="MAX_RULES_PER_PARTITION"):
+            get_prime(MAX_RULES_PER_PARTITION)
 
 
 class TestCheckedMultiply:
