@@ -15,7 +15,7 @@ permissions:
 
 jobs:
   build:
-    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop'
+    if: vars.TEXTBOOK_PUBLISHING_ENABLED == 'true' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop')
     runs-on: ubuntu-24.04
     outputs:
       main_sha: ${{ steps.snapshots.outputs.main_sha }}
@@ -97,7 +97,7 @@ jobs:
 
   deploy:
     needs: build
-    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop'
+    if: vars.TEXTBOOK_PUBLISHING_ENABLED == 'true' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop')
     runs-on: ubuntu-24.04
     permissions:
       contents: read

@@ -158,6 +158,12 @@ built from `main`; the [development textbook](https://docs.mountainash.io/mounta
 is built from `develop`. Each push to either branch builds both snapshots and
 publishes them together. A failed build leaves the previous paired site live.
 
+For initial activation, merge the textbook changes into both branches and
+configure Pages, its environment, and the shared custom domain first. Then set
+the repository Actions variable `TEXTBOOK_PUBLISHING_ENABLED` to `true` and
+manually dispatch `deploy-textbook.yml`. Until enabled, publishing runs are
+skipped; a one-sided bootstrap cannot deploy an incomplete site.
+
 The source artifacts live together in this repository:
 
 - `docs-site/profile/`: package profile and source provenance.
