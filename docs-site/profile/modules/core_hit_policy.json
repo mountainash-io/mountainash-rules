@@ -1,0 +1,68 @@
+{
+  "id": "mountainash_rules.core.hit_policy",
+  "path": "src/mountainash_rules/core/hit_policy.py",
+  "summary": "SelectionInfo dataclass plus ordering_keys/check_assertions/apply_cardinality/default_output_fields: the hit-policy selection layer (collect/unique/first/priority/any/rule_order) over survivor frames. New module.",
+  "role": "orchestration",
+  "visibility": "public",
+  "stability": "evolving",
+  "audiences": [
+    "users",
+    "maintainers",
+    "contributors"
+  ],
+  "doc_priority": "useful",
+  "confidence": "high",
+  "public_api": [
+    "SelectionInfo",
+    "HitPolicyViolationError",
+    "selection_info_from_metadata",
+    "ordering_keys",
+    "default_output_fields",
+    "check_assertions",
+    "apply_cardinality"
+  ],
+  "key_classes": [
+    "SelectionInfo",
+    "HitPolicyViolationError"
+  ],
+  "key_functions": [
+    "ordering_keys",
+    "check_assertions",
+    "apply_cardinality",
+    "selection_info_from_metadata"
+  ],
+  "dependencies": [
+    "mountainash_rules.core.constants"
+  ],
+  "dependents": [
+    "mountainash_rules.core.batch_result",
+    "mountainash_rules.core.result",
+    "mountainash_rules.engines.filter.engine",
+    "mountainash_rules.__init__"
+  ],
+  "extension_points": [],
+  "lifecycle_notes": [
+    "Entirely new module: hit policies (collect default, unique, first, priority, any, rule_order) did not exist in the prior profile \u2014 every evaluation returned all survivors unconditionally."
+  ],
+  "documentation_hooks": [],
+  "examples": [],
+  "tests": [
+    "tests/core/test_hit_policy.py"
+  ],
+  "risks": [],
+  "open_questions": [],
+  "evidence": [
+    {
+      "kind": "doc",
+      "path": "CLAUDE.md",
+      "detail": "'Hit policies (hit_policy.py, constants.HitPolicy)' section"
+    }
+  ],
+  "source_hash": "7d0e3dcb747949bb2d7172a34135a7872b2ed55f",
+  "manual": {
+    "notes": "",
+    "editorial_status": "",
+    "owner": "",
+    "manual_summary": ""
+  }
+}

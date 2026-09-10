@@ -1,0 +1,53 @@
+{
+  "id": "mountainash_rules.engines.accumulator.result",
+  "path": "src/mountainash_rules/engines/accumulator/result.py",
+  "summary": "AccumulatorResult extends RuleResult with accumulator-specific accessors: best_combination, accumulated(name), provenance (prime products), depths (combination level).",
+  "role": "model",
+  "visibility": "public",
+  "stability": "stable",
+  "audiences": [
+    "users",
+    "maintainers"
+  ],
+  "doc_priority": "useful",
+  "confidence": "high",
+  "public_api": [
+    "AccumulatorResult"
+  ],
+  "key_classes": [
+    "AccumulatorResult"
+  ],
+  "key_functions": [],
+  "dependencies": [
+    "mountainash_rules.core.result",
+    "mountainash_rules.engines.accumulator.aggregate",
+    "mountainash_rules.engines.accumulator.lattice"
+  ],
+  "dependents": [
+    "mountainash_rules.engines.accumulator.engine",
+    "mountainash_rules.__init__"
+  ],
+  "extension_points": [],
+  "lifecycle_notes": [],
+  "documentation_hooks": [],
+  "examples": [],
+  "tests": [
+    "tests/accumulator/test_result.py"
+  ],
+  "risks": [],
+  "open_questions": [],
+  "evidence": [
+    {
+      "kind": "symbol",
+      "path": "src/mountainash_rules/engines/accumulator/result.py",
+      "detail": "class AccumulatorResult(RuleResult)"
+    }
+  ],
+  "source_hash": "7d0e3dcb747949bb2d7172a34135a7872b2ed55f",
+  "manual": {
+    "notes": "",
+    "editorial_status": "",
+    "owner": "",
+    "manual_summary": ""
+  }
+}

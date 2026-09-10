@@ -1,0 +1,31 @@
+{
+  "id": "mountainash_rules.core.__init__",
+  "path": "src/mountainash_rules/core/__init__.py",
+  "summary": "Empty namespace marker for the core/ package.",
+  "role": "model",
+  "visibility": "private",
+  "stability": "stable",
+  "audiences": [],
+  "doc_priority": "skip-with-reason",
+  "confidence": "high",
+  "public_api": [],
+  "key_classes": [],
+  "key_functions": [],
+  "dependencies": [],
+  "dependents": [],
+  "extension_points": [],
+  "lifecycle_notes": [],
+  "documentation_hooks": [],
+  "examples": [],
+  "tests": [],
+  "risks": [],
+  "open_questions": [],
+  "evidence": [],
+  "source_hash": "7d0e3dcb747949bb2d7172a34135a7872b2ed55f",
+  "manual": {
+    "notes": "",
+    "editorial_status": "",
+    "owner": "",
+    "manual_summary": ""
+  }
+}

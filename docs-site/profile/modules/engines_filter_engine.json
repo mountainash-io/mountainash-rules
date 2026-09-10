@@ -1,0 +1,77 @@
+{
+  "id": "mountainash_rules.engines.filter.engine",
+  "path": "src/mountainash_rules/engines/filter/engine.py",
+  "summary": "ExpressionRulesEngine: the filter engine. evaluate() (single context), evaluate_batch() (many contexts, one pass), explain() (unfiltered per-rule ternary detail). The primary public entry point for 'find the best matching rule'.",
+  "role": "public-api",
+  "visibility": "public",
+  "stability": "stable",
+  "audiences": [
+    "users",
+    "maintainers",
+    "contributors",
+    "backend-architecture"
+  ],
+  "doc_priority": "essential",
+  "confidence": "high",
+  "public_api": [
+    "ExpressionRulesEngine"
+  ],
+  "key_classes": [
+    "ExpressionRulesEngine"
+  ],
+  "key_functions": [
+    "evaluate",
+    "evaluate_batch",
+    "explain"
+  ],
+  "dependencies": [
+    "mountainash_rules.core.batch_result",
+    "mountainash_rules.core.compiler",
+    "mountainash_rules.core.constants",
+    "mountainash_rules.core.context",
+    "mountainash_rules.core.dimension",
+    "mountainash_rules.core.hit_policy",
+    "mountainash_rules.core.result",
+    "mountainash_rules.core.set_wildcard"
+  ],
+  "dependents": [
+    "mountainash_rules.engines.accumulator.lattice",
+    "mountainash_rules.engines.accumulator.engine",
+    "mountainash_rules.__init__"
+  ],
+  "extension_points": [],
+  "lifecycle_notes": [
+    "Renamed/relocated from top-level engine.py to engines/filter/engine.py in the core/+engines/ reorg.",
+    "evaluate_batch() added: cross-joins contexts against rules, ranks per-context-id portably (no window functions), conforms contexts to the rules backend before the join.",
+    "explain() added: shares the compile/bind/score pipeline (_scored_relation) but skips survival filter, rank, and hit-policy.",
+    "Hit-policy pipeline (collect/unique/first/priority/any/rule_order) applied in evaluate()."
+  ],
+  "documentation_hooks": [],
+  "examples": [],
+  "tests": [
+    "tests/filter/test_engine.py",
+    "tests/filter/test_batch_evaluation.py",
+    "tests/filter/test_explain.py",
+    "tests/filter/test_integration.py",
+    "tests/filter/test_upstream_regressions.py",
+    "tests/test_backend_purity.py"
+  ],
+  "risks": [
+    "6-step evaluation pipeline documented in CLAUDE.md must stay pure per-step DataFrame transforms for traceability."
+  ],
+  "open_questions": [],
+  "evidence": [
+    {
+      "kind": "doc",
+      "path": "CLAUDE.md",
+      "detail": "'Filter engine pipeline (engine.py)' \u2014 compile/bind/evaluate/select steps"
+    }
+  ],
+  "source_hash": "7d0e3dcb747949bb2d7172a34135a7872b2ed55f",
+  "manual": {
+    "notes": "",
+    "editorial_status": "",
+    "owner": "",
+    "manual_summary": ""
+  }
+}
