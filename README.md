@@ -135,6 +135,10 @@ Do not regenerate content merely to publish it or advance source baselines on
 a directory move. Preserve the existing FAQ format; the marker-only FAQ
 exporter does not support it and must not overwrite its JSON.
 
+The inherited chapters include specifications for 32 simulations whose HTML
+implementations do not yet exist. Their missing embeds are an accepted
+pre-existing content gap for this migration, not a working simulation library.
+
 ## Development
 
 | Command | Description |
