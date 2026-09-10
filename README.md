@@ -151,6 +151,34 @@ hatch env create
 
 Requires sibling checkouts of `mountainash`, `mountainash-data`, and `mountainash-settings` (see `hatch.toml` for path configuration).
 
+## Textbook
+
+The [production textbook](https://docs.mountainash.io/mountainash-rules/) is
+built from `main`; the [development textbook](https://docs.mountainash.io/mountainash-rules/dev/)
+is built from `develop`. Each push to either branch builds both snapshots and
+publishes them together. A failed build leaves the previous paired site live.
+
+The source artifacts live together in this repository:
+
+- `docs-site/profile/`: package profile and source provenance.
+- `docs-site/learning-graph/`: canonical graph and FAQ artifacts.
+- `docs-site/site/`: MkDocs configuration, textbook Markdown, and refresh state.
+
+Preview locally without installing the source package or sibling repositories:
+
+```bash
+uv run --no-project --with-requirements docs-site/requirements.txt \
+  python -m mkdocs serve --config-file docs-site/site/mkdocs.yml
+```
+
+Refreshes are manual. Load `textbook-refresh` from the central
+`hiivmind-documentation-profile` tooling project and supply this repository's
+absolute root as `source_repo`, starting with `mode: check`. For a separate
+profile update, supply `docs-site/profile/` as the profiler's explicit output.
+Do not regenerate content merely to publish it or advance source baselines on
+a directory move. Preserve the existing FAQ format; the marker-only FAQ
+exporter does not support it and must not overwrite its JSON.
+
 ## Development
 
 | Command | Description |
