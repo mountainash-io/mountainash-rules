@@ -1,0 +1,83 @@
+{
+  "audience": "contributors",
+  "summary": "mountainash-rules is designed for extensibility across match strategies, aggregate operations, hit policies, and backends. The codebase follows consistent patterns that make it straightforward to add new capabilities while maintaining cross-backend correctness. Dependency direction is enforced one-way: engines/accumulator -> engines/filter -> core.",
+  "use_cases": [
+    "Add a new match strategy to support a domain-specific comparison (e.g. geographic proximity, semantic similarity).",
+    "Extend the accumulator engine with additional aggregate operations beyond sum/min/max/product.",
+    "Add a new hit policy for a selection semantic not covered by collect/unique/first/priority/any/rule_order.",
+    "Contribute cross-backend test coverage for new or existing strategies.",
+    "Improve expression compilation for better performance on a specific backend."
+  ],
+  "concepts": [
+    {
+      "name": "Adding a new MatchStrategy",
+      "module_ids": [
+        "mountainash_rules.core.constants",
+        "mountainash_rules.core.dimension",
+        "mountainash_rules.core.compiler"
+      ],
+      "description": "The end-to-end process for a new strategy follows a clear path (CLAUDE.md 'Adding a strategy'): add the enum value in core/constants.py, add validation logic in core/dimension.py, implement _compile_<strategy> in core/compiler.py, and add a corresponding test class in tests/core/test_compiler.py. EXACT_KEY and the REGEX/CONTEXT_REGEX split are recent examples of this pattern."
+    },
+    {
+      "name": "Adding an accumulator strategy",
+      "module_ids": [
+        "mountainash_rules.engines.accumulator.compiler",
+        "mountainash_rules.engines.accumulator.engine"
+      ],
+      "description": "AccumulatorCompiler now supports EXACT, RANGE, GT/LT threshold, and SET_MEMBERSHIP/SET_EXCLUSION. To add support for another strategy, implement the corresponding cases in compile_compatible (the compatibility guard) and compile_coalesce (the value-merge logic)."
+    },
+    {
+      "name": "Adding a new aggregate operation",
+      "module_ids": [
+        "mountainash_rules.engines.accumulator.aggregate",
+        "mountainash_rules.engines.accumulator.engine"
+      ],
+      "description": "AggregateOp now has four commutative, associative operations: sum, min, max, product. Adding a fifth means extending AggregateOp and the level-expansion aggregation logic in AccumulatorEngine. Note the documented limitation: aggregate-value overflow is backend-defined and unguarded (only the __prime_product identity is int64-guarded)."
+    },
+    {
+      "name": "Adding a hit policy",
+      "module_ids": [
+        "mountainash_rules.core.constants",
+        "mountainash_rules.core.hit_policy"
+      ],
+      "description": "HitPolicy is a StrEnum (collect/unique/first/priority/any/rule_order). New policies add an ordering_keys case and, if the policy asserts cardinality, a check_assertions/apply_cardinality case in core/hit_policy.py."
+    },
+    {
+      "name": "Backend-agnostic expression patterns",
+      "module_ids": [
+        "mountainash_rules.core.compiler",
+        "mountainash_rules.engines.filter.engine"
+      ],
+      "description": "All compiler output uses the mountainash BaseExpressionAPI, ensuring expressions work across every supported backend. Use t_col, t_eq, t_ne and related helpers for sentinel-aware ternary comparisons, and ma.when/then/otherwise for conditional logic. Staying within these abstractions guarantees cross-backend compatibility -- and is enforced package-wide by tests/test_backend_purity.py."
+    },
+    {
+      "name": "Set-dimension wildcard pattern",
+      "module_ids": [
+        "mountainash_rules.core.set_wildcard"
+      ],
+      "description": "New shared module: set dimensions represent 'wildcard' as an in-band '[sentinel]' list rather than null, normalized at ingestion (normalize_set_expr) and validated for reservation (validate_set_columns) and null elements (validate_set_no_null_elements) in both engines. Any new set-aware strategy should reuse these helpers rather than reinventing set-sentinel handling."
+    },
+    {
+      "name": "Test patterns",
+      "module_ids": [],
+      "description": "The test tree mirrors the src/ package layout (tests/core/, tests/filter/, tests/accumulator/, tests/benchmarks/). tests/filter/test_engine.py is the primary template for backend-parameterised evaluation tests; tests/accumulator/test_backends.py covers the accumulator engine. New strategies and features should follow these patterns to ensure coverage across all backends."
+    }
+  ],
+  "featured_modules": [
+    "mountainash_rules.core.constants",
+    "mountainash_rules.core.dimension",
+    "mountainash_rules.core.compiler",
+    "mountainash_rules.core.hit_policy",
+    "mountainash_rules.core.set_wildcard",
+    "mountainash_rules.engines.accumulator.compiler",
+    "mountainash_rules.engines.filter.engine",
+    "mountainash_rules.engines.accumulator.engine",
+    "mountainash_rules.engines.accumulator.aggregate"
+  ],
+  "hidden_or_internal_modules": [
+    "mountainash_rules.__version__",
+    "mountainash_rules.core.context",
+    "mountainash_rules.engines.accumulator.primes"
+  ],
+  "open_questions": []
+}

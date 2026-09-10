@@ -1,0 +1,66 @@
+{
+  "id": "mountainash_rules.core.compiler",
+  "path": "src/mountainash_rules/core/compiler.py",
+  "summary": "DimensionCompiler translates each Dimension's MatchStrategy into a backend-agnostic ternary BaseExpressionAPI expression template \u2014 one _compile_<strategy> method per strategy.",
+  "role": "api-builder",
+  "visibility": "public",
+  "stability": "evolving",
+  "audiences": [
+    "maintainers",
+    "contributors",
+    "backend-architecture",
+    "extension-authors"
+  ],
+  "doc_priority": "useful",
+  "confidence": "high",
+  "public_api": [
+    "DimensionCompiler"
+  ],
+  "key_classes": [
+    "DimensionCompiler"
+  ],
+  "key_functions": [
+    "compile_dimensions",
+    "compile_dimension"
+  ],
+  "dependencies": [
+    "mountainash_rules.core.constants",
+    "mountainash_rules.core.dimension",
+    "mountainash_rules.core.set_wildcard"
+  ],
+  "dependents": [
+    "mountainash_rules.engines.filter.engine",
+    "mountainash_rules.__init__"
+  ],
+  "extension_points": [
+    "Adding a MatchStrategy implements a new _compile_<strategy> method here (CLAUDE.md recipe)."
+  ],
+  "lifecycle_notes": [
+    "EXACT_KEY strategy added (_compile_exact_key: rule-side-wildcard-only exact match for partition routing).",
+    "REGEX (per-row pattern column) split from CONTEXT_REGEX (metadata literal pattern).",
+    "Bool-dimension ternary comparisons added (_compile_bool_ternary: null on either side is don't-care)."
+  ],
+  "documentation_hooks": [],
+  "examples": [],
+  "tests": [
+    "tests/core/test_compiler.py"
+  ],
+  "risks": [
+    "_compile_regex_per_row carries a '# allow:' backend-purity exemption (Polars-native fallback pending upstream regex_contains column-pattern support in mountainash) \u2014 documented in CLAUDE.md."
+  ],
+  "open_questions": [],
+  "evidence": [
+    {
+      "kind": "import",
+      "path": "src/mountainash_rules/core/compiler.py",
+      "detail": "12 _compile_* methods, one per MatchStrategy"
+    }
+  ],
+  "source_hash": "7d0e3dcb747949bb2d7172a34135a7872b2ed55f",
+  "manual": {
+    "notes": "",
+    "editorial_status": "",
+    "owner": "",
+    "manual_summary": ""
+  }
+}

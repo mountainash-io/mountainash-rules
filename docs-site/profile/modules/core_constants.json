@@ -1,0 +1,93 @@
+{
+  "id": "mountainash_rules.core.constants",
+  "path": "src/mountainash_rules/core/constants.py",
+  "summary": "MatchStrategy (12-member StrEnum), HitPolicy, DimensionRole, DataType enums; sentinel value tables (string/numeric/date/datetime) and sentinels_for/unknown_sentinel_for/not_set_sentinel_for lookups. The single source of truth for ternary-logic sentinel semantics used by every compiler.",
+  "role": "model",
+  "visibility": "public",
+  "stability": "stable",
+  "audiences": [
+    "users",
+    "maintainers",
+    "contributors",
+    "backend-architecture",
+    "extension-authors"
+  ],
+  "doc_priority": "essential",
+  "confidence": "high",
+  "public_api": [
+    "MatchStrategy",
+    "HitPolicy",
+    "DimensionRole",
+    "DataType",
+    "UNKNOWN",
+    "NOT_SET",
+    "UNKNOWN_NUMERIC",
+    "NOT_SET_NUMERIC",
+    "UNKNOWN_DATE",
+    "NOT_SET_DATE",
+    "UNKNOWN_DATETIME",
+    "NOT_SET_DATETIME",
+    "STRING_SENTINELS",
+    "NUMERIC_SENTINELS",
+    "TEMPORAL_DATE_SENTINELS",
+    "TEMPORAL_DATETIME_SENTINELS",
+    "CTX_PREFIX",
+    "sentinels_for",
+    "unknown_sentinel_for",
+    "not_set_sentinel_for"
+  ],
+  "key_classes": [
+    "MatchStrategy",
+    "HitPolicy",
+    "DimensionRole",
+    "DataType"
+  ],
+  "key_functions": [
+    "sentinels_for",
+    "unknown_sentinel_for",
+    "not_set_sentinel_for"
+  ],
+  "dependencies": [],
+  "dependents": [
+    "mountainash_rules.core.context",
+    "mountainash_rules.core.dimension",
+    "mountainash_rules.core.hit_policy",
+    "mountainash_rules.core.compiler",
+    "mountainash_rules.core.set_wildcard",
+    "mountainash_rules.core.result",
+    "mountainash_rules.engines.accumulator.lattice",
+    "mountainash_rules.engines.accumulator.compiler",
+    "mountainash_rules.engines.accumulator.engine",
+    "mountainash_rules.engines.filter.engine",
+    "mountainash_rules.__init__"
+  ],
+  "extension_points": [
+    "Adding a MatchStrategy starts here: add the enum value (CLAUDE.md 'Adding a strategy' recipe)."
+  ],
+  "lifecycle_notes": [
+    "MatchStrategy grew from 11 to 12 members (added EXACT_KEY for partition routing); MatchStrategy/DimensionRole became StrEnums with stable string values (was implicit/mixed before).",
+    "DataType enum added (was an implicit Python type before); temporal (date/datetime) sentinels added."
+  ],
+  "documentation_hooks": [],
+  "examples": [],
+  "tests": [
+    "tests/core/test_compiler.py",
+    "tests/core/test_dimension.py"
+  ],
+  "risks": [],
+  "open_questions": [],
+  "evidence": [
+    {
+      "kind": "symbol",
+      "path": "src/mountainash_rules/core/constants.py",
+      "detail": "12 MatchStrategy members incl. EXACT_KEY, REGEX/CONTEXT_REGEX split"
+    }
+  ],
+  "source_hash": "7d0e3dcb747949bb2d7172a34135a7872b2ed55f",
+  "manual": {
+    "notes": "",
+    "editorial_status": "",
+    "owner": "",
+    "manual_summary": ""
+  }
+}

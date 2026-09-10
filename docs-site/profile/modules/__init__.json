@@ -1,0 +1,94 @@
+{
+  "id": "mountainash_rules.__init__",
+  "path": "src/mountainash_rules/__init__.py",
+  "summary": "Public API re-export surface. The only supported import path; internal module paths are private.",
+  "role": "public-api",
+  "visibility": "public",
+  "stability": "stable",
+  "audiences": [
+    "users",
+    "maintainers",
+    "contributors",
+    "extension-authors"
+  ],
+  "doc_priority": "essential",
+  "confidence": "high",
+  "public_api": [
+    "__version__",
+    "AccumulatorEngine",
+    "AccumulatorResult",
+    "Aggregate",
+    "AggregateOp",
+    "AmbiguousPartitionError",
+    "BatchRuleResult",
+    "DataType",
+    "DimensionCompiler",
+    "Dimension",
+    "DimensionRole",
+    "DimensionsMetadata",
+    "ExplainResult",
+    "ExpressionRulesEngine",
+    "HitPolicy",
+    "HitPolicyViolationError",
+    "Lattice",
+    "LatticeIndex",
+    "MatchStrategy",
+    "NOT_SET",
+    "NOT_SET_DATE",
+    "NOT_SET_DATETIME",
+    "NOT_SET_NUMERIC",
+    "RuleResult",
+    "SelectionInfo",
+    "UNKNOWN",
+    "UNKNOWN_DATE",
+    "UNKNOWN_DATETIME",
+    "UNKNOWN_NUMERIC",
+    "not_set_sentinel_for",
+    "sentinels_for",
+    "unknown_sentinel_for"
+  ],
+  "key_classes": [],
+  "key_functions": [],
+  "dependencies": [
+    "mountainash_rules.__version__",
+    "mountainash_rules.engines.accumulator.engine",
+    "mountainash_rules.engines.accumulator.result",
+    "mountainash_rules.engines.accumulator.aggregate",
+    "mountainash_rules.core.compiler",
+    "mountainash_rules.core.constants",
+    "mountainash_rules.core.dimension",
+    "mountainash_rules.core.batch_result",
+    "mountainash_rules.engines.filter.engine",
+    "mountainash_rules.core.hit_policy",
+    "mountainash_rules.engines.accumulator.lattice",
+    "mountainash_rules.core.result"
+  ],
+  "dependents": [],
+  "extension_points": [],
+  "lifecycle_notes": [
+    "Package renamed mountainash_utils_rules -> mountainash_rules and reorganised into core/+engines/{filter,accumulator}/ (2026-07-16); deprecation shims for the pre-reorganisation flat module paths were removed the same date."
+  ],
+  "documentation_hooks": [
+    "CLAUDE.md: 'mountainash_rules module paths are private \u2014 import public names from the package root only'"
+  ],
+  "examples": [],
+  "tests": [
+    "tests/test_public_api.py"
+  ],
+  "risks": [],
+  "open_questions": [],
+  "evidence": [
+    {
+      "kind": "symbol",
+      "path": "src/mountainash_rules/__init__.py",
+      "detail": "__all__ tuple, 30 exported names"
+    }
+  ],
+  "source_hash": "7d0e3dcb747949bb2d7172a34135a7872b2ed55f",
+  "manual": {
+    "notes": "",
+    "editorial_status": "",
+    "owner": "",
+    "manual_summary": ""
+  }
+}
