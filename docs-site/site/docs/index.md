@@ -4,7 +4,7 @@ description: A practitioner's manual for the mountainash-rules vectorized, backe
 ---
 
 
-[← Back to Ecosystem](../)
+[← Back to Ecosystem](https://docs.mountainash.io/)
 # Mountainash Rules
 
 Define business rules as tabular data, evaluate them in a single vectorized pass on any backend, and get ranked results with full per-dimension explainability.
@@ -19,7 +19,7 @@ The API reference tells you *what* each class and method does. This manual expla
 
 ## Who This Is For
 
-Python developers building configurable business logic -- pricing engines, eligibility checkers, configuration selectors, and combinatorial accumulation problems. If you work with rules stored as tabular data and need vectorized evaluation that runs on any backend, start with [About](about.md) to see whether this manual fits your background.
+Python developers building configurable business logic -- pricing engines, eligibility checkers, configuration selectors, and combinatorial accumulation problems. If you work with rules stored as tabular data and need vectorized evaluation that runs on any backend, start with [About](#target-audience) to see whether this manual fits your background.
 
 
 # Package Overview

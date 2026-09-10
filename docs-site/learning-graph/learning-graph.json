@@ -9,7 +9,7 @@
     "schema": "https://raw.githubusercontent.com/dmccreary/learning-graphs/refs/heads/main/src/schema/learning-graph-schema.json",
     "license": "CC BY-NC-SA 4.0 DEED",
     "source_commit": "7d0e3dcb747949bb2d7172a34135a7872b2ed55f",
-    "profile_dir": "03.profile/mountainash-rules"
+    "profile_dir": "docs-site/profile"
   },
   "groups": {
     "FOUND": {
