@@ -1,0 +1,10 @@
+{
+  "title": "Mountainash Rules Package Concept Graph",
+  "description": "A concept dependency graph covering the mountainash-rules vectorized, backend-agnostic business rules engine. 130 concepts across 9 taxonomy categories spanning foundation, dimension model, expression rules engine, hit policies, expression engine results, batch evaluation, accumulator engine, lattice structures, and supporting modules.",
+  "creator": "Nathaniel Ramm",
+  "date": "2026-09-02",
+  "version": "1.1",
+  "format": "Learning Graph JSON v1.0",
+  "schema": "https://raw.githubusercontent.com/dmccreary/learning-graphs/refs/heads/main/src/schema/learning-graph-schema.json",
+  "license": "CC BY-NC-SA 4.0 DEED"
+}
