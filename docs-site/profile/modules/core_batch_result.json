@@ -1,0 +1,54 @@
+{
+  "id": "mountainash_rules.core.batch_result",
+  "path": "src/mountainash_rules/core/batch_result.py",
+  "summary": "BatchRuleResult: per-context accessors (survivors, best_matches, counts_per_context, matched/unmatched_context_ids, for_context) over the output of evaluate_batch. New module.",
+  "role": "model",
+  "visibility": "public",
+  "stability": "evolving",
+  "audiences": [
+    "users",
+    "maintainers"
+  ],
+  "doc_priority": "useful",
+  "confidence": "high",
+  "public_api": [
+    "BatchRuleResult"
+  ],
+  "key_classes": [
+    "BatchRuleResult"
+  ],
+  "key_functions": [],
+  "dependencies": [
+    "mountainash_rules.core.hit_policy",
+    "mountainash_rules.core.result"
+  ],
+  "dependents": [
+    "mountainash_rules.engines.filter.engine",
+    "mountainash_rules.__init__"
+  ],
+  "extension_points": [],
+  "lifecycle_notes": [
+    "Entirely new module: batch evaluation (evaluate_batch) of many contexts against the rules in one pass did not exist in the prior profile."
+  ],
+  "documentation_hooks": [],
+  "examples": [],
+  "tests": [
+    "tests/filter/test_batch_evaluation.py"
+  ],
+  "risks": [],
+  "open_questions": [],
+  "evidence": [
+    {
+      "kind": "symbol",
+      "path": "src/mountainash_rules/core/batch_result.py",
+      "detail": "for_context(context_id) -> RuleResult"
+    }
+  ],
+  "source_hash": "7d0e3dcb747949bb2d7172a34135a7872b2ed55f",
+  "manual": {
+    "notes": "",
+    "editorial_status": "",
+    "owner": "",
+    "manual_summary": ""
+  }
+}

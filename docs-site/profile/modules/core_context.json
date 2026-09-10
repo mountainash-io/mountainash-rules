@@ -1,0 +1,50 @@
+{
+  "id": "mountainash_rules.core.context",
+  "path": "src/mountainash_rules/core/context.py",
+  "summary": "extract_context_values(): pulls dimension values out of a Pydantic model or dict, filling type-correct NOT_SET sentinels for missing fields (bool dimensions get None, not a sentinel).",
+  "role": "io",
+  "visibility": "internal",
+  "stability": "stable",
+  "audiences": [
+    "maintainers",
+    "contributors"
+  ],
+  "doc_priority": "internal-note",
+  "confidence": "high",
+  "public_api": [
+    "extract_context_values"
+  ],
+  "key_classes": [],
+  "key_functions": [
+    "extract_context_values"
+  ],
+  "dependencies": [
+    "mountainash_rules.core.constants"
+  ],
+  "dependents": [
+    "mountainash_rules.engines.filter.engine"
+  ],
+  "extension_points": [],
+  "lifecycle_notes": [],
+  "documentation_hooks": [],
+  "examples": [],
+  "tests": [
+    "tests/core/test_context.py"
+  ],
+  "risks": [],
+  "open_questions": [],
+  "evidence": [
+    {
+      "kind": "symbol",
+      "path": "src/mountainash_rules/core/context.py",
+      "detail": "extract_context_values(context, dimension_names, metadata=None)"
+    }
+  ],
+  "source_hash": "7d0e3dcb747949bb2d7172a34135a7872b2ed55f",
+  "manual": {
+    "notes": "",
+    "editorial_status": "",
+    "owner": "",
+    "manual_summary": ""
+  }
+}

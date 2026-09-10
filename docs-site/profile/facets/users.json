@@ -1,0 +1,101 @@
+{
+  "audience": "users",
+  "summary": "mountainash-rules gives you a concise, expressive way to define business rules as tabular data and evaluate them in a single vectorized pass. Define your dimensions, choose from 12 match strategies, load your rules, and get ranked results with full per-dimension explainability. Evaluate one context or a whole batch at once, apply a hit policy to control how many survivors you get back, and use the AccumulatorEngine for combinatorial problems where you need every valid combination of rules rather than a single winner.",
+  "use_cases": [
+    "Pricing engine: evaluate a customer context against hundreds of pricing rules and retrieve the best-matching tier with a full explanation of why it won.",
+    "Eligibility screening: define eligibility criteria across multiple dimensions and instantly see which rules a given applicant satisfies.",
+    "Configuration selection: match device or environment attributes to configuration profiles, ranked by specificity.",
+    "Batch scoring: evaluate thousands of contexts against a rule table in one call and get per-context ranked results back.",
+    "Portfolio allocation: use the AccumulatorEngine to find all valid combinations of investment rules for a given risk profile, with accumulated totals (sum, min, max, or product).",
+    "High-volume routing: partition a large rule set by CONTEXT_KEY, pre-build a lattice per partition, persist it with Lattice.save, and serve apply() from Lattice.load in production."
+  ],
+  "concepts": [
+    {
+      "name": "Defining dimensions",
+      "module_ids": [
+        "mountainash_rules.core.dimension",
+        "mountainash_rules.core.constants"
+      ],
+      "description": "Dimensions describe the axes your rules operate on. Each dimension pairs a data column with a MatchStrategy (EXACT, EXACT_KEY, RANGE, GREATER_THAN, LESS_THAN, PREFIX, SUFFIX, CONTAINS, REGEX, CONTEXT_REGEX, SET_MEMBERSHIP, SET_EXCLUSION), giving you fine-grained control over how context values are compared to rule metadata. DimensionsMetadata round-trips to/from YAML."
+    },
+    {
+      "name": "Single-context rule evaluation",
+      "module_ids": [
+        "mountainash_rules.engines.filter.engine",
+        "mountainash_rules.core.result"
+      ],
+      "description": "Pass a context dictionary to ExpressionRulesEngine.evaluate() and receive a RuleResult containing every surviving rule, ranked by specificity. Access the best match, count survivors, or iterate the full ranked list."
+    },
+    {
+      "name": "Batch evaluation",
+      "module_ids": [
+        "mountainash_rules.engines.filter.engine",
+        "mountainash_rules.core.batch_result"
+      ],
+      "description": "evaluate_batch() scores many contexts against the rules in a single vectorized pass and returns a BatchRuleResult with per-context accessors (best_matches, counts_per_context, matched/unmatched_context_ids, for_context)."
+    },
+    {
+      "name": "Hit policies",
+      "module_ids": [
+        "mountainash_rules.core.hit_policy",
+        "mountainash_rules.core.constants"
+      ],
+      "description": "Control how many survivors you get back: collect (default, all survivors), unique (raise if more than one survives), first, priority (by a priority_field), any (raise on conflicting outputs), or rule_order. Set on DimensionsMetadata or per evaluate() call."
+    },
+    {
+      "name": "Explainability",
+      "module_ids": [
+        "mountainash_rules.core.result",
+        "mountainash_rules.engines.filter.engine"
+      ],
+      "description": "Every evaluation result carries a per-dimension ternary breakdown (match / unknown / non-match) so you can see exactly which dimensions contributed to a rule's survival and which were neutral. Call explain() on a rule name, or call ExpressionRulesEngine.explain(context) to score every rule in the table at once without filtering."
+    },
+    {
+      "name": "Accumulator: building and applying rule lattices",
+      "module_ids": [
+        "mountainash_rules.engines.accumulator.engine",
+        "mountainash_rules.engines.accumulator.lattice",
+        "mountainash_rules.engines.accumulator.result",
+        "mountainash_rules.engines.accumulator.aggregate"
+      ],
+      "description": "The AccumulatorEngine handles problems where you need valid combinations of rules rather than a single winner. Build a Lattice from your rule set, then apply a context to retrieve accumulated values with full provenance showing which rules contributed to each combination. Aggregates support sum, min, max, and product."
+    },
+    {
+      "name": "Persisting a lattice",
+      "module_ids": [
+        "mountainash_rules.engines.accumulator.lattice"
+      ],
+      "description": "Lattice.save(dir) writes a parquet + manifest snapshot; Lattice.load(dir) rehydrates it. Build offline once, save it, and serve apply() from the loaded snapshot in production without rebuilding."
+    },
+    {
+      "name": "Partitioned lattices (CONTEXT_KEY dimensions)",
+      "module_ids": [
+        "mountainash_rules.engines.accumulator.engine",
+        "mountainash_rules.engines.accumulator.lattice",
+        "mountainash_rules.core.constants"
+      ],
+      "description": "Mark dimensions as CONTEXT_KEY to partition your rule set before building lattices. build_all() builds one lattice per partition; index(lattices) returns a LatticeIndex that routes each context (or batch) to the correct lattice via ternary + specificity semantics, with load-time ambiguity validation."
+    }
+  ],
+  "featured_modules": [
+    "mountainash_rules.engines.filter.engine",
+    "mountainash_rules.core.result",
+    "mountainash_rules.core.batch_result",
+    "mountainash_rules.core.hit_policy",
+    "mountainash_rules.core.dimension",
+    "mountainash_rules.core.constants",
+    "mountainash_rules.engines.accumulator.engine",
+    "mountainash_rules.engines.accumulator.result",
+    "mountainash_rules.engines.accumulator.aggregate",
+    "mountainash_rules.engines.accumulator.lattice"
+  ],
+  "hidden_or_internal_modules": [
+    "mountainash_rules.core.compiler",
+    "mountainash_rules.engines.accumulator.compiler",
+    "mountainash_rules.core.context",
+    "mountainash_rules.core.set_wildcard",
+    "mountainash_rules.engines.accumulator.primes",
+    "mountainash_rules.__version__"
+  ],
+  "open_questions": []
+}

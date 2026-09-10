@@ -1,0 +1,73 @@
+{
+  "id": "mountainash_rules.engines.accumulator.lattice",
+  "path": "src/mountainash_rules/engines/accumulator/lattice.py",
+  "summary": "Lattice (built combinations frame + save/load snapshot persistence) and LatticeIndex (partition-key routing over multiple lattices with load-time ambiguity validation). Largest module in the package.",
+  "role": "model",
+  "visibility": "public",
+  "stability": "evolving",
+  "audiences": [
+    "users",
+    "maintainers",
+    "backend-architecture"
+  ],
+  "doc_priority": "essential",
+  "confidence": "high",
+  "public_api": [
+    "Lattice",
+    "LatticeIndex",
+    "AmbiguousPartitionError"
+  ],
+  "key_classes": [
+    "Lattice",
+    "LatticeIndex",
+    "AmbiguousPartitionError"
+  ],
+  "key_functions": [
+    "Lattice.save",
+    "Lattice.load"
+  ],
+  "dependencies": [
+    "mountainash_rules.core.constants",
+    "mountainash_rules.core.dimension",
+    "mountainash_rules.engines.accumulator.aggregate",
+    "mountainash_rules.engines.filter.engine"
+  ],
+  "dependents": [
+    "mountainash_rules.engines.accumulator.engine",
+    "mountainash_rules.engines.accumulator.result",
+    "mountainash_rules.__init__"
+  ],
+  "extension_points": [],
+  "lifecycle_notes": [
+    "Lattice.save/load added: parquet + manifest.yaml snapshot round-trip (a superset of babel's LatticeManifest) \u2014 the prior profile's coverage.md flagged 'no serialisation protocol' as an open question; that gap is now closed. 'Build offline, save, serve apply from load.'",
+    "Lattice.is_composed added to distinguish build() output (has __prime_product) from flat/imported lattices.",
+    "LatticeIndex is new: routes CONTEXT_KEY-partitioned contexts via ternary + specificity semantics through an embedded meta-engine; index(lattices, validate=True, max_witnesses=1_000_000) runs an exhaustive witness-matrix ambiguity check at load time; ties raise AmbiguousPartitionError (a KeyError subclass)."
+  ],
+  "documentation_hooks": [
+    "docs/superpowers/specs/2026-07-19-ternary-partition-routing-design.md",
+    "mountainash-rules-babel docs/lattice-schema.md (export schema contract for save/load)"
+  ],
+  "examples": [],
+  "tests": [
+    "tests/accumulator/test_lattice.py",
+    "tests/accumulator/test_lattice_properties.py"
+  ],
+  "risks": [
+    "Lattice.load carries a documented '# allow:' backend-purity exemption for the parquet read, pending backend-agnostic parquet.read_table support in mountainash."
+  ],
+  "open_questions": [],
+  "evidence": [
+    {
+      "kind": "doc",
+      "path": "CLAUDE.md",
+      "detail": "'Lattice.save(dir) / Lattice.load(dir) \u2014 snapshot persistence'"
+    }
+  ],
+  "source_hash": "7d0e3dcb747949bb2d7172a34135a7872b2ed55f",
+  "manual": {
+    "notes": "",
+    "editorial_status": "",
+    "owner": "",
+    "manual_summary": ""
+  }
+}

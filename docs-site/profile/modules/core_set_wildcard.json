@@ -1,0 +1,65 @@
+{
+  "id": "mountainash_rules.core.set_wildcard",
+  "path": "src/mountainash_rules/core/set_wildcard.py",
+  "summary": "Shared in-band sentinel helpers for set-dimension wildcards: normalize_set_expr, set_wildcard_predicate, canonicalize_set_expr, plus reservation/null-element validators. New module (did not exist at the prior profile).",
+  "role": "protocol",
+  "visibility": "semi-public",
+  "stability": "evolving",
+  "audiences": [
+    "maintainers",
+    "contributors",
+    "backend-architecture"
+  ],
+  "doc_priority": "useful",
+  "confidence": "high",
+  "public_api": [
+    "sentinel_list_expr",
+    "canonicalize_set_expr",
+    "normalize_set_expr",
+    "set_wildcard_predicate",
+    "validate_set_columns",
+    "validate_set_no_null_elements"
+  ],
+  "key_classes": [],
+  "key_functions": [
+    "normalize_set_expr",
+    "set_wildcard_predicate",
+    "validate_set_columns",
+    "validate_set_no_null_elements"
+  ],
+  "dependencies": [
+    "mountainash_rules.core.constants",
+    "mountainash_rules.core.dimension"
+  ],
+  "dependents": [
+    "mountainash_rules.core.compiler",
+    "mountainash_rules.engines.accumulator.compiler",
+    "mountainash_rules.engines.accumulator.engine",
+    "mountainash_rules.engines.filter.engine"
+  ],
+  "extension_points": [],
+  "lifecycle_notes": [
+    "New module: set-dimension wildcards moved from an unsupported/null representation to an in-band '[sentinel]' list, normalized at ingestion and validated for reservation + null elements in both engines (feature/accumulator-set-sentinel-wildcard, PR #52)."
+  ],
+  "documentation_hooks": [],
+  "examples": [],
+  "tests": [
+    "tests/core/test_set_wildcard.py"
+  ],
+  "risks": [],
+  "open_questions": [],
+  "evidence": [
+    {
+      "kind": "doc",
+      "path": "CLAUDE.md",
+      "detail": "'Set-dimension wildcards use the in-band [sentinel] list (not null)...'"
+    }
+  ],
+  "source_hash": "7d0e3dcb747949bb2d7172a34135a7872b2ed55f",
+  "manual": {
+    "notes": "",
+    "editorial_status": "",
+    "owner": "",
+    "manual_summary": ""
+  }
+}

@@ -1,0 +1,68 @@
+{
+  "id": "mountainash_rules.core.dimension",
+  "path": "src/mountainash_rules/core/dimension.py",
+  "summary": "Dimension (single match-strategy field spec) and DimensionsMetadata (collection with YAML round-trip and table-level hit-policy fields) Pydantic models. Validates strategy/data-type/field combinations at construction.",
+  "role": "model",
+  "visibility": "public",
+  "stability": "evolving",
+  "audiences": [
+    "users",
+    "maintainers",
+    "contributors",
+    "extension-authors"
+  ],
+  "doc_priority": "essential",
+  "confidence": "high",
+  "public_api": [
+    "Dimension",
+    "DimensionsMetadata"
+  ],
+  "key_classes": [
+    "Dimension",
+    "DimensionsMetadata"
+  ],
+  "key_functions": [],
+  "dependencies": [
+    "mountainash_rules.core.constants"
+  ],
+  "dependents": [
+    "mountainash_rules.core.compiler",
+    "mountainash_rules.core.set_wildcard",
+    "mountainash_rules.engines.accumulator.lattice",
+    "mountainash_rules.engines.accumulator.compiler",
+    "mountainash_rules.engines.accumulator.engine",
+    "mountainash_rules.engines.filter.engine",
+    "mountainash_rules.__init__"
+  ],
+  "extension_points": [
+    "New MatchStrategy validation logic added in model_validator '_validate_strategy_fields'."
+  ],
+  "lifecycle_notes": [
+    "YAML round-trip (to_yaml/from_yaml/to_yaml_file/from_yaml_file) added (new pyyaml dependency).",
+    "data_type became a DataType enum; passing a raw Python type still works but emits DeprecationWarning.",
+    "Table-level HitPolicy fields added to DimensionsMetadata (hit_policy, priority_field, output_fields).",
+    "bool dimensions with null-as-don't-care added; bool set dimensions explicitly rejected (no typed wildcard sentinel)."
+  ],
+  "documentation_hooks": [],
+  "examples": [],
+  "tests": [
+    "tests/core/test_dimension.py",
+    "tests/core/test_dimension_serialization.py"
+  ],
+  "risks": [],
+  "open_questions": [],
+  "evidence": [
+    {
+      "kind": "symbol",
+      "path": "src/mountainash_rules/core/dimension.py",
+      "detail": "DimensionsMetadata.from_yaml/from_yaml_file"
+    }
+  ],
+  "source_hash": "7d0e3dcb747949bb2d7172a34135a7872b2ed55f",
+  "manual": {
+    "notes": "",
+    "editorial_status": "",
+    "owner": "",
+    "manual_summary": ""
+  }
+}

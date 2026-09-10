@@ -1,0 +1,64 @@
+{
+  "id": "mountainash_rules.core.result",
+  "path": "src/mountainash_rules/core/result.py",
+  "summary": "RuleResult (survivors/best_match/count/explain/at_least/select accessors over an evaluated frame) and ExplainResult (every rule scored, unfiltered, for the new explain() API).",
+  "role": "model",
+  "visibility": "public",
+  "stability": "stable",
+  "audiences": [
+    "users",
+    "maintainers"
+  ],
+  "doc_priority": "essential",
+  "confidence": "high",
+  "public_api": [
+    "RuleResult",
+    "ExplainResult"
+  ],
+  "key_classes": [
+    "RuleResult",
+    "ExplainResult"
+  ],
+  "key_functions": [
+    "RuleResult.select",
+    "RuleResult.explain",
+    "RuleResult.at_least"
+  ],
+  "dependencies": [
+    "mountainash_rules.core.constants",
+    "mountainash_rules.core.hit_policy"
+  ],
+  "dependents": [
+    "mountainash_rules.core.batch_result",
+    "mountainash_rules.engines.accumulator.result",
+    "mountainash_rules.engines.filter.engine",
+    "mountainash_rules.__init__"
+  ],
+  "extension_points": [],
+  "lifecycle_notes": [
+    "ExplainResult added alongside ExpressionRulesEngine.explain() (all-rules ternary detail, no survival filter).",
+    "RuleResult.select(policy) added: re-apply a hit policy post-hoc over an untruncated result."
+  ],
+  "documentation_hooks": [],
+  "examples": [],
+  "tests": [
+    "tests/core/test_result.py",
+    "tests/filter/test_explain.py"
+  ],
+  "risks": [],
+  "open_questions": [],
+  "evidence": [
+    {
+      "kind": "symbol",
+      "path": "src/mountainash_rules/core/result.py",
+      "detail": "class ExplainResult (new since prior profile)"
+    }
+  ],
+  "source_hash": "7d0e3dcb747949bb2d7172a34135a7872b2ed55f",
+  "manual": {
+    "notes": "",
+    "editorial_status": "",
+    "owner": "",
+    "manual_summary": ""
+  }
+}

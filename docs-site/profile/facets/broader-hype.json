@@ -1,0 +1,74 @@
+{
+  "audience": "broader-hype",
+  "summary": "A rule engine that evaluates on any backend, explains every decision, and solves combinatorial problems that simpler engines can't express. Apache-2.0 licensed.",
+  "the_vision": "Business rules \u2014 pricing tiers, eligibility matrices, compliance conditions, feature flags, configuration logic \u2014 live at the heart of every data-driven organisation. mountainash-rules evaluates them as tabular data against whatever backend holds the data, with vectorized performance and built-in explainability. When overlapping rules interact, the accumulator engine resolves all consistent combinations and traces the provenance of every result \u2014 now persistable to disk so it never has to rebuild at request time.",
+  "what_it_makes_possible": [
+    {
+      "capability": "Rules that live where the data lives",
+      "essence": "Rule definitions are tabular data. Match strategies compile to mountainash expressions. The rule engine evaluates directly against whatever backend holds the data \u2014 Polars in a notebook, DuckDB in a pipeline, Snowflake in production, ClickHouse for analytics. The rules don't move to the data. The expressions compile to the backend."
+    },
+    {
+      "capability": "Every evaluation explains itself",
+      "essence": "Ask why a rule matched and get a per-dimension breakdown \u2014 not just 'matched' or 'didn't match,' but which dimensions matched, which were wildcards, and which excluded. Score every rule in the table at once with explain(), no survival filter required. Explainability is built into the evaluation, not a post-hoc analysis."
+    },
+    {
+      "capability": "One context or a million, one call",
+      "essence": "evaluate_batch() scores an entire population of contexts against the rule table in a single vectorized pass and ranks the survivors per-context \u2014 no per-row Python loop, no window-function backend requirement."
+    },
+    {
+      "capability": "Combinatorial problems solved \u2014 and persisted",
+      "essence": "When multiple rules can apply simultaneously \u2014 overlapping discount tiers, interacting eligibility conditions, complex regulatory criteria \u2014 the accumulator engine pre-computes all consistent combinations in one build step, with sum, min, max, or product accumulation. Save the lattice to disk once, and serve every subsequent apply() from the saved snapshot without rebuilding."
+    },
+    {
+      "capability": "Match strategies that cover real-world logic",
+      "essence": "Twelve match strategies: exact match, an exact-key partition router, ranges, greater/less than, prefix, suffix, contains, per-row regex, context-level regex, set membership, and set exclusion. Wildcard dimensions match everything, enabling graduated specificity."
+    },
+    {
+      "capability": "Rules that rank themselves \u2014 and can be governed",
+      "essence": "Surviving rules rank by specificity automatically. Layer a hit policy on top \u2014 require a unique match, take the first by priority, or assert no conflicting outputs \u2014 and the engine enforces it, raising a clear error the moment a business rule's assumptions are violated."
+    },
+    {
+      "capability": "Backend portability from the expression engine",
+      "essence": "Because match strategies compile to mountainash expressions, and those expressions compile to Polars, Narwhals, and Ibis \u2014 rules evaluate on any backend the expression engine reaches. Store rule tables in Snowflake. Evaluate against DuckDB. Persist results to Iceberg. The rule definitions don't change."
+    }
+  ],
+  "use_cases": [
+    {
+      "title": "The pricing engine",
+      "story": "A pricing team maintains discount and eligibility rules as a table \u2014 customer segment, geography, product tier, contract terms. The rule engine evaluates directly against Snowflake, batch-scoring the whole customer base overnight. The accumulator resolves overlapping discounts. Every customer's price comes with a full explanation of which rules applied and why. Rules-babel exports to DMN for compliance review."
+    },
+    {
+      "title": "The feature flag engine",
+      "story": "Feature flags as rule tables \u2014 user segment, region, plan tier, beta status. Evaluate against the production database in one vectorized pass. No feature flag service to maintain. When flags get complex (percentage rollouts that interact with plan restrictions), the accumulator handles the combinations, with a lattice saved once and reloaded on every request."
+    },
+    {
+      "title": "The compliance evaluator",
+      "story": "Regulatory conditions as rule dimensions, with a UNIQUE hit policy asserting exactly one applicable ruling per case. Evaluate a portfolio against compliance rules with full explainability \u2014 which conditions matched, which were neutral, which excluded. Export the rule definitions as DMN decision tables for regulatory review."
+    },
+    {
+      "title": "The ML feature selector",
+      "story": "Feature engineering rules that determine which model features apply to which populations \u2014 binning, exclusion criteria, interaction terms \u2014 batch-scored against millions of rows via evaluate_batch. Ternary logic handles sentinel values from ClickHouse without special-case code. The specification IS the evaluation."
+    },
+    {
+      "title": "The conformed business rule library",
+      "story": "A central team publishes rule sets as a versioned Python library \u2014 pricing rules, eligibility rules, compliance rules. Any team imports the library and evaluates against their own backend. The rules are the same everywhere. The explainability is the same everywhere."
+    }
+  ],
+  "featured_modules": [
+    "mountainash_rules.engines.filter.engine",
+    "mountainash_rules.core.result",
+    "mountainash_rules.core.batch_result",
+    "mountainash_rules.core.constants",
+    "mountainash_rules.engines.accumulator.engine",
+    "mountainash_rules.engines.accumulator.result",
+    "mountainash_rules.engines.accumulator.lattice"
+  ],
+  "hidden_or_internal_modules": [
+    "mountainash_rules.core.compiler",
+    "mountainash_rules.engines.accumulator.compiler",
+    "mountainash_rules.core.context",
+    "mountainash_rules.engines.accumulator.primes",
+    "mountainash_rules.core.set_wildcard"
+  ],
+  "open_questions": []
+}
