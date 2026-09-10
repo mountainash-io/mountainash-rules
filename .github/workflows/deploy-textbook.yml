@@ -21,14 +21,26 @@ jobs:
       main_sha: ${{ steps.snapshots.outputs.main_sha }}
       develop_sha: ${{ steps.snapshots.outputs.develop_sha }}
     steps:
-      - name: Select current branch snapshots
+      - name: Check out production branch snapshot
+        uses: actions/checkout@v4
+        with:
+          ref: refs/heads/main
+          path: prod
+          persist-credentials: false
+
+      - name: Check out development branch snapshot
+        uses: actions/checkout@v4
+        with:
+          ref: refs/heads/develop
+          path: dev
+          persist-credentials: false
+
+      - name: Record checked-out branch snapshots
         id: snapshots
-        env:
-          GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
-          main_sha=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq '.object.sha')
-          develop_sha=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/develop" --jq '.object.sha')
+          main_sha=$(git -C prod rev-parse --verify HEAD)
+          develop_sha=$(git -C dev rev-parse --verify HEAD)
           [[ "$main_sha" =~ ^[0-9a-f]{40}$ && "$develop_sha" =~ ^[0-9a-f]{40}$ ]]
           printf 'main_sha=%s\ndevelop_sha=%s\n' "$main_sha" "$develop_sha" >> "$GITHUB_OUTPUT"
           {
@@ -36,20 +48,6 @@ jobs:
             printf -- '- Production (`main`): `%s`\n' "$main_sha"
             printf -- '- Development (`develop`): `%s`\n' "$develop_sha"
           } >> "$GITHUB_STEP_SUMMARY"
-
-      - name: Check out production snapshot
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ steps.snapshots.outputs.main_sha }}
-          path: prod
-          persist-credentials: false
-
-      - name: Check out development snapshot
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ steps.snapshots.outputs.develop_sha }}
-          path: dev
-          persist-credentials: false
 
       - name: Set up Python
         uses: actions/setup-python@v5
