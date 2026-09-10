@@ -1,0 +1,56 @@
+{
+  "id": "mountainash_rules.engines.accumulator.aggregate",
+  "path": "src/mountainash_rules/engines/accumulator/aggregate.py",
+  "summary": "AggregateOp StrEnum (sum/min/max/product \u2014 all four now implemented) and Aggregate Pydantic model (column_name + operation) describing an accumulator accumulation column.",
+  "role": "model",
+  "visibility": "public",
+  "stability": "stable",
+  "audiences": [
+    "users",
+    "maintainers"
+  ],
+  "doc_priority": "useful",
+  "confidence": "high",
+  "public_api": [
+    "Aggregate",
+    "AggregateOp"
+  ],
+  "key_classes": [
+    "Aggregate",
+    "AggregateOp"
+  ],
+  "key_functions": [],
+  "dependencies": [],
+  "dependents": [
+    "mountainash_rules.engines.accumulator.lattice",
+    "mountainash_rules.engines.accumulator.engine",
+    "mountainash_rules.engines.accumulator.result",
+    "mountainash_rules.__init__"
+  ],
+  "extension_points": [],
+  "lifecycle_notes": [
+    "min/max/product aggregate operations added (feature A2, PR #51) \u2014 the prior profile's coverage.md flagged 'only sum is implemented' as an open question; that gap is now closed.",
+    "Documented limitation retained: aggregate-value overflow is backend-defined and unguarded (only __prime_product identity is int64-guarded); product overflows fastest."
+  ],
+  "documentation_hooks": [],
+  "examples": [],
+  "tests": [
+    "tests/accumulator/test_aggregate.py"
+  ],
+  "risks": [],
+  "open_questions": [],
+  "evidence": [
+    {
+      "kind": "doc",
+      "path": "src/mountainash_rules/engines/accumulator/aggregate.py",
+      "detail": "AggregateOp docstring: 'All four operations are commutative and associative'"
+    }
+  ],
+  "source_hash": "7d0e3dcb747949bb2d7172a34135a7872b2ed55f",
+  "manual": {
+    "notes": "",
+    "editorial_status": "",
+    "owner": "",
+    "manual_summary": ""
+  }
+}

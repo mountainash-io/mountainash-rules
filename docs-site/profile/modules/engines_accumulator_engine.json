@@ -1,0 +1,74 @@
+{
+  "id": "mountainash_rules.engines.accumulator.engine",
+  "path": "src/mountainash_rules/engines/accumulator/engine.py",
+  "summary": "AccumulatorEngine: build()/build_all() construct a Lattice of maximal consistent rule combinations by level-wise expansion; apply()/apply_auto() evaluate a context against a lattice (or route it via LatticeIndex).",
+  "role": "public-api",
+  "visibility": "public",
+  "stability": "evolving",
+  "audiences": [
+    "users",
+    "maintainers",
+    "contributors",
+    "backend-architecture"
+  ],
+  "doc_priority": "essential",
+  "confidence": "high",
+  "public_api": [
+    "AccumulatorEngine"
+  ],
+  "key_classes": [
+    "AccumulatorEngine"
+  ],
+  "key_functions": [],
+  "dependencies": [
+    "mountainash_rules.core.constants",
+    "mountainash_rules.core.dimension",
+    "mountainash_rules.core.set_wildcard",
+    "mountainash_rules.engines.accumulator.aggregate",
+    "mountainash_rules.engines.accumulator.compiler",
+    "mountainash_rules.engines.accumulator.lattice",
+    "mountainash_rules.engines.accumulator.primes",
+    "mountainash_rules.engines.accumulator.result",
+    "mountainash_rules.engines.filter.engine"
+  ],
+  "dependents": [
+    "mountainash_rules.__init__"
+  ],
+  "extension_points": [
+    "build_all + index(lattices) -> LatticeIndex routes CONTEXT_KEY-partitioned contexts to the correct lattice."
+  ],
+  "lifecycle_notes": [
+    "Renamed/relocated from top-level accumulator_engine.py to engines/accumulator/engine.py.",
+    "Apply-phase caching added: memoised filter engines and LatticeIndex per lattice (WeakKeyDictionary).",
+    "Ternary + specificity partition routing via an embedded meta-engine added for CONTEXT_KEY dimensions (feature/ternary-partition-routing, PR #48/#49) \u2014 NOT_SET fill for missing/null partition-key fields, EXACT_KEY match strategy powers the routing.",
+    "Each build level is materialised via relation(...).collect() \u2014 CLAUDE.md warns against lazy re-chaining (exponential plan blow-up)."
+  ],
+  "documentation_hooks": [],
+  "examples": [],
+  "tests": [
+    "tests/accumulator/test_engine.py",
+    "tests/accumulator/test_apply.py",
+    "tests/accumulator/test_backends.py",
+    "tests/accumulator/test_correctness.py",
+    "tests/accumulator/test_edge_cases.py",
+    "tests/benchmarks/test_accumulator_benchmarks.py"
+  ],
+  "risks": [
+    "`import polars as pl` with an '# allow:' tag for the empty-build schema seed \u2014 one of three documented backend-purity exemptions, pending backend-agnostic empty-frame support in mountainash."
+  ],
+  "open_questions": [],
+  "evidence": [
+    {
+      "kind": "import",
+      "path": "src/mountainash_rules/engines/accumulator/engine.py",
+      "detail": "import polars as pl  # allow: empty-build schema seed"
+    }
+  ],
+  "source_hash": "7d0e3dcb747949bb2d7172a34135a7872b2ed55f",
+  "manual": {
+    "notes": "",
+    "editorial_status": "",
+    "owner": "",
+    "manual_summary": ""
+  }
+}
