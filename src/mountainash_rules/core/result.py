@@ -68,7 +68,8 @@ class RuleResult:
             if required not in rel.columns:
                 raise ValueError(f"select() requires the {required} column")
         pf = priority_field if priority_field is not None else info.priority_field
-        selected_info: SelectionInfo = replace(info, priority_field=pf)
+        # replace preserves the concrete dataclass type, which Sonar cannot infer.
+        selected_info = t.cast(SelectionInfo, replace(info, priority_field=pf))
         check_policy_config(rel.columns, selected_policy, selected_info)
         check_priority(rel, selected_policy, selected_info)
         keys = ordering_keys(selected_policy, pf)
