@@ -359,7 +359,7 @@ Dimension(
 )
 ```
 
-> **Backend note:** SET_MEMBERSHIP and SET_EXCLUSION currently use a Polars-native implementation. They may not work on all backends.
+> **Backend note:** SET_MEMBERSHIP and SET_EXCLUSION use mountainash's backend-agnostic `list.t_contains()` API, preserving typed unknown-context sentinels. Use Polars or Ibis-DuckDB for engine evaluation. Pandas/Narwhals reject column-valued needles, SQLite has no list column type, and Ibis-Polars cannot execute engine row indexing. See [backend support](../README.md#backend-support).
 
 ---
 

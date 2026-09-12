@@ -146,7 +146,14 @@ The engine is backend-agnostic. Pass any supported DataFrame type as `rules`:
 | Ibis (Polars) | `ibis.polars.connect().create_table(...)` |
 | Ibis (SQLite) | `ibis.sqlite.connect().create_table(...)` |
 
-All backends produce identical results. Polars is recommended for performance.
+Supported operations produce identical results; backend capability limits still apply:
+
+- SET_MEMBERSHIP/SET_EXCLUSION use `list.t_contains()`. Use Polars or Ibis-DuckDB for engine evaluation: Pandas/Narwhals reject column-valued needles, and SQLite has no list column type.
+- PREFIX/SUFFIX/CONTAINS require column-valued string predicates, unsupported by Pandas, Narwhals-Pandas and the Ibis-Polars translator.
+- Ibis-Polars cannot execute the engine's row indexing. Expression-level support does not imply engine-level support.
+- Per-row REGEX retains its Polars-native implementation.
+
+Polars is recommended for performance.
 
 ## Installation
 
@@ -158,6 +165,8 @@ hatch env create
 ```
 
 Requires sibling checkouts of `mountainash`, `mountainash-data`, and `mountainash-settings` (see `hatch.toml` for path configuration).
+
+Set strategies require mountainash's `list.t_contains()` API from current `develop`; older snapshots using scalar `t_is_in(list_column)` are incompatible. CI checks out the matching dependency branch or falls back to the PR base branch. Keep dependency source revisions and installed packages aligned when comparing local results with CI; an existing Hatch environment can contain older non-editable dependency copies.
 
 ## Textbook
 
