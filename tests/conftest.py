@@ -41,10 +41,9 @@ LIST_CAPABLE_BACKENDS = [
     "ibis-polars",
 ]
 
-# Note: narwhals-polars is intentionally excluded from LIST_CAPABLE_BACKENDS.
-# narwhals (as of 2.19.0) types list.contains(item) as NonNestedLiteral and
-# rejects expression arguments across all its native backends, so t_is_in
-# against a list column cannot compile through the narwhals path.
+# Narwhals rejects a column-valued needle for list.t_contains on both its
+# Polars and Pandas paths. The compiler backend matrix asserts that capability
+# error; engine list tests run only on the backends above.
 
 # ---------------------------------------------------------------------------
 # Per-test upstream xfails

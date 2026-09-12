@@ -145,7 +145,9 @@ class DimensionCompiler:
         else:
             upper = max_col.t_gt(ctx_col)
 
-        return lower.t_and(upper)
+        # Row-wise minimum: Polars 1.44 min_horizontal can collapse constant
+        # ternary branches to a length-one Series instead of broadcasting.
+        return ma.when(lower.le(upper)).then(lower).otherwise(upper)
 
     def _context_is_nonconcrete(self, dim: Dimension) -> BaseExpressionAPI:
         """Context nulls and reserved markers cannot satisfy a concrete predicate."""
@@ -188,10 +190,8 @@ class DimensionCompiler:
 
         mountainash's regex_contains only accepts a literal pattern, so this
         uses a Polars-native expression pending upstream support for
-        column-valued patterns (same workaround precedent as
-        SET_MEMBERSHIP/SET_EXCLUSION before t_is_in landed). Non-polars
-        backends fail at evaluation with mountainash's native-expression
-        error.
+        column-valued patterns. Non-polars backends fail at evaluation with
+        mountainash's native-expression error.
         """
         import polars as pl  # allow: native fallback pending mountainash column-pattern regex_contains
 
@@ -230,7 +230,7 @@ class DimensionCompiler:
             CTX_PREFIX + dim.dimension_name, unknown=sentinels_for(dim.data_type)
         )
         is_wild = set_wildcard_predicate(dim, rule_col)
-        return ma.when(is_wild).then(0).otherwise(ctx_col.t_is_in(rule_col))
+        return ma.when(is_wild).then(0).otherwise(rule_col.list.t_contains(ctx_col))
 
     def _compile_set_exclusion(self, dim: Dimension) -> BaseExpressionAPI:
         """SET_EXCLUSION: context value NOT in the rule list; wildcard rule -> ternary 0."""
@@ -239,4 +239,8 @@ class DimensionCompiler:
             CTX_PREFIX + dim.dimension_name, unknown=sentinels_for(dim.data_type)
         )
         is_wild = set_wildcard_predicate(dim, rule_col)
-        return ma.when(is_wild).then(0).otherwise(ctx_col.t_is_not_in(rule_col))
+        return (
+            ma.when(is_wild)
+            .then(0)
+            .otherwise(rule_col.list.t_contains(ctx_col).t_not())
+        )

@@ -123,7 +123,7 @@ result = engine.evaluate({"region": "AU", "tier": "premium", "spend": 1500})
 
 `evaluate()` returns a `RuleResult`. All accessors return a DataFrame in the same backend as your input `rules`.
 
-#### `survivors` — all matching rules, ranked best first
+#### `survivors` — retained matching rules in policy order
 
 ```python
 print(result.survivors)
@@ -134,11 +134,11 @@ print(result.survivors)
 # global_fallback  <NA>    <NA>       -999999999 -999999999 0              3       0           0         0
 ```
 
-The `__specificity` column counts the number of dimensions that produced a hard match (ternary 1). Rules are sorted by specificity descending and assigned a 1-based `__rank`.
+The `__specificity` column counts dimensions that produced a hard match (ternary 1). The default COLLECT policy sorts by specificity descending; other policies can use source order or salience. `__rank` is 1-based and assigned before caller filters. Filtering does not rewrite it: rank 2 can be the first retained row.
 
 The `__t_<dimension>` columns show per-dimension ternary results: **1** = match, **0** = wildcard/unknown, **-1** = non-match. They are included by default (`include_observability=True`).
 
-#### `best_match` — the single most specific survivor
+#### `best_match` — the retained survivor with minimum policy rank
 
 ```python
 print(result.best_match)
@@ -188,6 +188,39 @@ result = engine.evaluate(context, min_specificity=2)
 # Evaluate only a subset of dimensions
 result = engine.evaluate(context, dimensions=["region", "spend"])
 ```
+
+Top-N selects positions among the rows remaining after `min_specificity`, not rows whose original rank is <= N. The same rule applies to batch `top_n_per_context`. Policy assertions run first, so a conflicting UNIQUE/ANY request still raises even with top-N zero or a threshold that would remove every match.
+
+### Policies, output schemas and re-selection
+
+Accepts `HitPolicy` members and exact lowercase strings (`collect`, `unique`, `first`, `priority`, `any`, `rule_order`). Evaluation `None` inherits metadata/default COLLECT; `select(None)` and invalid spellings/types raise `ValueError`. PRIORITY requires an existing priority field and rejects null priorities on survivors before limits; null priorities on nonmatching rules do not invalidate the request.
+
+For metadata-backed engines, configure `DimensionsMetadata.output_fields`. A nonempty declaration must contain unique, nonempty names present in the original rule schema, even when rules are empty or ANY is not the default policy. An empty metadata list infers outputs, excluding all physical condition columns (including inactive dimensions and both RANGE bounds), effective priority, rule name and internal columns. CONTEXT_REGEX has no physical condition column. Explicit declarations can intentionally include otherwise excluded rule fields.
+
+The expressions-only constructor has no metadata authority to infer outputs. Supply the keyword-only `output_fields` argument when constructing it to use ANY:
+
+```python
+engine = ExpressionRulesEngine(
+    rules,
+    dimension_expressions=expressions,
+    output_fields=["price"],
+)
+```
+
+Do not supply that argument together with metadata; configure metadata's field instead. Empty explicit constructor lists are invalid. There is no per-call output-schema override. Without an explicit expressions-only schema, ANY raises even on empty input. With metadata but no inferred outputs, zero/one survivor per context is accepted; multiple survivors require a nonempty output schema.
+
+ANY compares complete output tuples: `(None, "yes")` agrees with itself but differs from `(None, "no")` or `(10, "yes")`. Single violations expose full survivor rows through `HitPolicyViolationError.offending`; batch violations expose every offending `__context_id` and `__n` (survivor count for UNIQUE, distinct tuple count for ANY). Chunked violations aggregate all offending chunks. Messages contain bounded examples, not the full diagnostic payload.
+
+Re-selection requires a complete candidate basis:
+
+- Unfiltered COLLECT, RULE_ORDER and successful UNIQUE results can call `select()`.
+- Any supplied top-N/min-specificity, including a no-op limit or `min_specificity=0`, prevents later `select()`.
+- FIRST, PRIORITY and ANY also prevent later `select()`, even on empty/singleton results.
+- `select()` itself preserves this restriction across chains; batch `for_context()` inherits it, including after chunking. Re-evaluate to recover candidates rather than selecting from an incomplete result.
+
+This is the conservative meaning of exported `SelectionInfo.truncated`: possibly incomplete, not necessarily fewer rows. `SelectionInfo.metadata_backed` defaults to False; manual callers relying on inference must opt in with complete condition metadata. Engine-created results provide it automatically. Priority overrides are retained immutably and update inferred output exclusions; explicit output declarations remain unchanged.
+
+`include_observability=False` removes ternaries only; rank, specificity and source identity remain available for sound selection. Batch best-match accessors use minimum remaining rank and `for_context()` returns rank-ordered rows. Filter batch output is ordered by canonical context ID then rank, which need not be caller input order.
 
 ---
 
@@ -326,7 +359,7 @@ Dimension(
 )
 ```
 
-> **Backend note:** SET_MEMBERSHIP and SET_EXCLUSION currently use a Polars-native implementation. They may not work on all backends.
+> **Backend note:** SET_MEMBERSHIP and SET_EXCLUSION use mountainash's backend-agnostic `list.t_contains()` API, preserving typed unknown-context sentinels. Use Polars or Ibis-DuckDB for engine evaluation. Pandas/Narwhals reject column-valued needles, SQLite has no list column type, and Ibis-Polars cannot execute engine row indexing. See [backend support](../README.md#backend-support).
 
 ---
 

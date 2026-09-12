@@ -251,9 +251,8 @@ def _fraud_metadata() -> DimensionsMetadata:
 class TestMixedStrategyFraudDetection:
     """Exercises EXACT, SET_MEMBERSHIP, GREATER_THAN, and PREFIX together.
 
-    SET_MEMBERSHIP now compiles cleanly on every list-capable backend via
-    mountainash.expressions `t_is_in` / `t_is_not_in`, which accept list
-    column references polymorphically (mountainash#75).
+    SET_MEMBERSHIP uses mountainash.expressions ``list.t_contains`` with a
+    sentinel-aware context needle; SET_EXCLUSION negates that ternary result.
     """
 
     @pytest.fixture

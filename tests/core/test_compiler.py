@@ -4,7 +4,8 @@ import ibis
 import polars as pl
 import pytest
 
-import mountainash.expressions as ma
+from mountainash.core.types import BackendCapabilityError
+from mountainash.relations import relation
 
 from mountainash_rules.core.compiler import DimensionCompiler
 from mountainash_rules.core.constants import CTX_PREFIX, NOT_SET, UNKNOWN, UNKNOWN_NUMERIC, MatchStrategy
@@ -584,9 +585,10 @@ class TestSetExclusionCompilation:
 
 
 class TestBackendAgnosticism:
-    """Smoke tests: each strategy compiles against all 7 supported backends."""
+    """Evaluate ternary results, or report a known backend capability boundary."""
 
     _SAMPLE_DATA = {
+        "row_id": [0, 1],
         "str_col": ["A", "B"],
         "num_col": [10, 20],
         "min_col": [0, 0],
@@ -600,19 +602,34 @@ class TestBackendAgnosticism:
     _NON_LIST_DATA = {k: v for k, v in _SAMPLE_DATA.items() if k != "list_col"}
 
     @pytest.mark.parametrize("backend_name", ALL_BACKENDS)
-    @pytest.mark.parametrize("strategy,field,data_type,extras", [
-        (MatchStrategy.EXACT, "str_col", str, {}),
-        (MatchStrategy.NOT_EQUAL, "str_col", str, {}),
-        (MatchStrategy.RANGE, "num_col", int, {"range_min_field": "min_col", "range_max_field": "max_col"}),
-        (MatchStrategy.GREATER_THAN, "num_col", int, {}),
-        (MatchStrategy.LESS_THAN, "num_col", int, {}),
-        (MatchStrategy.PREFIX, "str_col", str, {}),
-        (MatchStrategy.SUFFIX, "str_col", str, {}),
-        (MatchStrategy.CONTAINS, "str_col", str, {}),
-        (MatchStrategy.CONTEXT_REGEX, "str_col", str, {"regex_pattern": "A"}),
-    ])
-    def test_non_set_strategy_compiles_on_backend(
-        self, compiler, backend_name, strategy, field, data_type, extras
+    @pytest.mark.parametrize(
+        "strategy,field,data_type,extras,expected",
+        [
+            (MatchStrategy.EXACT, "str_col", str, {}, [1, -1]),
+            (MatchStrategy.NOT_EQUAL, "str_col", str, {}, [-1, 1]),
+            (
+                MatchStrategy.RANGE,
+                "num_col",
+                int,
+                {"range_min_field": "min_col", "range_max_field": "max_col"},
+                [1, 1],
+            ),
+            (MatchStrategy.GREATER_THAN, "num_col", int, {}, [1, -1]),
+            (MatchStrategy.LESS_THAN, "num_col", int, {}, [-1, 1]),
+            (MatchStrategy.PREFIX, "str_col", str, {}, [1, -1]),
+            (MatchStrategy.SUFFIX, "str_col", str, {}, [1, -1]),
+            (MatchStrategy.CONTAINS, "str_col", str, {}, [1, -1]),
+            (
+                MatchStrategy.CONTEXT_REGEX,
+                "str_col",
+                str,
+                {"regex_pattern": "A"},
+                [1, 1],
+            ),
+        ],
+    )
+    def test_non_set_strategy_evaluates_on_backend(
+        self, compiler, backend_name, strategy, field, data_type, extras, expected
     ):
         dim = Dimension(
             dimension_name=field,
@@ -622,31 +639,75 @@ class TestBackendAgnosticism:
         )
         expr = compiler.compile_dimension(dim)
         df = build_backend_df(backend_name, self._NON_LIST_DATA)
-        compiled = expr.compile(df, booleanizer=None)
-        assert compiled is not None
+        if backend_name in {"pandas", "narwhals-pandas"} and strategy in {
+            MatchStrategy.PREFIX,
+            MatchStrategy.SUFFIX,
+            MatchStrategy.CONTAINS,
+        }:
+            # Column-valued string predicates are not supported on pandas.
+            rel = relation(df).with_columns(expr.alias("__t"))
+            with pytest.raises(BackendCapabilityError) as error:
+                rel.to_dict()
+            assert error.value.backend == "narwhals"
+            return
+        if backend_name == "ibis-polars" and strategy in {
+            MatchStrategy.PREFIX,
+            MatchStrategy.SUFFIX,
+            MatchStrategy.CONTAINS,
+        }:
+            # Ibis accepts the expression but its Polars translator rejects it.
+            rel = relation(df).with_columns(expr.alias("__t"))
+            with pytest.raises(ibis.common.exceptions.UnsupportedArgumentError):
+                rel.to_dict()
+            return
+        result = relation(df).with_columns(expr.alias("__t")).sort("row_id").to_dict()
+        assert result["__t"] == expected
 
     @pytest.mark.parametrize("backend_name", ALL_BACKENDS)
-    @pytest.mark.parametrize("strategy", [
-        MatchStrategy.SET_MEMBERSHIP,
-        MatchStrategy.SET_EXCLUSION,
-    ])
-    def test_set_strategy_compiles_on_backend(self, compiler, backend_name, strategy):
+    @pytest.mark.parametrize(
+        "strategy",
+        [
+            MatchStrategy.SET_MEMBERSHIP,
+            MatchStrategy.SET_EXCLUSION,
+        ],
+    )
+    def test_set_strategy_evaluates_on_backend(self, compiler, backend_name, strategy):
         if backend_name == "ibis-sqlite":
             pytest.skip("SQLite has no native array/list column type.")
-        if backend_name == "narwhals-polars":
-            pytest.skip(
-                "narwhals 2.19.0 types list.contains(item) as NonNestedLiteral "
-                "and rejects expression arguments across native backends."
-            )
         dim = Dimension(
             dimension_name="list_col",
             match_strategy=strategy,
             data_type=str,
         )
         expr = compiler.compile_dimension(dim)
-        df = build_backend_df(backend_name, self._SAMPLE_DATA)
-        compiled = expr.compile(df, booleanizer=None)
-        assert compiled is not None
+        df = build_backend_df(
+            backend_name,
+            {
+                "row_id": list(range(7)),
+                "list_col": [
+                    ["A", "X"],
+                    ["B", "Y"],
+                    [UNKNOWN],
+                    ["A"],
+                    ["A"],
+                    [],
+                    [NOT_SET],
+                ],
+                f"{CTX_PREFIX}list_col": ["A", "A", "A", UNKNOWN, NOT_SET, "A", "A"],
+            },
+        )
+        if backend_name in {"pandas", "narwhals-polars", "narwhals-pandas"}:
+            # List-column membership needs a column-valued needle.
+            rel = relation(df).with_columns(expr.alias("__t"))
+            with pytest.raises(BackendCapabilityError) as error:
+                rel.to_dict()
+            assert error.value.backend == "narwhals"
+            return
+        result = relation(df).with_columns(expr.alias("__t")).sort("row_id").to_dict()
+        expected = [1, -1, 0, 0, 0, -1, -1]
+        if strategy == MatchStrategy.SET_EXCLUSION:
+            expected = [-value for value in expected]
+        assert result["__t"] == expected
 
 
 class TestExactKeyCompilation:

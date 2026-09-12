@@ -7,7 +7,7 @@ import typing as t
 import mountainash.expressions as ma
 from mountainash.relations import relation
 
-from mountainash_rules.core.hit_policy import SelectionInfo
+from mountainash_rules.core.hit_policy import SelectionInfo, first_per_context
 from mountainash_rules.core.result import RuleResult
 
 
@@ -28,12 +28,16 @@ class BatchRuleResult:
 
     @property
     def survivors(self) -> t.Any:
+        """Retained rows ordered by canonical context ID and applied-policy rank."""
         return self._df
 
     @property
     def best_matches(self) -> t.Any:
+        """One minimum-remaining-rank row for each context with retained matches."""
         return (
-            relation(self._df).filter(ma.col("__rank").eq(ma.lit(1))).collect()
+            first_per_context(relation(self._df))
+            .sort("__context_id", "__rank")
+            .collect()
         )
 
     @property
@@ -59,18 +63,18 @@ class BatchRuleResult:
 
     @property
     def matched_context_ids(self) -> list:
-        rows = (
-            relation(self._df).select(ma.col("__context_id")).unique().to_dict()
-        )
+        rows = relation(self._df).select(ma.col("__context_id")).unique().to_dict()
         return sorted(rows["__context_id"])
 
     def unmatched_context_ids(self, contexts: t.Any) -> list:
         matched = set(self.matched_context_ids)
         ctx_rel = relation(contexts)
         if self._context_id_field in ctx_rel.columns:
-            all_ids = ctx_rel.select(
-                ma.col(self._context_id_field)
-            ).unique().to_dict()[self._context_id_field]
+            all_ids = (
+                ctx_rel.select(ma.col(self._context_id_field))
+                .unique()
+                .to_dict()[self._context_id_field]
+            )
         else:
             all_ids = list(range(ctx_rel.count_rows()))
         return sorted(i for i in all_ids if i not in matched)
@@ -79,6 +83,7 @@ class BatchRuleResult:
         frame = (
             relation(self._df)
             .filter(ma.col("__context_id").eq(ma.lit(context_id)))
+            .sort("__rank")
             .collect()
         )
         return RuleResult(

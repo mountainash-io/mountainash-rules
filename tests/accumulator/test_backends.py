@@ -4,9 +4,9 @@ import polars as pl
 import pytest
 from pydantic import BaseModel
 from mountainash.relations import relation
+from mountainash.core.types import BackendCapabilityError
 
 from mountainash_rules.engines.accumulator.engine import AccumulatorEngine
-from mountainash_rules.engines.accumulator.result import AccumulatorResult
 from mountainash_rules.engines.accumulator.aggregate import Aggregate
 from mountainash_rules.core.constants import UNKNOWN, UNKNOWN_NUMERIC, MatchStrategy
 from mountainash_rules.core.dimension import Dimension, DimensionsMetadata
@@ -70,12 +70,15 @@ def apply_backend(request):
 class TestApplyCrossBackend:
     """Verify the apply phase works across all 7 backends."""
 
-    def test_apply_returns_result(self, apply_backend):
+    def test_apply_reports_unsupported_row_index(self):
         engine = _worked_example_engine()
-        lattice = _build_lattice_in_backend(engine, _worked_example_rules(), apply_backend)
+        lattice = _build_lattice_in_backend(
+            engine, _worked_example_rules(), "ibis-polars"
+        )
         context = PricingContext(channel="BROKER", lvr=75, foreign_resident="false")
-        result = engine.apply(lattice, context)
-        assert isinstance(result, AccumulatorResult)
+        with pytest.raises(BackendCapabilityError) as error:
+            engine.apply(lattice, context)
+        assert error.value.backend == "ibis"
 
     def test_apply_correct_count(self, apply_backend):
         engine = _worked_example_engine()

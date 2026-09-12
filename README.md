@@ -79,11 +79,15 @@ Missing context and explicit context sentinels earn no specificity in ordinary p
 
 ## Hit Policies
 
-How many survivors come back, and in what order, is a **hit policy** (DMN-aligned, `HitPolicy` enum): `collect` (default — all survivors ranked by specificity), `unique` (exactly one or `HitPolicyViolationError`), `first` / `rule_order` (rule-definition order), `priority` (rank by a priority column), `any` (all survivors must agree on outputs). Set it on `DimensionsMetadata`, per `evaluate()` call, or re-select post-hoc with `result.select(policy)`.
+How many survivors come back, and in what order, is a **hit policy**: `collect` (default — all survivors ranked by specificity), `unique` (at most one survivor), `first` / `rule_order` (rule-definition order), `priority` (salience descending), and `any` (survivors must agree on output tuples, including nulls). Accepts `HitPolicy` members or exact lowercase strings; invalid values raise `ValueError`. Configure the policy on metadata or override it per evaluation.
 
 ```python
 result = engine.evaluate(context, hit_policy=HitPolicy.FIRST)
 ```
+
+Output declarations are validated against the original rule schema at construction. Metadata-backed engines use `DimensionsMetadata.output_fields`; an empty list infers outputs from non-condition columns. Expressions-only engines must supply the keyword-only `output_fields=["price", ...]` to use ANY—there is no guessed output schema. PRIORITY requires an existing field and non-null values on surviving rules. UNIQUE/ANY assertions run before limits or specificity filters.
+
+`result.select(policy)` is available only while the complete candidate set is retained. Any supplied limit/threshold or FIRST/PRIORITY/ANY selection marks the result potentially incomplete—even a no-op limit or singleton selection—and subsequent selection raises `ValueError`. Re-evaluate without those operations to choose another policy. See [policy and selection semantics](docs/user-quickstart.md#policies-output-schemas-and-re-selection).
 
 ## Batch Evaluation
 
@@ -93,12 +97,14 @@ Score thousands of contexts in one vectorised pass instead of looping:
 contexts = pl.DataFrame({"customer_id": [...], "region": [...], "spend": [...]})
 batch = engine.evaluate_batch(contexts, context_id_field="customer_id")
 
-batch.best_matches          # rank-1 rule per context
+batch.best_matches          # minimum retained rank per context (not necessarily 1)
 batch.counts_per_context    # survivors per context
 batch.for_context("C042")   # single-context RuleResult
 ```
 
 Contexts are automatically conformed to whatever backend the rules live in, and large batches can be chunked (`chunk_size=`).
+
+Filter batch rows are ordered by `__context_id` then `__rank`. Ranks describe the policy ordering before caller filters: if rank 1 is removed, rank 2 may be the best remaining match. Top-N applies to remaining positions without rewriting those ranks. `for_context()` preserves both rank order and the batch's re-selection restrictions.
 
 ## Accumulator Engine
 
@@ -140,7 +146,14 @@ The engine is backend-agnostic. Pass any supported DataFrame type as `rules`:
 | Ibis (Polars) | `ibis.polars.connect().create_table(...)` |
 | Ibis (SQLite) | `ibis.sqlite.connect().create_table(...)` |
 
-All backends produce identical results. Polars is recommended for performance.
+Supported operations produce identical results; backend capability limits still apply:
+
+- SET_MEMBERSHIP/SET_EXCLUSION use `list.t_contains()`. Use Polars or Ibis-DuckDB for engine evaluation: Pandas/Narwhals reject column-valued needles, and SQLite has no list column type.
+- PREFIX/SUFFIX/CONTAINS require column-valued string predicates, unsupported by Pandas, Narwhals-Pandas and the Ibis-Polars translator.
+- Ibis-Polars cannot execute the engine's row indexing. Expression-level support does not imply engine-level support.
+- Per-row REGEX retains its Polars-native implementation.
+
+Polars is recommended for performance.
 
 ## Installation
 
@@ -152,6 +165,8 @@ hatch env create
 ```
 
 Requires sibling checkouts of `mountainash`, `mountainash-data`, and `mountainash-settings` (see `hatch.toml` for path configuration).
+
+Set strategies require mountainash's `list.t_contains()` API from current `develop`; older snapshots using scalar `t_is_in(list_column)` are incompatible. CI checks out the matching dependency branch or falls back to the PR base branch. Keep dependency source revisions and installed packages aligned when comparing local results with CI; an existing Hatch environment can contain older non-editable dependency copies.
 
 ## Textbook
 
@@ -212,7 +227,7 @@ The engine uses **signed-integer ternary logic** (-1 = non-match, 0 = unknown, 1
 1. **Compile** — `DimensionCompiler` converts dimension metadata into backend-agnostic expression templates at construction time.
 2. **Bind** — Context values are injected as literal columns alongside the rules DataFrame.
 3. **Evaluate** — All dimension expressions execute in one `with_columns` call, producing a ternary value per dimension per rule.
-4. **Rank** — Rules with any -1 are eliminated. Survivors are ranked by **specificity** (count of 1s). More specific rules rank higher.
+4. **Rank and select** — Rules with any -1 are eliminated. Survivors receive a pre-filter, 1-based policy rank (specificity descending by default); policy assertions precede caller filters and cardinality.
 
 The engine and result layer use only `mountainash.relations` and `mountainash.expressions` — no direct backend imports. See [CLAUDE.md](CLAUDE.md) for full architectural details.
 
