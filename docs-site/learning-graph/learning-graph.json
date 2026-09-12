@@ -1,14 +1,14 @@
 {
   "metadata": {
     "title": "Mountainash Rules Package Concept Graph",
-    "description": "A concept dependency graph covering the mountainash-rules vectorized, backend-agnostic business rules engine. 130 concepts across 9 taxonomy categories spanning foundation, dimension model, expression rules engine, hit policies, expression engine results, batch evaluation, accumulator engine, lattice structures, and supporting modules.",
+    "description": "Internal teaching graph for the approved eight-chapter mountainash-rules manual: 133 concepts covering practical usage, expression and combination-search internals, and extension/maintenance.",
     "creator": "Nathaniel Ramm",
-    "date": "2026-09-02",
-    "version": "1.1",
+    "date": "2026-09-12",
+    "version": "1.2",
     "format": "Learning Graph JSON v1.0",
     "schema": "https://raw.githubusercontent.com/dmccreary/learning-graphs/refs/heads/main/src/schema/learning-graph-schema.json",
     "license": "CC BY-NC-SA 4.0 DEED",
-    "source_commit": "7d0e3dcb747949bb2d7172a34135a7872b2ed55f",
+    "source_commit": "94659bb0c096485c87d329f09e944577427f129f",
     "profile_dir": "docs-site/profile"
   },
   "groups": {
@@ -84,8 +84,9 @@
       "shape": "box",
       "source_module": null,
       "source_path": null,
-      "chapter": "01-foundation-concepts",
-      "match_confidence": 0.0
+      "chapter": "01-rule-tables-and-decisions",
+      "match_confidence": 0.0,
+      "cis": 76
     },
     {
       "id": 2,
@@ -93,8 +94,9 @@
       "group": "FOUND",
       "source_module": null,
       "source_path": null,
-      "chapter": "01-foundation-concepts",
-      "match_confidence": 0.0
+      "chapter": "01-rule-tables-and-decisions",
+      "match_confidence": 0.0,
+      "cis": 32
     },
     {
       "id": 3,
@@ -103,8 +105,9 @@
       "shape": "box",
       "source_module": null,
       "source_path": null,
-      "chapter": "01-foundation-concepts",
-      "match_confidence": 0.0
+      "chapter": "01-rule-tables-and-decisions",
+      "match_confidence": 0.0,
+      "cis": 615
     },
     {
       "id": 4,
@@ -113,8 +116,9 @@
       "shape": "box",
       "source_module": null,
       "source_path": null,
-      "chapter": "01-foundation-concepts",
-      "match_confidence": 0.0
+      "chapter": "01-rule-tables-and-decisions",
+      "match_confidence": 0.0,
+      "cis": 366
     },
     {
       "id": 5,
@@ -123,8 +127,9 @@
       "shape": "box",
       "source_module": null,
       "source_path": null,
-      "chapter": "01-foundation-concepts",
-      "match_confidence": 0.0
+      "chapter": "01-rule-tables-and-decisions",
+      "match_confidence": 0.0,
+      "cis": 408
     },
     {
       "id": 6,
@@ -133,8 +138,9 @@
       "shape": "box",
       "source_module": null,
       "source_path": null,
-      "chapter": "01-foundation-concepts",
-      "match_confidence": 0.0
+      "chapter": "01-rule-tables-and-decisions",
+      "match_confidence": 0.0,
+      "cis": 176
     },
     {
       "id": 7,
@@ -142,8 +148,9 @@
       "group": "FOUND",
       "source_module": null,
       "source_path": null,
-      "chapter": "01-foundation-concepts",
-      "match_confidence": 0.0
+      "chapter": "01-rule-tables-and-decisions",
+      "match_confidence": 0.0,
+      "cis": 179
     },
     {
       "id": 8,
@@ -151,8 +158,9 @@
       "group": "FOUND",
       "source_module": null,
       "source_path": null,
-      "chapter": "01-foundation-concepts",
-      "match_confidence": 0.0
+      "chapter": "01-rule-tables-and-decisions",
+      "match_confidence": 0.0,
+      "cis": 174
     },
     {
       "id": 9,
@@ -160,8 +168,9 @@
       "group": "FOUND",
       "source_module": null,
       "source_path": null,
-      "chapter": "01-foundation-concepts",
-      "match_confidence": 0.0
+      "chapter": "01-rule-tables-and-decisions",
+      "match_confidence": 0.0,
+      "cis": 124
     },
     {
       "id": 10,
@@ -169,8 +178,9 @@
       "group": "FOUND",
       "source_module": null,
       "source_path": null,
-      "chapter": "01-foundation-concepts",
-      "match_confidence": 0.0
+      "chapter": "01-rule-tables-and-decisions",
+      "match_confidence": 0.0,
+      "cis": 123
     },
     {
       "id": 11,
@@ -178,8 +188,9 @@
       "group": "DIM",
       "source_module": "mountainash_rules.core.constants",
       "source_path": "src/mountainash_rules/core/constants.py",
-      "chapter": "02-match-strategies",
-      "match_confidence": 0.85
+      "chapter": "02-authoring-rule-libraries",
+      "match_confidence": 0.85,
+      "cis": 365
     },
     {
       "id": 12,
@@ -187,8 +198,9 @@
       "group": "DIM",
       "source_module": "mountainash_rules.core.constants",
       "source_path": "src/mountainash_rules/core/constants.py",
-      "chapter": "02-match-strategies",
-      "match_confidence": 0.62
+      "chapter": "02-authoring-rule-libraries",
+      "match_confidence": 0.62,
+      "cis": 35
     },
     {
       "id": 13,
@@ -196,8 +208,9 @@
       "group": "DIM",
       "source_module": null,
       "source_path": null,
-      "chapter": "02-match-strategies",
-      "match_confidence": 0.3
+      "chapter": "02-authoring-rule-libraries",
+      "match_confidence": 0.3,
+      "cis": 1
     },
     {
       "id": 14,
@@ -205,8 +218,9 @@
       "group": "DIM",
       "source_module": null,
       "source_path": null,
-      "chapter": "02-match-strategies",
-      "match_confidence": 0.3
+      "chapter": "02-authoring-rule-libraries",
+      "match_confidence": 0.3,
+      "cis": 17
     },
     {
       "id": 15,
@@ -214,8 +228,9 @@
       "group": "DIM",
       "source_module": null,
       "source_path": null,
-      "chapter": "02-match-strategies",
-      "match_confidence": 0.3
+      "chapter": "02-authoring-rule-libraries",
+      "match_confidence": 0.3,
+      "cis": 11
     },
     {
       "id": 16,
@@ -223,8 +238,9 @@
       "group": "DIM",
       "source_module": null,
       "source_path": null,
-      "chapter": "02-match-strategies",
-      "match_confidence": 0.3
+      "chapter": "02-authoring-rule-libraries",
+      "match_confidence": 0.3,
+      "cis": 11
     },
     {
       "id": 17,
@@ -232,8 +248,9 @@
       "group": "DIM",
       "source_module": null,
       "source_path": null,
-      "chapter": "02-match-strategies",
-      "match_confidence": 0.3
+      "chapter": "02-authoring-rule-libraries",
+      "match_confidence": 0.3,
+      "cis": 6
     },
     {
       "id": 18,
@@ -241,8 +258,9 @@
       "group": "DIM",
       "source_module": null,
       "source_path": null,
-      "chapter": "02-match-strategies",
-      "match_confidence": 0.3
+      "chapter": "02-authoring-rule-libraries",
+      "match_confidence": 0.3,
+      "cis": 3
     },
     {
       "id": 19,
@@ -250,8 +268,9 @@
       "group": "DIM",
       "source_module": null,
       "source_path": null,
-      "chapter": "02-match-strategies",
-      "match_confidence": 0.3
+      "chapter": "02-authoring-rule-libraries",
+      "match_confidence": 0.3,
+      "cis": 3
     },
     {
       "id": 20,
@@ -259,8 +278,9 @@
       "group": "DIM",
       "source_module": null,
       "source_path": null,
-      "chapter": "02-match-strategies",
-      "match_confidence": 0.3
+      "chapter": "02-authoring-rule-libraries",
+      "match_confidence": 0.3,
+      "cis": 8
     },
     {
       "id": 21,
@@ -268,8 +288,9 @@
       "group": "DIM",
       "source_module": null,
       "source_path": null,
-      "chapter": "02-match-strategies",
-      "match_confidence": 0.3
+      "chapter": "02-authoring-rule-libraries",
+      "match_confidence": 0.3,
+      "cis": 9
     },
     {
       "id": 22,
@@ -277,8 +298,9 @@
       "group": "DIM",
       "source_module": null,
       "source_path": null,
-      "chapter": "02-match-strategies",
-      "match_confidence": 0.3
+      "chapter": "02-authoring-rule-libraries",
+      "match_confidence": 0.3,
+      "cis": 3
     },
     {
       "id": 23,
@@ -286,8 +308,9 @@
       "group": "DIM",
       "source_module": "mountainash_rules.core.constants",
       "source_path": "src/mountainash_rules/core/constants.py",
-      "chapter": "03-dimension-model",
-      "match_confidence": 0.85
+      "chapter": "02-authoring-rule-libraries",
+      "match_confidence": 0.85,
+      "cis": 249
     },
     {
       "id": 24,
@@ -295,8 +318,9 @@
       "group": "DIM",
       "source_module": null,
       "source_path": null,
-      "chapter": "03-dimension-model",
-      "match_confidence": 0.3
+      "chapter": "02-authoring-rule-libraries",
+      "match_confidence": 0.3,
+      "cis": 1
     },
     {
       "id": 25,
@@ -304,8 +328,9 @@
       "group": "DIM",
       "source_module": "mountainash_rules.core.context",
       "source_path": "src/mountainash_rules/core/context.py",
-      "chapter": "03-dimension-model",
-      "match_confidence": 0.6
+      "chapter": "02-authoring-rule-libraries",
+      "match_confidence": 0.6,
+      "cis": 8
     },
     {
       "id": 26,
@@ -313,8 +338,9 @@
       "group": "DIM",
       "source_module": "mountainash_rules.core.dimension",
       "source_path": "src/mountainash_rules/core/dimension.py",
-      "chapter": "03-dimension-model",
-      "match_confidence": 0.85
+      "chapter": "02-authoring-rule-libraries",
+      "match_confidence": 0.85,
+      "cis": 239
     },
     {
       "id": 27,
@@ -322,8 +348,9 @@
       "group": "DIM",
       "source_module": "mountainash_rules.core.dimension",
       "source_path": "src/mountainash_rules/core/dimension.py",
-      "chapter": "03-dimension-model",
-      "match_confidence": 1.0
+      "chapter": "02-authoring-rule-libraries",
+      "match_confidence": 1.0,
+      "cis": 202
     },
     {
       "id": 28,
@@ -331,8 +358,9 @@
       "group": "DIM",
       "source_module": null,
       "source_path": null,
-      "chapter": "03-dimension-model",
-      "match_confidence": 0.3
+      "chapter": "02-authoring-rule-libraries",
+      "match_confidence": 0.3,
+      "cis": 1
     },
     {
       "id": 29,
@@ -340,8 +368,9 @@
       "group": "DIM",
       "source_module": "mountainash_rules.core.dimension",
       "source_path": "src/mountainash_rules/core/dimension.py",
-      "chapter": "03-dimension-model",
-      "match_confidence": 0.7
+      "chapter": "02-authoring-rule-libraries",
+      "match_confidence": 0.7,
+      "cis": 1
     },
     {
       "id": 30,
@@ -349,8 +378,9 @@
       "group": "DIM",
       "source_module": null,
       "source_path": null,
-      "chapter": "03-dimension-model",
-      "match_confidence": 0.3
+      "chapter": "02-authoring-rule-libraries",
+      "match_confidence": 0.3,
+      "cis": 3
     },
     {
       "id": 31,
@@ -358,8 +388,9 @@
       "group": "EXPR",
       "source_module": "mountainash_rules.core.compiler",
       "source_path": "src/mountainash_rules/core/compiler.py",
-      "chapter": "04-dimension-compiler",
-      "match_confidence": 1.0
+      "chapter": "06-expression-execution-internals",
+      "match_confidence": 1.0,
+      "cis": 13
     },
     {
       "id": 32,
@@ -367,8 +398,9 @@
       "group": "EXPR",
       "source_module": null,
       "source_path": null,
-      "chapter": "04-dimension-compiler",
-      "match_confidence": 0.3
+      "chapter": "06-expression-execution-internals",
+      "match_confidence": 0.3,
+      "cis": 2
     },
     {
       "id": 33,
@@ -376,8 +408,9 @@
       "group": "EXPR",
       "source_module": "mountainash_rules.core.compiler",
       "source_path": "src/mountainash_rules/core/compiler.py",
-      "chapter": "04-dimension-compiler",
-      "match_confidence": 0.6
+      "chapter": "06-expression-execution-internals",
+      "match_confidence": 0.6,
+      "cis": 2
     },
     {
       "id": 34,
@@ -385,8 +418,9 @@
       "group": "EXPR",
       "source_module": null,
       "source_path": null,
-      "chapter": "04-dimension-compiler",
-      "match_confidence": 0.3
+      "chapter": "06-expression-execution-internals",
+      "match_confidence": 0.3,
+      "cis": 2
     },
     {
       "id": 35,
@@ -394,8 +428,9 @@
       "group": "EXPR",
       "source_module": "mountainash_rules.core.compiler",
       "source_path": "src/mountainash_rules/core/compiler.py",
-      "chapter": "04-dimension-compiler",
-      "match_confidence": 0.6
+      "chapter": "06-expression-execution-internals",
+      "match_confidence": 0.6,
+      "cis": 2
     },
     {
       "id": 36,
@@ -403,8 +438,9 @@
       "group": "EXPR",
       "source_module": null,
       "source_path": null,
-      "chapter": "04-dimension-compiler",
-      "match_confidence": 0.3
+      "chapter": "06-expression-execution-internals",
+      "match_confidence": 0.3,
+      "cis": 2
     },
     {
       "id": 37,
@@ -412,8 +448,9 @@
       "group": "EXPR",
       "source_module": null,
       "source_path": null,
-      "chapter": "04-dimension-compiler",
-      "match_confidence": 0.3
+      "chapter": "06-expression-execution-internals",
+      "match_confidence": 0.3,
+      "cis": 2
     },
     {
       "id": 38,
@@ -421,8 +458,9 @@
       "group": "EXPR",
       "source_module": null,
       "source_path": null,
-      "chapter": "04-dimension-compiler",
-      "match_confidence": 0.3
+      "chapter": "06-expression-execution-internals",
+      "match_confidence": 0.3,
+      "cis": 1
     },
     {
       "id": 39,
@@ -430,8 +468,9 @@
       "group": "EXPR",
       "source_module": "mountainash_rules.core.context",
       "source_path": "src/mountainash_rules/core/context.py",
-      "chapter": "04-dimension-compiler",
-      "match_confidence": 0.6
+      "chapter": "06-expression-execution-internals",
+      "match_confidence": 0.6,
+      "cis": 3
     },
     {
       "id": 40,
@@ -439,8 +478,9 @@
       "group": "EXPR",
       "source_module": "mountainash_rules.engines.filter.engine",
       "source_path": "src/mountainash_rules/engines/filter/engine.py",
-      "chapter": "05-expression-rules-engine",
-      "match_confidence": 1.0
+      "chapter": "03-evaluating-decisions",
+      "match_confidence": 1.0,
+      "cis": 114
     },
     {
       "id": 41,
@@ -448,8 +488,9 @@
       "group": "EXPR",
       "source_module": "mountainash_rules.engines.filter.engine",
       "source_path": "src/mountainash_rules/engines/filter/engine.py",
-      "chapter": "05-expression-rules-engine",
-      "match_confidence": 0.6
+      "chapter": "03-evaluating-decisions",
+      "match_confidence": 0.6,
+      "cis": 2
     },
     {
       "id": 42,
@@ -457,8 +498,9 @@
       "group": "EXPR",
       "source_module": null,
       "source_path": null,
-      "chapter": "05-expression-rules-engine",
-      "match_confidence": 0.3
+      "chapter": "03-evaluating-decisions",
+      "match_confidence": 0.3,
+      "cis": 1
     },
     {
       "id": 43,
@@ -466,8 +508,9 @@
       "group": "EXPR",
       "source_module": null,
       "source_path": null,
-      "chapter": "05-expression-rules-engine",
-      "match_confidence": 0.3
+      "chapter": "03-evaluating-decisions",
+      "match_confidence": 0.3,
+      "cis": 54
     },
     {
       "id": 44,
@@ -475,8 +518,9 @@
       "group": "EXPR",
       "source_module": "mountainash_rules.core.context",
       "source_path": "src/mountainash_rules/core/context.py",
-      "chapter": "05-expression-rules-engine",
-      "match_confidence": 0.6
+      "chapter": "06-expression-execution-internals",
+      "match_confidence": 0.6,
+      "cis": 2
     },
     {
       "id": 45,
@@ -484,8 +528,9 @@
       "group": "EXPR",
       "source_module": "mountainash_rules.core.dimension",
       "source_path": "src/mountainash_rules/core/dimension.py",
-      "chapter": "05-expression-rules-engine",
-      "match_confidence": 0.7
+      "chapter": "06-expression-execution-internals",
+      "match_confidence": 0.7,
+      "cis": 1
     },
     {
       "id": 46,
@@ -493,8 +538,9 @@
       "group": "EXPR",
       "source_module": null,
       "source_path": null,
-      "chapter": "05-expression-rules-engine",
-      "match_confidence": 0.3
+      "chapter": "03-evaluating-decisions",
+      "match_confidence": 0.3,
+      "cis": 38
     },
     {
       "id": 47,
@@ -502,8 +548,9 @@
       "group": "EXPR",
       "source_module": null,
       "source_path": null,
-      "chapter": "05-expression-rules-engine",
-      "match_confidence": 0.3
+      "chapter": "03-evaluating-decisions",
+      "match_confidence": 0.3,
+      "cis": 37
     },
     {
       "id": 48,
@@ -511,8 +558,9 @@
       "group": "EXPR",
       "source_module": null,
       "source_path": null,
-      "chapter": "05-expression-rules-engine",
-      "match_confidence": 0.3
+      "chapter": "03-evaluating-decisions",
+      "match_confidence": 0.3,
+      "cis": 32
     },
     {
       "id": 49,
@@ -520,8 +568,9 @@
       "group": "RESULT",
       "source_module": "mountainash_rules.core.result",
       "source_path": "src/mountainash_rules/core/result.py",
-      "chapter": "07-expression-engine-results",
-      "match_confidence": 0.85
+      "chapter": "03-evaluating-decisions",
+      "match_confidence": 0.85,
+      "cis": 16
     },
     {
       "id": 50,
@@ -529,8 +578,9 @@
       "group": "RESULT",
       "source_module": null,
       "source_path": null,
-      "chapter": "07-expression-engine-results",
-      "match_confidence": 0.3
+      "chapter": "03-evaluating-decisions",
+      "match_confidence": 0.3,
+      "cis": 1
     },
     {
       "id": 51,
@@ -538,8 +588,9 @@
       "group": "RESULT",
       "source_module": null,
       "source_path": null,
-      "chapter": "07-expression-engine-results",
-      "match_confidence": 0.3
+      "chapter": "03-evaluating-decisions",
+      "match_confidence": 0.3,
+      "cis": 1
     },
     {
       "id": 52,
@@ -547,8 +598,9 @@
       "group": "RESULT",
       "source_module": null,
       "source_path": null,
-      "chapter": "07-expression-engine-results",
-      "match_confidence": 0.3
+      "chapter": "03-evaluating-decisions",
+      "match_confidence": 0.3,
+      "cis": 1
     },
     {
       "id": 53,
@@ -556,8 +608,9 @@
       "group": "RESULT",
       "source_module": "mountainash_rules.core.dimension",
       "source_path": "src/mountainash_rules/core/dimension.py",
-      "chapter": "07-expression-engine-results",
-      "match_confidence": 0.7
+      "chapter": "03-evaluating-decisions",
+      "match_confidence": 0.7,
+      "cis": 1
     },
     {
       "id": 54,
@@ -565,8 +618,9 @@
       "group": "RESULT",
       "source_module": null,
       "source_path": null,
-      "chapter": "07-expression-engine-results",
-      "match_confidence": 0.3
+      "chapter": "03-evaluating-decisions",
+      "match_confidence": 0.3,
+      "cis": 2
     },
     {
       "id": 55,
@@ -574,8 +628,9 @@
       "group": "RESULT",
       "source_module": null,
       "source_path": null,
-      "chapter": "07-expression-engine-results",
-      "match_confidence": 0.3
+      "chapter": "03-evaluating-decisions",
+      "match_confidence": 0.3,
+      "cis": 1
     },
     {
       "id": 56,
@@ -583,8 +638,9 @@
       "group": "RESULT",
       "source_module": null,
       "source_path": null,
-      "chapter": "07-expression-engine-results",
-      "match_confidence": 0.3
+      "chapter": "03-evaluating-decisions",
+      "match_confidence": 0.3,
+      "cis": 1
     },
     {
       "id": 57,
@@ -592,8 +648,9 @@
       "group": "RESULT",
       "source_module": null,
       "source_path": null,
-      "chapter": "07-expression-engine-results",
-      "match_confidence": 0.3
+      "chapter": "03-evaluating-decisions",
+      "match_confidence": 0.3,
+      "cis": 1
     },
     {
       "id": 58,
@@ -601,8 +658,9 @@
       "group": "RESULT",
       "source_module": null,
       "source_path": null,
-      "chapter": "07-expression-engine-results",
-      "match_confidence": 0.3
+      "chapter": "03-evaluating-decisions",
+      "match_confidence": 0.3,
+      "cis": 1
     },
     {
       "id": 59,
@@ -610,8 +668,9 @@
       "group": "ACCUM",
       "source_module": "mountainash_rules.engines.accumulator.compiler",
       "source_path": "src/mountainash_rules/engines/accumulator/compiler.py",
-      "chapter": "09-accumulator-compiler",
-      "match_confidence": 1.0
+      "chapter": "07-combination-search-internals",
+      "match_confidence": 1.0,
+      "cis": 31
     },
     {
       "id": 60,
@@ -619,8 +678,9 @@
       "group": "ACCUM",
       "source_module": null,
       "source_path": null,
-      "chapter": "09-accumulator-compiler",
-      "match_confidence": 0.3
+      "chapter": "07-combination-search-internals",
+      "match_confidence": 0.3,
+      "cis": 11
     },
     {
       "id": 61,
@@ -628,8 +688,9 @@
       "group": "ACCUM",
       "source_module": null,
       "source_path": null,
-      "chapter": "09-accumulator-compiler",
-      "match_confidence": 0.3
+      "chapter": "07-combination-search-internals",
+      "match_confidence": 0.3,
+      "cis": 16
     },
     {
       "id": 62,
@@ -637,8 +698,9 @@
       "group": "ACCUM",
       "source_module": null,
       "source_path": null,
-      "chapter": "09-accumulator-compiler",
-      "match_confidence": 0.3
+      "chapter": "07-combination-search-internals",
+      "match_confidence": 0.3,
+      "cis": 1
     },
     {
       "id": 63,
@@ -646,8 +708,9 @@
       "group": "ACCUM",
       "source_module": null,
       "source_path": null,
-      "chapter": "09-accumulator-compiler",
-      "match_confidence": 0.3
+      "chapter": "07-combination-search-internals",
+      "match_confidence": 0.3,
+      "cis": 5
     },
     {
       "id": 64,
@@ -655,8 +718,9 @@
       "group": "ACCUM",
       "source_module": null,
       "source_path": null,
-      "chapter": "09-accumulator-compiler",
-      "match_confidence": 0.3
+      "chapter": "07-combination-search-internals",
+      "match_confidence": 0.3,
+      "cis": 5
     },
     {
       "id": 65,
@@ -664,8 +728,9 @@
       "group": "ACCUM",
       "source_module": null,
       "source_path": null,
-      "chapter": "09-accumulator-compiler",
-      "match_confidence": 0.3
+      "chapter": "07-combination-search-internals",
+      "match_confidence": 0.3,
+      "cis": 5
     },
     {
       "id": 66,
@@ -673,8 +738,9 @@
       "group": "ACCUM",
       "source_module": null,
       "source_path": null,
-      "chapter": "09-accumulator-compiler",
-      "match_confidence": 0.3
+      "chapter": "07-combination-search-internals",
+      "match_confidence": 0.3,
+      "cis": 5
     },
     {
       "id": 67,
@@ -682,8 +748,9 @@
       "group": "ACCUM",
       "source_module": null,
       "source_path": null,
-      "chapter": "09-accumulator-compiler",
-      "match_confidence": 0.3
+      "chapter": "07-combination-search-internals",
+      "match_confidence": 0.3,
+      "cis": 5
     },
     {
       "id": 68,
@@ -691,8 +758,9 @@
       "group": "ACCUM",
       "source_module": "mountainash_rules.engines.accumulator.engine",
       "source_path": "src/mountainash_rules/engines/accumulator/engine.py",
-      "chapter": "10-accumulator-engine",
-      "match_confidence": 1.0
+      "chapter": "05-combining-and-persisting-rules",
+      "match_confidence": 1.0,
+      "cis": 48
     },
     {
       "id": 69,
@@ -700,8 +768,9 @@
       "group": "ACCUM",
       "source_module": null,
       "source_path": null,
-      "chapter": "10-accumulator-engine",
-      "match_confidence": 0.3
+      "chapter": "07-combination-search-internals",
+      "match_confidence": 0.3,
+      "cis": 14
     },
     {
       "id": 70,
@@ -709,8 +778,9 @@
       "group": "ACCUM",
       "source_module": "mountainash_rules.engines.accumulator.primes",
       "source_path": "src/mountainash_rules/engines/accumulator/primes.py",
-      "chapter": "10-accumulator-engine",
-      "match_confidence": 0.7
+      "chapter": "07-combination-search-internals",
+      "match_confidence": 0.7,
+      "cis": 7
     },
     {
       "id": 71,
@@ -718,8 +788,9 @@
       "group": "ACCUM",
       "source_module": "mountainash_rules.engines.accumulator.primes",
       "source_path": "src/mountainash_rules/engines/accumulator/primes.py",
-      "chapter": "10-accumulator-engine",
-      "match_confidence": 0.85
+      "chapter": "07-combination-search-internals",
+      "match_confidence": 0.85,
+      "cis": 5
     },
     {
       "id": 72,
@@ -727,8 +798,9 @@
       "group": "ACCUM",
       "source_module": "mountainash_rules.engines.accumulator.primes",
       "source_path": "src/mountainash_rules/engines/accumulator/primes.py",
-      "chapter": "10-accumulator-engine",
-      "match_confidence": 0.8
+      "chapter": "07-combination-search-internals",
+      "match_confidence": 0.8,
+      "cis": 3
     },
     {
       "id": 73,
@@ -736,8 +808,9 @@
       "group": "ACCUM",
       "source_module": null,
       "source_path": null,
-      "chapter": "10-accumulator-engine",
-      "match_confidence": 0.3
+      "chapter": "07-combination-search-internals",
+      "match_confidence": 0.3,
+      "cis": 5
     },
     {
       "id": 74,
@@ -745,8 +818,9 @@
       "group": "ACCUM",
       "source_module": null,
       "source_path": null,
-      "chapter": "10-accumulator-engine",
-      "match_confidence": 0.3
+      "chapter": "07-combination-search-internals",
+      "match_confidence": 0.3,
+      "cis": 4
     },
     {
       "id": 75,
@@ -754,8 +828,9 @@
       "group": "ACCUM",
       "source_module": null,
       "source_path": null,
-      "chapter": "10-accumulator-engine",
-      "match_confidence": 0.3
+      "chapter": "07-combination-search-internals",
+      "match_confidence": 0.3,
+      "cis": 1
     },
     {
       "id": 76,
@@ -763,8 +838,9 @@
       "group": "ACCUM",
       "source_module": null,
       "source_path": null,
-      "chapter": "10-accumulator-engine",
-      "match_confidence": 0.3
+      "chapter": "07-combination-search-internals",
+      "match_confidence": 0.3,
+      "cis": 1
     },
     {
       "id": 77,
@@ -772,8 +848,9 @@
       "group": "LATT",
       "source_module": "mountainash_rules.engines.accumulator.lattice",
       "source_path": "src/mountainash_rules/engines/accumulator/lattice.py",
-      "chapter": "11-lattice-structures-and-results",
-      "match_confidence": 0.85
+      "chapter": "05-combining-and-persisting-rules",
+      "match_confidence": 0.85,
+      "cis": 22
     },
     {
       "id": 78,
@@ -781,8 +858,9 @@
       "group": "LATT",
       "source_module": "mountainash_rules.engines.accumulator.lattice",
       "source_path": "src/mountainash_rules/engines/accumulator/lattice.py",
-      "chapter": "11-lattice-structures-and-results",
-      "match_confidence": 0.7
+      "chapter": "05-combining-and-persisting-rules",
+      "match_confidence": 0.7,
+      "cis": 5
     },
     {
       "id": 79,
@@ -790,8 +868,9 @@
       "group": "LATT",
       "source_module": "mountainash_rules.engines.accumulator.lattice",
       "source_path": "src/mountainash_rules/engines/accumulator/lattice.py",
-      "chapter": "11-lattice-structures-and-results",
-      "match_confidence": 0.7
+      "chapter": "05-combining-and-persisting-rules",
+      "match_confidence": 0.7,
+      "cis": 1
     },
     {
       "id": 80,
@@ -799,8 +878,9 @@
       "group": "LATT",
       "source_module": null,
       "source_path": null,
-      "chapter": "11-lattice-structures-and-results",
-      "match_confidence": 0.3
+      "chapter": "05-combining-and-persisting-rules",
+      "match_confidence": 0.3,
+      "cis": 1
     },
     {
       "id": 81,
@@ -808,8 +888,9 @@
       "group": "LATT",
       "source_module": null,
       "source_path": null,
-      "chapter": "11-lattice-structures-and-results",
-      "match_confidence": 0.3
+      "chapter": "05-combining-and-persisting-rules",
+      "match_confidence": 0.3,
+      "cis": 1
     },
     {
       "id": 82,
@@ -817,8 +898,9 @@
       "group": "LATT",
       "source_module": null,
       "source_path": null,
-      "chapter": "11-lattice-structures-and-results",
-      "match_confidence": 0.3
+      "chapter": "05-combining-and-persisting-rules",
+      "match_confidence": 0.3,
+      "cis": 2
     },
     {
       "id": 83,
@@ -826,8 +908,9 @@
       "group": "LATT",
       "source_module": "mountainash_rules.engines.accumulator.result",
       "source_path": "src/mountainash_rules/engines/accumulator/result.py",
-      "chapter": "11-lattice-structures-and-results",
-      "match_confidence": 0.85
+      "chapter": "05-combining-and-persisting-rules",
+      "match_confidence": 0.85,
+      "cis": 5
     },
     {
       "id": 84,
@@ -835,8 +918,9 @@
       "group": "LATT",
       "source_module": "mountainash_rules.engines.accumulator.aggregate",
       "source_path": "src/mountainash_rules/engines/accumulator/aggregate.py",
-      "chapter": "11-lattice-structures-and-results",
-      "match_confidence": 0.7
+      "chapter": "05-combining-and-persisting-rules",
+      "match_confidence": 0.7,
+      "cis": 1
     },
     {
       "id": 85,
@@ -844,8 +928,9 @@
       "group": "LATT",
       "source_module": null,
       "source_path": null,
-      "chapter": "11-lattice-structures-and-results",
-      "match_confidence": 0.3
+      "chapter": "05-combining-and-persisting-rules",
+      "match_confidence": 0.3,
+      "cis": 1
     },
     {
       "id": 86,
@@ -853,8 +938,9 @@
       "group": "LATT",
       "source_module": null,
       "source_path": null,
-      "chapter": "11-lattice-structures-and-results",
-      "match_confidence": 0.3
+      "chapter": "05-combining-and-persisting-rules",
+      "match_confidence": 0.3,
+      "cis": 1
     },
     {
       "id": 87,
@@ -862,8 +948,9 @@
       "group": "SUPP",
       "source_module": "mountainash_rules.engines.accumulator.aggregate",
       "source_path": "src/mountainash_rules/engines/accumulator/aggregate.py",
-      "chapter": "11-lattice-structures-and-results",
-      "match_confidence": 0.85
+      "chapter": "05-combining-and-persisting-rules",
+      "match_confidence": 0.85,
+      "cis": 3
     },
     {
       "id": 88,
@@ -871,8 +958,9 @@
       "group": "SUPP",
       "source_module": null,
       "source_path": null,
-      "chapter": "11-lattice-structures-and-results",
-      "match_confidence": 0.3
+      "chapter": "05-combining-and-persisting-rules",
+      "match_confidence": 0.3,
+      "cis": 6
     },
     {
       "id": 89,
@@ -880,8 +968,9 @@
       "group": "SUPP",
       "source_module": "mountainash_rules.engines.accumulator.engine",
       "source_path": "src/mountainash_rules/engines/accumulator/engine.py",
-      "chapter": "11-lattice-structures-and-results",
-      "match_confidence": 0.7
+      "chapter": "05-combining-and-persisting-rules",
+      "match_confidence": 0.7,
+      "cis": 5
     },
     {
       "id": 90,
@@ -889,8 +978,9 @@
       "group": "SUPP",
       "source_module": "mountainash_rules.engines.accumulator.engine",
       "source_path": "src/mountainash_rules/engines/accumulator/engine.py",
-      "chapter": "11-lattice-structures-and-results",
-      "match_confidence": 0.7
+      "chapter": "05-combining-and-persisting-rules",
+      "match_confidence": 0.7,
+      "cis": 1
     },
     {
       "id": 91,
@@ -898,8 +988,9 @@
       "group": "DIM",
       "source_module": "mountainash_rules.core.constants",
       "source_path": "src/mountainash_rules/core/constants.py",
-      "chapter": "02-match-strategies",
-      "match_confidence": 0.85
+      "chapter": "02-authoring-rule-libraries",
+      "match_confidence": 0.85,
+      "cis": 2
     },
     {
       "id": 92,
@@ -907,8 +998,9 @@
       "group": "DIM",
       "source_module": "mountainash_rules.core.constants",
       "source_path": "src/mountainash_rules/core/constants.py",
-      "chapter": "02-match-strategies",
-      "match_confidence": 0.7
+      "chapter": "02-authoring-rule-libraries",
+      "match_confidence": 0.7,
+      "cis": 1
     },
     {
       "id": 93,
@@ -916,8 +1008,9 @@
       "group": "DIM",
       "source_module": "mountainash_rules.core.compiler",
       "source_path": "src/mountainash_rules/core/compiler.py",
-      "chapter": "02-match-strategies",
-      "match_confidence": 0.6
+      "chapter": "02-authoring-rule-libraries",
+      "match_confidence": 0.6,
+      "cis": 1
     },
     {
       "id": 94,
@@ -925,8 +1018,9 @@
       "group": "DIM",
       "source_module": "mountainash_rules.core.constants",
       "source_path": "src/mountainash_rules/core/constants.py",
-      "chapter": "03-dimension-model",
-      "match_confidence": 0.85
+      "chapter": "02-authoring-rule-libraries",
+      "match_confidence": 0.85,
+      "cis": 2
     },
     {
       "id": 95,
@@ -934,8 +1028,9 @@
       "group": "DIM",
       "source_module": "mountainash_rules.core.constants",
       "source_path": "src/mountainash_rules/core/constants.py",
-      "chapter": "03-dimension-model",
-      "match_confidence": 0.7
+      "chapter": "02-authoring-rule-libraries",
+      "match_confidence": 0.7,
+      "cis": 1
     },
     {
       "id": 96,
@@ -943,8 +1038,9 @@
       "group": "DIM",
       "source_module": "mountainash_rules.core.dimension",
       "source_path": "src/mountainash_rules/core/dimension.py",
-      "chapter": "03-dimension-model",
-      "match_confidence": 0.7
+      "chapter": "02-authoring-rule-libraries",
+      "match_confidence": 0.7,
+      "cis": 1
     },
     {
       "id": 97,
@@ -952,8 +1048,9 @@
       "group": "POLICY",
       "source_module": "mountainash_rules.core.dimension",
       "source_path": "src/mountainash_rules/core/dimension.py",
-      "chapter": "06-hit-policies",
-      "match_confidence": 0.6
+      "chapter": "03-evaluating-decisions",
+      "match_confidence": 0.6,
+      "cis": 1
     },
     {
       "id": 98,
@@ -961,8 +1058,9 @@
       "group": "EXPR",
       "source_module": "mountainash_rules.core.set_wildcard",
       "source_path": "src/mountainash_rules/core/set_wildcard.py",
-      "chapter": "04-dimension-compiler",
-      "match_confidence": 0.85
+      "chapter": "02-authoring-rule-libraries",
+      "match_confidence": 0.85,
+      "cis": 4
     },
     {
       "id": 99,
@@ -970,8 +1068,9 @@
       "group": "EXPR",
       "source_module": "mountainash_rules.core.set_wildcard",
       "source_path": "src/mountainash_rules/core/set_wildcard.py",
-      "chapter": "04-dimension-compiler",
-      "match_confidence": 0.7
+      "chapter": "02-authoring-rule-libraries",
+      "match_confidence": 0.7,
+      "cis": 1
     },
     {
       "id": 100,
@@ -979,8 +1078,9 @@
       "group": "POLICY",
       "source_module": "mountainash_rules.core.constants",
       "source_path": "src/mountainash_rules/core/constants.py",
-      "chapter": "06-hit-policies",
-      "match_confidence": 0.85
+      "chapter": "03-evaluating-decisions",
+      "match_confidence": 0.85,
+      "cis": 15
     },
     {
       "id": 101,
@@ -988,8 +1088,9 @@
       "group": "POLICY",
       "source_module": null,
       "source_path": null,
-      "chapter": "06-hit-policies",
-      "match_confidence": 0.4
+      "chapter": "03-evaluating-decisions",
+      "match_confidence": 0.4,
+      "cis": 1
     },
     {
       "id": 102,
@@ -997,8 +1098,9 @@
       "group": "POLICY",
       "source_module": null,
       "source_path": null,
-      "chapter": "06-hit-policies",
-      "match_confidence": 0.4
+      "chapter": "03-evaluating-decisions",
+      "match_confidence": 0.4,
+      "cis": 2
     },
     {
       "id": 103,
@@ -1006,8 +1108,9 @@
       "group": "POLICY",
       "source_module": null,
       "source_path": null,
-      "chapter": "06-hit-policies",
-      "match_confidence": 0.4
+      "chapter": "03-evaluating-decisions",
+      "match_confidence": 0.4,
+      "cis": 2
     },
     {
       "id": 104,
@@ -1015,8 +1118,9 @@
       "group": "POLICY",
       "source_module": null,
       "source_path": null,
-      "chapter": "06-hit-policies",
-      "match_confidence": 0.4
+      "chapter": "03-evaluating-decisions",
+      "match_confidence": 0.4,
+      "cis": 2
     },
     {
       "id": 105,
@@ -1024,8 +1128,9 @@
       "group": "POLICY",
       "source_module": null,
       "source_path": null,
-      "chapter": "06-hit-policies",
-      "match_confidence": 0.4
+      "chapter": "03-evaluating-decisions",
+      "match_confidence": 0.4,
+      "cis": 1
     },
     {
       "id": 106,
@@ -1033,8 +1138,9 @@
       "group": "POLICY",
       "source_module": "mountainash_rules.core.hit_policy",
       "source_path": "src/mountainash_rules/core/hit_policy.py",
-      "chapter": "06-hit-policies",
-      "match_confidence": 0.85
+      "chapter": "06-expression-execution-internals",
+      "match_confidence": 0.85,
+      "cis": 2
     },
     {
       "id": 107,
@@ -1042,8 +1148,9 @@
       "group": "POLICY",
       "source_module": "mountainash_rules.core.hit_policy",
       "source_path": "src/mountainash_rules/core/hit_policy.py",
-      "chapter": "06-hit-policies",
-      "match_confidence": 0.85
+      "chapter": "03-evaluating-decisions",
+      "match_confidence": 0.85,
+      "cis": 1
     },
     {
       "id": 108,
@@ -1051,8 +1158,9 @@
       "group": "POLICY",
       "source_module": "mountainash_rules.core.hit_policy",
       "source_path": "src/mountainash_rules/core/hit_policy.py",
-      "chapter": "06-hit-policies",
-      "match_confidence": 0.7
+      "chapter": "06-expression-execution-internals",
+      "match_confidence": 0.7,
+      "cis": 1
     },
     {
       "id": 109,
@@ -1060,8 +1168,9 @@
       "group": "RESULT",
       "source_module": "mountainash_rules.core.result",
       "source_path": "src/mountainash_rules/core/result.py",
-      "chapter": "07-expression-engine-results",
-      "match_confidence": 0.85
+      "chapter": "03-evaluating-decisions",
+      "match_confidence": 0.85,
+      "cis": 2
     },
     {
       "id": 110,
@@ -1069,8 +1178,9 @@
       "group": "RESULT",
       "source_module": "mountainash_rules.engines.filter.engine",
       "source_path": "src/mountainash_rules/engines/filter/engine.py",
-      "chapter": "07-expression-engine-results",
-      "match_confidence": 0.7
+      "chapter": "03-evaluating-decisions",
+      "match_confidence": 0.7,
+      "cis": 1
     },
     {
       "id": 111,
@@ -1078,8 +1188,9 @@
       "group": "RESULT",
       "source_module": "mountainash_rules.core.result",
       "source_path": "src/mountainash_rules/core/result.py",
-      "chapter": "07-expression-engine-results",
-      "match_confidence": 0.7
+      "chapter": "03-evaluating-decisions",
+      "match_confidence": 0.7,
+      "cis": 1
     },
     {
       "id": 112,
@@ -1087,8 +1198,9 @@
       "group": "BATCH",
       "source_module": "mountainash_rules.core.batch_result",
       "source_path": "src/mountainash_rules/core/batch_result.py",
-      "chapter": "08-batch-evaluation",
-      "match_confidence": 0.85
+      "chapter": "04-scoring-batches",
+      "match_confidence": 0.85,
+      "cis": 2
     },
     {
       "id": 113,
@@ -1096,8 +1208,9 @@
       "group": "BATCH",
       "source_module": "mountainash_rules.engines.filter.engine",
       "source_path": "src/mountainash_rules/engines/filter/engine.py",
-      "chapter": "08-batch-evaluation",
-      "match_confidence": 0.85
+      "chapter": "04-scoring-batches",
+      "match_confidence": 0.85,
+      "cis": 7
     },
     {
       "id": 114,
@@ -1105,8 +1218,9 @@
       "group": "BATCH",
       "source_module": "mountainash_rules.engines.filter.engine",
       "source_path": "src/mountainash_rules/engines/filter/engine.py",
-      "chapter": "08-batch-evaluation",
-      "match_confidence": 0.6
+      "chapter": "04-scoring-batches",
+      "match_confidence": 0.6,
+      "cis": 5
     },
     {
       "id": 115,
@@ -1114,8 +1228,9 @@
       "group": "BATCH",
       "source_module": "mountainash_rules.engines.filter.engine",
       "source_path": "src/mountainash_rules/engines/filter/engine.py",
-      "chapter": "08-batch-evaluation",
-      "match_confidence": 0.6
+      "chapter": "04-scoring-batches",
+      "match_confidence": 0.6,
+      "cis": 3
     },
     {
       "id": 116,
@@ -1123,8 +1238,9 @@
       "group": "BATCH",
       "source_module": "mountainash_rules.engines.filter.engine",
       "source_path": "src/mountainash_rules/engines/filter/engine.py",
-      "chapter": "08-batch-evaluation",
-      "match_confidence": 0.6
+      "chapter": "04-scoring-batches",
+      "match_confidence": 0.6,
+      "cis": 2
     },
     {
       "id": 117,
@@ -1132,8 +1248,9 @@
       "group": "BATCH",
       "source_module": "mountainash_rules.engines.filter.engine",
       "source_path": "src/mountainash_rules/engines/filter/engine.py",
-      "chapter": "08-batch-evaluation",
-      "match_confidence": 0.6
+      "chapter": "04-scoring-batches",
+      "match_confidence": 0.6,
+      "cis": 1
     },
     {
       "id": 118,
@@ -1141,8 +1258,9 @@
       "group": "BATCH",
       "source_module": "mountainash_rules.engines.filter.engine",
       "source_path": "src/mountainash_rules/engines/filter/engine.py",
-      "chapter": "08-batch-evaluation",
-      "match_confidence": 0.6
+      "chapter": "04-scoring-batches",
+      "match_confidence": 0.6,
+      "cis": 1
     },
     {
       "id": 119,
@@ -1150,8 +1268,9 @@
       "group": "BATCH",
       "source_module": "mountainash_rules.core.batch_result",
       "source_path": "src/mountainash_rules/core/batch_result.py",
-      "chapter": "08-batch-evaluation",
-      "match_confidence": 0.7
+      "chapter": "04-scoring-batches",
+      "match_confidence": 0.7,
+      "cis": 1
     },
     {
       "id": 120,
@@ -1159,8 +1278,9 @@
       "group": "ACCUM",
       "source_module": "mountainash_rules.engines.accumulator.compiler",
       "source_path": "src/mountainash_rules/engines/accumulator/compiler.py",
-      "chapter": "09-accumulator-compiler",
-      "match_confidence": 0.7
+      "chapter": "07-combination-search-internals",
+      "match_confidence": 0.7,
+      "cis": 2
     },
     {
       "id": 121,
@@ -1168,8 +1288,9 @@
       "group": "ACCUM",
       "source_module": "mountainash_rules.engines.accumulator.compiler",
       "source_path": "src/mountainash_rules/engines/accumulator/compiler.py",
-      "chapter": "09-accumulator-compiler",
-      "match_confidence": 0.7
+      "chapter": "07-combination-search-internals",
+      "match_confidence": 0.7,
+      "cis": 1
     },
     {
       "id": 122,
@@ -1177,8 +1298,9 @@
       "group": "ACCUM",
       "source_module": "mountainash_rules.engines.accumulator.engine",
       "source_path": "src/mountainash_rules/engines/accumulator/engine.py",
-      "chapter": "10-accumulator-engine",
-      "match_confidence": 0.6
+      "chapter": "05-combining-and-persisting-rules",
+      "match_confidence": 0.6,
+      "cis": 1
     },
     {
       "id": 123,
@@ -1186,8 +1308,9 @@
       "group": "ACCUM",
       "source_module": "mountainash_rules.engines.accumulator.primes",
       "source_path": "src/mountainash_rules/engines/accumulator/primes.py",
-      "chapter": "10-accumulator-engine",
-      "match_confidence": 0.85
+      "chapter": "07-combination-search-internals",
+      "match_confidence": 0.85,
+      "cis": 1
     },
     {
       "id": 124,
@@ -1195,8 +1318,9 @@
       "group": "LATT",
       "source_module": "mountainash_rules.engines.accumulator.lattice",
       "source_path": "src/mountainash_rules/engines/accumulator/lattice.py",
-      "chapter": "11-lattice-structures-and-results",
-      "match_confidence": 0.85
+      "chapter": "05-combining-and-persisting-rules",
+      "match_confidence": 0.85,
+      "cis": 2
     },
     {
       "id": 125,
@@ -1204,8 +1328,9 @@
       "group": "LATT",
       "source_module": "mountainash_rules.engines.accumulator.lattice",
       "source_path": "src/mountainash_rules/engines/accumulator/lattice.py",
-      "chapter": "11-lattice-structures-and-results",
-      "match_confidence": 0.85
+      "chapter": "05-combining-and-persisting-rules",
+      "match_confidence": 0.85,
+      "cis": 1
     },
     {
       "id": 126,
@@ -1213,8 +1338,9 @@
       "group": "LATT",
       "source_module": "mountainash_rules.engines.accumulator.lattice",
       "source_path": "src/mountainash_rules/engines/accumulator/lattice.py",
-      "chapter": "11-lattice-structures-and-results",
-      "match_confidence": 0.7
+      "chapter": "05-combining-and-persisting-rules",
+      "match_confidence": 0.7,
+      "cis": 1
     },
     {
       "id": 127,
@@ -1222,8 +1348,9 @@
       "group": "LATT",
       "source_module": "mountainash_rules.engines.accumulator.aggregate",
       "source_path": "src/mountainash_rules/engines/accumulator/aggregate.py",
-      "chapter": "11-lattice-structures-and-results",
-      "match_confidence": 0.85
+      "chapter": "05-combining-and-persisting-rules",
+      "match_confidence": 0.85,
+      "cis": 1
     },
     {
       "id": 128,
@@ -1231,8 +1358,9 @@
       "group": "SUPP",
       "source_module": "mountainash_rules.engines.accumulator.lattice",
       "source_path": "src/mountainash_rules/engines/accumulator/lattice.py",
-      "chapter": "11-lattice-structures-and-results",
-      "match_confidence": 0.85
+      "chapter": "05-combining-and-persisting-rules",
+      "match_confidence": 0.85,
+      "cis": 3
     },
     {
       "id": 129,
@@ -1240,8 +1368,9 @@
       "group": "SUPP",
       "source_module": "mountainash_rules.engines.accumulator.lattice",
       "source_path": "src/mountainash_rules/engines/accumulator/lattice.py",
-      "chapter": "11-lattice-structures-and-results",
-      "match_confidence": 0.7
+      "chapter": "05-combining-and-persisting-rules",
+      "match_confidence": 0.7,
+      "cis": 1
     },
     {
       "id": 130,
@@ -1249,8 +1378,39 @@
       "group": "SUPP",
       "source_module": "mountainash_rules.engines.accumulator.lattice",
       "source_path": "src/mountainash_rules/engines/accumulator/lattice.py",
-      "chapter": "11-lattice-structures-and-results",
-      "match_confidence": 0.6
+      "chapter": "05-combining-and-persisting-rules",
+      "match_confidence": 0.6,
+      "cis": 1
+    },
+    {
+      "id": 131,
+      "label": "Backend Purity Enforcement",
+      "group": "SUPP",
+      "source_module": null,
+      "source_path": null,
+      "chapter": "08-extending-and-maintaining",
+      "match_confidence": 0.5,
+      "cis": 1
+    },
+    {
+      "id": 132,
+      "label": "CTX_PREFIX Column Injection Pattern",
+      "group": "EXPR",
+      "source_module": "mountainash_rules.core.constants",
+      "source_path": "src/mountainash_rules/core/constants.py",
+      "chapter": "06-expression-execution-internals",
+      "match_confidence": 0.85,
+      "cis": 1
+    },
+    {
+      "id": 133,
+      "label": "LatticeWidthExceededError",
+      "group": "ACCUM",
+      "source_module": "mountainash_rules.engines.accumulator.primes",
+      "source_path": "src/mountainash_rules/engines/accumulator/primes.py",
+      "chapter": "07-combination-search-internals",
+      "match_confidence": 0.85,
+      "cis": 1
     }
   ],
   "edges": [
@@ -1515,18 +1675,6 @@
       "to": 2
     },
     {
-      "from": 40,
-      "to": 31
-    },
-    {
-      "from": 40,
-      "to": 9
-    },
-    {
-      "from": 40,
-      "to": 39
-    },
-    {
       "from": 41,
       "to": 40
     },
@@ -1591,18 +1739,6 @@
       "to": 37
     },
     {
-      "from": 46,
-      "to": 45
-    },
-    {
-      "from": 46,
-      "to": 38
-    },
-    {
-      "from": 46,
-      "to": 1
-    },
-    {
       "from": 47,
       "to": 46
     },
@@ -1639,14 +1775,6 @@
       "to": 49
     },
     {
-      "from": 54,
-      "to": 49
-    },
-    {
-      "from": 54,
-      "to": 38
-    },
-    {
       "from": 55,
       "to": 49
     },
@@ -1665,14 +1793,6 @@
     {
       "from": 57,
       "to": 47
-    },
-    {
-      "from": 58,
-      "to": 43
-    },
-    {
-      "from": 58,
-      "to": 38
     },
     {
       "from": 59,
@@ -1751,18 +1871,6 @@
       "to": 16
     },
     {
-      "from": 68,
-      "to": 59
-    },
-    {
-      "from": 68,
-      "to": 27
-    },
-    {
-      "from": 68,
-      "to": 40
-    },
-    {
       "from": 69,
       "to": 68
     },
@@ -1827,14 +1935,6 @@
       "to": 72
     },
     {
-      "from": 77,
-      "to": 76
-    },
-    {
-      "from": 77,
-      "to": 27
-    },
-    {
       "from": 78,
       "to": 77
     },
@@ -1845,30 +1945,6 @@
     {
       "from": 79,
       "to": 25
-    },
-    {
-      "from": 80,
-      "to": 77
-    },
-    {
-      "from": 80,
-      "to": 61
-    },
-    {
-      "from": 81,
-      "to": 77
-    },
-    {
-      "from": 81,
-      "to": 62
-    },
-    {
-      "from": 82,
-      "to": 77
-    },
-    {
-      "from": 82,
-      "to": 74
     },
     {
       "from": 83,
@@ -1885,14 +1961,6 @@
     {
       "from": 84,
       "to": 87
-    },
-    {
-      "from": 85,
-      "to": 83
-    },
-    {
-      "from": 85,
-      "to": 72
     },
     {
       "from": 86,
@@ -2173,6 +2241,118 @@
     {
       "from": 130,
       "to": 91
+    },
+    {
+      "from": 131,
+      "to": 6
+    },
+    {
+      "from": 131,
+      "to": 8
+    },
+    {
+      "from": 131,
+      "to": 9
+    },
+    {
+      "from": 132,
+      "to": 44
+    },
+    {
+      "from": 132,
+      "to": 8
+    },
+    {
+      "from": 133,
+      "to": 72
+    },
+    {
+      "from": 133,
+      "to": 74
+    },
+    {
+      "from": 40,
+      "to": 27
+    },
+    {
+      "from": 40,
+      "to": 9
+    },
+    {
+      "from": 40,
+      "to": 10
+    },
+    {
+      "from": 46,
+      "to": 43
+    },
+    {
+      "from": 46,
+      "to": 1
+    },
+    {
+      "from": 54,
+      "to": 49
+    },
+    {
+      "from": 54,
+      "to": 1
+    },
+    {
+      "from": 58,
+      "to": 43
+    },
+    {
+      "from": 58,
+      "to": 1
+    },
+    {
+      "from": 68,
+      "to": 27
+    },
+    {
+      "from": 68,
+      "to": 40
+    },
+    {
+      "from": 77,
+      "to": 68
+    },
+    {
+      "from": 77,
+      "to": 27
+    },
+    {
+      "from": 80,
+      "to": 77
+    },
+    {
+      "from": 80,
+      "to": 78
+    },
+    {
+      "from": 81,
+      "to": 77
+    },
+    {
+      "from": 81,
+      "to": 2
+    },
+    {
+      "from": 82,
+      "to": 77
+    },
+    {
+      "from": 82,
+      "to": 78
+    },
+    {
+      "from": 85,
+      "to": 83
+    },
+    {
+      "from": 85,
+      "to": 78
     }
   ]
 }

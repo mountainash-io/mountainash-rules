@@ -1,105 +1,83 @@
 {
   "schema_version": "1.0",
   "baseline": {
-    "source_commit": "7d0e3dcb747949bb2d7172a34135a7872b2ed55f",
-    "refresh_date": "2026-09-02T00:00:00Z",
+    "source_commit": "94659bb0c096485c87d329f09e944577427f129f",
+    "refresh_date": "2026-09-12T06:32:46Z",
     "tool_versions": {
-      "python": "3.12",
-      "enrich_script": "1.0.0",
-      "package_documentation_profile": "n/a (agent-executed, no version pin)",
-      "textbook_refresh": "n/a (agent-executed, no version pin)",
-      "csv_to_json": "0.04"
+      "python": "3.12.12",
+      "mountainash_ibook_tools": "0.1.0",
+      "mountainash_ibook_tools_revision": "dfcda21b1403352e73560aa86d99ba624a0cfe1d",
+      "chapter_content_generator": "2.0.0"
     }
   },
   "chapter_state": {
-    "01-foundation-concepts": {
-      "content_hash": "670848fd65b7b653d1877389701068993816dae00133c917ef53c59319cb42b5",
-      "word_count": 3256,
+    "01-rule-tables-and-decisions": {
+      "content_hash": "6665560ceabda54fbd8e91dd26332eab999c60fe4f864967816e5f3767589547",
+      "word_count": 3401,
       "has_concept_markers": true,
-      "last_generated": "2026-09-02",
-      "generator_version": "0.09"
+      "last_generated": "2026-09-12",
+      "generator_version": "2.0.0"
     },
-    "02-match-strategies": {
-      "content_hash": "44b54cf75fe27f6132b8b58a71409f64399dac9f20a74f7113c27de188a43883",
-      "word_count": 3826,
+    "02-authoring-rule-libraries": {
+      "content_hash": "b7c71207a89f5cf41b9ca138618a38746e5e706283cbdcf03938131f53a3ab2d",
+      "word_count": 6076,
       "has_concept_markers": true,
-      "last_generated": "2026-09-02",
-      "generator_version": "0.09"
+      "last_generated": "2026-09-12",
+      "generator_version": "2.0.0"
     },
-    "03-dimension-model": {
-      "content_hash": "a1f673ac877aee7ee789effaa90f8de6e41d4bc2a5bc5b383a4d9b98ce0ecfa7",
-      "word_count": 3435,
+    "03-evaluating-decisions": {
+      "content_hash": "a591a0a68bdfca3f49a8e44cbf6b1d11288c966ab9348080dbbe3c37bc6be607",
+      "word_count": 5109,
       "has_concept_markers": true,
-      "last_generated": "2026-09-02",
-      "generator_version": "0.09"
+      "last_generated": "2026-09-12",
+      "generator_version": "2.0.0"
     },
-    "04-dimension-compiler": {
-      "content_hash": "5d19bbaf12c3fab001269b657ddc0951e0a82f392621c2abb1147fa08a4ebef4",
-      "word_count": 3421,
+    "04-scoring-batches": {
+      "content_hash": "57d5c99e176fe7b5173909aa6db722302b6cbc47dbacb33613d27b89bc6b0125",
+      "word_count": 4006,
       "has_concept_markers": true,
-      "last_generated": "2026-09-02",
-      "generator_version": "0.09"
+      "last_generated": "2026-09-12",
+      "generator_version": "2.0.0"
     },
-    "05-expression-rules-engine": {
-      "content_hash": "3dc1225f4b69b153b2520d13ee2e95ace4bca7daeac46e6386b021524d68b88a",
-      "word_count": 3127,
+    "05-combining-and-persisting-rules": {
+      "content_hash": "ade7962d3f46ddf0d8487251e9e66410969ccfe23dc31a8855b51d7b51274eec",
+      "word_count": 4760,
       "has_concept_markers": true,
-      "last_generated": "2026-09-02",
-      "generator_version": "0.09"
+      "last_generated": "2026-09-12",
+      "generator_version": "2.0.0"
     },
-    "06-hit-policies": {
-      "content_hash": "1cf4ee107c02adb1083646894bdda24472dae82b88be98ba2ddef20507bb6407",
-      "word_count": 2895,
+    "06-expression-execution-internals": {
+      "content_hash": "6bbfce5e29cc252d88274971c54feb20501762c781aca23ca4e78adaff0a5875",
+      "word_count": 5752,
       "has_concept_markers": true,
-      "last_generated": "2026-09-02",
-      "generator_version": "0.09"
+      "last_generated": "2026-09-12",
+      "generator_version": "2.0.0"
     },
-    "07-expression-engine-results": {
-      "content_hash": "a37f311109d3fbbb7a272b7115171474471407844e5de0164f8a39ba1c19d1fd",
-      "word_count": 3647,
+    "07-combination-search-internals": {
+      "content_hash": "6df6b592813d07bf5c8b84ac68d1aa0aa9606d914ad4b346956a6d4ed60178ad",
+      "word_count": 5436,
       "has_concept_markers": true,
-      "last_generated": "2026-09-02",
-      "generator_version": "0.09"
+      "last_generated": "2026-09-12",
+      "generator_version": "2.0.0"
     },
-    "08-batch-evaluation": {
-      "content_hash": "9deb3f51f528c7b7fafa1b518f34b1e754be5bfeba457ee36f87168f6d8efb13",
-      "word_count": 3416,
+    "08-extending-and-maintaining": {
+      "content_hash": "89d4b1840a4683d9e3fc03ab0e015d73bc3871dea35bf8eb0b0b240dd352077a",
+      "word_count": 2964,
       "has_concept_markers": true,
-      "last_generated": "2026-09-02",
-      "generator_version": "0.09"
-    },
-    "09-accumulator-compiler": {
-      "content_hash": "115eefe968df4b8b26f5189e2ebe0ff93f19de57682dc2dec06e3d4cb2d9f77a",
-      "word_count": 3303,
-      "has_concept_markers": true,
-      "last_generated": "2026-09-02",
-      "generator_version": "0.09"
-    },
-    "10-accumulator-engine": {
-      "content_hash": "6ceb04229a3353fb59880781b0a696f55a886d4e31cbc43188498578aaad30a4",
-      "word_count": 3412,
-      "has_concept_markers": true,
-      "last_generated": "2026-09-02",
-      "generator_version": "0.09"
-    },
-    "11-lattice-structures-and-results": {
-      "content_hash": "2bc0cac818fdc3b339303a444dcb82853d663016ca46fa88afc1cecafd870daf",
-      "word_count": 4011,
-      "has_concept_markers": true,
-      "last_generated": "2026-09-02",
-      "generator_version": "0.09"
+      "last_generated": "2026-09-12",
+      "generator_version": "2.0.0"
     }
   },
   "learning_graph_state": {
-    "content_hash": "7cfc9150329b9d72607f7d7436c4ec5bd4e1967033591d19980daf6598665620",
-    "node_count": 130,
-    "edge_count": 230,
-    "enriched_nodes": 65,
-    "low_confidence_count": 65
+    "content_hash": "cc1bcb82e97f38c9b1624c841fae6b5ace4b040002d0485b13f8c4337e26e470",
+    "node_count": 133,
+    "edge_count": 235,
+    "enriched_nodes": 67,
+    "low_confidence_count": 66
   },
   "faq_state": {
-    "question_count": 70,
-    "content_hash": "67a8ea0c99b8866d65b4cef933938f43975594bdcba5484efd500eb11470eeff"
+    "question_count": 78,
+    "content_hash": "b7f5f77962ee247fee7284f16993adf13dbf412db39e6d48ae89d28957d52882"
   },
   "refresh_history": [
     {
@@ -133,6 +111,25 @@
       "faq_questions_updated": 17,
       "tokens_used": null,
       "note": "full refresh: package renamed mountainash_utils_rules->mountainash_rules and reorganised flat->core/+engines/{filter,accumulator}/; profile rebuilt 14->21 modules; learning graph grown 90->130 concepts, 7->9 taxonomy categories, 9->11 chapters (2 new: Hit Policies, Batch Evaluation); FAQ grown 53->70 questions, 6->8 categories"
+    },
+    {
+      "date": "2026-09-12T06:32:46Z",
+      "from_commit": "7d0e3dcb747949bb2d7172a34135a7872b2ed55f",
+      "to_commit": "94659bb0c096485c87d329f09e944577427f129f",
+      "chapters_updated": [
+        "01-rule-tables-and-decisions",
+        "02-authoring-rule-libraries",
+        "03-evaluating-decisions",
+        "04-scoring-batches",
+        "05-combining-and-persisting-rules",
+        "06-expression-execution-internals",
+        "07-combination-search-internals",
+        "08-extending-and-maintaining"
+      ],
+      "sections_regenerated": 133,
+      "faq_questions_updated": 78,
+      "tokens_used": null,
+      "note": "Unpublished candidate against the confirmed 2026-09-12 brief and user-approved eight-chapter plan. All 133 concepts have ordered chapter markers; 109 runnable chapter blocks exercised against the selected source. FAQ retains all 70 legacy topics and adds eight; original internal FAQ Markdown and unsupported JSON remain byte-identical. Added a 97-entry glossary and six rendered Mermaid diagrams. Internal graph/report and old course/sim reader surfaces removed from site inputs. A disposable concept-6 refresh proved read-only planning, bounded application, preservation of every other file and rejection of a stale reapplication; that exercise was not applied to this candidate. Earlier history is retained; publishing requires separate user acceptance."
     }
   ]
 }

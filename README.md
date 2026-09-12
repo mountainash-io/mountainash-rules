@@ -167,27 +167,55 @@ skipped; a one-sided bootstrap cannot deploy an incomplete site.
 The source artifacts live together in this repository:
 
 - `docs-site/profile/`: package profile and source provenance.
-- `docs-site/learning-graph/`: canonical graph and FAQ artifacts.
-- `docs-site/site/`: MkDocs configuration, textbook Markdown, and refresh state.
+- `docs-site/learning-graph/`: internal graph, reports and preserved legacy FAQ data.
+- `docs-site/editorial-brief.md` and `docs-site/chapter-plan.md`: confirmed editorial scope and approved chapter structure.
+- `docs-site/site/`: MkDocs runtime, eight chapters, FAQ/glossary appendices and refresh state.
 
 Preview locally without installing the source package or sibling repositories:
 
 ```bash
+TEXTBOOK_SITE_URL=http://127.0.0.1:8000/ \
 uv run --no-project --with-requirements docs-site/requirements.txt \
   python -m mkdocs serve --config-file docs-site/site/mkdocs.yml
 ```
 
-Refreshes are manual. Load `textbook-refresh` from the central
-`hiivmind-documentation-profile` tooling project and supply this repository's
-absolute root as `source_repo`, starting with `mode: check`. For a separate
-profile update, supply `docs-site/profile/` as the profiler's explicit output.
-Do not regenerate content merely to publish it or advance source baselines on
-a directory move. Preserve the existing FAQ format; the marker-only FAQ
-exporter does not support it and must not overwrite its JSON.
+Refreshes are manual. Load `textbook-refresh` from
+[Mountainash iBook skills](https://github.com/mountainash-io/mountainash-ibook-skills)
+and supply this worktree's absolute root as `source_repo`, starting with
+`mode: check`. Reuse the confirmed brief and approved chapter plan; reopen
+editorial questions only when their scope changes. Profile generation remains
+an agent workflow with `docs-site/profile/` as its explicit output.
 
-The inherited chapters include specifications for 32 simulations whose HTML
-implementations do not yet exist. Their missing embeds are an accepted
-pre-existing content gap for this migration, not a working simulation library.
+Deterministic operations use the following full Git revision and its matching
+constraints. Run this from the selected source worktree:
+
+```bash
+set -eu
+IBOOK_REV=dfcda21b1403352e73560aa86d99ba624a0cfe1d
+source_repo=$(git rev-parse --show-toplevel)
+tooling_inputs=$(mktemp -d)
+trap 'rm -rf "$tooling_inputs"' EXIT
+source_url="https://raw.githubusercontent.com/mountainash-io/mountainash-ibook-skills/$IBOOK_REV"
+curl --fail --silent --show-error --location "$source_url/constraints.txt" -o "$tooling_inputs/constraints.txt"
+curl --fail --silent --show-error --location "$source_url/build-constraints.txt" -o "$tooling_inputs/build-constraints.txt"
+uvx --python 3.12 \
+  --constraints "$tooling_inputs/constraints.txt" \
+  --build-constraints "$tooling_inputs/build-constraints.txt" \
+  --from "git+https://github.com/mountainash-io/mountainash-ibook-skills.git@$IBOOK_REV" \
+  ibook profile validate "$source_repo/docs-site/profile"
+```
+
+Stop if either download fails; never retry unconstrained. Use the same prefix
+for `ibook graph validate`, `ibook graph reconcile`, `ibook refresh coverage`
+and targeted `ibook refresh plan` / `apply`, with explicit input/output paths.
+The tooling README documents their arguments. Generic helper scripts are not
+copied into this repository.
+
+Keep graph data, reports and editorial plans outside the site's source tree.
+Preserve the legacy FAQ Markdown/JSON under `docs-site/learning-graph/`: the
+marker-only exporter does not support that format. Updating the reader FAQ
+does not authorise overwriting its legacy JSON. Do not generate content merely
+to publish, and do not replace the live book before content/deployment acceptance.
 
 ## Development
 

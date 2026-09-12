@@ -7,7 +7,8 @@
   "stability": "stable",
   "audiences": [
     "users",
-    "maintainers"
+    "maintainers",
+    "contributors"
   ],
   "doc_priority": "useful",
   "confidence": "high",

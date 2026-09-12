@@ -16,7 +16,23 @@
         "mountainash_rules.core.dimension",
         "mountainash_rules.core.compiler"
       ],
-      "description": "The end-to-end process for a new strategy follows a clear path (CLAUDE.md 'Adding a strategy'): add the enum value in core/constants.py, add validation logic in core/dimension.py, implement _compile_<strategy> in core/compiler.py, and add a corresponding test class in tests/core/test_compiler.py. EXACT_KEY and the REGEX/CONTEXT_REGEX split are recent examples of this pattern."
+      "description": "The end-to-end process for a new strategy follows a clear path (CLAUDE.md 'Adding a strategy'): add the enum value in core/constants.py, add validation logic in core/dimension.py, implement _compile_<strategy> in core/compiler.py, and add a corresponding test class in tests/core/test_compiler.py. EXACT_KEY and the REGEX/CONTEXT_REGEX split are recent examples of this pattern.",
+      "recommended_docs": [
+        "CLAUDE.md#match-strategies",
+        "CONTRIBUTING.md"
+      ],
+      "evidence": [
+        {
+          "kind": "doc",
+          "path": "CLAUDE.md",
+          "detail": "'Adding a strategy' recipe: enum value -> validation -> _compile_<strategy> -> test class"
+        },
+        {
+          "kind": "symbol",
+          "path": "src/mountainash_rules/core/compiler.py",
+          "detail": "12 _compile_* methods, one per MatchStrategy"
+        }
+      ]
     },
     {
       "name": "Adding an accumulator strategy",
@@ -24,7 +40,17 @@
         "mountainash_rules.engines.accumulator.compiler",
         "mountainash_rules.engines.accumulator.engine"
       ],
-      "description": "AccumulatorCompiler now supports EXACT, RANGE, GT/LT threshold, and SET_MEMBERSHIP/SET_EXCLUSION. To add support for another strategy, implement the corresponding cases in compile_compatible (the compatibility guard) and compile_coalesce (the value-merge logic)."
+      "description": "AccumulatorCompiler now supports EXACT, RANGE, GT/LT threshold, and SET_MEMBERSHIP/SET_EXCLUSION. To add support for another strategy, implement the corresponding cases in compile_compatible (the compatibility guard) and compile_coalesce (the value-merge logic).",
+      "recommended_docs": [
+        "CLAUDE.md#accumulator-engine"
+      ],
+      "evidence": [
+        {
+          "kind": "symbol",
+          "path": "src/mountainash_rules/engines/accumulator/compiler.py",
+          "detail": "compile_compatible / compile_coalesce per MatchStrategy; _compatible_set_membership, _coalesce_set"
+        }
+      ]
     },
     {
       "name": "Adding a new aggregate operation",
@@ -32,7 +58,22 @@
         "mountainash_rules.engines.accumulator.aggregate",
         "mountainash_rules.engines.accumulator.engine"
       ],
-      "description": "AggregateOp now has four commutative, associative operations: sum, min, max, product. Adding a fifth means extending AggregateOp and the level-expansion aggregation logic in AccumulatorEngine. Note the documented limitation: aggregate-value overflow is backend-defined and unguarded (only the __prime_product identity is int64-guarded)."
+      "description": "AggregateOp now has four commutative, associative operations: sum, min, max, product. Adding a fifth means extending AggregateOp and the level-expansion aggregation logic in AccumulatorEngine. Note the documented limitation: aggregate-value overflow is backend-defined and unguarded (only the __prime_product identity is int64-guarded).",
+      "recommended_docs": [
+        "docs/superpowers/specs/2026-07-12-accumulator-correctness-design.md"
+      ],
+      "evidence": [
+        {
+          "kind": "doc",
+          "path": "src/mountainash_rules/engines/accumulator/aggregate.py",
+          "detail": "AggregateOp docstring: 'All four operations are commutative and associative'"
+        },
+        {
+          "kind": "test",
+          "path": "tests/accumulator/test_aggregate.py",
+          "detail": "sum/min/max/product coverage"
+        }
+      ]
     },
     {
       "name": "Adding a hit policy",
@@ -40,7 +81,17 @@
         "mountainash_rules.core.constants",
         "mountainash_rules.core.hit_policy"
       ],
-      "description": "HitPolicy is a StrEnum (collect/unique/first/priority/any/rule_order). New policies add an ordering_keys case and, if the policy asserts cardinality, a check_assertions/apply_cardinality case in core/hit_policy.py."
+      "description": "HitPolicy is a StrEnum (collect/unique/first/priority/any/rule_order). New policies add an ordering_keys case and, if the policy asserts cardinality, a check_assertions/apply_cardinality case in core/hit_policy.py.",
+      "recommended_docs": [
+        "docs/superpowers/specs/2026-07-12-hit-policies-design.md"
+      ],
+      "evidence": [
+        {
+          "kind": "symbol",
+          "path": "src/mountainash_rules/core/hit_policy.py",
+          "detail": "ordering_keys/check_assertions/apply_cardinality per HitPolicy case"
+        }
+      ]
     },
     {
       "name": "Backend-agnostic expression patterns",
@@ -48,19 +99,60 @@
         "mountainash_rules.core.compiler",
         "mountainash_rules.engines.filter.engine"
       ],
-      "description": "All compiler output uses the mountainash BaseExpressionAPI, ensuring expressions work across every supported backend. Use t_col, t_eq, t_ne and related helpers for sentinel-aware ternary comparisons, and ma.when/then/otherwise for conditional logic. Staying within these abstractions guarantees cross-backend compatibility -- and is enforced package-wide by tests/test_backend_purity.py."
+      "description": "All compiler output uses the mountainash BaseExpressionAPI, ensuring expressions work across every supported backend. Use t_col, t_eq, t_ne and related helpers for sentinel-aware ternary comparisons, and ma.when/then/otherwise for conditional logic. Staying within these abstractions guarantees cross-backend compatibility -- and is enforced package-wide by tests/test_backend_purity.py.",
+      "recommended_docs": [
+        "CLAUDE.md#backend-purity-enforced"
+      ],
+      "evidence": [
+        {
+          "kind": "test",
+          "path": "tests/test_backend_purity.py",
+          "detail": "enforces mountainash.relations/expressions-only imports package-wide"
+        }
+      ]
     },
     {
       "name": "Set-dimension wildcard pattern",
       "module_ids": [
         "mountainash_rules.core.set_wildcard"
       ],
-      "description": "New shared module: set dimensions represent 'wildcard' as an in-band '[sentinel]' list rather than null, normalized at ingestion (normalize_set_expr) and validated for reservation (validate_set_columns) and null elements (validate_set_no_null_elements) in both engines. Any new set-aware strategy should reuse these helpers rather than reinventing set-sentinel handling."
+      "description": "New shared module: set dimensions represent 'wildcard' as an in-band '[sentinel]' list rather than null, normalized at ingestion (normalize_set_expr) and validated for reservation (validate_set_columns) and null elements (validate_set_no_null_elements) in both engines. Any new set-aware strategy should reuse these helpers rather than reinventing set-sentinel handling.",
+      "recommended_docs": [
+        "docs/superpowers/specs/2026-07-20-accumulator-set-sentinel-wildcard-design.md"
+      ],
+      "evidence": [
+        {
+          "kind": "doc",
+          "path": "docs/superpowers/specs/2026-07-20-accumulator-set-sentinel-wildcard-design.md",
+          "detail": "in-band '[sentinel]' list design for set-dimension wildcards"
+        },
+        {
+          "kind": "test",
+          "path": "tests/core/test_set_wildcard.py",
+          "detail": "normalize_set_expr/validate_set_columns/validate_set_no_null_elements coverage"
+        }
+      ]
     },
     {
       "name": "Test patterns",
       "module_ids": [],
-      "description": "The test tree mirrors the src/ package layout (tests/core/, tests/filter/, tests/accumulator/, tests/benchmarks/). tests/filter/test_engine.py is the primary template for backend-parameterised evaluation tests; tests/accumulator/test_backends.py covers the accumulator engine. New strategies and features should follow these patterns to ensure coverage across all backends."
+      "description": "The test tree mirrors the src/ package layout (tests/core/, tests/filter/, tests/accumulator/, tests/benchmarks/). tests/filter/test_engine.py is the primary template for backend-parameterised evaluation tests; tests/accumulator/test_backends.py covers the accumulator engine. New strategies and features should follow these patterns to ensure coverage across all backends.",
+      "recommended_docs": [
+        "CONTRIBUTING.md",
+        "CLAUDE.md#buildtestlint-commands"
+      ],
+      "evidence": [
+        {
+          "kind": "test",
+          "path": "tests/filter/test_engine.py",
+          "detail": "primary template for backend-parameterised evaluation tests"
+        },
+        {
+          "kind": "test",
+          "path": "tests/accumulator/test_backends.py",
+          "detail": "accumulator engine cross-backend coverage"
+        }
+      ]
     }
   ],
   "featured_modules": [
@@ -79,5 +171,11 @@
     "mountainash_rules.core.context",
     "mountainash_rules.engines.accumulator.primes"
   ],
-  "open_questions": []
+  "open_questions": [],
+  "documentation_plan": [
+    "Lead with the 'Adding a new MatchStrategy' recipe from CLAUDE.md, since it is the most common contribution and models the enum -> validation -> compile -> test pattern reused elsewhere.",
+    "Cover extending the accumulator (new accumulator strategy, new aggregate operation, new hit policy) as three independent, narrower recipes rather than one combined walkthrough.",
+    "Document the backend-purity constraint and the set-dimension wildcard helpers as shared prerequisites contributors must reuse rather than reinvent.",
+    "Point to tests/filter/test_engine.py and tests/accumulator/test_backends.py as the canonical test templates for new contributions."
+  ]
 }

@@ -9,7 +9,17 @@
         "mountainash_rules.core.compiler",
         "mountainash_rules.engines.filter.engine"
       ],
-      "description": "The ternary invariant (1=match, 0=unknown, -1=non-match) is the foundation of evaluation correctness. Sentinels in constants.py map to ternary 0 through the mountainash t_col wrapper, and specificity is computed by counting only definite matches (1s). This invariant must hold across all 12 match strategies and all backends."
+      "description": "The ternary encoding (1=match, 0=unknown, -1=non-match) underpins evaluation correctness, and specificity counts only definite matches. All 13 strategies produce values in that encoding, but sentinel handling is strategy-specific: t_col-based comparisons, raw string wrappers, EXACT_KEY and CONTEXT_REGEX do not share one universal unknown branch. Verify the declared behavior on each supported backend, including documented native exceptions.",
+      "recommended_docs": [
+        "CLAUDE.md#ternary-match-logic"
+      ],
+      "evidence": [
+        {
+          "kind": "doc",
+          "path": "CLAUDE.md",
+          "detail": "'Ternary match logic' section: 1=match, 0=unknown, -1=non-match; survives when min >= 0"
+        }
+      ]
     },
     {
       "name": "Sentinel contract",
@@ -18,7 +28,22 @@
         "mountainash_rules.core.compiler",
         "mountainash_rules.engines.accumulator.compiler"
       ],
-      "description": "UNKNOWN/NOT_SET sentinels exist per data type: string ('<NA>'/'<NOT_SET>'), numeric (-999999999/-999999998), date/datetime (proleptic-floor dates). Bool dimensions use null as don't-care instead of a sentinel (no typed wildcard sentinel exists for bool). Set dimensions use an in-band '[sentinel]' list, never null."
+      "description": "UNKNOWN/NOT_SET sentinels exist per data type: string ('<NA>'/'<NOT_SET>'), numeric (-999999999/-999999998), date/datetime (proleptic-floor dates). Bool dimensions use null as don't-care instead of a sentinel (no typed wildcard sentinel exists for bool). Set dimensions use an in-band '[sentinel]' list, never null.",
+      "recommended_docs": [
+        "CLAUDE.md#ternary-match-logic"
+      ],
+      "evidence": [
+        {
+          "kind": "symbol",
+          "path": "src/mountainash_rules/core/constants.py",
+          "detail": "STRING_SENTINELS/NUMERIC_SENTINELS/TEMPORAL_DATE_SENTINELS/TEMPORAL_DATETIME_SENTINELS tables"
+        },
+        {
+          "kind": "doc",
+          "path": "CLAUDE.md",
+          "detail": "'Set-dimension wildcards use the in-band [sentinel] list (not null)...'"
+        }
+      ]
     },
     {
       "name": "Filter engine evaluation pipeline",
@@ -27,7 +52,22 @@
         "mountainash_rules.core.compiler",
         "mountainash_rules.core.context"
       ],
-      "description": "evaluate() follows a 4-step pipeline: compile (DimensionCompiler at construction), bind (context -> __ctx_<dim> columns via context.py), evaluate (ternary columns + survival + specificity via _scored_relation, shared with explain()), select (sort/rank/hit-policy/cardinality via hit_policy.py). Each step is a pure DataFrame transformation."
+      "description": "evaluate() follows a 4-step pipeline: compile (DimensionCompiler at construction), bind (context -> __ctx_<dim> columns via context.py), evaluate (ternary columns + survival + specificity via _scored_relation, shared with explain()), select (sort/rank/hit-policy/cardinality via hit_policy.py). Each step is a pure DataFrame transformation.",
+      "recommended_docs": [
+        "CLAUDE.md#filter-engine-pipeline-enginepy"
+      ],
+      "evidence": [
+        {
+          "kind": "doc",
+          "path": "CLAUDE.md",
+          "detail": "'Filter engine pipeline (engine.py)' \u2014 compile/bind/evaluate/select steps"
+        },
+        {
+          "kind": "symbol",
+          "path": "src/mountainash_rules/core/context.py",
+          "detail": "extract_context_values(context, dimension_names, metadata=None)"
+        }
+      ]
     },
     {
       "name": "Hit-policy selection layer",
@@ -35,7 +75,22 @@
         "mountainash_rules.core.hit_policy",
         "mountainash_rules.core.result"
       ],
-      "description": "New since the prior profile: SelectionInfo carries what a RuleResult needs to re-apply policies post-hoc. check_assertions raises HitPolicyViolationError for UNIQUE/ANY breaches (zero survivors always pass). apply_cardinality truncates to one row for FIRST/PRIORITY/ANY."
+      "description": "New since the prior profile: SelectionInfo carries what a RuleResult needs to re-apply policies post-hoc. check_assertions raises HitPolicyViolationError for UNIQUE/ANY breaches (zero survivors always pass). apply_cardinality truncates to one row for FIRST/PRIORITY/ANY.",
+      "recommended_docs": [
+        "docs/superpowers/specs/2026-07-12-hit-policies-design.md"
+      ],
+      "evidence": [
+        {
+          "kind": "symbol",
+          "path": "src/mountainash_rules/core/hit_policy.py",
+          "detail": "SelectionInfo, check_assertions, apply_cardinality"
+        },
+        {
+          "kind": "symbol",
+          "path": "src/mountainash_rules/core/result.py",
+          "detail": "RuleResult.select(policy) re-applies a hit policy post-hoc"
+        }
+      ]
     },
     {
       "name": "Batch evaluation internals",
@@ -43,7 +98,17 @@
         "mountainash_rules.engines.filter.engine",
         "mountainash_rules.core.batch_result"
       ],
-      "description": "evaluate_batch() conforms contexts to the rules frame's backend before cross-joining (_conform_to_rules_backend), then ranks per __context_id portably without window functions. Opt-in chunked evaluation exists with cross-chunk violation accumulation for hit-policy assertions over large batches."
+      "description": "evaluate_batch() conforms contexts to the rules frame's backend before cross-joining (_conform_to_rules_backend), then ranks per __context_id portably without window functions. Opt-in chunked evaluation exists with cross-chunk violation accumulation for hit-policy assertions over large batches.",
+      "recommended_docs": [
+        "docs/superpowers/specs/2026-07-12-batch-context-evaluation-design.md"
+      ],
+      "evidence": [
+        {
+          "kind": "test",
+          "path": "tests/filter/test_batch_evaluation.py",
+          "detail": "evaluate_batch cross-join/backend conformance coverage"
+        }
+      ]
     },
     {
       "name": "Accumulator build algorithm",
@@ -53,7 +118,22 @@
         "mountainash_rules.engines.accumulator.primes",
         "mountainash_rules.engines.accumulator.lattice"
       ],
-      "description": "The build phase assigns unique primes to rules, creates an anchor lattice from single-rule entries, then iteratively expands by cross-joining compatible rules and coalescing their dimension values. A frontier filter removes dominated combinations (those whose prime product divides a larger combination's product). Each level is materialised via relation(...).collect() -- never re-chained lazily (exponential plan blow-up)."
+      "description": "The build phase assigns unique primes to rules, creates an anchor lattice from single-rule entries, then iteratively expands by cross-joining compatible rules and coalescing their dimension values. A frontier filter removes dominated combinations (those whose prime product divides a larger combination's product). Each level is materialised via relation(...).collect() -- never re-chained lazily (exponential plan blow-up).",
+      "recommended_docs": [
+        "docs/superpowers/specs/2026-07-12-accumulator-correctness-design.md"
+      ],
+      "evidence": [
+        {
+          "kind": "doc",
+          "path": "CLAUDE.md",
+          "detail": "'Accumulator engine' section: level-wise expansion, prime products, frontier filter"
+        },
+        {
+          "kind": "symbol",
+          "path": "src/mountainash_rules/engines/accumulator/primes.py",
+          "detail": "checked_multiply/get_prime, LatticeWidthExceededError"
+        }
+      ]
     },
     {
       "name": "Ternary partition routing",
@@ -62,14 +142,39 @@
         "mountainash_rules.engines.accumulator.engine",
         "mountainash_rules.core.constants"
       ],
-      "description": "New since the prior profile: LatticeIndex routes CONTEXT_KEY-partitioned contexts to the right lattice via ternary + specificity semantics using an embedded meta-engine over EXACT_KEY dimensions. An all-wildcard key is the default/overflow partition; exact hits keep an O(1) dict fast path; ties raise AmbiguousPartitionError (a KeyError subclass). index(lattices, validate=True) runs an exhaustive witness-matrix ambiguity check at load time."
+      "description": "New since the prior profile: LatticeIndex routes CONTEXT_KEY-partitioned contexts to the right lattice via ternary + specificity semantics using an embedded meta-engine over EXACT_KEY dimensions. An all-wildcard key is the default/overflow partition; exact hits keep an O(1) dict fast path; ties raise AmbiguousPartitionError (a KeyError subclass). index(lattices, validate=True) runs an exhaustive witness-matrix ambiguity check at load time.",
+      "recommended_docs": [
+        "docs/superpowers/specs/2026-07-19-ternary-partition-routing-design.md"
+      ],
+      "evidence": [
+        {
+          "kind": "doc",
+          "path": "docs/superpowers/specs/2026-07-19-ternary-partition-routing-design.md",
+          "detail": "CONTEXT_KEY partition routing design (LatticeIndex, AmbiguousPartitionError)"
+        },
+        {
+          "kind": "symbol",
+          "path": "src/mountainash_rules/engines/accumulator/lattice.py",
+          "detail": "LatticeIndex.index(lattices, validate=True, max_witnesses=1_000_000)"
+        }
+      ]
     },
     {
       "name": "Lattice persistence",
       "module_ids": [
         "mountainash_rules.engines.accumulator.lattice"
       ],
-      "description": "New since the prior profile, which flagged 'no serialisation protocol' as an open question. Lattice.save/load round-trips a lattice through parquet + manifest.yaml, a superset of mountainash-rules-babel's LatticeManifest. Build offline, save, serve apply() from load."
+      "description": "New since the prior profile, which flagged 'no serialisation protocol' as an open question. Lattice.save/load round-trips a lattice through parquet + manifest.yaml, a superset of mountainash-rules-babel's LatticeManifest. Build offline, save, serve apply() from load.",
+      "recommended_docs": [
+        "docs/superpowers/specs/2026-07-16-lattice-snapshot-save-load-design.md"
+      ],
+      "evidence": [
+        {
+          "kind": "doc",
+          "path": "docs/superpowers/specs/2026-07-16-lattice-snapshot-save-load-design.md",
+          "detail": "parquet + manifest.yaml snapshot design, superset of mountainash-rules-babel's LatticeManifest"
+        }
+      ]
     },
     {
       "name": "Prime product identity and limits",
@@ -77,7 +182,17 @@
         "mountainash_rules.engines.accumulator.primes",
         "mountainash_rules.engines.accumulator.engine"
       ],
-      "description": "Two independent bounds: combination width (~15 primes per combination, intrinsic to int64, enforced by checked_multiply/LatticeWidthExceededError) and rules-per-partition (MAX_RULES_PER_PARTITION=10,000, the prime table size, an explicit policy constant -- much larger than the prior profile's ~500-rule estimate). Exceeding the partition cap raises from get_prime; remediate with a CONTEXT_KEY dimension."
+      "description": "Two independent bounds: combination width (~15 primes per combination, intrinsic to int64, enforced by checked_multiply/LatticeWidthExceededError) and rules-per-partition (MAX_RULES_PER_PARTITION=10,000, the prime table size, an explicit policy constant -- much larger than the prior profile's ~500-rule estimate). Exceeding the partition cap raises from get_prime; remediate with a CONTEXT_KEY dimension.",
+      "recommended_docs": [
+        "CLAUDE.md#accumulator-engine"
+      ],
+      "evidence": [
+        {
+          "kind": "symbol",
+          "path": "src/mountainash_rules/engines/accumulator/primes.py",
+          "detail": "MAX_RULES_PER_PARTITION = 10_000"
+        }
+      ]
     },
     {
       "name": "Backend purity enforcement",
@@ -86,12 +201,42 @@
         "mountainash_rules.engines.accumulator.engine",
         "mountainash_rules.engines.accumulator.lattice"
       ],
-      "description": "No module under src/mountainash_rules/ may import polars/ibis/narwhals directly -- only mountainash.relations/mountainash.expressions. tests/test_backend_purity.py enforces this package-wide, parametrised over every non-dunder module with no exemptions. Exactly three documented '# allow:' escapes exist: the per-row REGEX fallback (core/compiler.py), the empty-build schema seed (engines/accumulator/engine.py), and the snapshot parquet read (engines/accumulator/lattice.py) -- each pending a specific upstream mountainash capability."
+      "description": "No module under src/mountainash_rules/ may import polars/ibis/narwhals directly -- only mountainash.relations/mountainash.expressions. tests/test_backend_purity.py enforces this package-wide, parametrised over every non-dunder module with no exemptions. Exactly three documented '# allow:' escapes exist: the per-row REGEX fallback (core/compiler.py), the empty-build schema seed (engines/accumulator/engine.py), and the snapshot parquet read (engines/accumulator/lattice.py) -- each pending a specific upstream mountainash capability.",
+      "recommended_docs": [
+        "CLAUDE.md#backend-purity-enforced"
+      ],
+      "evidence": [
+        {
+          "kind": "doc",
+          "path": "CLAUDE.md",
+          "detail": "'Backend purity (ENFORCED)' section: three documented '# allow:' escapes"
+        },
+        {
+          "kind": "test",
+          "path": "tests/test_backend_purity.py",
+          "detail": "package-wide parametrised import check, no exemptions"
+        }
+      ]
     },
     {
       "name": "Test suite structure",
       "module_ids": [],
-      "description": "The test tree now mirrors the src/ package layout one-to-one (tests/core/, tests/filter/, tests/accumulator/, tests/benchmarks/) plus package-wide tests/test_backend_purity.py and tests/test_public_api.py. CI runs pytest+coverage, ruff, and radon on PRs; known upstream issues are xfailed via tests/conftest.py's _UPSTREAM_XFAILS."
+      "description": "The test tree now mirrors the src/ package layout one-to-one (tests/core/, tests/filter/, tests/accumulator/, tests/benchmarks/) plus package-wide tests/test_backend_purity.py and tests/test_public_api.py. CI runs pytest+coverage, ruff, and radon on PRs; known upstream issues are xfailed via tests/conftest.py's _UPSTREAM_XFAILS.",
+      "recommended_docs": [
+        "CLAUDE.md#buildtestlint-commands"
+      ],
+      "evidence": [
+        {
+          "kind": "test",
+          "path": "tests/conftest.py",
+          "detail": "_UPSTREAM_XFAILS known-issue registry"
+        },
+        {
+          "kind": "test",
+          "path": "tests/test_backend_purity.py",
+          "detail": "package-wide backend purity test, no per-module exemptions"
+        }
+      ]
     }
   ],
   "featured_modules": [
@@ -112,5 +257,14 @@
     "mountainash_rules.__version__",
     "mountainash_rules.core.context"
   ],
-  "open_questions": []
+  "open_questions": [],
+  "documentation_plan": [
+    "Document the ternary logic invariant and sentinel contract first, since every other maintainer concept depends on it (per CLAUDE.md's own ordering).",
+    "Walk the filter engine's compile/bind/evaluate/select pipeline as the reference architecture, then show how the accumulator engine's build/apply phases parallel it.",
+    "Cover the hit-policy selection layer and batch-evaluation internals as pipeline extensions built on the same scored-relation core.",
+    "Document the accumulator build algorithm, prime-product identity, and ternary partition routing together, since they share the same lattice data structures.",
+    "Cover lattice persistence (save/load) as an operational concern distinct from the build algorithm.",
+    "State backend purity enforcement and its three documented exemptions explicitly, with a pointer to tests/test_backend_purity.py as the executable source of truth.",
+    "Describe the mirrored test-suite layout so maintainers can locate coverage for any module without a separate index."
+  ]
 }

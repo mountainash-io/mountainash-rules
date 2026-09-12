@@ -8,7 +8,8 @@
   "audiences": [
     "users",
     "maintainers",
-    "backend-architecture"
+    "backend-architecture",
+    "broader-hype"
   ],
   "doc_priority": "essential",
   "confidence": "high",

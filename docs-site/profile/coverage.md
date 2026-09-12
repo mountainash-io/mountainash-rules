@@ -1,12 +1,39 @@
 # Package Profile Coverage Report
 
-Generated: 2026-09-02
-Source hash: 7d0e3dcb747949bb2d7172a34135a7872b2ed55f (previous: 41d584652aa29b09762aa1140ae64fb640473940)
+Generated: 2026-09-02 (full refresh); revalidated 2026-09-12 (candidate revalidation, no source change)
+Source hash: 94659bb0c096485c87d329f09e944577427f129f (previous: 7d0e3dcb747949bb2d7172a34135a7872b2ed55f)
 Package root: src/mountainash_rules/
-Refresh type: **full refresh** — package renamed (`mountainash_utils_rules` → `mountainash_rules`) and
+Refresh type (2026-09-02): **full refresh** — package renamed (`mountainash_utils_rules` → `mountainash_rules`) and
 reorganised into `core/` + `engines/{filter,accumulator}/` (commit `23a29d6`), triggering every condition in
 `references/update-algorithm.md` ("Full Refresh Triggers"): package roots changed, package structure changed,
 and effectively all module paths changed relative to the previous profile.
+
+## Candidate Revalidation (2026-09-12)
+
+This pass established the pilot candidate source basis for `PILOT/docs-site/profile/`. `git diff --stat
+7d0e3dcb747949bb2d7172a34135a7872b2ed55f..94659bb0c096485c87d329f09e944577427f129f -- src/mountainash_rules`
+is empty, and the `src/mountainash_rules` git tree object (`9723c20ae6b9933ad8c2259cc0ffb8cf79fc3364`) is
+identical at both revisions: no package source changed between the last full-refresh hash and the current
+candidate HEAD. No module was reclassified, re-scanned, or had its `source_hash` advanced as a result.
+
+What this pass actually changed, backed by the unchanged source above (no new source evidence invented, no
+`manual` field touched):
+
+- Added the required `documentation_plan` array to all five facets.
+- Added `recommended_docs`/`evidence` to every existing concept in `users`, `maintainers`, `contributors`, and
+  `backend-architecture` (32 concepts), citing already-established module evidence, README.md/CLAUDE.md
+  sections, `docs/user-quickstart.md` sections, and `docs/superpowers/specs/*.md` design docs.
+- Added a `concepts` array to `facets/broader-hype.json` (previously absent — a required-field gap, not a
+  missing-`documentation_plan`-only gap), covering all 7 `what_it_makes_possible` capabilities against the
+  facet's existing 7 featured modules.
+- Corrected audience-membership gaps so every featured/concept module in a facet actually declares that
+  audience: `backend-architecture` was missing membership on `core/result` (used by "Backend-agnostic
+  protocol via mountainash.relations") and `core/dimension` (used by "Shared dimension model");
+  `broader-hype` had **no** module carrying `broader-hype` membership at all, so all 7 of its featured
+  modules gained it; `contributors` was missing membership on `engines/accumulator/aggregate` (used by
+  "Adding a new aggregate operation"). Each addition is backed by that module's own pre-existing
+  evidence/lifecycle_notes and the fact that a facet already referenced it without matching membership.
+
 
 ## Summary
 
@@ -111,7 +138,14 @@ removed as part of this full refresh; their content is superseded by the 21 curr
 
 ## Stale Profiles
 
-None — this is a full refresh; all 21 profiles are current at hash `7d0e3dcb747949bb2d7172a34135a7872b2ed55f`.
+All 21 module profiles carry `source_hash: 7d0e3dcb747949bb2d7172a34135a7872b2ed55f`, which now differs from
+the manifest's `current_hash` (`94659bb0c096485c87d329f09e944577427f129f`) recorded on 2026-09-12. This is a
+**verified-unchanged stale marker, not a drift risk**: see "Candidate Revalidation (2026-09-12)" above — the
+`src/mountainash_rules` git tree is byte-identical between the two revisions, so no module's classification,
+evidence, or `manual` object is out of date. A future refresh that advances past `94659bb` on a revision that
+actually touches `src/mountainash_rules` should re-run discovery rather than assume this precedent still
+holds.
+
 
 ## Facets Without User-Facing Module
 

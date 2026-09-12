@@ -1,7 +1,7 @@
 {
   "id": "mountainash_rules.core.constants",
   "path": "src/mountainash_rules/core/constants.py",
-  "summary": "MatchStrategy (12-member StrEnum), HitPolicy, DimensionRole, DataType enums; sentinel value tables (string/numeric/date/datetime) and sentinels_for/unknown_sentinel_for/not_set_sentinel_for lookups. The single source of truth for ternary-logic sentinel semantics used by every compiler.",
+  "summary": "MatchStrategy (13-member StrEnum), HitPolicy, DimensionRole, DataType enums; sentinel value tables (string/numeric/date/datetime) and sentinels_for/unknown_sentinel_for/not_set_sentinel_for lookups. The single source of truth for ternary-logic sentinel semantics used by every compiler.",
   "role": "model",
   "visibility": "public",
   "stability": "stable",
@@ -10,7 +10,8 @@
     "maintainers",
     "contributors",
     "backend-architecture",
-    "extension-authors"
+    "extension-authors",
+    "broader-hype"
   ],
   "doc_priority": "essential",
   "confidence": "high",
@@ -80,7 +81,7 @@
     {
       "kind": "symbol",
       "path": "src/mountainash_rules/core/constants.py",
-      "detail": "12 MatchStrategy members incl. EXACT_KEY, REGEX/CONTEXT_REGEX split"
+      "detail": "13 MatchStrategy members including NOT_EQUAL, EXACT_KEY and distinct REGEX/CONTEXT_REGEX strategies"
     }
   ],
   "source_hash": "7d0e3dcb747949bb2d7172a34135a7872b2ed55f",

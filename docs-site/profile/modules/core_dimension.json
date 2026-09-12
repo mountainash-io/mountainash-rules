@@ -9,7 +9,8 @@
     "users",
     "maintainers",
     "contributors",
-    "extension-authors"
+    "extension-authors",
+    "backend-architecture"
   ],
   "doc_priority": "essential",
   "confidence": "high",

@@ -1,6 +1,6 @@
 {
   "audience": "users",
-  "summary": "mountainash-rules gives you a concise, expressive way to define business rules as tabular data and evaluate them in a single vectorized pass. Define your dimensions, choose from 12 match strategies, load your rules, and get ranked results with full per-dimension explainability. Evaluate one context or a whole batch at once, apply a hit policy to control how many survivors you get back, and use the AccumulatorEngine for combinatorial problems where you need every valid combination of rules rather than a single winner.",
+  "summary": "mountainash-rules represents business rules as tabular data. Define dimensions, choose among 13 match strategies, evaluate one context or a batch, and inspect the ranked, policy-selected results. The AccumulatorEngine builds compatible combinations with aggregates and a separate apply lifecycle. Explainability, wildcard semantics and backend support have explicit strategy and result-interface boundaries.",
   "use_cases": [
     "Pricing engine: evaluate a customer context against hundreds of pricing rules and retrieve the best-matching tier with a full explanation of why it won.",
     "Eligibility screening: define eligibility criteria across multiple dimensions and instantly see which rules a given applicant satisfies.",
@@ -16,7 +16,23 @@
         "mountainash_rules.core.dimension",
         "mountainash_rules.core.constants"
       ],
-      "description": "Dimensions describe the axes your rules operate on. Each dimension pairs a data column with a MatchStrategy (EXACT, EXACT_KEY, RANGE, GREATER_THAN, LESS_THAN, PREFIX, SUFFIX, CONTAINS, REGEX, CONTEXT_REGEX, SET_MEMBERSHIP, SET_EXCLUSION), giving you fine-grained control over how context values are compared to rule metadata. DimensionsMetadata round-trips to/from YAML."
+      "description": "Dimensions describe the axes your rules operate on. Each dimension pairs a data column with a MatchStrategy (EXACT, EXACT_KEY, RANGE, GREATER_THAN, LESS_THAN, PREFIX, SUFFIX, CONTAINS, REGEX, CONTEXT_REGEX, SET_MEMBERSHIP, SET_EXCLUSION), giving you fine-grained control over how context values are compared to rule metadata. DimensionsMetadata round-trips to/from YAML.",
+      "recommended_docs": [
+        "docs/user-quickstart.md#step-2--declare-dimensions",
+        "docs/superpowers/specs/2026-07-12-serializable-dimension-metadata-design.md"
+      ],
+      "evidence": [
+        {
+          "kind": "doc",
+          "path": "docs/user-quickstart.md",
+          "detail": "Step 2 \u2014 Declare dimensions: Dimension/DimensionsMetadata/MatchStrategy usage"
+        },
+        {
+          "kind": "symbol",
+          "path": "src/mountainash_rules/core/dimension.py",
+          "detail": "DimensionsMetadata.from_yaml/from_yaml_file"
+        }
+      ]
     },
     {
       "name": "Single-context rule evaluation",
@@ -24,7 +40,22 @@
         "mountainash_rules.engines.filter.engine",
         "mountainash_rules.core.result"
       ],
-      "description": "Pass a context dictionary to ExpressionRulesEngine.evaluate() and receive a RuleResult containing every surviving rule, ranked by specificity. Access the best match, count survivors, or iterate the full ranked list."
+      "description": "Pass a context dictionary to ExpressionRulesEngine.evaluate() and receive a RuleResult containing every surviving rule, ranked by specificity. Access the best match, count survivors, or iterate the full ranked list.",
+      "recommended_docs": [
+        "docs/user-quickstart.md#part-1-expressionrulesengine"
+      ],
+      "evidence": [
+        {
+          "kind": "doc",
+          "path": "docs/user-quickstart.md",
+          "detail": "Step 4/5 \u2014 Evaluate a context / Read results: RuleResult.best_match, .survivors, .count"
+        },
+        {
+          "kind": "test",
+          "path": "tests/filter/test_engine.py",
+          "detail": "single-context evaluate() coverage"
+        }
+      ]
     },
     {
       "name": "Batch evaluation",
@@ -32,7 +63,22 @@
         "mountainash_rules.engines.filter.engine",
         "mountainash_rules.core.batch_result"
       ],
-      "description": "evaluate_batch() scores many contexts against the rules in a single vectorized pass and returns a BatchRuleResult with per-context accessors (best_matches, counts_per_context, matched/unmatched_context_ids, for_context)."
+      "description": "evaluate_batch() scores many contexts against the rules in a single vectorized pass and returns a BatchRuleResult with per-context accessors (best_matches, counts_per_context, matched/unmatched_context_ids, for_context).",
+      "recommended_docs": [
+        "README.md#batch-evaluation"
+      ],
+      "evidence": [
+        {
+          "kind": "doc",
+          "path": "README.md",
+          "detail": "'Batch Evaluation' section: score thousands of contexts in one vectorised pass"
+        },
+        {
+          "kind": "symbol",
+          "path": "src/mountainash_rules/core/batch_result.py",
+          "detail": "for_context(context_id) -> RuleResult"
+        }
+      ]
     },
     {
       "name": "Hit policies",
@@ -40,7 +86,23 @@
         "mountainash_rules.core.hit_policy",
         "mountainash_rules.core.constants"
       ],
-      "description": "Control how many survivors you get back: collect (default, all survivors), unique (raise if more than one survives), first, priority (by a priority_field), any (raise on conflicting outputs), or rule_order. Set on DimensionsMetadata or per evaluate() call."
+      "description": "Control how many survivors you get back: collect (default, all survivors), unique (raise if more than one survives), first, priority (by a priority_field), any (raise on conflicting outputs), or rule_order. Set on DimensionsMetadata or per evaluate() call.",
+      "recommended_docs": [
+        "README.md#hit-policies",
+        "docs/superpowers/specs/2026-07-12-hit-policies-design.md"
+      ],
+      "evidence": [
+        {
+          "kind": "doc",
+          "path": "README.md",
+          "detail": "'Hit Policies' section: collect/unique/first/priority/any/rule_order"
+        },
+        {
+          "kind": "doc",
+          "path": "CLAUDE.md",
+          "detail": "'Hit policies (hit_policy.py, constants.HitPolicy)' section"
+        }
+      ]
     },
     {
       "name": "Explainability",
@@ -48,7 +110,22 @@
         "mountainash_rules.core.result",
         "mountainash_rules.engines.filter.engine"
       ],
-      "description": "Every evaluation result carries a per-dimension ternary breakdown (match / unknown / non-match) so you can see exactly which dimensions contributed to a rule's survival and which were neutral. Call explain() on a rule name, or call ExpressionRulesEngine.explain(context) to score every rule in the table at once without filtering."
+      "description": "Every evaluation result carries a per-dimension ternary breakdown (match / unknown / non-match) so you can see exactly which dimensions contributed to a rule's survival and which were neutral. Call explain() on a rule name, or call ExpressionRulesEngine.explain(context) to score every rule in the table at once without filtering.",
+      "recommended_docs": [
+        "docs/user-quickstart.md#step-5--read-results"
+      ],
+      "evidence": [
+        {
+          "kind": "doc",
+          "path": "docs/user-quickstart.md",
+          "detail": "result.explain(\"premium_au\") -> {dimension: ternary_value} example"
+        },
+        {
+          "kind": "symbol",
+          "path": "src/mountainash_rules/core/result.py",
+          "detail": "class ExplainResult (new since prior profile)"
+        }
+      ]
     },
     {
       "name": "Accumulator: building and applying rule lattices",
@@ -58,14 +135,46 @@
         "mountainash_rules.engines.accumulator.result",
         "mountainash_rules.engines.accumulator.aggregate"
       ],
-      "description": "The AccumulatorEngine handles problems where you need valid combinations of rules rather than a single winner. Build a Lattice from your rule set, then apply a context to retrieve accumulated values with full provenance showing which rules contributed to each combination. Aggregates support sum, min, max, and product."
+      "description": "The AccumulatorEngine handles problems where you need valid combinations of rules rather than a single winner. Build a Lattice from your rule set, then apply a context to retrieve accumulated values with full provenance showing which rules contributed to each combination. Aggregates support sum, min, max, and product.",
+      "recommended_docs": [
+        "README.md#accumulator-engine",
+        "docs/user-quickstart.md#part-2-accumulatorengine",
+        "docs/superpowers/specs/2026-07-12-accumulator-correctness-design.md"
+      ],
+      "evidence": [
+        {
+          "kind": "doc",
+          "path": "docs/user-quickstart.md",
+          "detail": "'Quick example' \u2014 build phase (build) and apply phase (apply) over a Lattice"
+        },
+        {
+          "kind": "symbol",
+          "path": "src/mountainash_rules/engines/accumulator/aggregate.py",
+          "detail": "AggregateOp: sum/min/max/product"
+        }
+      ]
     },
     {
       "name": "Persisting a lattice",
       "module_ids": [
         "mountainash_rules.engines.accumulator.lattice"
       ],
-      "description": "Lattice.save(dir) writes a parquet + manifest snapshot; Lattice.load(dir) rehydrates it. Build offline once, save it, and serve apply() from the loaded snapshot in production without rebuilding."
+      "description": "Lattice.save(dir) writes a parquet + manifest snapshot; Lattice.load(dir) rehydrates it. Build offline once, save it, and serve apply() from the loaded snapshot in production without rebuilding.",
+      "recommended_docs": [
+        "docs/superpowers/specs/2026-07-16-lattice-snapshot-save-load-design.md"
+      ],
+      "evidence": [
+        {
+          "kind": "doc",
+          "path": "CLAUDE.md",
+          "detail": "'Lattice.save(dir) / Lattice.load(dir) \u2014 snapshot persistence'"
+        },
+        {
+          "kind": "test",
+          "path": "tests/accumulator/test_lattice.py",
+          "detail": "save/load round-trip coverage"
+        }
+      ]
     },
     {
       "name": "Partitioned lattices (CONTEXT_KEY dimensions)",
@@ -74,7 +183,23 @@
         "mountainash_rules.engines.accumulator.lattice",
         "mountainash_rules.core.constants"
       ],
-      "description": "Mark dimensions as CONTEXT_KEY to partition your rule set before building lattices. build_all() builds one lattice per partition; index(lattices) returns a LatticeIndex that routes each context (or batch) to the correct lattice via ternary + specificity semantics, with load-time ambiguity validation."
+      "description": "Mark dimensions as CONTEXT_KEY to partition your rule set before building lattices. build_all() builds one lattice per partition; index(lattices) returns a LatticeIndex that routes each context (or batch) to the correct lattice via ternary + specificity semantics, with load-time ambiguity validation.",
+      "recommended_docs": [
+        "docs/user-quickstart.md#partitioned-lattices-context_key-dimensions",
+        "docs/superpowers/specs/2026-07-19-ternary-partition-routing-design.md"
+      ],
+      "evidence": [
+        {
+          "kind": "doc",
+          "path": "docs/user-quickstart.md",
+          "detail": "'Partitioned lattices (CONTEXT_KEY dimensions)' section: build_all/apply_auto"
+        },
+        {
+          "kind": "symbol",
+          "path": "src/mountainash_rules/engines/accumulator/lattice.py",
+          "detail": "LatticeIndex.index(lattices, validate=True) ambiguity check"
+        }
+      ]
     }
   ],
   "featured_modules": [
@@ -97,5 +222,13 @@
     "mountainash_rules.engines.accumulator.primes",
     "mountainash_rules.__version__"
   ],
-  "open_questions": []
+  "open_questions": [],
+  "documentation_plan": [
+    "Cover dimension definition and all 13 match strategies before evaluation, checking source semantics rather than copying stale strategy counts or guarantees from existing prose.",
+    "Explain single-context evaluation (RuleResult) before batch evaluation (BatchRuleResult), since batch evaluation reuses the same ranked-result model.",
+    "Present hit policies as a control layer over evaluation results, referencing the existing 'Hit Policies' README section and the hit-policies design doc.",
+    "Treat explainability (explain()/ExplainResult) as a cross-cutting capability demonstrated alongside both single-context and batch evaluation.",
+    "Introduce the AccumulatorEngine only after the filter engine is established, since it depends on the same dimension/hit-policy concepts plus its own build/apply lifecycle.",
+    "Document lattice persistence (save/load) and CONTEXT_KEY partitioning as accumulator-specific extensions, each with its own worked example."
+  ]
 }

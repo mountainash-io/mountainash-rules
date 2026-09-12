@@ -1,47 +1,27 @@
-# Learning Graph for Mountainash Rules
+# Internal editorial graph
 
-This section contains the learning graph for the mountainash-rules package. A learning graph is
-a graph of concepts where each concept is represented by a node in a network graph.
-Concepts are connected by directed edges that indicate
-what concepts each node depends on before that concept is understood by the learner.
+This directory supports authoring and targeted refresh of the Mountainash Rules manual. It is not a reader-facing learning-path application and must remain outside `docs-site/site/docs/`.
 
-A learning graph is the foundational data structure for intelligent textbooks that can recommend learning paths.
-A learning graph is like a roadmap of concepts to help learners arrive at their learning goals.
+## Editorial authority
 
-At the left of the learning graph are prerequisite or foundational concepts. They
-have no outbound edges. They only have inbound edges for other concepts that depend on
-understanding these foundational prerequisite concepts. At the far right
-we have the most advanced concepts. To master these concepts you
-must understand all the concepts that they point to.
+The [confirmed brief](../editorial-brief.md) defines audience, depth and appendices. The [approved chapter plan](../chapter-plan.md) assigns every concept to one primary chapter block and orders prerequisites before dependants. Package profiles under `../profile/` and the source repository supply evidence; the historical course description is not an active generation prerequisite.
 
-## Course Description
+The approved graph contains 133 concepts and 235 teaching-dependency edges. Taxonomy categories describe subject areas; they do not determine chapter boundaries. Public API use is taught before implementation detail where that detail is not a genuine prerequisite.
 
-We use the [Course Description](./course-description.md) as
-the source document for the concepts that are included in this package.
-The course description uses the 2001 Bloom taxonomy to order learning objectives.
+## Maintained artifacts
 
-## List of Concepts
+- [JSON graph](learning-graph.json): canonical node enrichments, dependency edges, source evidence and chapter assignments.
+- [CSV graph](learning-graph.csv): concept IDs, labels, dependencies and taxonomy categories. Graph reconciliation preserves existing enrichments rather than replacing them with a bare CSV conversion.
+- [Concept list](concept-list.md): stable concept IDs and labels.
+- [Taxonomy description](concept-taxonomy.md) and [distribution report](taxonomy-distribution.md): internal category documentation.
+- [Graph analysis](quality-metrics.md): structural diagnostics, not a numerical gate for reader intent or chapter approval.
 
-We use generative AI to convert the course description into a [Concept List](./concept-list.md).
-Each concept is in the form of a short Title Case label with most labels under 32 characters long.
+Deterministic maintenance uses the installed `ibook graph` and `ibook refresh` commands from Mountainash iBook tooling. See the repository README for the pinned installation and invocation contract. Do not restore copied helper implementations in this directory.
 
-## Concept Dependency List
+## FAQ history and format safety
 
-We next use generative AI to create a Directed Acyclic Graph (DAG). DAGs do not have cycles where
-concepts depend on themselves. We provide the DAG in two formats. One is a [CSV file](learning-graph.csv) and the other
-format is a [JSON file](learning-graph.json) that uses the vis-network JavaScript library format. The vis-network format uses `nodes`, `edges` and `metadata`
-elements with edges containing `from` and `to` properties.
+`faq.md` and `faq-chatbot-training.json` retain the existing heading-based FAQ and its JSON representation as migration inputs. Their original 70 ordered category/question/answer records match after trimming only surrounding answer whitespace. The JSON SHA-256 at incorporation is `9bbc887c155f5429fe99365c30a081a03200c13674a3e53a38e1c986b707bb6f`.
 
-## Analysis & Documentation
+The current reader appendix belongs at `../site/docs/faq.md`, not in a public graph directory. Editing that appendix does not implicitly convert or overwrite the legacy chatbot data. The packaged marker exporter supports paired-marker FAQs only; an empty projection of this nonempty legacy FAQ is not a valid migration.
 
-### Learning Graph Quality Validation
-
-[View the Learning Graph Quality Validation](quality-metrics.md)
-
-### Concept Taxonomy
-
-[View the Concept Taxonomy](concept-taxonomy.md)
-
-### Taxonomy Distribution
-
-[View the Taxonomy Distribution Report](./taxonomy-distribution.md)
+Refresh hashes and append-only generation history belong in `../site/refresh-state.json`. They record verified artifacts and source provenance, not merely successful directory creation or an attempted command.

@@ -2,36 +2,36 @@
 
 ## Overview
 
-- **Total Concepts**: 130
+- **Total Concepts**: 133
 - **Number of Taxonomies**: 9
-- **Average Concepts per Taxonomy**: 14.4
+- **Average Concepts per Taxonomy**: 14.8
 
 ## Distribution Summary
 
 | Category | TaxonomyID | Count | Percentage | Status |
 |----------|-----------|-------|------------|--------|
-| DIM | DIM | 26 | 20.0% | ✅ |
-| ACCUM | ACCUM | 22 | 16.9% | ✅ |
-| EXPR | EXPR | 20 | 15.4% | ✅ |
-| LATT | LATT | 14 | 10.8% | ✅ |
-| RESULT | RESULT | 13 | 10.0% | ✅ |
-| Foundation Concepts - Prerequisites | FOUND | 10 | 7.7% | ✅ |
-| POLICY | POLICY | 10 | 7.7% | ✅ |
-| BATCH | BATCH | 8 | 6.2% | ✅ |
-| SUPP | SUPP | 7 | 5.4% | ✅ |
+| Dimension Model | DIM | 26 | 19.5% | ✅ |
+| Accumulator Engine | ACCUM | 23 | 17.3% | ✅ |
+| Expression Rules Engine | EXPR | 21 | 15.8% | ✅ |
+| Accumulator Lattice & Results | LATT | 14 | 10.5% | ✅ |
+| Expression Engine Results | RESULT | 13 | 9.8% | ✅ |
+| Foundation Concepts | FOUND | 10 | 7.5% | ✅ |
+| Hit Policies | POLICY | 10 | 7.5% | ✅ |
+| Supporting Modules | SUPP | 8 | 6.0% | ✅ |
+| Batch Evaluation | BATCH | 8 | 6.0% | ✅ |
 
 ## Visual Distribution
 
 ```
-DIM                       ██████████  26 ( 20.0%)
-ACCUM                     ████████  22 ( 16.9%)
-EXPR                      ███████  20 ( 15.4%)
-LATT                      █████  14 ( 10.8%)
-RESULT                    █████  13 ( 10.0%)
-Foundation Concepts - Pre ███  10 (  7.7%)
-POLICY                    ███  10 (  7.7%)
-BATCH                     ███   8 (  6.2%)
-SUPP                      ██   7 (  5.4%)
+Dimension Model           █████████  26 ( 19.5%)
+Accumulator Engine        ████████  23 ( 17.3%)
+Expression Rules Engine   ███████  21 ( 15.8%)
+Accumulator Lattice & Res █████  14 ( 10.5%)
+Expression Engine Results ████  13 (  9.8%)
+Foundation Concepts       ███  10 (  7.5%)
+Hit Policies              ███  10 (  7.5%)
+Supporting Modules        ███   8 (  6.0%)
+Batch Evaluation          ███   8 (  6.0%)
 ```
 
 ## Balance Analysis
@@ -42,9 +42,9 @@ All categories are under the 30% threshold. Good balance!
 
 ## Category Details
 
-### DIM (DIM)
+### Dimension Model (DIM)
 
-**Count**: 26 concepts (20.0%)
+**Count**: 26 concepts (19.5%)
 
 **Concepts**:
 
@@ -65,9 +65,9 @@ All categories are under the 30% threshold. Good balance!
 - 25. CONTEXT_KEY Role
 - *...and 11 more*
 
-### ACCUM (ACCUM)
+### Accumulator Engine (ACCUM)
 
-**Count**: 22 concepts (16.9%)
+**Count**: 23 concepts (17.3%)
 
 **Concepts**:
 
@@ -86,11 +86,11 @@ All categories are under the 30% threshold. Good balance!
 - 71. Get Prime Function
 - 72. Checked Multiply
 - 73. Anchor Creation
-- *...and 7 more*
+- *...and 8 more*
 
-### EXPR (EXPR)
+### Expression Rules Engine (EXPR)
 
-**Count**: 20 concepts (15.4%)
+**Count**: 21 concepts (15.8%)
 
 **Concepts**:
 
@@ -109,11 +109,11 @@ All categories are under the 30% threshold. Good balance!
 - 43. Single-Pass Evaluation
 - 44. Context Binding Phase
 - 45. Dimension Expression Phase
-- *...and 5 more*
+- *...and 6 more*
 
-### LATT (LATT)
+### Accumulator Lattice & Results (LATT)
 
-**Count**: 14 concepts (10.8%)
+**Count**: 14 concepts (10.5%)
 
 **Concepts**:
 
@@ -132,9 +132,9 @@ All categories are under the 30% threshold. Good balance!
 - 126. Lattice Is Composed
 - 127. Aggregate Min Max Product
 
-### RESULT (RESULT)
+### Expression Engine Results (RESULT)
 
-**Count**: 13 concepts (10.0%)
+**Count**: 13 concepts (9.8%)
 
 **Concepts**:
 
@@ -152,9 +152,9 @@ All categories are under the 30% threshold. Good balance!
 - 110. Engine-Level Explain
 - 111. RuleResult Select Method
 
-### Foundation Concepts - Prerequisites (FOUND)
+### Foundation Concepts (FOUND)
 
-**Count**: 10 concepts (7.7%)
+**Count**: 10 concepts (7.5%)
 
 **Concepts**:
 
@@ -169,9 +169,9 @@ All categories are under the 30% threshold. Good balance!
 - 9. Mountainash Relations
 - 10. Context Object
 
-### POLICY (POLICY)
+### Hit Policies (POLICY)
 
-**Count**: 10 concepts (7.7%)
+**Count**: 10 concepts (7.5%)
 
 **Concepts**:
 
@@ -186,9 +186,24 @@ All categories are under the 30% threshold. Good balance!
 - 107. HitPolicyViolationError
 - 108. Cardinality Application
 
-### BATCH (BATCH)
+### Supporting Modules (SUPP)
 
-**Count**: 8 concepts (6.2%)
+**Count**: 8 concepts (6.0%)
+
+**Concepts**:
+
+- 87. Aggregate Model
+- 88. Partition Key Filtering
+- 89. Build All Partitions
+- 90. Apply Auto Selection
+- 128. LatticeIndex Router
+- 129. AmbiguousPartitionError
+- 130. EXACT_KEY Partition Routing
+- 131. Backend Purity Enforcement
+
+### Batch Evaluation (BATCH)
+
+**Count**: 8 concepts (6.0%)
 
 **Concepts**:
 
@@ -201,23 +216,9 @@ All categories are under the 30% threshold. Good balance!
 - 118. Chunked Batch Evaluation
 - 119. For Context Accessor
 
-### SUPP (SUPP)
-
-**Count**: 7 concepts (5.4%)
-
-**Concepts**:
-
-- 87. Aggregate Model
-- 88. Partition Key Filtering
-- 89. Build All Partitions
-- 90. Apply Auto Selection
-- 128. LatticeIndex Router
-- 129. AmbiguousPartitionError
-- 130. EXACT_KEY Partition Routing
-
 ## Recommendations
 
-- ✅ **Excellent balance**: Categories are evenly distributed (spread: 14.6%)
+- ✅ **Excellent balance**: Categories are evenly distributed (spread: 13.5%)
 - ✅ **MISC category minimal**: Good categorization specificity
 
 ### Educational Use Recommendations
@@ -230,4 +231,4 @@ All categories are under the 30% threshold. Good balance!
 
 ---
 
-*Report generated by learning-graph-reports/taxonomy_distribution.py*
+*Report generated by ibook graph taxonomy-report*
