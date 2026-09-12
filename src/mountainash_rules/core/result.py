@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import typing as t
+from dataclasses import replace
 
 import mountainash.expressions as ma
 from mountainash.relations import relation
@@ -12,7 +13,12 @@ from mountainash_rules.core.hit_policy import (
     SelectionInfo,
     apply_cardinality,
     check_assertions,
+    check_policy_config,
+    check_priority,
+    normalize_policy,
     ordering_keys,
+    selection_is_truncated,
+    validate_priority_field,
 )
 
 
@@ -23,7 +29,7 @@ class RuleResult:
     - Original rule columns (passed through unchanged)
     - __t_{dim_name} columns: ternary values (1=match, 0=unknown, -1=non-match)
     - __specificity: count of hard matches (TRUE=1 values)
-    - __rank: 1-based ranking by specificity descending
+    - __rank: 1-based applied-policy rank, assigned before caller filters
 
     All accessors are backend-agnostic — they reach the DataFrame only through
     mountainash.relations.Relation. The `survivors` property returns the native
@@ -41,29 +47,33 @@ class RuleResult:
         self._selection_info = selection_info
 
     def select(
-        self, policy: HitPolicy, priority_field: str | None = None
+        self, policy: HitPolicy | str, priority_field: str | None = None
     ) -> "RuleResult":
-        """Re-apply a hit policy over an untruncated COLLECT result."""
+        """Re-apply a policy only when the full candidate basis is retained."""
+        policy = normalize_policy(policy)
+        validate_priority_field(priority_field)
         info = self._selection_info
         if info is None:
             raise ValueError(
-                "select() requires a result produced by evaluate() with "
-                "metadata (no selection info available)"
+                "select() requires selection information; re-evaluate "
+                "with the engine before selecting another policy"
             )
         if info.truncated:
             raise ValueError(
-                "select() on a truncated result (top_n/min_specificity was "
-                "applied); re-evaluate without truncation instead"
+                "select() on a possibly truncated result (filters or cardinality "
+                "were applied); re-evaluate the complete candidate set instead"
             )
         rel = relation(self._df)
-        for required in ("__specificity", "__rule_index"):
+        for required in ("__rank", "__specificity", "__rule_index"):
             if required not in rel.columns:
                 raise ValueError(f"select() requires the {required} column")
-        pf = priority_field or info.priority_field
+        pf = priority_field if priority_field is not None else info.priority_field
+        info = replace(info, priority_field=pf)
+        check_policy_config(rel.columns, policy, info)
+        check_priority(rel, policy, info)
         keys = ordering_keys(policy, pf)
         rel = (
-            rel
-            .sort(*[k for k, _ in keys], descending=[d for _, d in keys])
+            rel.sort(*[k for k, _ in keys], descending=[d for _, d in keys])
             .drop("__rank")
             .with_row_index(name="__rank")
             .with_columns(ma.col("__rank").add(ma.lit(1)).alias("__rank"))
@@ -71,14 +81,14 @@ class RuleResult:
         check_assertions(rel, policy, info)
         rel = apply_cardinality(rel, policy)
         return RuleResult(
-            dataframe=rel.collect(),
+            dataframe=rel.sort("__rank").collect(),
             active_dimensions=self._active_dimensions,
-            selection_info=info,
+            selection_info=replace(info, truncated=selection_is_truncated(policy)),
         )
 
     @property
     def survivors(self) -> t.Any:
-        """All surviving rules, ranked by specificity descending.
+        """Retained rules in applied-policy rank order, not necessarily all candidates.
 
         Returns the native DataFrame in the same backend as the input.
         """
@@ -86,8 +96,8 @@ class RuleResult:
 
     @property
     def best_match(self) -> t.Any:
-        """The single most specific surviving rule."""
-        return relation(self._df).head(1).collect()
+        """The retained rule with minimum applied-policy rank, or an empty frame."""
+        return relation(self._df).sort("__rank").head(1).collect()
 
     @property
     def count(self) -> int:
@@ -112,16 +122,11 @@ class RuleResult:
             KeyError: If the rule_name is not found in survivors.
         """
         rel = (
-            relation(self._df)
-            .filter(ma.col("rule_name").eq(ma.lit(rule_name)))
-            .head(1)
+            relation(self._df).filter(ma.col("rule_name").eq(ma.lit(rule_name))).head(1)
         )
         if rel.count_rows() == 0:
             raise KeyError(f"Rule '{rule_name}' not found in survivors")
-        return {
-            dim: rel.item(f"__t_{dim}")
-            for dim in self._active_dimensions
-        }
+        return {dim: rel.item(f"__t_{dim}") for dim in self._active_dimensions}
 
     def at_least(self, n: int) -> t.Any:
         """Return survivors with specificity >= n.
@@ -133,9 +138,7 @@ class RuleResult:
             Filtered DataFrame in the same backend as the input.
         """
         return (
-            relation(self._df)
-            .filter(ma.col("__specificity").ge(ma.lit(n)))
-            .collect()
+            relation(self._df).filter(ma.col("__specificity").ge(ma.lit(n))).collect()
         )
 
 
@@ -171,7 +174,5 @@ class ExplainResult:
     @property
     def non_survivors(self) -> t.Any:
         return (
-            relation(self._df)
-            .filter(ma.col("__survived").eq(ma.lit(False)))
-            .collect()
+            relation(self._df).filter(ma.col("__survived").eq(ma.lit(False))).collect()
         )
