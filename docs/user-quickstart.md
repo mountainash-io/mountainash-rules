@@ -204,10 +204,16 @@ result = engine.evaluate(context, include_observability=False)
 
 ### Context with missing fields
 
-If a context field is `None` or absent, it is treated as `NOT_SET` — the rule engine will score that dimension as 0 (wildcard) for every rule. The rule is not eliminated; it just gets no specificity credit from that dimension.
+For metadata-backed evaluation, an absent field or `None` binds to the datatype's NOT_SET sentinel; Boolean absence uses null instead of a string marker. Single, batch and chunked evaluation use the same matching semantics. Explicit UNKNOWN and NOT_SET markers remain distinct stored values. `False`, zero and an empty string are concrete inputs.
+
+Ordinary comparisons and string predicates treat unavailable context as ternary 0: the rule may survive, but that dimension earns no specificity. In particular, PREFIX, SUFFIX, CONTAINS and per-row REGEX never match the spelling of a missing-value marker.
+
+Strict strategies differ: `CONTEXT_REGEX` rejects unavailable context with -1, even when its pattern would match `<NOT_SET>` or empty text. A concrete empty string is tested against the pattern normally. `EXACT_KEY` accepts only authored rule-side wildcards when context is unavailable; concrete partition keys do not match missing input. Unknown in another dimension never rescues a known non-match.
+
+The expressions-only constructor has no datatype metadata and retains string NOT_SET binding; custom expressions own its interpretation.
 
 ```python
-# Context missing 'tier' — all rules that don't require a specific tier survive
+# Context missing 'tier' — this ordinary EXACT dimension cannot eliminate rules
 result = engine.evaluate({"region": "AU", "spend": 1500})
 # tier dimension scores 0 for all rules; premium_au and standard_au still survive
 # because their tier wildcard is also 0 — no rule is eliminated on this dimension

@@ -15,7 +15,10 @@ from mountainash_rules.core.constants import (
     unknown_sentinel_for,
 )
 from mountainash_rules.core.dimension import Dimension, DimensionsMetadata
-from mountainash_rules.core.set_wildcard import normalize_set_expr, set_wildcard_predicate
+from mountainash_rules.core.set_wildcard import (
+    normalize_set_expr,
+    set_wildcard_predicate,
+)
 
 
 class DimensionCompiler:
@@ -25,7 +28,9 @@ class DimensionCompiler:
     that the engine populates at evaluation time.
     """
 
-    def compile_dimensions(self, metadata: DimensionsMetadata) -> dict[str, BaseExpressionAPI]:
+    def compile_dimensions(
+        self, metadata: DimensionsMetadata
+    ) -> dict[str, BaseExpressionAPI]:
         """Compile all dimensions in a metadata set to expression templates."""
         return {
             dim.dimension_name: self.compile_dimension(dim)
@@ -76,26 +81,23 @@ class DimensionCompiler:
         """Rule-side-wildcard-only exact match (partition-key routing).
 
         Only the rule side has a wildcard (UNKNOWN sentinel; null for
-        bool). A context-side sentinel is an ordinary non-matching value:
+        bool). A context-side sentinel is non-concrete:
         specific keys must never match an unknown/unset context.
         """
         rule_col = ma.col(dim.resolved_rule_field)
         ctx_col = ma.col(CTX_PREFIX + dim.dimension_name)
         if dim.data_type is DataType.BOOL:
-            # Bool: rule null is the wildcard (checked above), unlike other
-            # data types the rule-side wildcard has no sentinel value to
-            # compare against. The equality check below then compares
-            # rule_col and ctx_col as native Booleans directly (both are
-            # true/false/null here, never the string sentinels) — there is
-            # no stringification involved for this data type.
+            # Boolean keys use null as their only wildcard representation.
             wildcard = rule_col.is_null()
         else:
-            wildcard = rule_col.__eq__(
-                ma.lit(unknown_sentinel_for(dim.data_type))
-            )
+            wildcard = rule_col.__eq__(ma.lit(unknown_sentinel_for(dim.data_type)))
         return (
-            ma.when(wildcard).then(0)
-            .when(rule_col.__eq__(ctx_col)).then(1)
+            ma.when(wildcard)
+            .then(0)
+            .when(self._context_is_nonconcrete(dim))
+            .then(-1)
+            .when(rule_col.__eq__(ctx_col))
+            .then(1)
             .otherwise(-1)
         )
 
@@ -113,11 +115,7 @@ class DimensionCompiler:
         ctx_col = ma.col(CTX_PREFIX + dim.dimension_name)
         either_null = rule_col.is_null().__or__(ctx_col.is_null())
         compared = getattr(rule_col, op_name)(ctx_col)
-        return (
-            ma.when(either_null).then(0)
-            .when(compared).then(1)
-            .otherwise(-1)
-        )
+        return ma.when(either_null).then(0).when(compared).then(1).otherwise(-1)
 
     def _compile_greater_than(self, dim: Dimension) -> BaseExpressionAPI:
         sentinels = sentinels_for(dim.data_type)
@@ -149,19 +147,29 @@ class DimensionCompiler:
 
         return lower.t_and(upper)
 
+    def _context_is_nonconcrete(self, dim: Dimension) -> BaseExpressionAPI:
+        """Context nulls and reserved markers cannot satisfy a concrete predicate."""
+        ctx_col = ma.col(CTX_PREFIX + dim.dimension_name)
+        missing = ctx_col.is_null()
+        if dim.data_type is not DataType.BOOL:
+            for sentinel in sentinels_for(dim.data_type):
+                missing = missing | ctx_col.eq(ma.lit(sentinel))
+        return missing
+
     def _compile_string_match(self, dim: Dimension, op_name: str) -> BaseExpressionAPI:
         """Shared wrapper for PREFIX/SUFFIX/CONTAINS/REGEX.
 
         Wraps a boolean-returning string operation in a sentinel-aware
-        ternary expression: unknown rule → 0, match → 1, no-match → -1.
+        ternary expression: unknown rule/context → 0, match → 1, no-match → -1.
         """
         rule_col = ma.col(dim.resolved_rule_field)
         ctx_col = ma.col(CTX_PREFIX + dim.dimension_name)
-        rule_is_sentinel = (
-            rule_col.__eq__(ma.lit(UNKNOWN)) | rule_col.__eq__(ma.lit(NOT_SET))
+        rule_is_sentinel = rule_col.__eq__(ma.lit(UNKNOWN)) | rule_col.__eq__(
+            ma.lit(NOT_SET)
         )
         match = getattr(ctx_col.str, op_name)(rule_col)
-        return ma.when(rule_is_sentinel).then(0).when(match).then(1).otherwise(-1)
+        unknown = rule_is_sentinel | self._context_is_nonconcrete(dim)
+        return ma.when(unknown).then(0).when(match).then(1).otherwise(-1)
 
     def _compile_prefix(self, dim: Dimension) -> BaseExpressionAPI:
         return self._compile_string_match(dim, "starts_with")
@@ -175,8 +183,8 @@ class DimensionCompiler:
     def _compile_regex_per_row(self, dim: Dimension) -> BaseExpressionAPI:
         """Per-row REGEX: the rule column holds the pattern for each rule.
 
-        Sentinel patterns act as don't-care (0); otherwise search semantics
-        against the context value per rule row.
+        Sentinel patterns or non-concrete contexts act as don't-care (0);
+        otherwise search semantics apply against the context per rule row.
 
         mountainash's regex_contains only accepts a literal pattern, so this
         uses a Polars-native expression pending upstream support for
@@ -190,34 +198,45 @@ class DimensionCompiler:
         rule_field = dim.resolved_rule_field
         ctx_name = CTX_PREFIX + dim.dimension_name
         rule_col = ma.col(rule_field)
-        rule_is_sentinel = (
-            rule_col.__eq__(ma.lit(UNKNOWN)) | rule_col.__eq__(ma.lit(NOT_SET))
+        rule_is_sentinel = rule_col.__eq__(ma.lit(UNKNOWN)) | rule_col.__eq__(
+            ma.lit(NOT_SET)
         )
         match = ma.native(pl.col(ctx_name).str.contains(pl.col(rule_field)))
-        return ma.when(rule_is_sentinel).then(0).when(match).then(1).otherwise(-1)
+        unknown = rule_is_sentinel | self._context_is_nonconcrete(dim)
+        return ma.when(unknown).then(0).when(match).then(1).otherwise(-1)
 
     def _compile_context_regex(self, dim: Dimension) -> BaseExpressionAPI:
         """CONTEXT_REGEX dimensions use a literal pattern from metadata.
 
         All rules in the engine share the same ternary outcome for a
         CONTEXT_REGEX dimension — it acts as a global context validator.
-        There is no unknown state because the pattern is fixed at metadata
-        time.
+        There is no unknown state: non-concrete context fails the guard,
+        regardless of whether the pattern matches the marker's spelling.
         """
         ctx_col = ma.col(CTX_PREFIX + dim.dimension_name)
         match = ctx_col.str.regex_contains(dim.regex_pattern)
-        return ma.when(match).then(1).otherwise(-1)
+        return (
+            ma.when(self._context_is_nonconcrete(dim))
+            .then(-1)
+            .when(match)
+            .then(1)
+            .otherwise(-1)
+        )
 
     def _compile_set_membership(self, dim: Dimension) -> BaseExpressionAPI:
         """SET_MEMBERSHIP: context value in the rule list; wildcard rule -> ternary 0."""
         rule_col = normalize_set_expr(dim, ma.col(dim.resolved_rule_field))
-        ctx_col = ma.t_col(CTX_PREFIX + dim.dimension_name, unknown=sentinels_for(dim.data_type))
+        ctx_col = ma.t_col(
+            CTX_PREFIX + dim.dimension_name, unknown=sentinels_for(dim.data_type)
+        )
         is_wild = set_wildcard_predicate(dim, rule_col)
         return ma.when(is_wild).then(0).otherwise(ctx_col.t_is_in(rule_col))
 
     def _compile_set_exclusion(self, dim: Dimension) -> BaseExpressionAPI:
         """SET_EXCLUSION: context value NOT in the rule list; wildcard rule -> ternary 0."""
         rule_col = normalize_set_expr(dim, ma.col(dim.resolved_rule_field))
-        ctx_col = ma.t_col(CTX_PREFIX + dim.dimension_name, unknown=sentinels_for(dim.data_type))
+        ctx_col = ma.t_col(
+            CTX_PREFIX + dim.dimension_name, unknown=sentinels_for(dim.data_type)
+        )
         is_wild = set_wildcard_predicate(dim, rule_col)
         return ma.when(is_wild).then(0).otherwise(ctx_col.t_is_not_in(rule_col))

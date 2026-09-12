@@ -75,6 +75,8 @@ print(result.explain("fallback"))    # {"region": 0, "spend": 0} — both wildca
 
 Wildcard values (`<NA>` for strings, `-999999999` for numerics, and typed date/datetime sentinels) produce an UNKNOWN result — the rule is not eliminated but scores lower on specificity.
 
+Missing context and explicit context sentinels earn no specificity in ordinary predicates, including PREFIX/SUFFIX/CONTAINS/per-row REGEX. Boolean absence is null, never a string marker. Strict `CONTEXT_REGEX` guards reject missing input; `EXACT_KEY` permits only rule-side wildcards against missing context. See [missing-context semantics](docs/user-quickstart.md#context-with-missing-fields).
+
 ## Hit Policies
 
 How many survivors come back, and in what order, is a **hit policy** (DMN-aligned, `HitPolicy` enum): `collect` (default — all survivors ranked by specificity), `unique` (exactly one or `HitPolicyViolationError`), `first` / `rule_order` (rule-definition order), `priority` (rank by a priority column), `any` (all survivors must agree on outputs). Set it on `DimensionsMetadata`, per `evaluate()` call, or re-select post-hoc with `result.select(policy)`.
