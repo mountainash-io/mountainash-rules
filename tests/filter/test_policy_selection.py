@@ -216,8 +216,9 @@ def test_possibly_lossy_results_refuse_reselection(options):
             **batch_options,
         )
         for cid in (0, 99):
+            context_result = batch.for_context(cid)
             with pytest.raises(ValueError):
-                batch.for_context(cid).select("unique")
+                context_result.select("unique")
 
 
 def test_complete_selection_chains_keep_assertions_and_loss_guards():
@@ -245,8 +246,9 @@ def test_complete_selection_chains_keep_assertions_and_loss_guards():
     )
     for context in ({"region": "AU"}, {"region": "NZ"}):
         for policy in ("first", "any"):
+            selected = singleton.evaluate(context, hit_policy=policy)
             with pytest.raises(ValueError):
-                singleton.evaluate(context, hit_policy=policy).select("collect")
+                selected.select("collect")
 
 
 def test_surviving_null_priority_rejected_before_filters(backend_name):
@@ -266,16 +268,18 @@ def test_surviving_null_priority_rejected_before_filters(backend_name):
             min_specificity=1,
             top_n=1,
         )
+    batch_contexts = pl.DataFrame({"region": ["AU"]})
     with pytest.raises(ValueError):
         engine.evaluate_batch(
-            pl.DataFrame({"region": ["AU"]}),
+            batch_contexts,
             hit_policy="priority",
             priority_field="salience",
             min_specificity=1,
             top_n_per_context=1,
         )
+    evaluated = engine.evaluate({"region": "AU"})
     with pytest.raises(ValueError):
-        engine.evaluate({"region": "AU"}).select("priority", priority_field="salience")
+        evaluated.select("priority", priority_field="salience")
     valid = _engine(
         {
             "rule_name": ["unmatched", "winner"],
@@ -293,18 +297,15 @@ def test_surviving_null_priority_rejected_before_filters(backend_name):
 
 @pytest.mark.parametrize("fields", [["price", "missing"], ["price", "price"], [""]])
 def test_declared_output_errors_are_not_hidden_by_empty_rules(fields):
+    metadata = DimensionsMetadata(
+        dimensions=[Dimension(dimension_name="region")], output_fields=fields
+    )
     for rules in (
         pl.DataFrame({"region": ["AU"], "price": [1]}),
         pl.DataFrame(schema={"region": pl.String, "price": pl.Int64}),
     ):
         with pytest.raises(ValueError):
-            ExpressionRulesEngine(
-                rules,
-                DimensionsMetadata(
-                    dimensions=[Dimension(dimension_name="region")],
-                    output_fields=fields,
-                ),
-            )
+            ExpressionRulesEngine(rules, metadata)
 
 
 def test_expression_output_schema_is_explicit_and_constructor_only():
@@ -327,28 +328,27 @@ def test_expression_output_schema_is_explicit_and_constructor_only():
         == 1
     )
     assert explicit.evaluate({"region": "AU"}).select("any").count == 1
+    empty_contexts = pl.DataFrame(schema={"region": pl.String})
     for data in (rules, rules.head(0)):
         engine = ExpressionRulesEngine(data, dimension_expressions=expressions)
         with pytest.raises(ValueError):
             engine.evaluate({"region": "AU"}, hit_policy="any")
         with pytest.raises(ValueError):
-            engine.evaluate_batch(
-                pl.DataFrame(schema={"region": pl.String}), hit_policy="any"
-            )
+            engine.evaluate_batch(empty_contexts, hit_policy="any")
+        evaluated = engine.evaluate({"region": "AU"})
         with pytest.raises(ValueError):
-            engine.evaluate({"region": "AU"}).select("any")
+            evaluated.select("any")
     for invalid in ([], ["missing"], ["price", "price"], [None], "price"):
         with pytest.raises(ValueError):
             ExpressionRulesEngine(
                 rules, dimension_expressions=expressions, output_fields=invalid
             )
+    metadata_without_outputs = DimensionsMetadata(
+        dimensions=[Dimension(dimension_name="region")]
+    )
     for fields in ([], ["price"]):
         with pytest.raises(ValueError):
-            ExpressionRulesEngine(
-                rules,
-                DimensionsMetadata(dimensions=[Dimension(dimension_name="region")]),
-                output_fields=fields,
-            )
+            ExpressionRulesEngine(rules, metadata_without_outputs, output_fields=fields)
 
 
 def test_metadata_without_outputs_compares_cardinality_per_context(backend_name):
@@ -363,8 +363,9 @@ def test_metadata_without_outputs_compares_cardinality_per_context(backend_name)
         assert engine.evaluate_batch(contexts, hit_policy="any").count == count
     with pytest.raises(ValueError):
         engine.evaluate({}, hit_policy="any")
+    null_contexts = pl.DataFrame({"region": [None]})
     with pytest.raises(ValueError):
-        engine.evaluate_batch(pl.DataFrame({"region": [None]}), hit_policy="any")
+        engine.evaluate_batch(null_contexts, hit_policy="any")
 
 
 @pytest.mark.parametrize("policy", ["uniqe", "COLLECT", "", [], {}, 7, True])
@@ -372,26 +373,30 @@ def test_invalid_policies_never_fall_back_to_collect(policy):
     engine = _engine()
     with pytest.raises(ValueError):
         engine.evaluate({"region": "AU"}, hit_policy=policy)
+    batch_contexts = pl.DataFrame({"region": ["AU"]})
     with pytest.raises(ValueError):
-        engine.evaluate_batch(pl.DataFrame({"region": ["AU"]}), hit_policy=policy)
+        engine.evaluate_batch(batch_contexts, hit_policy=policy)
+    evaluated = engine.evaluate({"region": "AU"})
     with pytest.raises(ValueError):
-        engine.evaluate({"region": "AU"}).select(policy)
+        evaluated.select(policy)
 
 
 def test_priority_configuration_and_select_none_are_explicit():
     engine = _engine(priority_field="salience")
+    batch_contexts = pl.DataFrame({"region": ["AU"]})
     for priority in ("", False, 5):
         with pytest.raises(ValueError):
             engine.evaluate({"region": "AU"}, priority_field=priority)
         with pytest.raises(ValueError):
-            engine.evaluate_batch(
-                pl.DataFrame({"region": ["AU"]}), priority_field=priority
-            )
+            engine.evaluate_batch(batch_contexts, priority_field=priority)
+        evaluated = engine.evaluate({"region": "AU"})
         with pytest.raises(ValueError):
-            engine.evaluate({"region": "AU"}).select("collect", priority_field=priority)
+            evaluated.select("collect", priority_field=priority)
+    evaluated_default = engine.evaluate({"region": "AU"})
     with pytest.raises(ValueError):
-        engine.evaluate({"region": "AU"}).select(None)
+        evaluated_default.select(None)
     empty = _engine({"rule_name": ["r"], "region": ["NZ"]})
+    empty_contexts = pl.DataFrame(schema={"region": pl.String})
     for priority in (None, "missing"):
         with pytest.raises(ValueError):
             empty.evaluate(
@@ -399,9 +404,7 @@ def test_priority_configuration_and_select_none_are_explicit():
             )
         with pytest.raises(ValueError):
             empty.evaluate_batch(
-                pl.DataFrame(schema={"region": pl.String}),
-                hit_policy="priority",
-                priority_field=priority,
+                empty_contexts, hit_policy="priority", priority_field=priority
             )
 
 
@@ -442,10 +445,9 @@ def test_assertions_precede_every_output_reduction(policy, filters):
         ("top_n_per_context" if key == "top_n" else key): value
         for key, value in filters.items()
     }
+    batch_contexts = pl.DataFrame({"region": ["AU"]})
     with pytest.raises(HitPolicyViolationError):
-        engine.evaluate_batch(
-            pl.DataFrame({"region": ["AU"]}), hit_policy=policy, **options
-        )
+        engine.evaluate_batch(batch_contexts, hit_policy=policy, **options)
 
 
 def test_output_inference_uses_full_physical_metadata_not_active_projection():
@@ -501,20 +503,23 @@ def test_manual_results_require_truthful_selection_state():
             "__rule_index": [0, 1],
         }
     )
+    no_selection_info = RuleResult(frame, ["region"])
     with pytest.raises(ValueError):
-        RuleResult(frame, ["region"]).select("first")
+        no_selection_info.select("first")
+    active_dims_result = RuleResult(
+        frame, ["region"], SelectionInfo(("region",), None, (), False, True)
+    )
     with pytest.raises(ValueError):
-        RuleResult(
-            frame, ["region"], SelectionInfo(("region",), None, (), False, True)
-        ).select("any")
+        active_dims_result.select("any")
     explicit = RuleResult(
         frame, ["region"], SelectionInfo((), None, ("price",), False, True)
     )
     assert explicit.select("any").count == 1
     for field in ("__rank", "__specificity", "__rule_index"):
+        missing_field_result = RuleResult(
+            frame.drop(field),
+            ["region"],
+            SelectionInfo((), None, ("price",), False, True),
+        )
         with pytest.raises(ValueError):
-            RuleResult(
-                frame.drop(field),
-                ["region"],
-                SelectionInfo((), None, ("price",), False, True),
-            ).select("first")
+            missing_field_result.select("first")

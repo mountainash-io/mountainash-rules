@@ -91,13 +91,12 @@ class ExpressionRulesEngine:
         ):
             raise ValueError("output_fields must be a nonempty list of field names")
         self._rule_columns = relation(rules).columns
-        declared = (
-            dimension_metadata.output_fields
-            if dimension_metadata is not None
-            else output_fields
-            if output_fields is not None
-            else []
-        )
+        if dimension_metadata is not None:
+            declared = dimension_metadata.output_fields
+        elif output_fields is not None:
+            declared = output_fields
+        else:
+            declared = []
         self._output_fields = validate_output_fields(declared, self._rule_columns)
         self._expressions: dict[str, BaseExpressionAPI]
         self._metadata: DimensionsMetadata | None
@@ -321,56 +320,31 @@ class ExpressionRulesEngine:
         for dim_name in active_dims:
             if dim_name not in all_dim_names:
                 raise KeyError(f"Dimension '{dim_name}' not found in expressions")
-        hit_policy, info = self._selection_config(
+        selection = self._selection_config(
             hit_policy, priority_field, include_observability
         )
+        selected_policy, info = selection
 
         prepared = self._prepare_contexts(contexts, active_dims, context_id_field)
         if chunk_size is None:
             result_df = self._evaluate_batch_frame(
                 prepared,
                 active_dims,
-                hit_policy,
+                selected_policy,
                 info,
                 top_n_per_context,
                 min_specificity,
                 include_observability,
             )
         else:
-            prepared_pl = prepared.to_polars()
-            frames = []
-            violations: list[HitPolicyViolationError] = []
-            for start in range(0, len(prepared_pl), chunk_size):
-                chunk = prepared_pl.slice(start, chunk_size)
-                try:
-                    frames.append(
-                        self._evaluate_batch_frame(
-                            relation(chunk),
-                            active_dims,
-                            hit_policy,
-                            info,
-                            top_n_per_context,
-                            min_specificity,
-                            include_observability,
-                        )
-                    )
-                except HitPolicyViolationError as exc:
-                    violations.append(exc)
-            if violations:
-                combined = concat([relation(v.offending) for v in violations]).sort(
-                    "__context_id"
-                )
-                ids = combined.to_dict()["__context_id"]
-                raise HitPolicyViolationError(
-                    hit_policy,
-                    combined.collect(),
-                    f"hit_policy={hit_policy.value} violated for context ids {ids[:20]}"
-                    + (" (truncated)" if len(ids) > 20 else ""),
-                )
-            result_df = (
-                concat([relation(f) for f in frames])
-                .sort("__context_id", "__rank")
-                .collect()
+            result_df = self._evaluate_batch_chunked(
+                prepared,
+                active_dims,
+                selection,
+                chunk_size,
+                top_n_per_context=top_n_per_context,
+                min_specificity=min_specificity,
+                include_observability=include_observability,
             )
         return BatchRuleResult(
             dataframe=result_df,
@@ -379,9 +353,58 @@ class ExpressionRulesEngine:
             selection_info=dataclasses.replace(
                 info,
                 truncated=selection_is_truncated(
-                    hit_policy, top_n_per_context, min_specificity
+                    selected_policy, top_n_per_context, min_specificity
                 ),
             ),
+        )
+
+    def _evaluate_batch_chunked(
+        self,
+        prepared: t.Any,
+        active_dims: list[str],
+        selection: tuple[HitPolicy, SelectionInfo],
+        chunk_size: int,
+        *,
+        top_n_per_context: int | None,
+        min_specificity: int | None,
+        include_observability: bool,
+    ) -> t.Any:
+        """Evaluate prepared contexts in row-count chunks.
+
+        Runs each chunk through `_evaluate_batch_frame` independently, deferring
+        any HitPolicyViolationError until every chunk has been evaluated so the
+        combined, sorted offending set (not just the first chunk's) is reported.
+        """
+        hit_policy, info = selection
+        prepared_pl = prepared.to_polars()
+        frames = []
+        violations: list[HitPolicyViolationError] = []
+        for start in range(0, len(prepared_pl), chunk_size):
+            chunk = prepared_pl.slice(start, chunk_size)
+            try:
+                frames.append(
+                    self._evaluate_batch_frame(
+                        relation(chunk),
+                        active_dims,
+                        hit_policy,
+                        info,
+                        top_n_per_context,
+                        min_specificity,
+                        include_observability,
+                    )
+                )
+            except HitPolicyViolationError as exc:
+                violations.append(exc)
+        if violations:
+            combined = concat([relation(v.offending) for v in violations]).sort(
+                "__context_id"
+            )
+            ids = combined.to_dict()["__context_id"]
+            self._raise_batch_violation(hit_policy, combined.collect(), ids)
+        return (
+            concat([relation(f) for f in frames])
+            .sort("__context_id", "__rank")
+            .collect()
         )
 
     def _conform_to_rules_backend(self, prepared: t.Any) -> t.Any:
@@ -456,48 +479,7 @@ class ExpressionRulesEngine:
         )
         joined = joined.drop("__global_idx", "__grp_base")
 
-        # Assertions over full per-context survivor sets (pre-truncation)
-        if hit_policy == HitPolicy.UNIQUE:
-            offenders = (
-                joined.group_by("__context_id")
-                .agg(ma.col("__rank").count().alias("__n"))
-                .filter(ma.col("__n").gt(ma.lit(1)))
-            )
-            if offenders.count_rows() > 0:
-                ids = offenders.to_dict()["__context_id"]
-                raise HitPolicyViolationError(
-                    hit_policy,
-                    offenders.collect(),
-                    f"hit_policy=unique violated for context ids "
-                    f"{sorted(ids)[:20]}" + (" (truncated)" if len(ids) > 20 else ""),
-                )
-        elif hit_policy == HitPolicy.ANY:
-            outputs = default_output_fields(joined.columns, info)
-            comparison = (
-                joined.select(
-                    ma.col("__context_id"), *[ma.col(c) for c in outputs]
-                ).unique()
-                if outputs
-                else joined
-            )
-            disagree = (
-                comparison.group_by("__context_id")
-                .agg(ma.col("__context_id").count().alias("__n"))
-                .filter(ma.col("__n").gt(ma.lit(1)))
-            )
-            if disagree.count_rows() > 0:
-                if not outputs:
-                    raise ValueError(
-                        "hit_policy=any requires nonempty output_fields "
-                        "when more than one rule survives a context"
-                    )
-                ids = disagree.to_dict()["__context_id"]
-                raise HitPolicyViolationError(
-                    hit_policy,
-                    disagree.collect(),
-                    f"hit_policy=any violated for context ids {sorted(ids)[:20]}"
-                    + (" (truncated)" if len(ids) > 20 else ""),
-                )
+        self._assert_batch_policy(joined, hit_policy, info)
 
         if min_specificity is not None:
             joined = joined.filter(ma.col("__specificity").ge(ma.lit(min_specificity)))
@@ -527,6 +509,59 @@ class ExpressionRulesEngine:
         if not include_observability:
             drop_cols += [f"__t_{d}" for d in active_dims]
         return joined.drop(*drop_cols).sort("__context_id", "__rank").collect()
+
+    @staticmethod
+    def _raise_batch_violation(
+        hit_policy: HitPolicy, offending: t.Any, ids: t.Sequence[t.Any]
+    ) -> t.NoReturn:
+        """Raise HitPolicyViolationError with a bounded, sorted context-id list."""
+        sorted_ids = sorted(ids)
+        message = (
+            f"hit_policy={hit_policy.value} violated for context ids "
+            f"{sorted_ids[:20]}"
+        )
+        if len(sorted_ids) > 20:
+            message += " (truncated)"
+        raise HitPolicyViolationError(hit_policy, offending, message)
+
+    def _assert_batch_policy(
+        self, joined: t.Any, hit_policy: HitPolicy, info: SelectionInfo
+    ) -> None:
+        """Enforce UNIQUE/ANY hit-policy assertions over full per-context survivor sets.
+
+        Runs pre-truncation, over the complete survivor set for every context.
+        """
+        if hit_policy == HitPolicy.UNIQUE:
+            offenders = (
+                joined.group_by("__context_id")
+                .agg(ma.col("__rank").count().alias("__n"))
+                .filter(ma.col("__n").gt(ma.lit(1)))
+            )
+            if offenders.count_rows() > 0:
+                ids = offenders.to_dict()["__context_id"]
+                self._raise_batch_violation(hit_policy, offenders.collect(), ids)
+        elif hit_policy == HitPolicy.ANY:
+            outputs = default_output_fields(joined.columns, info)
+            comparison = (
+                joined.select(
+                    ma.col("__context_id"), *[ma.col(c) for c in outputs]
+                ).unique()
+                if outputs
+                else joined
+            )
+            disagree = (
+                comparison.group_by("__context_id")
+                .agg(ma.col("__context_id").count().alias("__n"))
+                .filter(ma.col("__n").gt(ma.lit(1)))
+            )
+            if disagree.count_rows() > 0:
+                if not outputs:
+                    raise ValueError(
+                        "hit_policy=any requires nonempty output_fields "
+                        "when more than one rule survives a context"
+                    )
+                ids = disagree.to_dict()["__context_id"]
+                self._raise_batch_violation(hit_policy, disagree.collect(), ids)
 
     def _scored_relation(
         self, active_dims: list[str], context_values: dict[str, t.Any]

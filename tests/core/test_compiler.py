@@ -645,8 +645,9 @@ class TestBackendAgnosticism:
             MatchStrategy.CONTAINS,
         }:
             # Column-valued string predicates are not supported on pandas.
+            rel = relation(df).with_columns(expr.alias("__t"))
             with pytest.raises(BackendCapabilityError) as error:
-                relation(df).with_columns(expr.alias("__t")).to_dict()
+                rel.to_dict()
             assert error.value.backend == "narwhals"
             return
         if backend_name == "ibis-polars" and strategy in {
@@ -655,8 +656,9 @@ class TestBackendAgnosticism:
             MatchStrategy.CONTAINS,
         }:
             # Ibis accepts the expression but its Polars translator rejects it.
+            rel = relation(df).with_columns(expr.alias("__t"))
             with pytest.raises(ibis.common.exceptions.UnsupportedArgumentError):
-                relation(df).with_columns(expr.alias("__t")).to_dict()
+                rel.to_dict()
             return
         result = relation(df).with_columns(expr.alias("__t")).sort("row_id").to_dict()
         assert result["__t"] == expected
@@ -696,8 +698,9 @@ class TestBackendAgnosticism:
         )
         if backend_name in {"pandas", "narwhals-polars", "narwhals-pandas"}:
             # List-column membership needs a column-valued needle.
+            rel = relation(df).with_columns(expr.alias("__t"))
             with pytest.raises(BackendCapabilityError) as error:
-                relation(df).with_columns(expr.alias("__t")).to_dict()
+                rel.to_dict()
             assert error.value.backend == "narwhals"
             return
         result = relation(df).with_columns(expr.alias("__t")).sort("row_id").to_dict()

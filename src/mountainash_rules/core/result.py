@@ -50,7 +50,7 @@ class RuleResult:
         self, policy: HitPolicy | str, priority_field: str | None = None
     ) -> "RuleResult":
         """Re-apply a policy only when the full candidate basis is retained."""
-        policy = normalize_policy(policy)
+        selected_policy: HitPolicy = normalize_policy(policy)
         validate_priority_field(priority_field)
         info = self._selection_info
         if info is None:
@@ -69,21 +69,23 @@ class RuleResult:
                 raise ValueError(f"select() requires the {required} column")
         pf = priority_field if priority_field is not None else info.priority_field
         info = replace(info, priority_field=pf)
-        check_policy_config(rel.columns, policy, info)
-        check_priority(rel, policy, info)
-        keys = ordering_keys(policy, pf)
+        check_policy_config(rel.columns, selected_policy, info)
+        check_priority(rel, selected_policy, info)
+        keys = ordering_keys(selected_policy, pf)
         rel = (
             rel.sort(*[k for k, _ in keys], descending=[d for _, d in keys])
             .drop("__rank")
             .with_row_index(name="__rank")
             .with_columns(ma.col("__rank").add(ma.lit(1)).alias("__rank"))
         )
-        check_assertions(rel, policy, info)
-        rel = apply_cardinality(rel, policy)
+        check_assertions(rel, selected_policy, info)
+        rel = apply_cardinality(rel, selected_policy)
         return RuleResult(
             dataframe=rel.sort("__rank").collect(),
             active_dimensions=self._active_dimensions,
-            selection_info=replace(info, truncated=selection_is_truncated(policy)),
+            selection_info=replace(
+                info, truncated=selection_is_truncated(selected_policy)
+            ),
         )
 
     @property
