@@ -7,7 +7,8 @@
   "stability": "evolving",
   "audiences": [
     "users",
-    "maintainers"
+    "maintainers",
+    "broader-hype"
   ],
   "doc_priority": "useful",
   "confidence": "high",

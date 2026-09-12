@@ -38,13 +38,13 @@ ConceptID,ConceptLabel,Dependencies,TaxonomyID
 37,Compile Threshold Expression,31|15|16|2,EXPR
 38,Sentinel-Aware Ternary,1|2|8,EXPR
 39,Context Value Extraction,10|2,EXPR
-40,ExpressionRulesEngine,31|9|39,EXPR
+40,ExpressionRulesEngine,27|9|10,EXPR
 41,Engine Construction,40|27,EXPR
 42,Convenience vs Advanced Path,41,EXPR
 43,Single-Pass Evaluation,40|7|5,EXPR
 44,Context Binding Phase,43|39|8,EXPR
 45,Dimension Expression Phase,43|32|33|34|35|36|37,EXPR
-46,Survival Computation,45|38|1,EXPR
+46,Survival Computation,43|1,EXPR
 47,Specificity Scoring,46,EXPR
 48,Rank Assignment,47,EXPR
 49,RuleResult Class,48,RESULT
@@ -52,11 +52,11 @@ ConceptID,ConceptLabel,Dependencies,TaxonomyID
 51,Best Match Accessor,49|9,RESULT
 52,Count Accessor,49|9,RESULT
 53,Active Dimensions,49,RESULT
-54,RuleResult Explain Method,49|38,RESULT
+54,RuleResult Explain Method,49|1,RESULT
 55,At Least Filter,49|47,RESULT
 56,Top N Filtering,43,RESULT
 57,Min Specificity Filter,43|47,RESULT
-58,Observability Columns,43|38,RESULT
+58,Observability Columns,43|1,RESULT
 59,AccumulatorCompiler,8|26,ACCUM
 60,Compatible Expression,59|12,ACCUM
 61,Coalesce Expression,59|12,ACCUM
@@ -66,7 +66,7 @@ ConceptID,ConceptLabel,Dependencies,TaxonomyID
 65,Coalesce Exact,61|2,ACCUM
 66,Coalesce Range,61|14,ACCUM
 67,Coalesce Threshold,61|15|16,ACCUM
-68,AccumulatorEngine,59|27|40,ACCUM
+68,AccumulatorEngine,27|40,ACCUM
 69,Prime Number Encoding,68,ACCUM
 70,Prime Table Sieve,69,ACCUM
 71,Get Prime Function,70,ACCUM
@@ -75,15 +75,15 @@ ConceptID,ConceptLabel,Dependencies,TaxonomyID
 74,Level Expansion,73|63|64|65|66|67,ACCUM
 75,Canonical Ordering Guard,74|69,ACCUM
 76,Frontier Filter,74|72,ACCUM
-77,Lattice Class,76|27,LATT
+77,Lattice Class,68|27,LATT
 78,Lattice Combinations,77,LATT
 79,Lattice Partition Key,77|25,LATT
-80,Coalesced Columns,77|61,LATT
-81,NA Flag Columns,77|62,LATT
-82,Combination Depth,77|74,LATT
+80,Coalesced Columns,77|78,LATT
+81,NA Flag Columns,77|2,LATT
+82,Combination Depth,77|78,LATT
 83,AccumulatorResult Class,77|49,LATT
 84,Accumulated Aggregates,83|87,LATT
-85,Provenance Accessor,83|72,LATT
+85,Provenance Accessor,83|78,LATT
 86,Depths Accessor,83|82,LATT
 87,Aggregate Model,4,SUPP
 88,Partition Key Filtering,25|9,SUPP
@@ -129,3 +129,6 @@ ConceptID,ConceptLabel,Dependencies,TaxonomyID
 128,LatticeIndex Router,77|89,SUPP
 129,AmbiguousPartitionError,128,SUPP
 130,EXACT_KEY Partition Routing,128|91,SUPP
+131,Backend Purity Enforcement,6|8|9,SUPP
+132,CTX_PREFIX Column Injection Pattern,44|8,EXPR
+133,LatticeWidthExceededError,72|74,ACCUM

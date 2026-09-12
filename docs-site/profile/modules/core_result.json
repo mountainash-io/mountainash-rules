@@ -7,7 +7,9 @@
   "stability": "stable",
   "audiences": [
     "users",
-    "maintainers"
+    "maintainers",
+    "backend-architecture",
+    "broader-hype"
   ],
   "doc_priority": "essential",
   "confidence": "high",

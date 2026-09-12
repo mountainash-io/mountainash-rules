@@ -1,6 +1,136 @@
 {
   "audience": "broader-hype",
   "summary": "A rule engine that evaluates on any backend, explains every decision, and solves combinatorial problems that simpler engines can't express. Apache-2.0 licensed.",
+  "concepts": [
+    {
+      "name": "Rules that live where the data lives",
+      "module_ids": [
+        "mountainash_rules.engines.filter.engine",
+        "mountainash_rules.core.constants"
+      ],
+      "recommended_docs": [
+        "README.md#backend-support"
+      ],
+      "evidence": [
+        {
+          "kind": "doc",
+          "path": "README.md",
+          "detail": "'Backend Support' section \u2014 the same rule definitions evaluate against Polars, Pandas-via-Narwhals, or Ibis-backed DataFrames"
+        }
+      ]
+    },
+    {
+      "name": "Every evaluation explains itself",
+      "module_ids": [
+        "mountainash_rules.core.result"
+      ],
+      "recommended_docs": [
+        "docs/user-quickstart.md#step-5--read-results"
+      ],
+      "evidence": [
+        {
+          "kind": "symbol",
+          "path": "src/mountainash_rules/core/result.py",
+          "detail": "RuleResult.explain(rule_name); ExplainResult scores every rule unfiltered"
+        }
+      ]
+    },
+    {
+      "name": "One context or a million, one call",
+      "module_ids": [
+        "mountainash_rules.engines.filter.engine",
+        "mountainash_rules.core.batch_result"
+      ],
+      "recommended_docs": [
+        "README.md#batch-evaluation"
+      ],
+      "evidence": [
+        {
+          "kind": "doc",
+          "path": "README.md",
+          "detail": "'Batch Evaluation' section: score thousands of contexts in one vectorised pass instead of looping"
+        }
+      ]
+    },
+    {
+      "name": "Combinatorial problems solved \u2014 and persisted",
+      "module_ids": [
+        "mountainash_rules.engines.accumulator.engine",
+        "mountainash_rules.engines.accumulator.lattice",
+        "mountainash_rules.engines.accumulator.result"
+      ],
+      "recommended_docs": [
+        "README.md#accumulator-engine",
+        "docs/superpowers/specs/2026-07-16-lattice-snapshot-save-load-design.md"
+      ],
+      "evidence": [
+        {
+          "kind": "doc",
+          "path": "README.md",
+          "detail": "'Accumulator Engine' section: precomputes every maximal consistent combination of rules"
+        },
+        {
+          "kind": "doc",
+          "path": "CLAUDE.md",
+          "detail": "'Lattice.save(dir) / Lattice.load(dir) \u2014 snapshot persistence'"
+        }
+      ]
+    },
+    {
+      "name": "Match strategies that cover real-world logic",
+      "module_ids": [
+        "mountainash_rules.core.constants"
+      ],
+      "recommended_docs": [
+        "README.md#match-strategies"
+      ],
+      "evidence": [
+        {
+          "kind": "symbol",
+          "path": "src/mountainash_rules/core/constants.py",
+          "detail": "13 MatchStrategy members including NOT_EQUAL, EXACT_KEY and distinct REGEX/CONTEXT_REGEX strategies"
+        }
+      ]
+    },
+    {
+      "name": "Rules that rank themselves \u2014 and can be governed",
+      "module_ids": [
+        "mountainash_rules.core.result"
+      ],
+      "recommended_docs": [
+        "README.md#hit-policies"
+      ],
+      "evidence": [
+        {
+          "kind": "symbol",
+          "path": "src/mountainash_rules/core/result.py",
+          "detail": "RuleResult ranks survivors by __specificity/__rank"
+        },
+        {
+          "kind": "doc",
+          "path": "README.md",
+          "detail": "'Hit Policies' section: layer a hit policy to require a unique match, take the first by priority, or assert no conflicting outputs"
+        }
+      ]
+    },
+    {
+      "name": "Backend portability from the expression engine",
+      "module_ids": [
+        "mountainash_rules.engines.filter.engine",
+        "mountainash_rules.core.constants"
+      ],
+      "recommended_docs": [
+        "README.md#backend-support"
+      ],
+      "evidence": [
+        {
+          "kind": "doc",
+          "path": "README.md",
+          "detail": "'Backend Support' section: rules evaluate against Polars, Pandas-via-Narwhals, or Ibis without changing rule definitions"
+        }
+      ]
+    }
+  ],
   "the_vision": "Business rules \u2014 pricing tiers, eligibility matrices, compliance conditions, feature flags, configuration logic \u2014 live at the heart of every data-driven organisation. mountainash-rules evaluates them as tabular data against whatever backend holds the data, with vectorized performance and built-in explainability. When overlapping rules interact, the accumulator engine resolves all consistent combinations and traces the provenance of every result \u2014 now persistable to disk so it never has to rebuild at request time.",
   "what_it_makes_possible": [
     {
@@ -21,7 +151,7 @@
     },
     {
       "capability": "Match strategies that cover real-world logic",
-      "essence": "Twelve match strategies: exact match, an exact-key partition router, ranges, greater/less than, prefix, suffix, contains, per-row regex, context-level regex, set membership, and set exclusion. Wildcard dimensions match everything, enabling graduated specificity."
+      "essence": "Thirteen match strategies cover equality and inequality, exact-key partition routing, ranges, greater/less-than thresholds, prefix, suffix, contains, per-row regex, context-level regex, set membership and set exclusion. Rule wildcards support graduated specificity; their exact behavior depends on the selected strategy."
     },
     {
       "capability": "Rules that rank themselves \u2014 and can be governed",
@@ -69,6 +199,12 @@
     "mountainash_rules.core.context",
     "mountainash_rules.engines.accumulator.primes",
     "mountainash_rules.core.set_wildcard"
+  ],
+  "documentation_plan": [
+    "Lead with backend portability and 'rules live where the data lives' as the headline differentiator.",
+    "Pair 'every evaluation explains itself' with a concrete before/after example rather than an abstract claim.",
+    "Present batch evaluation and the accumulator engine as the two ways to scale from one rule to many, or one context to a population.",
+    "Reserve persistence (saved lattices) and governance (hit policies) as secondary capabilities once the core evaluation story is established."
   ],
   "open_questions": []
 }
