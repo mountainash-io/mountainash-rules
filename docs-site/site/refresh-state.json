@@ -6,7 +6,7 @@
     "tool_versions": {
       "python": "3.12.12",
       "mountainash_ibook_tools": "0.1.0",
-      "mountainash_ibook_tools_revision": "6336624c0eb8b154daad8def24a82d7869452503",
+      "mountainash_ibook_tools_revision": "dfcda21b1403352e73560aa86d99ba624a0cfe1d",
       "chapter_content_generator": "2.0.0"
     }
   },

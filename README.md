@@ -191,7 +191,7 @@ constraints. Run this from the selected source worktree:
 
 ```bash
 set -eu
-IBOOK_REV=6336624c0eb8b154daad8def24a82d7869452503
+IBOOK_REV=dfcda21b1403352e73560aa86d99ba624a0cfe1d
 source_repo=$(git rev-parse --show-toplevel)
 tooling_inputs=$(mktemp -d)
 trap 'rm -rf "$tooling_inputs"' EXIT
