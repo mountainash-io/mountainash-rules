@@ -68,9 +68,9 @@ class RuleResult:
             if required not in rel.columns:
                 raise ValueError(f"select() requires the {required} column")
         pf = priority_field if priority_field is not None else info.priority_field
-        info = replace(info, priority_field=pf)
-        check_policy_config(rel.columns, selected_policy, info)
-        check_priority(rel, selected_policy, info)
+        selected_info: SelectionInfo = replace(info, priority_field=pf)
+        check_policy_config(rel.columns, selected_policy, selected_info)
+        check_priority(rel, selected_policy, selected_info)
         keys = ordering_keys(selected_policy, pf)
         rel = (
             rel.sort(*[k for k, _ in keys], descending=[d for _, d in keys])
@@ -78,13 +78,13 @@ class RuleResult:
             .with_row_index(name="__rank")
             .with_columns(ma.col("__rank").add(ma.lit(1)).alias("__rank"))
         )
-        check_assertions(rel, selected_policy, info)
+        check_assertions(rel, selected_policy, selected_info)
         rel = apply_cardinality(rel, selected_policy)
         return RuleResult(
             dataframe=rel.sort("__rank").collect(),
             active_dimensions=self._active_dimensions,
             selection_info=replace(
-                info, truncated=selection_is_truncated(selected_policy)
+                selected_info, truncated=selection_is_truncated(selected_policy)
             ),
         )
 
