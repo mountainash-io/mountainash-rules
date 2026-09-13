@@ -7,6 +7,9 @@ path = "src/mountainash_rules/__version__.py"
 [build.targets.wheel]
 packages = ["src/mountainash_rules"]
 
+[build.targets.wheel.hooks.custom]
+path = "hatch_build.py"
+
 #================
 # Env: build_github
 #================

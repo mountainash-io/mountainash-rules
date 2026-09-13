@@ -14,6 +14,69 @@ Built on [mountainash](https://github.com/mountainash-io/mountainash) expression
 - **Rules are auditable.** Every rule is a row with a name, dimensions, and match criteria. You can diff two rule sets, version them in a table, and explain exactly why a context matched — because the engine tracks per-dimension ternary results (match / unknown / non-match) for every rule.
 - **Rules scale without branching.** A hand-coded rule system with 2,000 rules is unmaintainable. A DataFrame with 2,000 rows is just data. The engine evaluates all of them in one vectorised pass regardless of count.
 
+## Installation
+
+End-user installations use interpreter/platform-specific wheels containing the
+Rust extension; no Rust toolchain is required to install a compatible wheel.
+There is no pure-Python fallback. Source and editable builds require Cargo and
+a Rust toolchain. `hatch build` builds the extension through the existing Hatch
+backend; `cargo test --locked --lib` exercises its language regressions.
+
+The release matrix targets CPython 3.10–3.14 and PyPy 3.10/3.11 on Linux
+x86_64/aarch64, macOS and Windows x86_64. macOS arm64 supports CPython;
+PyPy uses macOS x86_64. Local artifact verification does not certify the
+entire release matrix; CI builds and smoke-tests each configured artifact.
+
+Mountainash and its sibling dependencies are still required separately in
+development; native wheels do not resolve the existing publication-chain gap.
+
+## Exact String Languages
+
+`StringLanguage` provides an independent Rust-backed language API. It does not
+replace the filter engine's regex implementation or enable disjoint accumulator
+cells; that integration remains deferred.
+
+```python
+from mountainash_rules import LanguageLimits, StringLanguage
+
+limits = LanguageLimits(
+    max_input_bytes=2_000_000,
+    max_nesting=64,
+    max_nfa_states=50_000,
+    max_states=10_000,
+    max_transitions=500_000,
+    max_work=200_000_000,
+)
+words = StringLanguage.regex(r"\A(?:cat|car)\z", limits=limits)
+only_cat = words.difference(StringLanguage.literal("car", limits=limits), limits=limits)
+assert only_cat.witness(limits=limits) == "cat"
+assert only_cat.cardinality(10, limits=limits) == 1
+loaded = StringLanguage.from_json(only_cat.to_json(limits=limits), limits=limits)
+assert loaded.language_id(limits=limits) == only_cat.language_id(limits=limits)
+```
+
+Regex construction recognizes complete Unicode-scalar strings containing a search
+match. The pinned dialect is `regex-syntax 0.8.10` with Unicode 16.0.0; `RegexOptions`
+controls case folding, multiline, dot/newline, CRLF, greed, Unicode and whitespace
+flags. Inline flags retain their scope. Backreferences, lookahead and lookbehind
+are syntax errors. Literal, prefix, suffix and contains constructors never
+interpret their input as regex syntax.
+
+Languages support union, intersection, difference, complement, membership,
+emptiness, shortest/scalar-lexicographic witnesses and capped cardinality.
+Complement excludes surrogate codepoints and does not represent missing context.
+Canonical `language-1` JSON uses complete scalar ranges, minimal reachable states
+and BFS numbering. Loading rejects duplicate/unknown fields and noncanonical
+graphs; it does not compile a source pattern.
+
+Every operation takes explicit limits. Input-byte limits also bound JSON and
+witness output; work covers construction, traversal and conservative Unicode
+expansion reservations, not elapsed time. Nesting is limited to 256. Exhaustion
+raises `LanguageResourceError` with `resource` and `limit`, never a partial answer.
+Malformed patterns and wires raise `LanguageSyntaxError` and `LanguageWireError`.
+The example ceilings are illustrative, not benchmarked deployment defaults.
+Native dependency and Unicode notices are included in `THIRD_PARTY_LICENSES`.
+
 ## Quick Start
 
 ```python
