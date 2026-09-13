@@ -1,13 +1,13 @@
 {
   "profile_version": "1.0",
-  "generated_at": "2026-09-02T00:00:00+00:00",
+  "generated_at": "2026-09-13T07:41:53.750877+00:00",
   "source": {
     "root": ".",
     "git": {
-      "previous_hash": "41d584652aa29b09762aa1140ae64fb640473940",
-      "current_hash": "7d0e3dcb747949bb2d7172a34135a7872b2ed55f",
-      "branch": "bugfix/prime-table-explicit-cap",
-      "working_tree_dirty": false
+      "previous_hash": "7d0e3dcb747949bb2d7172a34135a7872b2ed55f",
+      "current_hash": "730a8583ee9d4fd6b52dc5350699eb66cc7487e9",
+      "branch": "detached HEAD",
+      "working_tree_dirty": true
     }
   },
   "scope": {
@@ -37,10 +37,36 @@
   },
   "changed_scopes": {
     "files": [
-      "full refresh: package root renamed src/mountainash_utils_rules -> src/mountainash_rules and reorganised into core/ + engines/{filter,accumulator}/ (23a29d6); all 21 module paths changed relative to the previous_hash profile"
+      "src/mountainash_rules/core/batch_result.py",
+      "src/mountainash_rules/core/compiler.py",
+      "src/mountainash_rules/core/context.py",
+      "src/mountainash_rules/core/hit_policy.py",
+      "src/mountainash_rules/core/result.py",
+      "src/mountainash_rules/core/set_wildcard.py",
+      "src/mountainash_rules/engines/filter/engine.py"
     ],
     "modules": [
-      "all (full refresh \u2014 package_roots changed, package structure changed, >1/3 modules changed; see references/update-algorithm.md Full Refresh Triggers)"
+      "mountainash_rules.__init__",
+      "mountainash_rules.__version__",
+      "mountainash_rules.core.__init__",
+      "mountainash_rules.core.batch_result",
+      "mountainash_rules.core.compiler",
+      "mountainash_rules.core.constants",
+      "mountainash_rules.core.context",
+      "mountainash_rules.core.dimension",
+      "mountainash_rules.core.hit_policy",
+      "mountainash_rules.core.result",
+      "mountainash_rules.core.set_wildcard",
+      "mountainash_rules.engines.__init__",
+      "mountainash_rules.engines.accumulator.__init__",
+      "mountainash_rules.engines.accumulator.aggregate",
+      "mountainash_rules.engines.accumulator.compiler",
+      "mountainash_rules.engines.accumulator.engine",
+      "mountainash_rules.engines.accumulator.lattice",
+      "mountainash_rules.engines.accumulator.primes",
+      "mountainash_rules.engines.accumulator.result",
+      "mountainash_rules.engines.filter.__init__",
+      "mountainash_rules.engines.filter.engine"
     ],
     "facets": [
       "users",

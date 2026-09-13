@@ -20,8 +20,14 @@
   "tests": [],
   "risks": [],
   "open_questions": [],
-  "evidence": [],
-  "source_hash": "7d0e3dcb747949bb2d7172a34135a7872b2ed55f",
+  "evidence": [
+    {
+      "kind": "source",
+      "path": "src/mountainash_rules/engines/accumulator/__init__.py",
+      "detail": "Empty package marker; no declarations or imports."
+    }
+  ],
+  "source_hash": "730a8583ee9d4fd6b52dc5350699eb66cc7487e9",
   "manual": {
     "notes": "",
     "editorial_status": "",

@@ -1,116 +1,111 @@
 {
   "audience": "maintainers",
-  "summary": "mountainash-rules is built around two evaluation architectures (filter engine and accumulator engine) under core/ + engines/{filter,accumulator}/, sharing a dimension model, ternary logic system, and sentinel contract. Dependency direction is one-way: engines/accumulator -> engines/filter -> core; core never imports from engines/. Understanding the shared ternary invariant, the in-band set-wildcard sentinel, and the prime-product identity is key to confident maintenance across both engines.",
+  "summary": "Maintain input, ternary-matching, policy and identity invariants across the shared core and two engine implementations.",
   "concepts": [
     {
-      "name": "Ternary logic encoding",
+      "name": "Context and compiler boundaries",
       "module_ids": [
-        "mountainash_rules.core.constants",
+        "mountainash_rules.core.context",
         "mountainash_rules.core.compiler",
-        "mountainash_rules.engines.filter.engine"
+        "mountainash_rules.core.set_wildcard"
       ],
-      "description": "The ternary invariant (1=match, 0=unknown, -1=non-match) is the foundation of evaluation correctness. Sentinels in constants.py map to ternary 0 through the mountainash t_col wrapper, and specificity is computed by counting only definite matches (1s). This invariant must hold across all 12 match strategies and all backends."
+      "description": "Trace missing/sentinel values through binding, boolean handling, string/set predicates and error propagation.",
+      "recommended_docs": [
+        "README.md"
+      ],
+      "evidence": [
+        "src/mountainash_rules/core/context.py",
+        "src/mountainash_rules/core/compiler.py",
+        "src/mountainash_rules/core/set_wildcard.py"
+      ]
     },
     {
-      "name": "Sentinel contract",
-      "module_ids": [
-        "mountainash_rules.core.constants",
-        "mountainash_rules.core.compiler",
-        "mountainash_rules.engines.accumulator.compiler"
-      ],
-      "description": "UNKNOWN/NOT_SET sentinels exist per data type: string ('<NA>'/'<NOT_SET>'), numeric (-999999999/-999999998), date/datetime (proleptic-floor dates). Bool dimensions use null as don't-care instead of a sentinel (no typed wildcard sentinel exists for bool). Set dimensions use an in-band '[sentinel]' list, never null."
-    },
-    {
-      "name": "Filter engine evaluation pipeline",
-      "module_ids": [
-        "mountainash_rules.engines.filter.engine",
-        "mountainash_rules.core.compiler",
-        "mountainash_rules.core.context"
-      ],
-      "description": "evaluate() follows a 4-step pipeline: compile (DimensionCompiler at construction), bind (context -> __ctx_<dim> columns via context.py), evaluate (ternary columns + survival + specificity via _scored_relation, shared with explain()), select (sort/rank/hit-policy/cardinality via hit_policy.py). Each step is a pure DataFrame transformation."
-    },
-    {
-      "name": "Hit-policy selection layer",
+      "name": "Policy and result integrity",
       "module_ids": [
         "mountainash_rules.core.hit_policy",
-        "mountainash_rules.core.result"
-      ],
-      "description": "New since the prior profile: SelectionInfo carries what a RuleResult needs to re-apply policies post-hoc. check_assertions raises HitPolicyViolationError for UNIQUE/ANY breaches (zero survivors always pass). apply_cardinality truncates to one row for FIRST/PRIORITY/ANY."
-    },
-    {
-      "name": "Batch evaluation internals",
-      "module_ids": [
-        "mountainash_rules.engines.filter.engine",
+        "mountainash_rules.core.result",
         "mountainash_rules.core.batch_result"
       ],
-      "description": "evaluate_batch() conforms contexts to the rules frame's backend before cross-joining (_conform_to_rules_backend), then ranks per __context_id portably without window functions. Opt-in chunked evaluation exists with cross-chunk violation accumulation for hit-policy assertions over large batches."
-    },
-    {
-      "name": "Accumulator build algorithm",
-      "module_ids": [
-        "mountainash_rules.engines.accumulator.engine",
-        "mountainash_rules.engines.accumulator.compiler",
-        "mountainash_rules.engines.accumulator.primes",
-        "mountainash_rules.engines.accumulator.lattice"
+      "description": "Preserve candidate completeness, rank identity, schema validation and policy-assertion ordering.",
+      "recommended_docs": [
+        "README.md"
       ],
-      "description": "The build phase assigns unique primes to rules, creates an anchor lattice from single-rule entries, then iteratively expands by cross-joining compatible rules and coalescing their dimension values. A frontier filter removes dominated combinations (those whose prime product divides a larger combination's product). Each level is materialised via relation(...).collect() -- never re-chained lazily (exponential plan blow-up)."
+      "evidence": [
+        "src/mountainash_rules/core/hit_policy.py",
+        "src/mountainash_rules/core/result.py",
+        "src/mountainash_rules/core/batch_result.py"
+      ]
     },
     {
-      "name": "Ternary partition routing",
+      "name": "Filter batch staging",
+      "module_ids": [
+        "mountainash_rules.engines.filter.engine"
+      ],
+      "description": "Explain context validation before conversion/chunking and the actual, bounded memory guarantee of chunk_size.",
+      "recommended_docs": [
+        "README.md"
+      ],
+      "evidence": [
+        "src/mountainash_rules/engines/filter/engine.py"
+      ]
+    },
+    {
+      "name": "Accumulator interaction with shared core",
+      "module_ids": [
+        "mountainash_rules.engines.accumulator.compiler",
+        "mountainash_rules.engines.accumulator.engine",
+        "mountainash_rules.engines.accumulator.result"
+      ],
+      "description": "Review shared filter/result dependencies even when accumulator source files did not change.",
+      "recommended_docs": [
+        "README.md"
+      ],
+      "evidence": [
+        "src/mountainash_rules/engines/accumulator/compiler.py",
+        "src/mountainash_rules/engines/accumulator/engine.py",
+        "src/mountainash_rules/engines/accumulator/result.py"
+      ]
+    },
+    {
+      "name": "Lattice and prime invariants",
       "module_ids": [
         "mountainash_rules.engines.accumulator.lattice",
-        "mountainash_rules.engines.accumulator.engine",
-        "mountainash_rules.core.constants"
+        "mountainash_rules.engines.accumulator.primes"
       ],
-      "description": "New since the prior profile: LatticeIndex routes CONTEXT_KEY-partitioned contexts to the right lattice via ternary + specificity semantics using an embedded meta-engine over EXACT_KEY dimensions. An all-wildcard key is the default/overflow partition; exact hits keep an O(1) dict fast path; ties raise AmbiguousPartitionError (a KeyError subclass). index(lattices, validate=True) runs an exhaustive witness-matrix ambiguity check at load time."
-    },
-    {
-      "name": "Lattice persistence",
-      "module_ids": [
-        "mountainash_rules.engines.accumulator.lattice"
+      "description": "Separate partition row capacity, combination width, aggregate overflow and routing witness bounds.",
+      "recommended_docs": [
+        "README.md"
       ],
-      "description": "New since the prior profile, which flagged 'no serialisation protocol' as an open question. Lattice.save/load round-trips a lattice through parquet + manifest.yaml, a superset of mountainash-rules-babel's LatticeManifest. Build offline, save, serve apply() from load."
-    },
-    {
-      "name": "Prime product identity and limits",
-      "module_ids": [
-        "mountainash_rules.engines.accumulator.primes",
-        "mountainash_rules.engines.accumulator.engine"
-      ],
-      "description": "Two independent bounds: combination width (~15 primes per combination, intrinsic to int64, enforced by checked_multiply/LatticeWidthExceededError) and rules-per-partition (MAX_RULES_PER_PARTITION=10,000, the prime table size, an explicit policy constant -- much larger than the prior profile's ~500-rule estimate). Exceeding the partition cap raises from get_prime; remediate with a CONTEXT_KEY dimension."
-    },
-    {
-      "name": "Backend purity enforcement",
-      "module_ids": [
-        "mountainash_rules.core.compiler",
-        "mountainash_rules.engines.accumulator.engine",
-        "mountainash_rules.engines.accumulator.lattice"
-      ],
-      "description": "No module under src/mountainash_rules/ may import polars/ibis/narwhals directly -- only mountainash.relations/mountainash.expressions. tests/test_backend_purity.py enforces this package-wide, parametrised over every non-dunder module with no exemptions. Exactly three documented '# allow:' escapes exist: the per-row REGEX fallback (core/compiler.py), the empty-build schema seed (engines/accumulator/engine.py), and the snapshot parquet read (engines/accumulator/lattice.py) -- each pending a specific upstream mountainash capability."
-    },
-    {
-      "name": "Test suite structure",
-      "module_ids": [],
-      "description": "The test tree now mirrors the src/ package layout one-to-one (tests/core/, tests/filter/, tests/accumulator/, tests/benchmarks/) plus package-wide tests/test_backend_purity.py and tests/test_public_api.py. CI runs pytest+coverage, ruff, and radon on PRs; known upstream issues are xfailed via tests/conftest.py's _UPSTREAM_XFAILS."
+      "evidence": [
+        "src/mountainash_rules/engines/accumulator/lattice.py",
+        "src/mountainash_rules/engines/accumulator/primes.py"
+      ]
     }
   ],
   "featured_modules": [
-    "mountainash_rules.engines.filter.engine",
+    "mountainash_rules.core.context",
     "mountainash_rules.core.compiler",
+    "mountainash_rules.core.set_wildcard",
     "mountainash_rules.core.hit_policy",
-    "mountainash_rules.engines.accumulator.engine",
-    "mountainash_rules.engines.accumulator.compiler",
-    "mountainash_rules.engines.accumulator.lattice",
-    "mountainash_rules.engines.accumulator.primes",
-    "mountainash_rules.core.constants",
-    "mountainash_rules.core.dimension",
     "mountainash_rules.core.result",
     "mountainash_rules.core.batch_result",
-    "mountainash_rules.core.set_wildcard"
+    "mountainash_rules.engines.filter.engine",
+    "mountainash_rules.engines.accumulator.compiler",
+    "mountainash_rules.engines.accumulator.engine",
+    "mountainash_rules.engines.accumulator.result",
+    "mountainash_rules.engines.accumulator.lattice",
+    "mountainash_rules.engines.accumulator.primes"
   ],
   "hidden_or_internal_modules": [
     "mountainash_rules.__version__",
-    "mountainash_rules.core.context"
+    "mountainash_rules.core.__init__",
+    "mountainash_rules.engines.__init__",
+    "mountainash_rules.engines.accumulator.__init__",
+    "mountainash_rules.engines.filter.__init__"
+  ],
+  "documentation_plan": [
+    "Link each invariant to its implementation and retained test path; inspection is not a test-pass claim.",
+    "Keep raw source and source SHA available when reviewing profile prose."
   ],
   "open_questions": []
 }

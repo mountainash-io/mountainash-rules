@@ -8,7 +8,7 @@
     "format": "Learning Graph JSON v1.0",
     "schema": "https://raw.githubusercontent.com/dmccreary/learning-graphs/refs/heads/main/src/schema/learning-graph-schema.json",
     "license": "CC BY-NC-SA 4.0 DEED",
-    "source_commit": "7d0e3dcb747949bb2d7172a34135a7872b2ed55f",
+    "source_commit": "730a8583ee9d4fd6b52dc5350699eb66cc7487e9",
     "profile_dir": "docs-site/profile"
   },
   "groups": {

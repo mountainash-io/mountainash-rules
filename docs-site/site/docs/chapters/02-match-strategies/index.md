@@ -263,6 +263,9 @@ Example use case: matching URL paths or product codes by their leading segment.
 | `"ELEC"` | `"ELECTRONICS"` | 1 (TRUE) |
 | `"ELEC"` | `"FURNITURE"` | -1 (FALSE) |
 | `"<NA>"` | `"ELECTRONICS"` | 0 (UNKNOWN) |
+| `"ELEC"` | missing / `None` | 0 (UNKNOWN) |
+
+A sentinel rule cell (`<NA>`/`<NOT_SET>`) yields UNKNOWN, and so does a non-concrete context value: `_context_is_nonconcrete` treats a `None` context, or a context equal to the reserved `<NA>`/`<NOT_SET>` markers, as unable to satisfy any concrete predicate, so PREFIX resolves to 0 in that case too.
 
 The PREFIX strategy requires `data_type=str` on the dimension. Attempting to use it with a numeric dimension raises a `ValueError` during Pydantic validation.
 
@@ -278,6 +281,9 @@ Example use case: matching file extensions or domain suffixes.
 | `".com.au"` | `"example.com.au"` | 1 (TRUE) |
 | `".com.au"` | `"example.co.uk"` | -1 (FALSE) |
 | `"<NA>"` | `"example.com"` | 0 (UNKNOWN) |
+| `".com.au"` | missing / `None` | 0 (UNKNOWN) |
+
+A sentinel rule cell yields UNKNOWN, and so does a non-concrete context value — `None`, or the reserved `<NA>`/`<NOT_SET>` markers — via the same `_context_is_nonconcrete` guard described for PREFIX.
 
 <!-- concept:19 -->
 ### CONTAINS Strategy
@@ -291,13 +297,16 @@ This is the most permissive string strategy — it matches regardless of positio
 | `"premium"` | `"super_premium_gold"` | 1 (TRUE) |
 | `"premium"` | `"standard_basic"` | -1 (FALSE) |
 | `"<NA>"` | `"premium_gold"` | 0 (UNKNOWN) |
+| `"premium"` | missing / `None` | 0 (UNKNOWN) |
+
+As with PREFIX and SUFFIX, a sentinel rule cell or a non-concrete context value (`None`, or the reserved `<NA>`/`<NOT_SET>` markers) both resolve to UNKNOWN via `_context_is_nonconcrete`.
 
 <!-- concept:20 -->
 ### REGEX Strategy
 
-REGEX is the per-row regex strategy: each rule row supplies its own pattern in the dimension's rule column. The context string is tested against that row's pattern, so different rules can accept different textual shapes. A sentinel pattern (`<NA>` or `<NOT_SET>`) produces UNKNOWN (0), while a non-sentinel pattern produces TRUE (1) on a match and FALSE (-1) otherwise.
+REGEX is the per-row regex strategy: each rule row supplies its own pattern in the dimension's rule column. The context string is tested against that row's pattern, so different rules can accept different textual shapes. A sentinel pattern (`<NA>` or `<NOT_SET>`) produces UNKNOWN (0), and so does a non-concrete context value — `None`, or the reserved `<NA>`/`<NOT_SET>` markers; otherwise a non-sentinel pattern produces TRUE (1) on a match and FALSE (-1) otherwise.
 
-`DimensionCompiler._compile_regex_per_row` implements this behavior. Because `mountainash`'s `regex_contains` currently accepts only a literal pattern, the method uses a Polars-native `str.contains` expression with the context and rule columns. This is the compiler's explicitly tagged backend fallback; non-Polars backends do not have a portable column-valued regex operation yet.
+`DimensionCompiler._compile_regex_per_row` implements this behavior. Because `mountainash`'s `regex_contains` currently accepts only a literal pattern, the method uses a Polars-native `str.contains` expression with the context and rule columns. This is the compiler's explicitly tagged backend fallback; non-Polars backends fail at evaluation with mountainash's native-expression error rather than offering a portable column-valued regex operation.
 
 ```python
 from mountainash_rules import DataType, Dimension, MatchStrategy
@@ -315,7 +324,7 @@ For REGEX dimensions, `regex_pattern` must not be set: the pattern belongs in `e
 <!-- concept:92 -->
 ### CONTEXT_REGEX Strategy
 
-CONTEXT_REGEX is a global context validator. Its single literal pattern is stored on the `Dimension`'s `regex_pattern` field, not in the rules table. `DimensionCompiler._compile_context_regex` applies `ctx_col.str.regex_contains(dim.regex_pattern)` and maps a match to TRUE (1) and a non-match to FALSE (-1). Every rule receives the same ternary result for this dimension, so there is no rule-side wildcard and no UNKNOWN branch.
+CONTEXT_REGEX is a global context validator. Its single literal pattern is stored on the `Dimension`'s `regex_pattern` field, not in the rules table. `DimensionCompiler._compile_context_regex` applies `ctx_col.str.regex_contains(dim.regex_pattern)` and maps a match to TRUE (1) and a non-match to FALSE (-1). A missing or non-concrete context value — `None`, or the reserved `<NA>`/`<NOT_SET>` markers — forces FALSE (-1), taking precedence over the regex outcome even if the pattern could match the marker's spelling. Every rule receives the same ternary result for this dimension, so there is no rule-side wildcard and no UNKNOWN branch.
 
 The `Dimension` validator requires a non-empty `regex_pattern` for CONTEXT_REGEX and rejects `regex_pattern` for other strategies, including per-row REGEX:
 
@@ -363,7 +372,7 @@ Type: microsim
 <!-- concept:21 -->
 ### SET_MEMBERSHIP Strategy
 
-SET_MEMBERSHIP produces TRUE (1) when the context value appears in the rule cell's list, and FALSE (-1) when it does not. The underlying operation is `ctx_col.t_is_in(rule_col)`, which is ternary-aware: if the context value is a sentinel, the result is UNKNOWN (0).
+SET_MEMBERSHIP produces TRUE (1) when the context value appears in the rule cell's list, and FALSE (-1) when it does not. The underlying operation is `rule_col.list.t_contains(ctx_col)`, where `ctx_col` is a ternary-aware `t_col`: if the context value is a sentinel, the result is UNKNOWN (0).
 
 Example use case: a rule that applies to a specific set of countries stored as a list in the rule row.
 
@@ -373,12 +382,12 @@ Example use case: a rule that applies to a specific set of countries stored as a
 | `["AU", "NZ", "SG"]` | `"US"` | -1 (FALSE) |
 | `["AU", "NZ", "SG"]` | `"<NOT_SET>"` | 0 (UNKNOWN) |
 
-The list column format depends on the DataFrame backend. In Polars, this is a column of type `List(Utf8)` or `List(Int64)`. The `t_is_in` operator handles the backend-specific membership test transparently.
+The list column format depends on the DataFrame backend. In Polars, this is a column of type `List(Utf8)` or `List(Int64)`. The `list.t_contains` operator handles the backend-specific membership test transparently.
 
 <!-- concept:22 -->
 ### SET_EXCLUSION Strategy
 
-SET_EXCLUSION is the complement of SET_MEMBERSHIP: it produces TRUE (1) when the context value does *not* appear in the rule cell's list. The underlying operation is `ctx_col.t_is_not_in(rule_col)`.
+SET_EXCLUSION is the complement of SET_MEMBERSHIP: it produces TRUE (1) when the context value does *not* appear in the rule cell's list. The underlying operation is `rule_col.list.t_contains(ctx_col).t_not()`.
 
 Example use case: a rule that applies to all countries *except* those in a sanctions list.
 
@@ -388,7 +397,7 @@ Example use case: a rule that applies to all countries *except* those in a sanct
 | `["XX", "YY"]` | `"XX"` | -1 (FALSE) |
 | `["XX", "YY"]` | `"<NOT_SET>"` | 0 (UNKNOWN) |
 
-Both SET strategies share the same sentinel handling: the ternary awareness comes from the context-side `t_col` reference. The rule-side column (the list) does not use sentinels — an empty list is semantically different from a wildcard. If the dimension should act as a wildcard (no constraint), the entire rule cell should contain the list sentinel value rather than an empty list.
+Both SET strategies share the same sentinel handling: the ternary awareness comes from the context-side `t_col` reference, and `.t_not()` negates the ternary membership result without disturbing an UNKNOWN outcome. The rule-side list does not use scalar `t_col` sentinel handling. Instead, a one-element list containing the typed UNKNOWN sentinel is detected explicitly as a wildcard and returns 0. An empty list is not a wildcard: it admits nothing for membership and excludes nothing for exclusion.
 
 ## Strategy Selection Guidelines
 

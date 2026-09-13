@@ -9,7 +9,9 @@
     "users",
     "maintainers",
     "contributors",
-    "extension-authors"
+    "extension-authors",
+    "backend-architecture",
+    "broader-hype"
   ],
   "doc_priority": "essential",
   "confidence": "high",
@@ -23,42 +25,63 @@
   ],
   "key_functions": [],
   "dependencies": [
-    "mountainash_rules.core.constants"
+    "mountainash_rules.core.constants",
+    "pydantic",
+    "yaml"
   ],
   "dependents": [
+    "mountainash_rules.__init__",
     "mountainash_rules.core.compiler",
+    "mountainash_rules.core.context",
+    "mountainash_rules.core.hit_policy",
     "mountainash_rules.core.set_wildcard",
-    "mountainash_rules.engines.accumulator.lattice",
     "mountainash_rules.engines.accumulator.compiler",
     "mountainash_rules.engines.accumulator.engine",
-    "mountainash_rules.engines.filter.engine",
-    "mountainash_rules.__init__"
+    "mountainash_rules.engines.accumulator.lattice",
+    "mountainash_rules.engines.filter.engine"
   ],
   "extension_points": [
     "New MatchStrategy validation logic added in model_validator '_validate_strategy_fields'."
   ],
   "lifecycle_notes": [
-    "YAML round-trip (to_yaml/from_yaml/to_yaml_file/from_yaml_file) added (new pyyaml dependency).",
-    "data_type became a DataType enum; passing a raw Python type still works but emits DeprecationWarning.",
-    "Table-level HitPolicy fields added to DimensionsMetadata (hit_policy, priority_field, output_fields).",
-    "bool dimensions with null-as-don't-care added; bool set dimensions explicitly rejected (no typed wildcard sentinel)."
+    "Dimension construction validates strategy/type combinations, range fields, literal context regex patterns and unsupported boolean set dimensions.",
+    "Raw Python data_type classes are converted with a DeprecationWarning; serializable DataType values are preferred.",
+    "DimensionsMetadata rejects duplicate dimension names and requires priority_field for PRIORITY; actual rule-column/policy schema checks are performed by evaluation code.",
+    "YAML serialization uses safe_dump with defaults omitted; from_yaml uses safe_load then Pydantic model validation.",
+    "valid_values is declarative metadata, not an engine-side domain restriction."
   ],
-  "documentation_hooks": [],
+  "documentation_hooks": [
+    "Separate metadata construction validation from runtime rule-schema and context validation.",
+    "Explain resolved_context_field/resolved_rule_field fallback and range inclusivity controls."
+  ],
   "examples": [],
   "tests": [
     "tests/core/test_dimension.py",
     "tests/core/test_dimension_serialization.py"
   ],
-  "risks": [],
+  "risks": [
+    "A valid DimensionsMetadata object does not prove the provided rule table contains required policy columns.",
+    "valid_values must not be documented as an enforced engine filter."
+  ],
   "open_questions": [],
   "evidence": [
     {
       "kind": "symbol",
       "path": "src/mountainash_rules/core/dimension.py",
-      "detail": "DimensionsMetadata.from_yaml/from_yaml_file"
+      "detail": "Dimension._validate_strategy_fields, resolved_context_field/resolved_rule_field, DimensionsMetadata._validate_hit_policy/_validate_unique_names and YAML helpers."
+    },
+    {
+      "kind": "test",
+      "path": "tests/core/test_dimension_serialization.py",
+      "detail": "TestYamlRoundTrip, TestDataTypeMigration and TestValidValues cover metadata contracts; inspected, not executed in this profile run."
+    },
+    {
+      "kind": "documentation",
+      "path": "README.md",
+      "detail": "Quick Start, Match Strategies and Serialisable Metadata provide concrete examples for a non-specialist capability overview; no performance or deployment guarantees inferred."
     }
   ],
-  "source_hash": "7d0e3dcb747949bb2d7172a34135a7872b2ed55f",
+  "source_hash": "730a8583ee9d4fd6b52dc5350699eb66cc7487e9",
   "manual": {
     "notes": "",
     "editorial_status": "",

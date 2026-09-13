@@ -48,8 +48,6 @@ class RuleResult:
 All accessors on RuleResult reach the underlying DataFrame through `mountainash.relations.relation()`, maintaining backend agnosticism. The only exception is the `survivors` property, which returns the raw DataFrame directly for callers who want backend-specific operations.
 
 <!-- concept:50 -->
-<!-- concept:51 -->
-<!-- concept:52 -->
 ## Survivors Accessor
 
 The `survivors` property returns the complete result DataFrame — all rules that passed the survival filter, ordered according to the active hit policy (specificity descending with deterministic input-order tie-breaking by default), with rank assignments.
@@ -68,18 +66,20 @@ The returned DataFrame contains:
 
 The DataFrame is in the same backend as the input rules. If you passed a Polars DataFrame to the engine constructor, `survivors` returns a Polars DataFrame. This allows callers to chain backend-specific operations (filtering, aggregation, export) on the result.
 
+<!-- concept:51 -->
 ## Best Match Accessor
 
-The `best_match` property returns the single surviving rule at rank 1 under the active hit-policy ordering. With the default `COLLECT` ordering, this is the most specific surviving rule. It returns a one-row DataFrame (not a scalar), preserving all columns.
+The `best_match` property returns the single surviving rule at the minimum retained `__rank` under the active hit-policy ordering. With the default `COLLECT` ordering and no truncation, this is the most specific surviving rule. It returns a one-row DataFrame (not a scalar), preserving all columns.
 
 ```python
 best = result.best_match  # Single-row DataFrame
 ```
 
-Internally, this takes the first row via `relation(self._df).head(1).collect()`. If no rules survived (empty result), `best_match` returns an empty DataFrame rather than raising an error.
+Internally, this sorts by `__rank` and takes the first row: `relation(self._df).sort("__rank").head(1).collect()`. The explicit sort matters because `__rank` is assigned once, before any caller-supplied filter such as `min_specificity` runs; the filters do not renumber it. If that filter removes the row ranked 1, `best_match` returns the retained row with the next-lowest rank instead — it compares ranks rather than trusting dataframe order, and never assumes rank 1 survived. If no rules survived (empty result), `best_match` returns an empty DataFrame rather than raising an error.
 
-This accessor is the most common entry point for callers who need a single definitive answer: "given this context and hit policy, which rule is ranked first?"
+This accessor is the most common entry point for callers who need a single definitive answer: "given this context and hit policy, which retained rule ranks best?"
 
+<!-- concept:52 -->
 ## Count Accessor
 
 The `count` property returns the number of surviving rules as a plain integer:
@@ -224,7 +224,7 @@ Sharing `_scored_relation` means explanation and evaluation cannot silently grow
 <!-- concept:111 -->
 ## RuleResult Select Method
 
-`RuleResult.select(policy, priority_field=None)` re-applies a hit policy after evaluation and returns a new `RuleResult`. Use it on an untruncated result produced with the `COLLECT` policy, so the complete survivor set is still available for the new selection.
+`RuleResult.select(policy, priority_field=None)` re-applies a hit policy after evaluation and returns a new `RuleResult`. The gate is not which policy produced the source result — it is whether the source still carries a complete, untruncated candidate basis. `select()` requires `SelectionInfo` to be present and its `truncated` flag to be `False`; a result evaluated with `COLLECT`, `UNIQUE`, or `RULE_ORDER`, with no `top_n`/`min_specificity` limit applied, satisfies that.
 
 ```python
 from mountainash_rules import HitPolicy
@@ -238,10 +238,9 @@ selected = collected.select(
 
 The method reorders the retained survivors, recomputes their 1-based `__rank`, runs the policy's assertions, and applies its cardinality rule. `priority_field` overrides the field recorded in the evaluation metadata when the selected policy needs one.
 
-Selection cannot recover rows that were discarded earlier. If `top_n` or `min_specificity` truncated the original result, `select()` raises `ValueError`; re-evaluate without truncation instead. The same principle is why the complete source should be `COLLECT`: a prior non-collecting cardinality decision has already narrowed the rows available for post-hoc selection. See [Chapter 6: Hit Policies](../06-hit-policies/) for the full semantics of each policy; this method only controls when those semantics are re-applied.
+Selection cannot recover rows that were discarded earlier. If `top_n` or `min_specificity` was supplied for the original evaluation, `select()` raises `ValueError` even when that limit removed no rows; re-evaluate without those limits instead. The same restriction applies after a prior `select()` call to `FIRST`, `PRIORITY`, or `ANY`: those policies mark their output truncated even when nothing was actually discarded — for example a singleton survivor — because their outputs are conservatively treated as potentially incomplete. The flag records which operations were requested, not proof that rows were lost. See [Chapter 6: Hit Policies](../06-hit-policies/) for the full semantics of each policy; this method only controls when those semantics are re-applied.
 
 <!-- concept:55 -->
-<!-- concept:57 -->
 ## At Least Filter
 
 The `at_least(n)` method returns a filtered DataFrame containing only survivors with specificity >= n. This is a post-evaluation convenience that applies a floor to the specificity score.
@@ -277,6 +276,7 @@ The filtering happens via `rel.head(top_n)` after sorting by specificity descend
 
 `top_n` is useful when the caller needs a fixed-size result regardless of how many rules match — for example, displaying the "top 5 applicable offers" to a user.
 
+<!-- concept:57 -->
 ## Min Specificity Filter
 
 The `min_specificity` parameter on `evaluate()` excludes survivors whose specificity falls below a threshold. Like `top_n`, it is applied during evaluation after rank assignment.

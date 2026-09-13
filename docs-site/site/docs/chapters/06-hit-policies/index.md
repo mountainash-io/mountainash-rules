@@ -178,7 +178,9 @@ Calling `ordering_keys(HitPolicy.PRIORITY, None)` raises `ValueError` because no
 
 `HitPolicy.ANY` permits multiple survivors only when they agree on their outputs. It is useful when several conditions independently produce the same answer: the rule table may contain redundant or differently specific explanations, but the application should reject conflicting results.
 
-The engine first counts survivors. Zero or one survivor passes. If more than one survives, it determines output columns using `output_fields` when configured, or by inference. Inferred outputs exclude dimension rule fields, `rule_name`, the configured priority field, and all columns whose names start with `__`. It then counts distinct rows over those output columns. If the count is greater than one, `check_assertions()` raises `HitPolicyViolationError`; if the outputs agree, cardinality keeps one representative row.
+Output-schema configuration is validated before any scoring happens, independent of how many rows will ultimately survive. With metadata attached, output columns may be inferred: the inference excludes dimension rule fields, `rule_name`, the configured priority field, and all columns whose names start with `__`. Without metadata — the expressions-only construction path — `output_fields` must be declared explicitly; `check_policy_config()` raises `ValueError` up front if none are present, even for a context where zero or one rule will survive.
+
+Only once configuration passes does the engine count survivors. Zero or one survivor always passes, regardless of output agreement. If more than one survives, the engine compares the configured or inferred output columns by counting distinct rows over them. `check_assertions()` raises `HitPolicyViolationError` when that count is greater than one; with metadata-backed inference, an inferred output set that happens to be empty is likewise only an error once there is more than one survivor to compare against. If the outputs agree, cardinality keeps one representative row.
 
 An explicit output field makes the contract clear:
 
@@ -221,7 +223,7 @@ except HitPolicyViolationError as exc:
     assert len(exc.offending) == 2
 ```
 
-When no metadata is available to infer dimensions or outputs, `ANY` requires explicit `output_fields`; otherwise the implementation raises `ValueError` rather than guessing which columns represent the result. This protects the assertion from accidentally comparing a condition column or an internal observability column.
+An expressions-only engine that never declares `output_fields` never reaches this comparison at all: the configuration check happens before scoring, protecting the assertion from accidentally comparing a condition column or an internal observability column no matter how many rules would have survived.
 
 <!-- concept:105 -->
 ## Rule Order Policy
@@ -249,15 +251,16 @@ The distinction is important for audit and migration work. Changing from `COLLEC
 
 `SelectionInfo` is the small record that a `RuleResult` carries so it can re-apply a hit policy after evaluation. It preserves the schema facts needed by ordering and assertion logic instead of forcing `RuleResult` to reconstruct them from the result frame.
 
-The dataclass has five fields:
+The dataclass has six fields:
 
 | Field | Type | Purpose |
 |---|---|---|
 | `dimension_rule_fields` | `tuple[str, ...]` | Identifies condition columns to exclude from inferred outputs; range dimensions contribute both bound fields |
 | `priority_field` | `str \| None` | Supplies the priority column for `PRIORITY` and excludes it from inferred outputs |
 | `output_fields` | `tuple[str, ...]` | Explicit output columns for `ANY` agreement checks |
-| `truncated` | `bool` | Records whether evaluation already removed rows with `top_n` or `min_specificity` |
+| `truncated` | `bool` | Records whether the survivor set is possibly incomplete for re-selection |
 | `observability` | `bool` | Records whether per-dimension ternary columns were retained |
+| `metadata_backed` | `bool` | Records whether the engine was built from `DimensionsMetadata`; `ANY` may only infer output columns when this is `True` |
 
 The helper `selection_info_from_metadata(metadata, priority_field, observability)` collects these values. For each ordinary dimension it records `resolved_rule_field`; for a `RANGE` dimension it records `range_min_field` and `range_max_field`. A per-call `priority_field` takes precedence over `metadata.priority_field`. The helper initially sets `truncated=False`; `evaluate()` replaces that value with the actual truncation state before constructing `RuleResult`.
 
@@ -266,10 +269,12 @@ The `RuleResult.select()` signature is:
 ```python
 def select(
     self,
-    policy: HitPolicy,
+    policy: HitPolicy | str,
     priority_field: str | None = None,
 ) -> RuleResult:
 ```
+
+`policy` accepts either a `HitPolicy` member or its serialized string value; both are normalized through the same validation `evaluate()` uses, and an unrecognized string raises `ValueError` rather than silently falling back to `COLLECT`.
 
 This enables a collect-first workflow. Evaluate once without truncating, then choose different policies for different consumers:
 
@@ -281,7 +286,9 @@ ordered = collected.select(HitPolicy.RULE_ORDER)
 priority = collected.select(HitPolicy.PRIORITY, priority_field="salience")
 ```
 
-`select()` re-sorts the stored survivors, drops the old `__rank`, assigns a new one-based rank, checks assertions, and applies cardinality. It refuses to operate when selection information is absent or when `truncated` is true. A result created with `top_n` or `min_specificity` no longer represents the full survivor set, so applying `UNIQUE` or `ANY` to it could miss an ambiguity. Re-evaluate without those truncating filters when a post-hoc policy needs complete evidence.
+`select()` re-sorts the stored survivors, drops the old `__rank`, assigns a new one-based rank, checks assertions, and applies cardinality. It refuses to operate when selection information is absent or when `truncated` is true.
+
+`truncated` is set conservatively, not by comparing row counts before and after. A result is marked truncated whenever `top_n` or `min_specificity` was requested — even if the limit happened to remove no rows — and whenever the applied policy is `FIRST`, `PRIORITY`, or `ANY`, even if only a single rule survived. `select()` cannot distinguish a genuinely narrowed survivor set from one that merely passed through a no-op limit or a singleton cardinality policy, so it treats both as incomplete evidence and refuses a second selection. Re-evaluate without truncating filters, using `COLLECT`, when a post-hoc policy needs complete evidence.
 
 <!-- concept:107 -->
 ## HitPolicyViolationError

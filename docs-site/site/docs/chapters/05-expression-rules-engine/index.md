@@ -15,23 +15,24 @@ This chapter covers the ExpressionRulesEngine class — the primary entry point 
 
 ---
 
-<!-- concept:41 -->
+<!-- concept:40 -->
 ## The Central Engine Class
 
-<!-- concept:40 -->
-The `ExpressionRulesEngine` is the primary API for rule evaluation in mountainash-rules. It accepts a rules DataFrame and dimension configuration at construction time, compiles expressions once, and then evaluates any number of contexts against those rules using a fixed single-pass pipeline.
+The `ExpressionRulesEngine` is the primary API for rule evaluation in mountainash-rules. It accepts a rules DataFrame and dimension configuration at construction time, compiles expressions once, and then evaluates any number of contexts against those rules using a fixed single-pass pipeline. Dimension configuration must come from exactly one non-empty definition; the constructor validates this before any compilation happens.
 
 The engine is designed around three principles from Chapter 1: vectorized evaluation (all rules processed simultaneously), backend-agnostic design (any supported DataFrame type), and ternary logic (wildcards handled algebraically). This chapter shows how those principles manifest in the concrete implementation.
 
+<!-- concept:41 -->
 ## Engine Construction
 
-The engine constructor accepts three parameters:
+The engine constructor accepts three positional-or-keyword parameters plus one keyword-only parameter:
 
 - **`rules`**: the DataFrame containing the rules table (required)
 - **`dimension_metadata`**: a `DimensionsMetadata` object for automatic compilation (optional)
 - **`dimension_expressions`**: a pre-compiled dict of expressions (optional)
+- **`output_fields`**: an explicit list of output field names, keyword-only and accepted only on the expressions-only path (optional)
 
-Exactly one of `dimension_metadata` or `dimension_expressions` must be provided — the constructor raises `ValueError` if both or neither are supplied.
+Exactly one of `dimension_metadata` or `dimension_expressions` must be provided, and it must configure at least one dimension — the constructor raises `ValueError` if both or neither are supplied, or if the supplied definition is empty.
 
 ```python
 from mountainash_rules import ExpressionRulesEngine, DimensionsMetadata
@@ -42,7 +43,6 @@ engine = ExpressionRulesEngine(
     dimension_metadata=metadata,
 )
 
-<!-- concept:45 -->
 # Construction with pre-compiled expressions (advanced path)
 engine = ExpressionRulesEngine(
     rules=rules_df,
@@ -50,7 +50,7 @@ engine = ExpressionRulesEngine(
 )
 ```
 
-During construction, the engine stores the rules DataFrame as `self._rules` and the compiled expressions as `self._expressions`. If metadata is provided, it also stores the metadata as `self._metadata` for reference (though this is not used during evaluation — only the compiled expressions matter at runtime).
+During construction, the engine stores the rules DataFrame as `self._rules` and the compiled expressions as `self._expressions`. If metadata is provided, it also stores it as `self._metadata`. Evaluation consults metadata for context-field/type resolution, default hit-policy configuration, and set-column validation; the compiled expressions perform the dimension scoring.
 
 <!-- concept:42 -->
 ## Convenience vs Advanced Path
@@ -67,6 +67,8 @@ The two construction paths serve different use cases:
 - Testing scenarios where specific expression behavior is needed
 
 The advanced path bypasses the compiler entirely — the engine trusts that the provided expressions are valid and produce ternary integer columns when applied to the rules DataFrame.
+
+Only the advanced (expressions-only) path may pass `output_fields` explicitly. These are the rule columns compared for `ANY` output agreement, not a projection of the returned columns. When supplied, the argument must be a nonempty list of unique, nonempty names present in the rules table. Expressions-only `ANY` requires this declaration even for zero or one survivor. The convenience path uses `dimension_metadata.output_fields` instead and rejects a constructor-level `output_fields` argument.
 
 | Path | Input | Compilation | Use Case |
 |------|-------|-------------|----------|
@@ -121,26 +123,26 @@ def evaluate(
     top_n: int | None = None,
     min_specificity: int | None = None,
     include_observability: bool = True,
-    hit_policy: HitPolicy | None = None,
+    hit_policy: HitPolicy | str | None = None,
     priority_field: str | None = None,
 ) -> RuleResult:
 ```
 
 The optional parameters provide control over the evaluation:
 
-- **`dimensions`**: evaluate only a subset of dimensions (useful for partial evaluation or debugging)
-- **`top_n`**: limit the result to the N most specific survivors
-- **`min_specificity`**: exclude survivors with fewer than N hard matches
+- **`dimensions`**: evaluate only a subset of dimensions (useful for partial evaluation or debugging). `None` means all configured dimensions; an empty list, duplicate names, or non-list/non-string values raise `ValueError` — an empty list is no longer an alias for "all dimensions". A well-formed but unknown dimension name still raises `KeyError`.
+- **`top_n`**: keep at most N remaining rows in applied-policy order after the specificity filter; must be a non-Boolean Python `int >= 0` or `None`, otherwise `ValueError`
+- **`min_specificity`**: exclude survivors with fewer than N hard matches; must be a non-Boolean Python `int >= 0` or `None`, otherwise `ValueError`
 - **`include_observability`**: retain or drop the per-dimension ternary columns in the result
-- **`hit_policy`**: select survivor cardinality and ordering; `None` uses the policy from metadata, or `collect` when using pre-compiled expressions
+- **`hit_policy`**: select survivor cardinality and ordering, given as a `HitPolicy` value or its lowercase string value (such as `"collect"`); `None` uses the policy from metadata, or `collect` when using pre-compiled expressions
 - **`priority_field`**: identify the rule column used to order survivors for the `priority` hit policy, overriding the metadata value when supplied
 
 These two selection parameters control which survivors are returned and how they are ordered; their complete semantics are deferred to [Chapter 6: Hit Policies](../06-hit-policies/).
 
 Internally, `evaluate()` performs three preparatory steps before delegating to the pipeline:
 
-1. Determine active dimensions (all dimensions if `dimensions` is None, otherwise the specified subset)
-2. Validate that all requested dimension names exist in the compiled expressions
+1. Determine and validate the active dimensions (`None` means all dimensions; an empty list, duplicate names, or non-list/non-string values raise `ValueError`, and a well-formed but unknown name raises `KeyError`)
+2. Validate the `top_n` and `min_specificity` limits, then normalize and validate the `hit_policy`
 3. Extract context values using `extract_context_values()`
 
 It then calls `_evaluate()` which executes the six-step pipeline and returns the materialized result DataFrame, which is wrapped in a `RuleResult` object.
@@ -148,15 +150,18 @@ It then calls `_evaluate()` which executes the six-step pipeline and returns the
 <!-- concept:44 -->
 ## Context Binding Phase
 
-The first step of the evaluation pipeline binds context values to the rules DataFrame as literal columns. Each context value is broadcast to every row, creating a uniform reference for column-to-column comparisons.
+The first step of the evaluation pipeline binds context values to the rules DataFrame as literal columns. Each context value is broadcast to every row, creating a uniform reference for column-to-column comparisons. A missing Boolean context value is bound as a typed null rather than a concrete `True`/`False` literal, so a backend whose Boolean cast would otherwise turn null into `False` still preserves "absent" as absent.
 
 ```python
-# Step 1: Bind context values as literal columns
+from mountainash_rules.core.context import _context_literal
+
+# Step 1: Bind context values as typed literal columns
 rel = relation(self._rules)
-ctx_columns = [
-    ma.lit(value).alias(f"__ctx_{name}")
-    for name, value in context_values.items()
-]
+ctx_columns = []
+for name, value in context_values.items():
+    dim = self._metadata.get_dimension(name) if self._metadata is not None else None
+    literal = _context_literal(value, dim.data_type if dim is not None else None)
+    ctx_columns.append(literal.alias(f"__ctx_{name}"))
 rel = rel.with_columns(*ctx_columns)
 ```
 
@@ -164,6 +169,7 @@ After this step, the DataFrame has one new column per active dimension, all pref
 
 The literal broadcast is computationally cheap — modern DataFrame backends represent literal columns as a single scalar with a length, not by physically replicating the value per row. This means context binding adds negligible memory overhead regardless of rule count.
 
+<!-- concept:45 -->
 ## Dimension Expression Phase
 
 The second step applies each compiled dimension expression, producing a ternary column per dimension:
@@ -184,15 +190,19 @@ This is where the vectorized power manifests: all rules are evaluated for all di
 <!-- concept:46 -->
 ## Survival Computation
 
-The third step determines which rules survive evaluation and how specific they are. A rule survives if no dimension produced FALSE (-1) — equivalently, if the minimum ternary value across all dimensions is >= 0.
+The third step determines which rules survive evaluation and how specific they are. A rule survives if no dimension produced FALSE (-1) — equivalently, if every dimension's ternary value is >= 0. The implementation computes this survival flag as a conjunction (logical AND) of each dimension's `ternary >= 0` check rather than a horizontal minimum, because a horizontal-minimum reduction over identical inputs can collapse to a single element on some backend versions; the conjunction preserves the same survival rule and row shape.
 
 ```python
-<!-- concept:47 -->
+import functools
+
 # Step 3: Compute survival and specificity
 t_cols = [ma.col(f"__t_{d}") for d in active_dims]
 
-# Survival: min(all ternary values) >= 0
-survived = ma.least(*t_cols).ge(ma.lit(0)).alias("__survived")
+# Survival: every ternary value must be non-negative
+survived = functools.reduce(
+    lambda a, b: a.and_(b),
+    (c.ge(ma.lit(0)) for c in t_cols),
+).alias("__survived")
 
 # Specificity: count of dimensions with TRUE (1)
 specificity = sum(c.eq(ma.lit(1)).cast(int) for c in t_cols).alias("__specificity")
@@ -200,13 +210,14 @@ specificity = sum(c.eq(ma.lit(1)).cast(int) for c in t_cols).alias("__specificit
 rel = rel.with_columns(survived, specificity)
 ```
 
-The survival computation uses `ma.least()` to take the element-wise minimum across all ternary columns. If any ternary column is -1 for a row, the least value will be -1, and `.ge(0)` will be False. This elegantly implements the ternary AND semantics without explicit conditional logic.
+The survival computation first turns each ternary column into a Boolean `>= 0` check, then combines the checks with `.and_()`. A -1 makes the row fail; 0 and 1 both pass. The nonempty dimension requirement gives the reduction at least one input.
 
 The specificity score counts how many dimensions produced a hard match (TRUE = 1) by casting each equality check to integer (0 or 1) and summing. A rule that matches 3 out of 5 dimensions with hard matches has specificity 3.
 
 !!! note "Why Specificity Matters"
     When multiple rules survive, specificity determines which is the "best" match. A rule that explicitly matches the context on 4 dimensions is more specific than one that matches on 2 and wildcards the rest. Specificity provides a natural, parameter-free ranking of survivors.
 
+<!-- concept:47 -->
 ## Specificity Scoring
 
 The specificity score is the count of dimensions where the ternary value is exactly 1 (TRUE). It does *not* count UNKNOWN (0) values — those represent wildcards, not matches. This distinction is crucial: two rules might both survive (neither has FALSE), but the one with more TRUE dimensions is more specific to the given context.
@@ -417,6 +428,6 @@ The engine also exposes `evaluate_batch()` for evaluating many contexts at once 
 - **Single-pass evaluation** processes the entire rules DataFrame in one pipeline — no iteration, no recursion, and predictable performance regardless of rule complexity.
 - **Context binding** broadcasts context values as literal columns, enabling column-to-column comparison with zero per-row overhead.
 - **Dimension expression application** evaluates all dimensions simultaneously via a single `with_columns` call, producing ternary columns.
-- **Survival computation** uses `ma.least()` across ternary columns — any FALSE eliminates the rule, any UNKNOWN preserves it without claiming a match.
+- **Survival computation** requires every dimension's ternary value to be >= 0, computed as a conjunction of per-dimension checks — any FALSE eliminates the rule, any UNKNOWN preserves it without claiming a match.
 - **Specificity scoring** counts hard matches (TRUE = 1) per rule, providing a natural ranking criterion without explicit configuration.
 - **Rank assignment** orders survivors according to the active hit policy (specificity descending by default) and assigns 1-based ranks, with optional post-filters for top_n and min_specificity.

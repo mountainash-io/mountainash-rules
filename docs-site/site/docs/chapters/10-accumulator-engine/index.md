@@ -69,6 +69,8 @@ def _filter_engine_for(self, lattice: Lattice) -> ExpressionRulesEngine:
 
 The cache is a `weakref.WeakKeyDictionary` created by `AccumulatorEngine.__init__`, keyed by lattice identity. Repeated `apply(lattice, context)` calls therefore reuse the same filter engine and its compiled expressions, while entries disappear when the corresponding lattice is no longer strongly referenced. The optional `dimensions` argument is still passed to each `evaluate()` call, so per-query dimension selection does not alter the cached engine.
 
+Because `ExpressionRulesEngine` construction requires at least one non-empty dimension definition, `apply()` cannot filter a lattice whose metadata contributes zero constraint dimensions — `_build_apply_metadata()` would produce an empty dimension configuration, and constructing the cached engine raises `ValueError` before any query runs. The `dimensions` argument passed through to `evaluate()` also inherits the strict non-empty, no-duplicate projection validation described in Chapter 5: an explicit `dimensions=[]` is no longer treated as "all dimensions".
+
 The cache is local to the `AccumulatorEngine`; it does not merge lattices or change their combinations. `apply_auto()` uses the indexed routing path first and then applies this same per-lattice cache.
 
 The AccumulatorCompiler expressions used during the build are covered in Chapter 9. Partition routing for multiple lattices, including the `LatticeIndex` ternary-partition router, is covered in Chapter 11. This chapter focuses on the build algorithm itself.

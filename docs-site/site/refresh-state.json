@@ -1,14 +1,15 @@
 {
   "schema_version": "1.0",
   "baseline": {
-    "source_commit": "7d0e3dcb747949bb2d7172a34135a7872b2ed55f",
-    "refresh_date": "2026-09-02T00:00:00Z",
+    "source_commit": "730a8583ee9d4fd6b52dc5350699eb66cc7487e9",
+    "refresh_date": "2026-09-13T11:33:12Z",
     "tool_versions": {
-      "python": "3.12",
+      "python": "3.12.12",
       "enrich_script": "1.0.0",
-      "package_documentation_profile": "n/a (agent-executed, no version pin)",
-      "textbook_refresh": "n/a (agent-executed, no version pin)",
-      "csv_to_json": "0.04"
+      "package_documentation_profile": "1dc336adb73d228aed73366150c53423765bba51 (validated reused profile)",
+      "textbook_refresh": "1dc336adb73d228aed73366150c53423765bba51 + local instruction edits; exact digests in refresh_history",
+      "csv_to_json": "0.04",
+      "ibook": "0535e0adb9a3e347e22246c34dbd52ce3adb909a"
     }
   },
   "chapter_state": {
@@ -20,10 +21,10 @@
       "generator_version": "0.09"
     },
     "02-match-strategies": {
-      "content_hash": "44b54cf75fe27f6132b8b58a71409f64399dac9f20a74f7113c27de188a43883",
-      "word_count": 3826,
+      "content_hash": "754f8bdd638319ca4773354259490f4668c0ba98c665262a5d9ff6b8774749c6",
+      "word_count": 4023,
       "has_concept_markers": true,
-      "last_generated": "2026-09-02",
+      "last_generated": "2026-09-13",
       "generator_version": "0.09"
     },
     "03-dimension-model": {
@@ -34,38 +35,38 @@
       "generator_version": "0.09"
     },
     "04-dimension-compiler": {
-      "content_hash": "5d19bbaf12c3fab001269b657ddc0951e0a82f392621c2abb1147fa08a4ebef4",
-      "word_count": 3421,
+      "content_hash": "1a7c1a7bd8ea65670aa403d39a44cc9f2c0f4610dea0183af488f7ecb16f063f",
+      "word_count": 3678,
       "has_concept_markers": true,
-      "last_generated": "2026-09-02",
+      "last_generated": "2026-09-13",
       "generator_version": "0.09"
     },
     "05-expression-rules-engine": {
-      "content_hash": "3dc1225f4b69b153b2520d13ee2e95ace4bca7daeac46e6386b021524d68b88a",
-      "word_count": 3127,
+      "content_hash": "91572db2c55f6a54b7907e10da81a78137f12aac450f25b396d041485c2a1e62",
+      "word_count": 3472,
       "has_concept_markers": true,
-      "last_generated": "2026-09-02",
+      "last_generated": "2026-09-13",
       "generator_version": "0.09"
     },
     "06-hit-policies": {
-      "content_hash": "1cf4ee107c02adb1083646894bdda24472dae82b88be98ba2ddef20507bb6407",
-      "word_count": 2895,
+      "content_hash": "a95b240579b43589319839cb823163ebc8806ab54fedd7930cc7635413ee481a",
+      "word_count": 3102,
       "has_concept_markers": true,
-      "last_generated": "2026-09-02",
+      "last_generated": "2026-09-13",
       "generator_version": "0.09"
     },
     "07-expression-engine-results": {
-      "content_hash": "a37f311109d3fbbb7a272b7115171474471407844e5de0164f8a39ba1c19d1fd",
-      "word_count": 3647,
+      "content_hash": "c034f3d05eb6cfe12e834f2e0d220f84472994f03074607cf30ae1d4f7b767f0",
+      "word_count": 3779,
       "has_concept_markers": true,
-      "last_generated": "2026-09-02",
+      "last_generated": "2026-09-13",
       "generator_version": "0.09"
     },
     "08-batch-evaluation": {
-      "content_hash": "9deb3f51f528c7b7fafa1b518f34b1e754be5bfeba457ee36f87168f6d8efb13",
-      "word_count": 3416,
+      "content_hash": "e94f4a4215112464a64d648748ccb1591a00c20f764ca4a6730a897f02f67668",
+      "word_count": 4111,
       "has_concept_markers": true,
-      "last_generated": "2026-09-02",
+      "last_generated": "2026-09-13",
       "generator_version": "0.09"
     },
     "09-accumulator-compiler": {
@@ -76,22 +77,22 @@
       "generator_version": "0.09"
     },
     "10-accumulator-engine": {
-      "content_hash": "6ceb04229a3353fb59880781b0a696f55a886d4e31cbc43188498578aaad30a4",
-      "word_count": 3412,
+      "content_hash": "60ff023b3eff62772fd20d5667c9a6c003d29be02b8b1a84766268da2dd991f5",
+      "word_count": 3481,
       "has_concept_markers": true,
-      "last_generated": "2026-09-02",
+      "last_generated": "2026-09-13",
       "generator_version": "0.09"
     },
     "11-lattice-structures-and-results": {
-      "content_hash": "2bc0cac818fdc3b339303a444dcb82853d663016ca46fa88afc1cecafd870daf",
-      "word_count": 4011,
+      "content_hash": "8bc605cf2f7bb760dab27ac92033c5f3178c532ceca619dcb2820b6263418180",
+      "word_count": 4140,
       "has_concept_markers": true,
-      "last_generated": "2026-09-02",
+      "last_generated": "2026-09-13",
       "generator_version": "0.09"
     }
   },
   "learning_graph_state": {
-    "content_hash": "7cfc9150329b9d72607f7d7436c4ec5bd4e1967033591d19980daf6598665620",
+    "content_hash": "0fcf14c3f2e65d5b0d9734785c6a2b5a79d5aaea552081e68b2eccd044517abb",
     "node_count": 130,
     "edge_count": 230,
     "enriched_nodes": 65,
@@ -99,7 +100,7 @@
   },
   "faq_state": {
     "question_count": 70,
-    "content_hash": "67a8ea0c99b8866d65b4cef933938f43975594bdcba5484efd500eb11470eeff"
+    "content_hash": "f5225bbfa080cf48812b43ca28674ed2bf2ab7270a9a96f3e5e671afb243d135"
   },
   "refresh_history": [
     {
@@ -133,6 +134,51 @@
       "faq_questions_updated": 17,
       "tokens_used": null,
       "note": "full refresh: package renamed mountainash_utils_rules->mountainash_rules and reorganised flat->core/+engines/{filter,accumulator}/; profile rebuilt 14->21 modules; learning graph grown 90->130 concepts, 7->9 taxonomy categories, 9->11 chapters (2 new: Hit Policies, Batch Evaluation); FAQ grown 53->70 questions, 6->8 categories"
+    },
+    {
+      "date": "2026-09-13T11:33:12Z",
+      "from_commit": "7d0e3dcb747949bb2d7172a34135a7872b2ed55f",
+      "to_commit": "730a8583ee9d4fd6b52dc5350699eb66cc7487e9",
+      "chapters_updated": [
+        "02-match-strategies",
+        "04-dimension-compiler",
+        "05-expression-rules-engine",
+        "06-hit-policies",
+        "07-expression-engine-results",
+        "08-batch-evaluation",
+        "10-accumulator-engine",
+        "11-lattice-structures-and-results"
+      ],
+      "sections_regenerated": 31,
+      "faq_questions_updated": 12,
+      "tokens_used": null,
+      "note": "Approved incremental refresh: 14 marker-only relocations, 31 bounded concept replacements, seven separately checked summary substitutions, and 12 answer-only FAQ updates across the existing Markdown/JSON/published Markdown artifacts. All 130 concept identities and graph topology preserved; published graph mirror and both README texts unchanged. Original chapter generator_version fields retained; refresh provenance recorded here. Existing missing MicroSim targets remain outside this content-only scope.",
+      "tool_provenance": {
+        "ibook_revision": "0535e0adb9a3e347e22246c34dbd52ce3adb909a",
+        "profile_validation_revision": "1dc336adb73d228aed73366150c53423765bba51",
+        "refresh_instruction_base": "1dc336adb73d228aed73366150c53423765bba51",
+        "local_refresh_instruction_sha256": {
+          "skills/textbook-refresh/SKILL.md": "98ceaaf121ee5f8b83bc60c2e57f82adc89ff14ff9c1d0488311b924d44100a1",
+          "skills/textbook-refresh/references/change-classification.md": "085324f2a8f24ed2c110612e0ab8e9f6941470b89f7516faf74120f4bacf2e0d"
+        },
+        "runtime_dependency_commits": {
+          "mountainash": "6255670d4faefaf4032bb4b501e9cbcca0851953",
+          "mountainash-data": "e01f18002c26daeedf09a4fdda5a1828992918ba",
+          "mountainash-settings": "eba11c42ec0a5e56226fd0190453936023206193"
+        }
+      },
+      "verification": {
+        "concept_coverage": "130 concepts exactly once in their assigned chapters",
+        "changed_python_examples_executed": 6,
+        "source_contract_scenarios_passed": 15,
+        "dependent_and_policy_boundary_smoke": "passed",
+        "runtime": "Python 3.12.12, Polars 1.44.2, Ibis 12.0.0 installed; execution checks used Polars",
+        "faq_parity": "70 questions, 8 categories, 12 updated answers, 58 untouched answers preserved",
+        "strict_mkdocs_build": "passed with MkDocs 1.6.1",
+        "rendered_pages_inspected": 9,
+        "outside_approved_content_bytes": "preserved",
+        "preexisting_missing_iframe_targets_in_updated_chapters": 22
+      }
     }
   ]
 }

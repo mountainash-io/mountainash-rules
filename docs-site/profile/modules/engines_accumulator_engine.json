@@ -21,6 +21,7 @@
   ],
   "key_functions": [],
   "dependencies": [
+    "mountainash",
     "mountainash_rules.core.constants",
     "mountainash_rules.core.dimension",
     "mountainash_rules.core.set_wildcard",
@@ -29,7 +30,9 @@
     "mountainash_rules.engines.accumulator.lattice",
     "mountainash_rules.engines.accumulator.primes",
     "mountainash_rules.engines.accumulator.result",
-    "mountainash_rules.engines.filter.engine"
+    "mountainash_rules.engines.filter.engine",
+    "polars",
+    "pydantic"
   ],
   "dependents": [
     "mountainash_rules.__init__"
@@ -41,9 +44,14 @@
     "Renamed/relocated from top-level accumulator_engine.py to engines/accumulator/engine.py.",
     "Apply-phase caching added: memoised filter engines and LatticeIndex per lattice (WeakKeyDictionary).",
     "Ternary + specificity partition routing via an embedded meta-engine added for CONTEXT_KEY dimensions (feature/ternary-partition-routing, PR #48/#49) \u2014 NOT_SET fill for missing/null partition-key fields, EXACT_KEY match strategy powers the routing.",
-    "Each build level is materialised via relation(...).collect() \u2014 CLAUDE.md warns against lazy re-chaining (exponential plan blow-up)."
+    "Each build level is materialised via relation(...).collect(); do not infer lazy streaming of the entire combination search.",
+    "At target source, apply delegates to a cached ExpressionRulesEngine built from constraint dimensions only. A context-key-only lattice can be built, but its apply filter rejects empty dimensions.",
+    "The delegated filter now validates explicit dimension projections. Unchanged accumulator source does not imply unchanged behavior of its shared filter dependency."
   ],
-  "documentation_hooks": [],
+  "documentation_hooks": [
+    "README.md: Accumulator Engine documents the apply-phase constraint-dimension requirement.",
+    "Explain build-time partitioning separately from apply-time filter validation."
+  ],
   "examples": [],
   "tests": [
     "tests/accumulator/test_engine.py",
@@ -61,10 +69,15 @@
     {
       "kind": "import",
       "path": "src/mountainash_rules/engines/accumulator/engine.py",
-      "detail": "import polars as pl  # allow: empty-build schema seed"
+      "detail": "AccumulatorEngine._build_apply_metadata, apply and _filter_engine_for remap only constraint dimensions and delegate evaluation; the native Polars import seeds empty-build schemas."
+    },
+    {
+      "kind": "symbol",
+      "path": "src/mountainash_rules/engines/filter/engine.py",
+      "detail": "ExpressionRulesEngine.__init__ rejects an empty configured dimension set; _active_dimensions rejects empty, duplicate or malformed explicit projections."
     }
   ],
-  "source_hash": "7d0e3dcb747949bb2d7172a34135a7872b2ed55f",
+  "source_hash": "730a8583ee9d4fd6b52dc5350699eb66cc7487e9",
   "manual": {
     "notes": "",
     "editorial_status": "",
