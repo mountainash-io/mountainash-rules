@@ -95,6 +95,8 @@ engine = ExpressionRulesEngine(rules=rules, dimension_metadata=metadata)
 
 Expressions are compiled once here. Build the engine at startup and reuse it for every evaluation.
 
+Provide exactly one nonempty definition: `dimension_metadata` or `dimension_expressions`. Passing both is invalid even when the expressions dict is empty. Zero dimensions are rejected by the filter constructor, not by shared `DimensionsMetadata`; zero rules with a valid typed schema are supported.
+
 ---
 
 ### Step 4 — Evaluate a context
@@ -191,6 +193,10 @@ result = engine.evaluate(context, dimensions=["region", "spend"])
 
 Top-N selects positions among the rows remaining after `min_specificity`, not rows whose original rank is <= N. The same rule applies to batch `top_n_per_context`. Policy assertions run first, so a conflicting UNIQUE/ANY request still raises even with top-N zero or a threshold that would remove every match.
 
+Limits and `min_specificity` must be nonnegative Python integers or `None`; Booleans, floats, strings, and negative values raise `ValueError`. A threshold greater than the active dimension count is valid.
+
+Across `evaluate`, `evaluate_batch`, and `explain`, `dimensions=None` selects all dimensions in configured order. Explicit selections must be nonempty lists of distinct configured names. Empty lists, duplicate names, and malformed selections raise `ValueError`; a well-formed unknown name raises `KeyError`. Projection order is retained in `active_dimensions` and ternary presentation without adding a ranking tiebreak.
+
 ### Policies, output schemas and re-selection
 
 Accepts `HitPolicy` members and exact lowercase strings (`collect`, `unique`, `first`, `priority`, `any`, `rule_order`). Evaluation `None` inherits metadata/default COLLECT; `select(None)` and invalid spellings/types raise `ValueError`. PRIORITY requires an existing priority field and rejects null priorities on survivors before limits; null priorities on nonmatching rules do not invalidate the request.
@@ -221,6 +227,26 @@ Re-selection requires a complete candidate basis:
 This is the conservative meaning of exported `SelectionInfo.truncated`: possibly incomplete, not necessarily fewer rows. `SelectionInfo.metadata_backed` defaults to False; manual callers relying on inference must opt in with complete condition metadata. Engine-created results provide it automatically. Priority overrides are retained immutably and update inferred output exclusions; explicit output declarations remain unchanged.
 
 `include_observability=False` removes ternaries only; rank, specificity and source identity remain available for sound selection. Batch best-match accessors use minimum remaining rank and `for_context()` returns rank-ordered rows. Filter batch output is ordered by canonical context ID then rank, which need not be caller input order.
+
+### Batch identity and empty inputs
+
+```python
+contexts = pl.DataFrame({"cid": ["B", "A"], "region": ["AU", "NZ"]})
+batch = engine.evaluate_batch(contexts, context_id_field="cid", chunk_size=1)
+batch.survivors["__context_id"]  # correlation values from cid, sorted with rank
+batch.context_id_field         # "cid": source mapping, not an echoed column
+batch.unmatched_context_ids(contexts)
+```
+
+Supplied IDs must be non-null and globally unique in an existing input column. Validation precedes backend conversion and chunking, so duplicates across chunks are still invalid. IDs are not coerced to strings. Result rows use canonical `__context_id`; a rules-side column named `cid` remains ordinary rule data, not an echo from contexts.
+
+With `context_id_field=None`, IDs are assigned once as original zero-based row positions. Unmatched rows leave gaps; chunking does not restart or renumber IDs. Unordered database inputs have no portable replay order—provide explicit IDs for persistent correlation.
+
+`matched_context_ids` and `counts_per_context` describe retained rows, not all pre-filter candidates. Top-N zero can make every submitted ID unmatched by these accessors. `unmatched_context_ids(original_contexts)` returns absent IDs sorted; it validates the recorded custom source field rather than guessing positions if that field is missing. For generated IDs, preserve original row order and count. The result does not store the full request universe, so `for_context()` returns the same typed empty view for unmatched and never-submitted IDs, with unchanged re-selection restrictions.
+
+`chunk_size` must be `None` or a positive Python integer, excluding Boolean values. Typed empty contexts and typed empty rules produce the normal typed empty result, with requested observability, identity metadata, and conservative completeness state. Empty chunked input follows normal evaluation once; it does not fabricate a row or untyped schema. Empty input still validates policy configuration and reserved fields.
+
+Chunking bounds the cross-product work per chunk, not total memory: prepared input, result frames, and grouped violation diagnostics are still accumulated. All offending UNIQUE/ANY contexts are reported before an exception is raised; no partial successful result is returned.
 
 ---
 
@@ -307,17 +333,17 @@ Dimension(
     data_type=str,
 )
 
-# REGEX: context value matches a fixed pattern defined on the dimension
+# CONTEXT_REGEX: context value matches a fixed pattern defined on the dimension
 # The pattern is metadata-level — all rules share the same pattern.
 Dimension(
     dimension_name="sku",
-    match_strategy=MatchStrategy.REGEX,
+    match_strategy=MatchStrategy.CONTEXT_REGEX,
     data_type=str,
     regex_pattern=r"^[A-Z]{3}-\d{4}$",
 )
 ```
 
-> **REGEX limitation:** `regex_pattern` is declared on the `Dimension`, not per-row. Every rule in the engine applies the same pattern. This is a global context validator, not a per-rule filter.
+`CONTEXT_REGEX` is a global context validator, not a per-rule pattern. `REGEX` instead reads each rule's pattern column and currently uses the documented Polars-native fallback.
 
 ### NOT_EQUAL
 
@@ -405,6 +431,8 @@ engine = ExpressionRulesEngine(rules=table, dimension_metadata=metadata)
 ## Part 2: AccumulatorEngine
 
 Use `AccumulatorEngine` when you need to find the most constrained rule *combination* that is consistent with a context — not just the best individual rule.
+
+Application requires at least one constraint dimension. Context-key-only metadata can still build a lattice, but applying it raises an explicit filter dimension `ValueError`; no implicit match-all or dummy dimension is supplied. No-key index routing works normally when constraint dimensions exist.
 
 ### When to use it
 

@@ -17,8 +17,16 @@ from mountainash_rules import (
 def engine():
     metadata = DimensionsMetadata(
         dimensions=[
-            Dimension(dimension_name="region", match_strategy=MatchStrategy.EXACT, data_type="str"),
-            Dimension(dimension_name="channel", match_strategy=MatchStrategy.EXACT, data_type="str"),
+            Dimension(
+                dimension_name="region",
+                match_strategy=MatchStrategy.EXACT,
+                data_type="str",
+            ),
+            Dimension(
+                dimension_name="channel",
+                match_strategy=MatchStrategy.EXACT,
+                data_type="str",
+            ),
         ]
     )
     rules = pl.DataFrame(
@@ -42,8 +50,8 @@ class TestExplain:
         rows = {r["rule_name"]: r for r in result.frame.to_dicts()}
         miss = rows["one_miss"]
         assert miss["__survived"] is False
-        assert miss["__t_region"] == 1      # matched
-        assert miss["__t_channel"] == -1    # the reason it failed
+        assert miss["__t_region"] == 1  # matched
+        assert miss["__t_channel"] == -1  # the reason it failed
 
     def test_wildcard_rows_report_zero_ternary(self, engine):
         result = engine.explain({"region": "AU", "channel": "BROKER"})
@@ -66,22 +74,9 @@ class TestExplain:
         assert not any(c.startswith("__ctx_") for c in cols)
         assert "__rule_index" in cols  # kept: stable rule identity
 
-    def test_zero_dimension_engine_raises(self):
-        # dimensions=[] is falsy and expands to all dims (evaluate's existing
-        # semantics); the genuinely-empty case is an engine with no dimensions.
-        empty_engine = ExpressionRulesEngine(
-            rules=pl.DataFrame({"rule_name": ["r1"]}),
-            dimension_metadata=DimensionsMetadata(dimensions=[]),
-        )
-        with pytest.raises(ValueError, match="at least one"):
-            empty_engine.explain({})
-
     def test_agrees_with_evaluate_survivor_set(self, engine):
         ctx = {"region": "AU", "channel": "BROKER"}
-        eval_names = {
-            r["rule_name"]
-            for r in engine.evaluate(ctx).survivors.to_dicts()
-        }
+        eval_names = {r["rule_name"] for r in engine.evaluate(ctx).survivors.to_dicts()}
         explain_names = {
             r["rule_name"] for r in engine.explain(ctx).survivors.to_dicts()
         }

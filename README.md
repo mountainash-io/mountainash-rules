@@ -102,9 +102,21 @@ batch.counts_per_context    # survivors per context
 batch.for_context("C042")   # single-context RuleResult
 ```
 
-Contexts are automatically conformed to whatever backend the rules live in, and large batches can be chunked (`chunk_size=`).
+Contexts are conformed to the rules backend. `chunk_size` is `None` or a positive Python integer (not Boolean). Chunking bounds each contexts × rules evaluation, not total input staging, accumulated results, or violation diagnostics. Typed empty contexts and typed empty rules preserve the normal result schema, including when chunking is enabled.
 
 Filter batch rows are ordered by `__context_id` then `__rank`. Ranks describe the policy ordering before caller filters: if rank 1 is removed, rank 2 may be the best remaining match. Top-N applies to remaining positions without rewriting those ranks. `for_context()` preserves both rank order and the batch's re-selection restrictions.
+
+Caller ID columns must exist and contain globally unique, non-null values, validated before conversion or chunking. Rows always expose **`__context_id`**; `batch.context_id_field` records the source field (`"customer_id"` above), not an echoed context column. Without a source field, generated IDs are original zero-based input positions, assigned once before chunking. Their stability is within an evaluation, not across unordered database queries.
+
+`matched_context_ids` and `counts_per_context` describe retained rows after limits. `unmatched_context_ids(original_contexts)` returns submitted IDs absent from those rows in sorted order; custom IDs require the original non-null, unique source column. Generated IDs require the original input order and row count. `for_context()` cannot distinguish an unmatched submitted ID from one never submitted.
+
+### Input boundaries — correctness update
+
+Filter construction requires exactly one nonempty dimension definition: metadata or expressions, never both (even when one is empty). Empty shared metadata remains serializable; zero rules with a valid schema remain supported.
+
+On `evaluate`, `evaluate_batch`, and `explain`, `dimensions=None` means all configured dimensions. An explicit projection must be a nonempty list of distinct names; empty/duplicate/malformed projections raise `ValueError`, while well-formed unknown names retain `KeyError`. Requested order controls dimension presentation, not ranking.
+
+`top_n`, `top_n_per_context`, and `min_specificity` accept only `None` or nonnegative Python integers, excluding Boolean values. Zero top-N and thresholds above the active dimension count yield empty results **after** policy assertions. Invalid configuration is still rejected on empty input. These explicit failures replace previously inconsistent fallback or backend errors.
 
 ## Accumulator Engine
 
@@ -120,6 +132,8 @@ result = engine.apply(lattice, context)  # apply many times
 ```
 
 Dimensions marked `DimensionRole.CONTEXT_KEY` partition the rule space into separate lattices; `engine.index(lattices)` routes single or batched contexts to the right one. Combination provenance is tracked with prime products, and impossible widths fail fast with a sized `LatticeWidthExceededError`.
+
+Apply-phase filters require at least one constraint dimension. A context-key-only accumulator may build a lattice, but applying it raises an explicit dimension `ValueError`; unconditional application is not supported. No-key index routing remains supported when constraint dimensions exist.
 
 ## Serialisable Metadata
 
