@@ -43,15 +43,30 @@ permissions:
   contents: write
   pull-requests: read
 
+env:
+  PACKAGE_SRCDIR: mountainash_rules
+  PACKAGE_NAME: mountainash-rules
+  ORGNAME: mountainash-io
+
 jobs:
-  build-and-release:
+  # ============================================================
+  # Compute the release version/type once; every other job reads
+  # its outputs instead of recomputing them.
+  configure-release:
     if: github.event.pull_request.merged == true || github.event_name == 'workflow_dispatch'
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-24.04]
-        python-version: ["3.12"]
+    runs-on: ubuntu-24.04
+    outputs:
+      resolved_sha: ${{ steps.resolved_sha.outputs.SHA }}
+      source_branch: ${{ steps.branch_vars.outputs.SOURCE_BRANCH }}
+      target_branch: ${{ steps.branch_vars.outputs.TARGET_BRANCH }}
+      fallback_branch: ${{ steps.branch_vars.outputs.FALLBACK_BRANCH }}
+      base_version: ${{ steps.base_version.outputs.BASE_VERSION }}
+      version: ${{ steps.release_config.outputs.FULL_VERSION }}
+      version_suffix: ${{ steps.release_config.outputs.VERSION_SUFFIX }}
+      release_type: ${{ steps.release_config.outputs.RELEASE_TYPE }}
+      release_title: ${{ steps.release_config.outputs.RELEASE_TITLE }}
+      release_description: ${{ steps.release_config.outputs.RELEASE_DESCRIPTION }}
+      is_prerelease: ${{ steps.release_config.outputs.IS_PRERELEASE }}
 
     env:
       BUILD_ENV: "build_github"
@@ -68,16 +83,10 @@ jobs:
       # ======================================================
       # INITIALIZE
 
-      - name: Setup Environment Variables
-        run: |
-          echo "PACKAGE_SRCDIR=mountainash_rules" >> $GITHUB_ENV
-          echo "PACKAGE_NAME=mountainash-rules" >> $GITHUB_ENV
-          echo "ORGNAME=mountainash-io" >> $GITHUB_ENV
-
-      - name: Set up Python ${{ matrix.python-version }}
+      - name: Set up Python 3.12
         uses: actions/setup-python@v5
         with:
-          python-version: ${{ matrix.python-version }}
+          python-version: "3.12"
 
       - name: Checkout Repository (PR)
         if: github.event_name == 'pull_request'
@@ -94,20 +103,34 @@ jobs:
           fetch-depth: 0
 
       - name: Set Branch Vars
+        id: branch_vars
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_SOURCE_BRANCH: ${{ inputs.source_branch }}
+          INPUT_FALLBACK_BRANCH: ${{ inputs.fallback_branch }}
+          INPUT_RELEASE_TYPE: ${{ inputs.release_type }}
+          PR_SOURCE_BRANCH: ${{ github.head_ref }}
+          PR_TARGET_BRANCH: ${{ github.base_ref }}
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            # For manual runs, use the specified source branch
-            echo "SOURCE_BRANCH=${{ github.event.inputs.source_branch }}" >> $GITHUB_ENV
-            echo "TARGET_BRANCH=${{ github.event.inputs.source_branch }}" >> $GITHUB_ENV
-            echo "FALLBACK_BRANCH=${{ github.event.inputs.fallback_branch }}" >> $GITHUB_ENV
-            echo "MANUAL_RELEASE_TYPE=${{ github.event.inputs.release_type }}" >> $GITHUB_ENV
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            SOURCE_BRANCH="$INPUT_SOURCE_BRANCH"
+            TARGET_BRANCH="$INPUT_SOURCE_BRANCH"
+            FALLBACK_BRANCH="$INPUT_FALLBACK_BRANCH"
+            MANUAL_RELEASE_TYPE="$INPUT_RELEASE_TYPE"
           else
-            # Normal PR merge behavior
-            echo "SOURCE_BRANCH=${{ github.head_ref }}" >> $GITHUB_ENV
-            echo "TARGET_BRANCH=${{ github.base_ref }}" >> $GITHUB_ENV
-            echo "FALLBACK_BRANCH=main" >> $GITHUB_ENV
-            echo "MANUAL_RELEASE_TYPE=" >> $GITHUB_ENV
+            SOURCE_BRANCH="$PR_SOURCE_BRANCH"
+            TARGET_BRANCH="$PR_TARGET_BRANCH"
+            FALLBACK_BRANCH=main
+            MANUAL_RELEASE_TYPE=
           fi
+          for output in "$GITHUB_ENV" "$GITHUB_OUTPUT"; do
+            {
+              echo "SOURCE_BRANCH=$SOURCE_BRANCH"
+              echo "TARGET_BRANCH=$TARGET_BRANCH"
+              echo "FALLBACK_BRANCH=$FALLBACK_BRANCH"
+              echo "MANUAL_RELEASE_TYPE=$MANUAL_RELEASE_TYPE"
+            } >> "$output"
+          done
 
       # ======================================================
       # DEPENDENCIES
@@ -139,9 +162,9 @@ jobs:
       - name: Get Base Version
         id: base_version
         run: |
-          # BASE_VERSION=$(python -c "import sys; sys.path.append('src'); from ${{env.PACKAGE_SRCDIR}}.__version__ import __version__; print(__version__)")
           BASE_VERSION=$(hatch version)
           echo "BASE_VERSION=${BASE_VERSION}" >> $GITHUB_ENV
+          echo "BASE_VERSION=${BASE_VERSION}" >> $GITHUB_OUTPUT
 
           # Validate semantic version format
           if [[ ! "$BASE_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
@@ -230,10 +253,10 @@ jobs:
                 ;;
 
               *)
-                if [[ "{{ env.SOURCE_BRANCH }}" == feature/* || "$SOURCE_BRANCH" == bugfix/* ]]; then
+                if [[ "$SOURCE_BRANCH" == feature/* || "$SOURCE_BRANCH" == bugfix/* || "$SOURCE_BRANCH" == hotfix/* ]]; then
                   RELEASE_TYPE="beta"
                   # Extract feature/bugfix name from branch
-                  FEATURE_NAME=$(echo {{ env.SOURCE_BRANCH }} | cut -d'/' -f2)
+                  FEATURE_NAME="${SOURCE_BRANCH#*/}"
                   # Get latest beta number for this feature
                   LATEST_BETA=$(get_latest_version "v${BASE_VERSION}" "beta.${FEATURE_NAME}")
                   BETA_NUM=$(echo "$LATEST_BETA" | grep -oP 'beta\.[^.]+\.\K\d+' || echo "0")
@@ -286,37 +309,154 @@ jobs:
             git push -u origin $RELEASE_BRANCH
           fi
 
-      # ======================================================
-      # BUILD ARTIFACTS
+      - name: Resolve Commit SHA
+        id: resolved_sha
+        run: echo "SHA=$(git rev-parse HEAD)" >> $GITHUB_OUTPUT
 
-      - name: Setup Build Environment
-        run: |
-          hatch env create ${{ env.BUILD_ENV }}
+  # ============================================================
+  # Build the compiled native wheel for every supported
+  # CPython/PyPy version on every supported OS/arch. Never
+  # produces (or falls back to) a pure "-none-any" wheel: the
+  # extension is a hard requirement of every artifact built here.
+  build-wheels:
+    needs: configure-release
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # Native runners avoid cross-architecture tagging/linker assumptions.
+        os: [ubuntu-24.04, ubuntu-24.04-arm, macos-14, macos-15-intel, windows-2022]
 
-      - name: Modify Version for Build with Hatch
-        if: steps.release_config.outputs.VERSION_SUFFIX != ''
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.configure-release.outputs.resolved_sha }}
+          fetch-depth: 0
+
+      - name: Stamp Prerelease Version
+        if: needs.configure-release.outputs.version_suffix != ''
+        shell: bash
         run: |
-          # Backup original version file
           cp src/${{ env.PACKAGE_SRCDIR }}/__version__.py src/${{ env.PACKAGE_SRCDIR }}/__version__.py.bak
-          # Update version with suffix
-          echo "__version__ = '${{ env.VERSION }}'" > src/${{ env.PACKAGE_SRCDIR }}/__version__.py
+          echo "__version__ = '${{ needs.configure-release.outputs.version }}'" > src/${{ env.PACKAGE_SRCDIR }}/__version__.py
 
-      - name: Verify Version Before Build
-        run: |
-          echo "Checking version from Hatch:"
-          hatch version
+      - name: Set up Rust for native host builds
+        if: runner.os != 'Linux'
+        uses: dtolnay/rust-toolchain@stable
 
-      - name: Build Package
-        id: build
-        run: |
-          hatch -e ${{ env.BUILD_ENV }} build
-          echo "WHEEL_FILE=$(ls dist/*.whl)" >> $GITHUB_OUTPUT
-          echo "WHEEL_FILENAME=$(basename $(ls dist/*.whl))" >> $GITHUB_OUTPUT
+      - name: Build native wheels
+        uses: pypa/cibuildwheel@v4.2.1
 
       - name: Restore Original Version
-        if: steps.release_config.outputs.VERSION_SUFFIX != ''
+        if: needs.configure-release.outputs.version_suffix != ''
+        shell: bash
+        run: mv src/${{ env.PACKAGE_SRCDIR }}/__version__.py.bak src/${{ env.PACKAGE_SRCDIR }}/__version__.py
+
+      - name: Upload wheel artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: wheels-${{ matrix.os }}
+          path: wheelhouse/*.whl
+          if-no-files-found: error
+
+  # ============================================================
+  # Execute the installed native component without DataFrame dependencies.
+  # The regular pytest job separately exercises the package-root API with
+  # the actual Mountainash dependency graph installed.
+  smoke-test-wheels:
+    needs: [configure-release, build-wheels]
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, ubuntu-24.04-arm, macos-14, macos-15-intel, windows-2022]
+        python-version: ["3.10", "3.11", "3.12", "3.13", "3.14", "pypy3.10", "pypy3.11"]
+        # PyPy's published macOS interpreters are x86_64, not arm64.
+        exclude:
+          - { os: macos-14, python-version: "pypy3.10" }
+          - { os: macos-14, python-version: "pypy3.11" }
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.configure-release.outputs.resolved_sha }}
+
+      - name: Set up ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Download wheel artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: wheels-${{ matrix.os }}
+          path: wheelhouse
+
+      - name: Native wheel smoke test
+        run: python scripts/native_wheel_smoke.py wheelhouse/
+
+  # ============================================================
+  # SBOM generation, tag/release creation and asset publication.
+  # Unchanged from the previous single-wheel flow except that
+  # every native wheel built above is attached to the release and
+  # copied into the wheels repository.
+  publish-release:
+    needs: [configure-release, build-wheels, smoke-test-wheels]
+    runs-on: ubuntu-24.04
+    env:
+      BUILD_ENV: "build_github"
+      VERSION: ${{ needs.configure-release.outputs.version }}
+      BASE_VERSION: ${{ needs.configure-release.outputs.base_version }}
+      TARGET_BRANCH: ${{ needs.configure-release.outputs.target_branch }}
+      FALLBACK_BRANCH: ${{ needs.configure-release.outputs.fallback_branch }}
+
+    steps:
+      - name: Generate GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ secrets.CI_APP_ID }}
+          private-key: ${{ secrets.CI_APP_PRIVATE_KEY }}
+          owner: mountainash-io
+
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.configure-release.outputs.resolved_sha }}
+          fetch-depth: 0
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Python Dependencies
         run: |
-          mv src/${{ env.PACKAGE_SRCDIR }}/__version__.py.bak src/${{ env.PACKAGE_SRCDIR }}/__version__.py
+          pip install hatchling==1.29.0
+          pip install hatch==1.16.5
+
+      - name: Load Dependencies
+        id: deps
+        uses: ./.github/actions/load-dependencies
+        with:
+          config-path: .github/config/mountainash_dependencies.yml
+
+      - name: Checkout Dependencies
+        uses: ./.github/actions/checkout-dependencies
+        with:
+          dependencies: ${{ steps.deps.outputs.dependencies }}
+          target-branch: ${{ env.TARGET_BRANCH }}
+          default-branch: ${{ env.FALLBACK_BRANCH }}
+          token: ${{ steps.app-token.outputs.token }}
+          org-name: ${{ env.ORGNAME }}
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Setup Build Environment
+        run: hatch env create ${{ env.BUILD_ENV }}
 
       - name: Generate SBOMs
         run: |
@@ -325,6 +465,18 @@ jobs:
           hatch run ${{ env.BUILD_ENV }}:sbom-direct
           mv ./sbom-full.json ./${{ env.PACKAGE_NAME }}-${{ env.VERSION }}-sbom-full.json
           mv ./sbom-direct.json ./${{ env.PACKAGE_NAME }}-${{ env.VERSION }}-sbom-direct.json
+
+      - name: Download all wheel artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: wheels-*
+          path: wheelhouse-all
+          merge-multiple: true
+
+      - name: List Wheels To Publish
+        run: |
+          echo "Publishing the following native wheels:"
+          ls -la wheelhouse-all/*.whl
 
       # ======================================================
       # PUBLISH
@@ -343,32 +495,37 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           tag_name: v${{ env.VERSION }}
-          release_name: ${{ steps.release_config.outputs.RELEASE_TITLE }} v${{ env.VERSION }}
+          release_name: ${{ needs.configure-release.outputs.release_title }} v${{ env.VERSION }}
           draft: false
-          prerelease: ${{ steps.release_config.outputs.IS_PRERELEASE }}
+          prerelease: ${{ needs.configure-release.outputs.is_prerelease }}
           body: |
-            ${{ steps.release_config.outputs.RELEASE_DESCRIPTION }}
+            ${{ needs.configure-release.outputs.release_description }}
 
             ## Release Details
-            - Type: ${{ steps.release_config.outputs.RELEASE_TYPE }}
-            - Source Branch: ${{ github.head_ref }}
-            - Target Branch: ${{ github.base_ref }}
+            - Type: ${{ needs.configure-release.outputs.release_type }}
+            - Source Branch: ${{ needs.configure-release.outputs.source_branch }}
+            - Target Branch: ${{ needs.configure-release.outputs.target_branch }}
             - Version: ${{ env.VERSION }}
 
             ## Package Information
             - Package: ${{ env.PACKAGE_NAME }}
             - Base Version: ${{ env.BASE_VERSION }}
-            ${{ steps.release_config.outputs.VERSION_SUFFIX && format('- Version Suffix: {0}', steps.release_config.outputs.VERSION_SUFFIX) || '' }}
+            ${{ needs.configure-release.outputs.version_suffix && format('- Version Suffix: {0}', needs.configure-release.outputs.version_suffix) || '' }}
 
-      - name: Upload Package
-        uses: actions/upload-release-asset@v1
+            ## Native Wheels
+            This release ships compiled native (`mountainash_rules._native`) wheels for
+            CPython 3.10-3.14 on Linux (x86_64/aarch64), macOS (arm64/x86_64)
+            and Windows (x86_64). PyPy 3.10/3.11 wheels cover Linux (x86_64/aarch64),
+            macOS (x86_64) and Windows (x86_64), matching published interpreter
+            distributions. There is no pure-Python / universal wheel.
+
+      - name: Upload Wheels
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: ${{ steps.build.outputs.WHEEL_FILE }}
-          asset_name: ${{ steps.build.outputs.WHEEL_FILENAME }}
-          asset_content_type: application/octet-stream
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload "v${{ env.VERSION }}" wheelhouse-all/*.whl \
+            --repo "${{ github.repository }}" \
+            --clobber
 
       - name: Upload SBOM (Full)
         uses: actions/upload-release-asset@v1
@@ -390,52 +547,52 @@ jobs:
           asset_name: ${{ env.PACKAGE_NAME }}-${{ env.VERSION }}-sbom-direct.json
           asset_content_type: application/xml
 
-
       - name: Setup Wheels Repository
         run: |
           # Configure git
           git config --global user.name "GitHub Actions"
           git config --global user.email "actions@github.com"
-          
+
           # Clone the wheels repository
           git clone https://x-access-token:${{ steps.app-token.outputs.token }}@github.com/${{ env.ORGNAME }}/mountainash-wheels.git wheels-repo
-          
+
           # Go to the wheels repository
           cd wheels-repo
-          
+
           # Generate a unique branch name using a timestamp
           TIMESTAMP=$(date +%Y%m%d%H%M%S)
           BRANCH_NAME="release/${{ env.PACKAGE_NAME }}-${{ env.VERSION }}-${TIMESTAMP}"
-          
+
           # Create a new branch for this release
           git checkout -b $BRANCH_NAME
-          
+
           # Create package directory if it doesn't exist
           mkdir -p ${{ env.PACKAGE_NAME }}
-          
-          # Copy the newly built wheel to the repository
-          cp ../${{ steps.build.outputs.WHEEL_FILE }} ${{ env.PACKAGE_NAME }}/
-          
-          # Add the new wheel file
+
+          # Copy every newly built native wheel to the repository
+          cp ../wheelhouse-all/*.whl ${{ env.PACKAGE_NAME }}/
+
+          # Add the new wheel files
           git add .
-          
+
           # Commit the changes
-          git commit -m "Add ${{ steps.build.outputs.WHEEL_FILENAME }} to wheels repository"
-          
+          git commit -m "Add ${{ env.PACKAGE_NAME }} v${{ env.VERSION }} native wheels to wheels repository"
+
           # Push the branch to the repository
           git push -u origin $BRANCH_NAME
-          
+
           # Export the branch name for later steps
           echo "WHEELS_BRANCH=${BRANCH_NAME}" >> $GITHUB_ENV
 
       - name: Create Pull Request
         run: |
           # Create a simpler PR body
-          PR_BODY="This PR adds the following wheel file to the wheels repository:\n- ${{ steps.build.outputs.WHEEL_FILENAME }}\n\nThis was automatically generated from the release workflow of ${{ github.repository }}."
-          
+          WHEEL_LIST=$(cd wheelhouse-all && ls -1 *.whl | sed 's/^/- /' | paste -sd '\n' -)
+          PR_BODY="This PR adds the following native wheels to the wheels repository:\n${WHEEL_LIST}\n\nThis was automatically generated from the release workflow of ${{ github.repository }}."
+
           # Properly escape the PR body for JSON
           PR_BODY_ESCAPED=$(echo "$PR_BODY" | jq -Rs .)
-          
+
           # Create the PR
           PR_RESPONSE=$(curl -X POST \
             -H "Authorization: token ${{ steps.app-token.outputs.token }}" \
@@ -447,13 +604,13 @@ jobs:
               \"head\": \"${WHEELS_BRANCH}\",
               \"base\": \"main\"
             }")
-            
+
             echo "API Response: $PR_RESPONSE"
-            
+
             # Extract PR URL and number
             PR_URL=$(echo "$PR_RESPONSE" | jq -r '.html_url')
             PR_NUMBER=$(echo "$PR_RESPONSE" | jq -r '.number')
-            
+
             # Add labels to the PR
             if [ "$PR_NUMBER" != "null" ]; then
               curl -X POST \
@@ -463,11 +620,11 @@ jobs:
                 -d '{
                   "labels": ["automated", "wheel"]
                 }'
-              
+
               echo "PR_URL=${PR_URL}" >> $GITHUB_ENV
               echo "::notice::Pull Request created: ${PR_URL}"
             else
               echo "::error::Failed to create Pull Request"
               echo "$PR_RESPONSE"
               exit 1
-          fi                    
+          fi

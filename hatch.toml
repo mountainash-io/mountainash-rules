@@ -7,6 +7,9 @@ path = "src/mountainash_rules/__version__.py"
 [build.targets.wheel]
 packages = ["src/mountainash_rules"]
 
+[build.targets.wheel.hooks.custom]
+path = "hatch_build.py"
+
 #================
 # Env: build_github
 #================
@@ -245,7 +248,8 @@ test-ci = [
 #================
 [envs.ruff]
 installer = "uv"
-dependencies = ["ruff==0.3.7"]
+# E721 permits exact-type identity checks from Ruff 0.5.0.
+dependencies = ["ruff==0.5.0"]
 [envs.ruff.scripts]
 check = "ruff check ./src"
 fix = "ruff check ./src --fix"

@@ -1,0 +1,26 @@
+[package]
+name = "mountainash-rules-native"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+publish = false
+
+[lib]
+name = "_native"
+path = "native/lib.rs"
+crate-type = ["cdylib", "rlib"]
+
+[features]
+extension-module = ["dep:pyo3", "pyo3/extension-module"]
+
+[dependencies]
+pyo3 = { version = "=0.27.2", optional = true }
+regex-syntax = "=0.8.10"
+serde = { version = "=1.0.228", features = ["derive"] }
+serde_json = "=1.0.149"
+
+[dev-dependencies]
+regex-automata = "=0.4.14"
+
+[build-dependencies]
+pyo3-build-config = "=0.27.2"
