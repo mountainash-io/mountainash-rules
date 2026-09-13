@@ -248,7 +248,8 @@ test-ci = [
 #================
 [envs.ruff]
 installer = "uv"
-dependencies = ["ruff==0.3.7"]
+# E721 permits exact-type identity checks from Ruff 0.5.0.
+dependencies = ["ruff==0.5.0"]
 [envs.ruff.scripts]
 check = "ruff check ./src"
 fix = "ruff check ./src --fix"
