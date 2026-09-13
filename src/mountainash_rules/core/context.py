@@ -15,6 +15,41 @@ if t.TYPE_CHECKING:
     from mountainash_rules.core.dimension import DimensionsMetadata
 
 
+def _validate_context_ids(rel: t.Any, context_id_field: str) -> None:
+    """Reject missing, null or duplicate caller IDs before conversion/chunking.
+
+    Aggregate row, non-null and distinct counts together; never collect the
+    full input merely to validate identity. A single null is invalid even
+    when uniqueness would otherwise allow it.
+    """
+    if not isinstance(context_id_field, str) or not context_id_field:
+        raise ValueError("context_id_field must be a nonempty string or None")
+    if context_id_field not in rel.columns:
+        raise ValueError(f"context_id_field {context_id_field!r} not found in contexts")
+    stats = (
+        rel.group_by()
+        .agg(
+            ma.count_records().alias("__total"),
+            ma.col(context_id_field).count().alias("__non_null"),
+            ma.col(context_id_field).n_unique().alias("__distinct"),
+        )
+        .to_dict()
+    )
+    total = stats["__total"][0]
+    non_null = stats["__non_null"][0]
+    distinct = stats["__distinct"][0]
+    if non_null != total:
+        raise ValueError(
+            f"context_id_field {context_id_field!r} must be non-null "
+            f"({total - non_null} null value(s) found among {total} rows)"
+        )
+    if distinct != total:
+        raise ValueError(
+            f"context_id_field {context_id_field!r} must be globally unique "
+            f"({total} rows, {distinct} distinct value(s))"
+        )
+
+
 def _absent_context_value(data_type: DataType | None) -> t.Any:
     """Choose the declared type's missing value; bool has no in-band sentinel."""
     if data_type is DataType.BOOL:

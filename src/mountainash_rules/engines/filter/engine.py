@@ -24,6 +24,7 @@ from mountainash_rules.core.context import (
     _absent_context_value,
     _context_literal,
     _nullable_bool,
+    _validate_context_ids,
     extract_context_values,
 )
 from mountainash_rules.core.dimension import DimensionsMetadata
@@ -75,14 +76,21 @@ class ExpressionRulesEngine:
         *,
         output_fields: list[str] | None = None,
     ) -> None:
-        if dimension_metadata and dimension_expressions:
+        if dimension_metadata is not None and dimension_expressions is not None:
             raise ValueError(
                 "Provide dimension_metadata or dimension_expressions, not both"
             )
-        if not dimension_metadata and not dimension_expressions:
+        if dimension_metadata is None and dimension_expressions is None:
             raise ValueError(
                 "Must provide either dimension_metadata or dimension_expressions"
             )
+        configured = (
+            dimension_metadata.dimensions
+            if dimension_metadata is not None
+            else dimension_expressions
+        )
+        if not configured:
+            raise ValueError("Filter engines require at least one dimension")
 
         if dimension_metadata is not None and output_fields is not None:
             raise ValueError("Configure output_fields on dimension_metadata, not both")
@@ -101,7 +109,7 @@ class ExpressionRulesEngine:
         self._expressions: dict[str, BaseExpressionAPI]
         self._metadata: DimensionsMetadata | None
 
-        if dimension_metadata:
+        if dimension_metadata is not None:
             compiler = DimensionCompiler()
             self._expressions = compiler.compile_dimensions(dimension_metadata)
             self._metadata = dimension_metadata
@@ -113,6 +121,42 @@ class ExpressionRulesEngine:
 
         self._rules = rules
         self._set_dims_validated = False
+
+    def _active_dimensions(self, dimensions: list[str] | None) -> list[str]:
+        """Validate the entire projection before constructing expressions."""
+        if dimensions is None:
+            return list(self._expressions)
+        if (
+            not isinstance(dimensions, list)
+            or not dimensions
+            or any(not isinstance(name, str) for name in dimensions)
+        ):
+            raise ValueError("dimensions must be a nonempty list of dimension names")
+        if len(set(dimensions)) != len(dimensions):
+            raise ValueError("dimensions must not contain duplicate names")
+        for name in dimensions:
+            if name not in self._expressions:
+                raise KeyError(f"Dimension '{name}' not found in expressions")
+        return dimensions
+
+    @staticmethod
+    def _validate_limit(name: str, value: int | None, minimum: int = 0) -> None:
+        """Validate public integer limits without coercion or Boolean acceptance."""
+        if value is not None and (
+            isinstance(value, bool) or not isinstance(value, int) or value < minimum
+        ):
+            raise ValueError(f"{name} must be a Python integer >= {minimum} or None")
+
+    @staticmethod
+    def _survival_expression(t_cols: list[BaseExpressionAPI]) -> BaseExpressionAPI:
+        """Require every ternary >= 0 without a horizontal minimum reduction.
+
+        Polars 1.44 can collapse identical horizontal-minimum inputs to one
+        element. Conjunction preserves row shape and the same survival rule.
+        """
+        return functools.reduce(
+            lambda a, b: a.and_(b), (c.ge(ma.lit(0)) for c in t_cols)
+        ).alias("__survived")
 
     def _selection_config(
         self,
@@ -181,12 +225,9 @@ class ExpressionRulesEngine:
         Returns:
             RuleResult with ranked surviving rules.
         """
-        all_dim_names = list(self._expressions.keys()) if self._expressions else []
-        active_dims = dimensions if dimensions else all_dim_names
-
-        for dim_name in active_dims:
-            if dim_name not in all_dim_names:
-                raise KeyError(f"Dimension '{dim_name}' not found in expressions")
+        active_dims = self._active_dimensions(dimensions)
+        self._validate_limit("top_n", top_n)
+        self._validate_limit("min_specificity", min_specificity)
 
         hit_policy, info = self._selection_config(
             hit_policy, priority_field, include_observability
@@ -221,13 +262,7 @@ class ExpressionRulesEngine:
         __specificity. Hit policies are not consulted — explain answers
         "why did/didn't each rule match", not "which rule wins".
         """
-        all_dim_names = list(self._expressions.keys()) if self._expressions else []
-        active_dims = dimensions if dimensions else all_dim_names
-        if not active_dims:
-            raise ValueError("explain requires at least one active dimension")
-        for dim_name in active_dims:
-            if dim_name not in all_dim_names:
-                raise KeyError(f"Dimension '{dim_name}' not found in expressions")
+        active_dims = self._active_dimensions(dimensions)
 
         context_values = extract_context_values(
             context, active_dims, metadata=self._metadata
@@ -274,13 +309,7 @@ class ExpressionRulesEngine:
         if context_id_field is None:
             rel = rel.with_row_index(name="__context_id")
         else:
-            total = rel.count_rows()
-            distinct = rel.select(ma.col(context_id_field)).unique().count_rows()
-            if distinct != total:
-                raise ValueError(
-                    f"context_id_field '{context_id_field}' must be unique "
-                    f"({total} rows, {distinct} distinct)"
-                )
+            _validate_context_ids(rel, context_id_field)
             rel = rel.with_columns(ma.col(context_id_field).alias("__context_id"))
 
         available = set(rel.columns)
@@ -315,11 +344,14 @@ class ExpressionRulesEngine:
         chunk_size: int | None = None,
     ) -> BatchRuleResult:
         """Evaluate every context row against every rule in one pass."""
-        all_dim_names = list(self._expressions.keys()) if self._expressions else []
-        active_dims = dimensions if dimensions else all_dim_names
-        for dim_name in active_dims:
-            if dim_name not in all_dim_names:
-                raise KeyError(f"Dimension '{dim_name}' not found in expressions")
+        active_dims = self._active_dimensions(dimensions)
+        self._validate_limit("top_n_per_context", top_n_per_context)
+        self._validate_limit("min_specificity", min_specificity)
+        self._validate_limit("chunk_size", chunk_size, minimum=1)
+        if context_id_field is not None and (
+            not isinstance(context_id_field, str) or not context_id_field
+        ):
+            raise ValueError("context_id_field must be a nonempty string or None")
         selection = self._selection_config(
             hit_policy, priority_field, include_observability
         )
@@ -377,6 +409,16 @@ class ExpressionRulesEngine:
         """
         hit_policy, info = selection
         prepared_pl = prepared.to_polars()
+        if len(prepared_pl) == 0:
+            return self._evaluate_batch_frame(
+                prepared,
+                active_dims,
+                hit_policy,
+                info,
+                top_n_per_context,
+                min_specificity,
+                include_observability,
+            )
         frames = []
         violations: list[HitPolicyViolationError] = []
         for start in range(0, len(prepared_pl), chunk_size):
@@ -451,8 +493,7 @@ class ExpressionRulesEngine:
         dim_columns = [self._expressions[d].name.alias(f"__t_{d}") for d in active_dims]
         joined = joined.with_columns(*dim_columns)
         t_cols = [ma.col(f"__t_{d}") for d in active_dims]
-        survived_inner = t_cols[0] if len(t_cols) == 1 else ma.least(*t_cols)
-        survived = survived_inner.ge(ma.lit(0)).alias("__survived")
+        survived = self._survival_expression(t_cols)
         specificity = functools.reduce(
             lambda a, b: a.add(b),
             [c.eq(ma.lit(1)).cast(int) for c in t_cols],
@@ -588,22 +629,14 @@ class ExpressionRulesEngine:
             ctx_columns.append(literal.alias(f"{CTX_PREFIX}{name}"))
         rel = rel.with_columns(*ctx_columns)
 
-        dim_columns = (
-            [
-                self._expressions[dim_name].name.alias(f"__t_{dim_name}")
-                for dim_name in active_dims
-            ]
-            if self._expressions
-            else []
-        )
+        dim_columns = [
+            self._expressions[dim_name].name.alias(f"__t_{dim_name}")
+            for dim_name in active_dims
+        ]
         rel = rel.with_columns(*dim_columns)
 
         t_cols = [ma.col(f"__t_{d}") for d in active_dims]
-        if len(t_cols) == 1:
-            survived_inner = t_cols[0]
-        else:
-            survived_inner = ma.least(*t_cols)
-        survived = survived_inner.ge(ma.lit(0)).alias("__survived")
+        survived = self._survival_expression(t_cols)
         specificity = functools.reduce(
             lambda a, b: a.add(b),
             [c.eq(ma.lit(1)).cast(int) for c in t_cols],
