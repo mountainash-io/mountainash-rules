@@ -15,11 +15,6 @@ This chapter explains how the DimensionCompiler translates dimension metadata in
 
 ---
 
-<!-- concept:32 -->
-<!-- concept:33 -->
-<!-- concept:35 -->
-<!-- concept:36 -->
-<!-- concept:37 -->
 ## From Metadata to Expressions
 
 Chapters 2 and 3 defined *what* each match strategy means and *how* dimensions are configured. This chapter bridges the gap between configuration and execution by showing how the `DimensionCompiler` transforms dimension metadata into executable expression templates.
@@ -27,7 +22,6 @@ Chapters 2 and 3 defined *what* each match strategy means and *how* dimensions a
 An expression template is a lazy computation tree that references two column names: the rule column (from the DataFrame) and the context literal column (injected at evaluation time). The template does not execute immediately — it becomes executable only when the engine applies it to a relation containing both columns. This separation of compilation from evaluation is what enables the engine to compile once and evaluate many times with different contexts.
 
 <!-- concept:31 -->
-<!-- concept:34 -->
 ## DimensionCompiler
 
 The `DimensionCompiler` class is a stateless translator. It takes a `Dimension` object (or an entire `DimensionsMetadata` collection) and produces expression templates — one per dimension. The class has no internal state; it could be a collection of free functions, but is organized as a class for namespacing and future extensibility.
@@ -76,6 +70,7 @@ Type: diagram
 **Learning objective:** Trace the compilation path from a Dimension's match_strategy to its resulting expression tree (Bloom: Apply)
 </details>
 
+<!-- concept:32 -->
 ## Compile Exact Expression
 
 The EXACT compilation is the simplest and most illustrative. It constructs a ternary equality comparison between the rule column and the context literal column, with sentinel-awareness built into both column references.
@@ -100,9 +95,10 @@ The NOT_EQUAL compilation is identical except it uses `.t_ne()` instead of `.t_e
 
 The sibling `_compile_exact_key` variant is used when only the rule side may wildcard (partition-key routing); context sentinels remain ordinary non-matches. Chapter 2 explains this strategy-level distinction.
 
+<!-- concept:33 -->
 ## Compile Range Expression
 
-RANGE compilation produces a compound expression that tests both the lower and upper bounds, combining them with a ternary AND. This is the only strategy that references two rule columns rather than one.
+RANGE compilation produces a compound expression that tests both the lower and upper bounds and combines them by taking their row-wise ternary minimum, which is equivalent to a ternary AND. This is the only strategy that references two rule columns rather than one.
 
 For a dimension with `range_min_field="age_min"`, `range_max_field="age_max"`, and inclusive bounds:
 
@@ -112,16 +108,15 @@ ctx_col = ma.t_col("__ctx_age", unknown=sentinels)
 min_col = ma.t_col("age_min", unknown=sentinels)
 max_col = ma.t_col("age_max", unknown=sentinels)
 
-<!-- concept:39 -->
 # Lower bound: min <= context
 lower = min_col.t_le(ctx_col)
 # Upper bound: max >= context
 upper = max_col.t_ge(ctx_col)
-# Combined: both must be satisfied
-expr = lower.t_and(upper)
+# Combined: row-wise ternary minimum
+expr = ma.when(lower.le(upper)).then(lower).otherwise(upper)
 ```
 
-The `t_and` operator follows ternary AND semantics: if either operand is -1 (FALSE), the result is -1. If both are 1 (TRUE), the result is 1. If one is 0 (UNKNOWN) and the other is non-negative, the result is 0. This means a range with one sentinel bound (wildcard on that side) still produces a meaningful result from the other bound.
+The explicit row-wise minimum follows ternary AND semantics: if either operand is -1 (FALSE), the result is -1. If both are 1 (TRUE), the result is 1. If one is 0 (UNKNOWN) and the other is non-negative, the result is 0. With one sentinel bound, a contradiction on the other side still produces -1; otherwise the result is 0, not a hard match. The explicit `when` expression avoids the horizontal-minimum row-shape collapse noted in the compiler for Polars 1.44.
 
 When bounds are exclusive, the compiler substitutes `.t_lt()` for `.t_le()` or `.t_gt()` for `.t_ge()`:
 
@@ -132,24 +127,31 @@ When bounds are exclusive, the compiler substitutes `.t_lt()` for `.t_le()` or `
 | Max exclusive | `min_col.t_le(ctx_col)` | `max_col.t_gt(ctx_col)` |
 | Both exclusive | `min_col.t_lt(ctx_col)` | `max_col.t_gt(ctx_col)` |
 
+<!-- concept:34 -->
 ## Compile String Match
 
 PREFIX, SUFFIX, and CONTAINS share a common compilation pattern encapsulated in `_compile_string_match`. These strategies cannot use the `t_col` / `t_eq` approach because the underlying string operations (starts_with, ends_with, contains) return Boolean values, not ternary integers.
 
-The compiler builds a three-branch conditional expression that explicitly handles sentinels:
+The compiler builds a three-branch conditional expression that explicitly handles both a sentinel rule cell and a non-concrete context value — via `_context_is_nonconcrete` — before falling back to `otherwise`:
 
 ```python
 rule_col = ma.col(dim.resolved_rule_field)
 ctx_col = ma.col(CTX_PREFIX + dim.dimension_name)
 
-# Branch 1: rule is sentinel -> UNKNOWN
+# Branch 1: sentinel rule or non-concrete context -> UNKNOWN
 rule_is_sentinel = rule_col.eq(ma.lit("<NA>")) | rule_col.eq(ma.lit("<NOT_SET>"))
+context_is_nonconcrete = (
+    ctx_col.is_null()
+    | ctx_col.eq(ma.lit("<NA>"))
+    | ctx_col.eq(ma.lit("<NOT_SET>"))
+)
+unknown = rule_is_sentinel | context_is_nonconcrete
 
 # Branch 2: string operation matches -> TRUE
 match = ctx_col.str.starts_with(rule_col)  # or ends_with / contains
 
-# Assemble: when sentinel -> 0, when match -> 1, otherwise -> -1
-expr = ma.when(rule_is_sentinel).then(0).when(match).then(1).otherwise(-1)
+# Assemble: when unknown -> 0, when match -> 1, otherwise -> -1
+expr = ma.when(unknown).then(0).when(match).then(1).otherwise(-1)
 ```
 
 Note that this pattern uses `ma.col()` (not `ma.t_col()`) because the sentinel detection is handled explicitly in the `when` branches rather than by the column reference itself. The three strategies differ only in which string method is invoked:
@@ -158,6 +160,7 @@ Note that this pattern uses `ma.col()` (not `ma.t_col()`) because the sentinel d
 - SUFFIX: `ctx_col.str.ends_with(rule_col)`
 - CONTAINS: `ctx_col.str.contains(rule_col)`
 
+<!-- concept:35 -->
 ## Compile Regex Expression
 
 Regex compilation has two sibling paths. For `REGEX`, `_compile_regex_per_row` reads a pattern from each rule row and maps sentinel patterns to UNKNOWN; for `CONTEXT_REGEX`, `_compile_context_regex` applies the metadata's literal `regex_pattern` uniformly as a global context validator. Chapter 2 explains the strategy-level distinction; this section focuses on the resulting expression shapes.
@@ -167,14 +170,21 @@ For `CONTEXT_REGEX`, the compiled expression is:
 ```python
 ctx_col = ma.col(CTX_PREFIX + dim.dimension_name)
 match = ctx_col.str.regex_contains(dim.regex_pattern)
-expr = ma.when(match).then(1).otherwise(-1)
+expr = (
+    ma.when(self._context_is_nonconcrete(dim))
+    .then(-1)
+    .when(match)
+    .then(1)
+    .otherwise(-1)
+)
 ```
 
-There is no UNKNOWN branch because the pattern is always defined (enforced by the Pydantic validator). The result is binary: the context value either matches the regex (1) or does not (-1). This makes `CONTEXT_REGEX` dimensions behave as global filters — they eliminate all rules simultaneously if the context fails the pattern check.
+There is no UNKNOWN branch because the pattern is always defined (enforced by the Pydantic validator). A non-concrete context — `None`, or the reserved `<NA>`/`<NOT_SET>` markers — forces FALSE (-1), taking precedence over the regex outcome even if the pattern could match the marker's spelling; otherwise the result is binary: the context value either matches the regex (1) or does not (-1). This makes `CONTEXT_REGEX` dimensions behave as global filters — they eliminate all rules simultaneously if the context fails the pattern check or is non-concrete.
 
+<!-- concept:36 -->
 ## Compile Set Expression
 
-`SET_MEMBERSHIP` and `SET_EXCLUSION` use the ternary-aware `t_is_in` and `t_is_not_in` operators. These operators handle sentinel detection on the context side — if the context value is a sentinel, the result is UNKNOWN (0). The rule side is normalized first so that its in-band wildcard can be detected before the membership operation:
+`SET_MEMBERSHIP` and `SET_EXCLUSION` use the ternary-aware `list.t_contains` operator (with `.t_not()` negating the result for `SET_EXCLUSION`). The operator handles sentinel detection on the context side — if the context value is a sentinel, the result is UNKNOWN (0). The rule side is normalized first so that its in-band wildcard can be detected before the membership operation:
 
 ```python
 rule_col = normalize_set_expr(dim, ma.col(dim.resolved_rule_field))
@@ -185,10 +195,10 @@ ctx_col = ma.t_col(
 is_wild = set_wildcard_predicate(dim, rule_col)
 
 # SET_MEMBERSHIP
-expr = ma.when(is_wild).then(0).otherwise(ctx_col.t_is_in(rule_col))
+expr = ma.when(is_wild).then(0).otherwise(rule_col.list.t_contains(ctx_col))
 
 # SET_EXCLUSION
-expr = ma.when(is_wild).then(0).otherwise(ctx_col.t_is_not_in(rule_col))
+expr = ma.when(is_wild).then(0).otherwise(rule_col.list.t_contains(ctx_col).t_not())
 ```
 
 The rule column starts as a list-valued `ma.col()` reference because set wildcards are represented in-band rather than by scalar `t_col` handling. `normalize_set_expr` canonicalizes concrete lists and converts a null list to the wildcard representation; `set_wildcard_predicate` then turns that wildcard into ternary UNKNOWN (0), while concrete lists use the appropriate membership operator.
@@ -241,6 +251,7 @@ Type: diagram
 **Learning objective:** Compare the structural complexity and node types across different compiled expressions (Bloom: Analyze)
 </details>
 
+<!-- concept:37 -->
 ## Compile Threshold Expression
 
 The GREATER_THAN and LESS_THAN strategies produce straightforward ternary comparisons between the context value and the rule cell value. Unlike RANGE (which tests two bounds), threshold expressions test a single comparison.
@@ -269,12 +280,13 @@ The sentinel-aware ternary system is the mechanism that makes wildcard handling 
 
 2. **Expression-level**: the `when/then/otherwise` pattern in string match compilation explicitly checks for sentinels before performing string operations, producing 0 for sentinel rows.
 
-The column-level approach (used by EXACT, NOT_EQUAL, RANGE, GREATER_THAN, LESS_THAN, SET_MEMBERSHIP, SET_EXCLUSION) is preferred because it requires no explicit conditional logic — the sentinel awareness is embedded in the column reference and propagates automatically through any ternary operator applied to it.
+The column-level approach (used by EXACT, NOT_EQUAL, RANGE, GREATER_THAN, LESS_THAN, SET_MEMBERSHIP, SET_EXCLUSION) is preferred because the sentinel awareness is embedded in the column reference and propagates automatically through any ternary operator applied to it. RANGE and the SET strategies do combine their column-level comparisons with an explicit `when/then/otherwise` — a row-wise minimum for RANGE's two bounds, a wildcard check for SET_MEMBERSHIP/SET_EXCLUSION — RANGE uses the bounds' ternary outcomes, while each SET strategy explicitly recognizes its rule-side wildcard list and relies on the context-side `t_col` for scalar sentinel handling.
 
 The expression-level approach (used by PREFIX, SUFFIX, CONTAINS) is necessary when the underlying operation is Boolean (not ternary) and cannot be wrapped in the `t_col` mechanism. The compiler explicitly converts the Boolean result into a ternary integer using the `when/then/otherwise` pattern.
 
 Both approaches produce the same ternary semantics — they differ only in implementation mechanism. The consumer of the compiled expression (the engine) does not need to know which approach was used; it simply applies the expression as a column transformation and receives a ternary integer column.
 
+<!-- concept:39 -->
 ## Context Value Extraction
 
 Before any dimension expression can be evaluated, the context values must be available as columns in the rules DataFrame. The `extract_context_values()` function handles the conversion from a user-provided context (dict or Pydantic model) to a dictionary of values ready for column injection.
@@ -283,10 +295,10 @@ The extraction process for each dimension:
 
 1. Determine the context field name using `dim.resolved_context_field`
 2. Look up that field in the context dict (or model dump)
-3. If the value is `None` or the field is missing, substitute the `NOT_SET` sentinel
+3. If the value is `None` or the field is missing, substitute the dimension's typed absent value: the declared type's `NOT_SET` sentinel for most types, but `None` for a `DataType.BOOL` dimension, which has no in-band sentinel (or, when no metadata is supplied, the string `NOT_SET`)
 4. Return the value mapped to the dimension name (not the context field name)
 
-The result is a dictionary keyed by dimension name, containing either the actual context value or the appropriate sentinel. The engine then broadcasts each value as a literal column with the `__ctx_` prefix:
+The result is a dictionary keyed by dimension name, containing the actual context value, a typed sentinel, or — for an absent Boolean — `None`. The engine then broadcasts each value as a literal column with the `__ctx_` prefix, binding a `None` Boolean through a nullable-Boolean literal so a backend's cast does not turn the absence into `False`:
 
 ```python
 # Context extraction
@@ -299,7 +311,7 @@ values = extract_context_values(context, ["region", "tier"])
 # __ctx_tier = "<NOT_SET>" (every row)
 ```
 
-The `NOT_SET` sentinel ensures that missing context values produce UNKNOWN (0) in the ternary evaluation rather than causing type errors or null propagation issues. This is the runtime complement to the `<NA>` sentinel used for wildcard rule cells.
+For ordinary constraint strategies, typed `NOT_SET` values (or a null Boolean) preserve missing context as UNKNOWN (0). This differs from strict `CONTEXT_REGEX`, which returns -1 for non-concrete context, and `EXACT_KEY` routing, where a concrete rule key rejects absent context while a rule-side wildcard still returns 0. Context absence and a rule-side wildcard are separate inputs; their outcomes depend on the strategy.
 
 #### Diagram: Context Extraction and Column Binding
 
@@ -389,12 +401,12 @@ The following table summarizes the expression structure each compile method prod
 |----------|----------------|-------------------|-------------------|-------------|
 | EXACT | `t_eq` | Column-level (`t_col`) | 1 rule, 1 context | 1/0/-1 |
 | NOT_EQUAL | `t_ne` | Column-level (`t_col`) | 1 rule, 1 context | 1/0/-1 |
-| RANGE | `t_and(t_le, t_ge)` | Column-level (`t_col`) | 2 rule (min,max), 1 context | 1/0/-1 |
+| RANGE | row-wise minimum (`when/then/otherwise`) | Column-level (`t_col`) | 2 rule (min,max), 1 context | 1/0/-1 |
 | GREATER_THAN | `t_gt` | Column-level (`t_col`) | 1 rule, 1 context | 1/0/-1 |
 | LESS_THAN | `t_lt` | Column-level (`t_col`) | 1 rule, 1 context | 1/0/-1 |
 | PREFIX/SUFFIX/CONTAINS | `when/then/otherwise` | Expression-level | 1 rule, 1 context | 1/0/-1 |
-| REGEX | `when/then/otherwise` | Rule-side sentinels | 1 rule (pattern), 1 context | 1/0/-1 |
-| CONTEXT_REGEX | `when/then/otherwise` | None (pattern fixed) | 0 rule, 1 context | 1/-1 only |
+| REGEX | `when/then/otherwise` | Rule-side sentinels + non-concrete context | 1 rule (pattern), 1 context | 1/0/-1 |
+| CONTEXT_REGEX | `when/then/otherwise` | Non-concrete context → -1 (hard fail) | 0 rule, 1 context | 1/-1 only |
 | SET_MEMBERSHIP | `when/then/otherwise` | Rule-side `[sentinel]` + context-side (`t_col`) | 1 rule (list), 1 context | 1/0/-1 |
 | SET_EXCLUSION | `when/then/otherwise` | Rule-side `[sentinel]` + context-side (`t_col`) | 1 rule (list), 1 context | 1/0/-1 |
 
@@ -426,10 +438,10 @@ Type: workflow
 
 - The **DimensionCompiler** is a stateless translator that converts Dimension metadata into backend-agnostic expression templates, dispatching to strategy-specific methods via pattern matching.
 - **Compile Exact** uses `ma.t_col` with sentinel sets and `.t_eq()` to produce a ternary equality comparison with automatic wildcard handling; `_compile_exact_key` is the rule-side-wildcard-only sibling used for partition routing.
-- **Compile Range** produces a compound `t_and` of lower and upper bound checks, supporting configurable inclusive/exclusive boundaries.
+- **Compile Range** produces a compound expression that combines lower and upper bound checks via a row-wise ternary minimum (equivalent to `t_and`), supporting configurable inclusive/exclusive boundaries.
 - **Compile String Match** uses an explicit `when/then/otherwise` pattern to convert Boolean string operations into ternary integers, with sentinel detection as the first branch.
 - **Compile Regex** separates per-row `REGEX` patterns (`_compile_regex_per_row`) from metadata-literal `CONTEXT_REGEX` validation (`_compile_context_regex`).
-- **Compile Set** normalizes list columns, recognizes the in-band `[sentinel]` wildcard, and applies `t_is_in` / `t_is_not_in` for concrete rules.
+- **Compile Set** normalizes list columns, recognizes the in-band `[sentinel]` wildcard, and applies `list.t_contains` (negated with `.t_not()` for SET_EXCLUSION) for concrete rules.
 - **Set Value Normalization** sorts and deduplicates concrete lists so equal sets compare and fingerprint identically, while validation rejects reserved sentinels and element-level nulls.
 - **Sentinel-Aware Ternary** operates at two levels: column-level (via `t_col`) for most strategies, and expression-level (via `when/then`) for string operations.
-- **Context Value Extraction** normalizes user input into a sentinel-aware dictionary, substituting `NOT_SET` for missing or None values before they become DataFrame literal columns.
+- **Context Value Extraction** maps metadata-backed dimensions to their typed `NOT_SET` sentinel when missing or `None`, preserving Boolean absence as `None`; without metadata, it uses the generic string `NOT_SET` before column binding.

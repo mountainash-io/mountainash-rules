@@ -1,7 +1,7 @@
 {
   "id": "mountainash_rules.core.compiler",
   "path": "src/mountainash_rules/core/compiler.py",
-  "summary": "DimensionCompiler translates each Dimension's MatchStrategy into a backend-agnostic ternary BaseExpressionAPI expression template \u2014 one _compile_<strategy> method per strategy.",
+  "summary": "DimensionCompiler translates each Dimension's MatchStrategy into a backend-agnostic ternary BaseExpressionAPI expression template \u2014 one _compile_<strategy> method per strategy. This revision adds a shared _context_is_nonconcrete() guard (null or reserved-sentinel context) consumed by EXACT_KEY, PREFIX/SUFFIX/CONTAINS/REGEX, and CONTEXT_REGEX to fix cases where a non-concrete context previously produced an incorrect ternary outcome.",
   "role": "api-builder",
   "visibility": "public",
   "stability": "evolving",
@@ -21,42 +21,57 @@
   ],
   "key_functions": [
     "compile_dimensions",
-    "compile_dimension"
+    "compile_dimension",
+    "_context_is_nonconcrete"
   ],
   "dependencies": [
+    "mountainash",
     "mountainash_rules.core.constants",
     "mountainash_rules.core.dimension",
-    "mountainash_rules.core.set_wildcard"
+    "mountainash_rules.core.set_wildcard",
+    "polars"
   ],
   "dependents": [
-    "mountainash_rules.engines.filter.engine",
-    "mountainash_rules.__init__"
+    "mountainash_rules.__init__",
+    "mountainash_rules.engines.filter.engine"
   ],
   "extension_points": [
-    "Adding a MatchStrategy implements a new _compile_<strategy> method here (CLAUDE.md recipe)."
+    "Adding a MatchStrategy implements a new _compile_<strategy> method here (CLAUDE.md recipe).",
+    "A dimension whose context value can be legitimately absent should route through _context_is_nonconcrete for its don't-care/hard-fail guard rather than re-deriving null/sentinel detection."
   ],
   "lifecycle_notes": [
-    "EXACT_KEY strategy added (_compile_exact_key: rule-side-wildcard-only exact match for partition routing).",
-    "REGEX (per-row pattern column) split from CONTEXT_REGEX (metadata literal pattern).",
-    "Bool-dimension ternary comparisons added (_compile_bool_ternary: null on either side is don't-care)."
+    "Public DimensionCompiler methods are unchanged, but their generated expressions changed in this source window.",
+    "EXACT_KEY checks rule-side wildcard first (0), then rejects a non-concrete context for a non-wildcard rule (-1), before testing concrete equality (1). The UNKNOWN wildcard must not be conflated with a NOT_SET-valued concrete rule.",
+    "PREFIX/SUFFIX/CONTAINS and per-row REGEX treat reserved rule markers or a non-concrete context as unknown (0). CONTEXT_REGEX is a strict global guard: a non-concrete context fails (-1), with no unknown state.",
+    "The shared _context_is_nonconcrete helper handles null and declared sentinels, while Boolean absence is represented only by null.",
+    "RANGE combines bounds with an explicit row-wise minimum to avoid the documented constant-branch collapse in Polars 1.44.",
+    "SET_MEMBERSHIP/SET_EXCLUSION now use rule_col.list.t_contains(ctx_col), negated for exclusion, after wildcard normalization."
   ],
   "documentation_hooks": [],
   "examples": [],
   "tests": [
-    "tests/core/test_compiler.py"
+    "tests/core/test_compiler.py",
+    "tests/filter/test_typed_context.py"
   ],
   "risks": [
-    "_compile_regex_per_row carries a '# allow:' backend-purity exemption (Polars-native fallback pending upstream regex_contains column-pattern support in mountainash) \u2014 documented in CLAUDE.md."
+    "Per-row REGEX uses a Polars-native expression; its source explicitly says non-Polars evaluation fails with a native-expression error.",
+    "Missing-context semantics are strategy-specific: EXACT_KEY still permits a wildcard rule, while CONTEXT_REGEX rejects all non-concrete context and ordinary string predicates contribute zero specificity.",
+    "Public signatures alone do not reveal these changes to emitted expressions; documentation of matching semantics must compare implementation behavior."
   ],
   "open_questions": [],
   "evidence": [
     {
-      "kind": "import",
+      "kind": "symbol",
       "path": "src/mountainash_rules/core/compiler.py",
-      "detail": "12 _compile_* methods, one per MatchStrategy"
+      "detail": "compile_dimensions; compile_dimension; _context_is_nonconcrete"
+    },
+    {
+      "kind": "documentation",
+      "path": "README.md",
+      "detail": "Missing-context semantics, policy/output schema restrictions, batch identity and input boundaries are documented in the current source checkout; source bodies are authoritative."
     }
   ],
-  "source_hash": "7d0e3dcb747949bb2d7172a34135a7872b2ed55f",
+  "source_hash": "730a8583ee9d4fd6b52dc5350699eb66cc7487e9",
   "manual": {
     "notes": "",
     "editorial_status": "",

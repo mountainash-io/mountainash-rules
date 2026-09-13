@@ -1,7 +1,7 @@
 {
   "id": "mountainash_rules.core.result",
   "path": "src/mountainash_rules/core/result.py",
-  "summary": "RuleResult (survivors/best_match/count/explain/at_least/select accessors over an evaluated frame) and ExplainResult (every rule scored, unfiltered, for the new explain() API).",
+  "summary": "RuleResult (survivors/best_match/count/explain/at_least accessors, plus select() to re-apply a hit policy post-hoc) and ExplainResult (every rule scored, unfiltered, for explain()). select() now validates the policy and priority field, gates re-selection on non-truncated selection info, and its output is re-sorted by __rank; best_match sorts by __rank before taking the top row instead of trusting caller row order.",
   "role": "model",
   "visibility": "public",
   "stability": "stable",
@@ -22,39 +22,62 @@
   "key_functions": [
     "RuleResult.select",
     "RuleResult.explain",
-    "RuleResult.at_least"
+    "RuleResult.at_least",
+    "RuleResult.best_match"
   ],
   "dependencies": [
+    "mountainash",
     "mountainash_rules.core.constants",
     "mountainash_rules.core.hit_policy"
   ],
   "dependents": [
+    "mountainash_rules.__init__",
     "mountainash_rules.core.batch_result",
     "mountainash_rules.engines.accumulator.result",
-    "mountainash_rules.engines.filter.engine",
-    "mountainash_rules.__init__"
+    "mountainash_rules.engines.filter.engine"
   ],
   "extension_points": [],
   "lifecycle_notes": [
-    "ExplainResult added alongside ExpressionRulesEngine.explain() (all-rules ternary detail, no survival filter).",
-    "RuleResult.select(policy) added: re-apply a hit policy post-hoc over an untruncated result."
+    "ExplainResult exposes unfiltered scoring without ranked-selection methods; it is not a RuleResult subclass.",
+    "RuleResult.select(policy) requires explicit selection metadata and the complete candidate basis; manually wrapping a dataframe does not establish that provenance.",
+    "select() now accepts HitPolicy | str and normalizes/validates it via hit_policy.normalize_policy() (raises ValueError on an unknown policy string instead of failing later); it also validates an explicit priority_field via validate_priority_field() and requires the '__rank' column in addition to '__specificity'/'__rule_index'.",
+    "select() runs check_policy_config()/check_priority() (new hit_policy.py gates) before re-sorting/re-ranking, then sets the returned RuleResult's selection_info.truncated via selection_is_truncated(policy) instead of copying the original info unchanged \u2014 previously a second select() after FIRST/PRIORITY/ANY could silently re-select from an already-truncated single-row set; now it correctly raises the 'possibly truncated' ValueError.",
+    "select()'s returned dataframe is now explicitly re-sorted by '__rank' before collect(), and best_match now does relation(...).sort('__rank').head(1) instead of a bare head(1) \u2014 both accessors no longer assume the incoming frame is pre-sorted by the caller."
   ],
   "documentation_hooks": [],
   "examples": [],
   "tests": [
     "tests/core/test_result.py",
+    "tests/core/test_hit_policy.py",
     "tests/filter/test_explain.py"
   ],
-  "risks": [],
+  "risks": [
+    "best_match requires a __rank column and follows the minimum retained rank, not necessarily the most specific rule under every policy."
+  ],
   "open_questions": [],
   "evidence": [
     {
       "kind": "symbol",
       "path": "src/mountainash_rules/core/result.py",
-      "detail": "class ExplainResult (new since prior profile)"
+      "detail": "ExplainResult is a separate class without __rank, best_match or select; its frame includes both surviving and rejected rules."
+    },
+    {
+      "kind": "symbol",
+      "path": "src/mountainash_rules/core/result.py",
+      "detail": "select(): normalize_policy(policy), validate_priority_field(priority_field), check_policy_config(rel.columns, selected_policy, selected_info), check_priority(rel, selected_policy, selected_info), and selection_info=replace(selected_info, truncated=selection_is_truncated(selected_policy)) on return"
+    },
+    {
+      "kind": "symbol",
+      "path": "src/mountainash_rules/core/result.py",
+      "detail": "best_match: 'return relation(self._df).sort(\"__rank\").head(1).collect()' (previously a bare head(1))"
+    },
+    {
+      "kind": "test",
+      "path": "tests/core/test_hit_policy.py",
+      "detail": "TestResultSelect.test_select_first_from_collect, test_select_priority_from_collect, test_select_unique_raises_on_two_survivors, test_select_refuses_truncated_result"
     }
   ],
-  "source_hash": "7d0e3dcb747949bb2d7172a34135a7872b2ed55f",
+  "source_hash": "730a8583ee9d4fd6b52dc5350699eb66cc7487e9",
   "manual": {
     "notes": "",
     "editorial_status": "",

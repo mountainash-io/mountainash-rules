@@ -1,7 +1,7 @@
 {
   "id": "mountainash_rules.core.set_wildcard",
   "path": "src/mountainash_rules/core/set_wildcard.py",
-  "summary": "Shared in-band sentinel helpers for set-dimension wildcards: normalize_set_expr, set_wildcard_predicate, canonicalize_set_expr, plus reservation/null-element validators. New module (did not exist at the prior profile).",
+  "summary": "Shared in-band sentinel helpers for set-dimension wildcards: normalize_set_expr, set_wildcard_predicate, canonicalize_set_expr, plus reservation/null-element validators. Exported API and behavior are unchanged this revision; only validate_set_no_null_elements's docstring was updated to name the filter engine's new list-membership primitive.",
   "role": "protocol",
   "visibility": "semi-public",
   "stability": "evolving",
@@ -28,6 +28,7 @@
     "validate_set_no_null_elements"
   ],
   "dependencies": [
+    "mountainash",
     "mountainash_rules.core.constants",
     "mountainash_rules.core.dimension"
   ],
@@ -39,7 +40,7 @@
   ],
   "extension_points": [],
   "lifecycle_notes": [
-    "New module: set-dimension wildcards moved from an unsupported/null representation to an in-band '[sentinel]' list, normalized at ingestion and validated for reservation + null elements in both engines (feature/accumulator-set-sentinel-wildcard, PR #52)."
+    "This module already existed at the accepted baseline. Its only change in this window updates validate_set_no_null_elements's docstring from t_is_in to list.t_contains; executable helpers and signatures are unchanged."
   ],
   "documentation_hooks": [],
   "examples": [],
@@ -53,9 +54,19 @@
       "kind": "doc",
       "path": "CLAUDE.md",
       "detail": "'Set-dimension wildcards use the in-band [sentinel] list (not null)...'"
+    },
+    {
+      "kind": "symbol",
+      "path": "src/mountainash_rules/core/set_wildcard.py",
+      "detail": "validate_set_no_null_elements docstring: '``list.t_contains`` tolerates a null element (it matches nothing)...' (previously named ``t_is_in``)"
+    },
+    {
+      "kind": "import",
+      "path": "src/mountainash_rules/core/compiler.py",
+      "detail": "_compile_set_membership/_compile_set_exclusion now call rule_col.list.t_contains(ctx_col) instead of ctx_col.t_is_in(rule_col)/ctx_col.t_is_not_in(rule_col)"
     }
   ],
-  "source_hash": "7d0e3dcb747949bb2d7172a34135a7872b2ed55f",
+  "source_hash": "730a8583ee9d4fd6b52dc5350699eb66cc7487e9",
   "manual": {
     "notes": "",
     "editorial_status": "",

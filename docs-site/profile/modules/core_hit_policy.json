@@ -1,7 +1,7 @@
 {
   "id": "mountainash_rules.core.hit_policy",
   "path": "src/mountainash_rules/core/hit_policy.py",
-  "summary": "SelectionInfo dataclass plus ordering_keys/check_assertions/apply_cardinality/default_output_fields: the hit-policy selection layer (collect/unique/first/priority/any/rule_order) over survivor frames. New module.",
+  "summary": "SelectionInfo dataclass plus the hit-policy selection layer (collect/unique/first/priority/any/rule_order) over survivor frames: ordering_keys/default_output_fields for ordering and output-field resolution, check_policy_config/check_priority for pre-scoring configuration validation, check_assertions/apply_cardinality for UNIQUE/ANY assertions and cardinality truncation, plus new normalize_policy/validate_priority_field/validate_output_fields input guards, selection_is_truncated for conservative re-selection safety, and first_per_context for batch best-match selection.",
   "role": "orchestration",
   "visibility": "public",
   "stability": "evolving",
@@ -15,11 +15,18 @@
   "public_api": [
     "SelectionInfo",
     "HitPolicyViolationError",
+    "normalize_policy",
+    "validate_priority_field",
+    "validate_output_fields",
     "selection_info_from_metadata",
     "ordering_keys",
     "default_output_fields",
+    "check_policy_config",
+    "check_priority",
+    "selection_is_truncated",
     "check_assertions",
-    "apply_cardinality"
+    "apply_cardinality",
+    "first_per_context"
   ],
   "key_classes": [
     "SelectionInfo",
@@ -29,36 +36,79 @@
     "ordering_keys",
     "check_assertions",
     "apply_cardinality",
-    "selection_info_from_metadata"
+    "selection_info_from_metadata",
+    "normalize_policy",
+    "check_policy_config",
+    "check_priority",
+    "selection_is_truncated",
+    "first_per_context"
   ],
   "dependencies": [
-    "mountainash_rules.core.constants"
+    "mountainash",
+    "mountainash_rules.core.constants",
+    "mountainash_rules.core.dimension"
   ],
   "dependents": [
+    "mountainash_rules.__init__",
     "mountainash_rules.core.batch_result",
     "mountainash_rules.core.result",
-    "mountainash_rules.engines.filter.engine",
-    "mountainash_rules.__init__"
+    "mountainash_rules.engines.filter.engine"
   ],
   "extension_points": [],
   "lifecycle_notes": [
-    "Entirely new module: hit policies (collect default, unique, first, priority, any, rule_order) did not exist in the prior profile \u2014 every evaluation returned all survivors unconditionally."
+    "The six hit policies existed at the accepted baseline; this refresh adds explicit schema validation and conservative selection-completeness tracking.",
+    "SelectionInfo gained a 'metadata_backed: bool = False' field; default_output_fields() now raises ValueError('hit_policy=any requires explicit output_fields without metadata') when output_fields is empty and metadata_backed is False, instead of silently returning no output columns.",
+    "normalize_policy(policy) added: coerces a HitPolicy|str via HitPolicy(policy) and raises ValueError('Invalid hit policy: ...') for anything else, replacing a previous implicit fallthrough.",
+    "validate_priority_field permits None but rejects other non-string or empty values. validate_output_fields rejects non-string, empty, duplicate or unknown field names; an empty sequence itself is permitted, with policy-specific requirements enforced separately.",
+    "selection_info_from_metadata(): priority_field resolution changed from 'priority_field or md_priority' (falsy fallback, so an explicit empty-string priority_field was silently ignored) to 'priority_field if priority_field is not None else md_priority' followed by validate_priority_field() \u2014 an explicit empty string now raises instead of silently deferring to metadata. It also gained a keyword-only 'output_fields: tuple[str, ...] = ()' parameter used only when metadata is None, and dimensions with match_strategy == MatchStrategy.CONTEXT_REGEX are now excluded from dimension_rule_fields (a CONTEXT_REGEX dimension has no per-rule resolved_rule_field; it is a global context validator, per compiler.py's _compile_context_regex).",
+    "check_policy_config rejects missing PRIORITY fields and invalid ANY output configuration before scoring, including on empty input. check_priority separately rejects null priorities on surviving rules; rejected rules do not trigger that value check.",
+    "check_assertions()'s ANY branch now calls default_output_fields(rel.columns, info) unconditionally (previously only when rel.count_rows() > 1), so a metadata-less ANY policy without output_fields now raises regardless of survivor count, not only when more than one rule survives.",
+    "selection_is_truncated(policy, top_n, min_specificity) added: conservative truncation predicate (true for FIRST/PRIORITY/ANY or when top_n/min_specificity is set) used by result.py's select() to mark a just-reselected RuleResult as truncated for any further select() calls.",
+    "first_per_context(rel) added: group_by('__context_id').agg(min('__rank')) then inner-join back on ['__context_id', '__rank'] \u2014 used by batch_result.py's best_matches instead of a bare '__rank == 1' filter, so it no longer assumes rank 1 survives for every context."
   ],
   "documentation_hooks": [],
   "examples": [],
   "tests": [
-    "tests/core/test_hit_policy.py"
+    "tests/core/test_hit_policy.py",
+    "tests/filter/test_batch_evaluation.py"
   ],
-  "risks": [],
+  "risks": [
+    "selection_is_truncated() is a static predicate over policy/top_n/min_specificity; it does not inspect the actual result size, so a FIRST/PRIORITY/ANY selection over a single-survivor set is still conservatively marked truncated even though no information was actually lost."
+  ],
   "open_questions": [],
   "evidence": [
     {
       "kind": "doc",
       "path": "CLAUDE.md",
-      "detail": "'Hit policies (hit_policy.py, constants.HitPolicy)' section"
+      "detail": "'Hit policies (hit_policy.py, constants.HitPolicy)' section: collect/unique/first/priority/any/rule_order semantics and 'RuleResult.select(policy) re-selects post-hoc unless the result was truncated' (line ~45)"
+    },
+    {
+      "kind": "symbol",
+      "path": "src/mountainash_rules/core/hit_policy.py",
+      "detail": "def check_policy_config(columns, policy, info): PRIORITY requires info.priority_field in columns; ANY requires default_output_fields(columns, info) to succeed (new)"
+    },
+    {
+      "kind": "symbol",
+      "path": "src/mountainash_rules/core/hit_policy.py",
+      "detail": "def first_per_context(rel): rel.group_by('__context_id').agg(ma.col('__rank').min()...).join(..., on=['__context_id', '__rank'], how='inner') (new)"
+    },
+    {
+      "kind": "symbol",
+      "path": "src/mountainash_rules/core/hit_policy.py",
+      "detail": "selection_info_from_metadata(): 'elif d.match_strategy != MatchStrategy.CONTEXT_REGEX: fields.append(d.resolved_rule_field)' excludes CONTEXT_REGEX dimensions from dimension_rule_fields"
+    },
+    {
+      "kind": "test",
+      "path": "tests/core/test_hit_policy.py",
+      "detail": "TestMetadataFields.test_priority_requires_field, TestDeterministicTieBreak.test_collect_ties_broken_by_rule_order, TestResultSelect (select() over collect/priority/unique/truncated)"
+    },
+    {
+      "kind": "test",
+      "path": "tests/filter/test_batch_evaluation.py",
+      "detail": "TestBatchHitPolicies.test_unique_violation_lists_context_ids, TestChunking.test_unique_violations_accumulate_across_chunks (HitPolicyViolationError imported directly from mountainash_rules.core.hit_policy)"
     }
   ],
-  "source_hash": "7d0e3dcb747949bb2d7172a34135a7872b2ed55f",
+  "source_hash": "730a8583ee9d4fd6b52dc5350699eb66cc7487e9",
   "manual": {
     "notes": "",
     "editorial_status": "",

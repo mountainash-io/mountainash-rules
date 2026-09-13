@@ -1,7 +1,7 @@
 {
   "id": "mountainash_rules.__init__",
   "path": "src/mountainash_rules/__init__.py",
-  "summary": "Public API re-export surface. The only supported import path; internal module paths are private.",
+  "summary": "Package-root import surface for both engines, results, dimension metadata, policies, lattice types and typed sentinel helpers.",
   "role": "public-api",
   "visibility": "public",
   "stability": "stable",
@@ -9,7 +9,8 @@
     "users",
     "maintainers",
     "contributors",
-    "extension-authors"
+    "extension-authors",
+    "broader-hype"
   ],
   "doc_priority": "essential",
   "confidence": "high",
@@ -51,25 +52,25 @@
   "key_functions": [],
   "dependencies": [
     "mountainash_rules.__version__",
-    "mountainash_rules.engines.accumulator.engine",
-    "mountainash_rules.engines.accumulator.result",
-    "mountainash_rules.engines.accumulator.aggregate",
+    "mountainash_rules.core.batch_result",
     "mountainash_rules.core.compiler",
     "mountainash_rules.core.constants",
     "mountainash_rules.core.dimension",
-    "mountainash_rules.core.batch_result",
-    "mountainash_rules.engines.filter.engine",
     "mountainash_rules.core.hit_policy",
+    "mountainash_rules.core.result",
+    "mountainash_rules.engines.accumulator.aggregate",
+    "mountainash_rules.engines.accumulator.engine",
     "mountainash_rules.engines.accumulator.lattice",
-    "mountainash_rules.core.result"
+    "mountainash_rules.engines.accumulator.result",
+    "mountainash_rules.engines.filter.engine"
   ],
   "dependents": [],
   "extension_points": [],
   "lifecycle_notes": [
-    "Package renamed mountainash_utils_rules -> mountainash_rules and reorganised into core/+engines/{filter,accumulator}/ (2026-07-16); deprecation shims for the pre-reorganisation flat module paths were removed the same date."
+    "Root imports load filter and accumulator modules; the export tuple is unchanged from the prior source baseline."
   ],
   "documentation_hooks": [
-    "CLAUDE.md: 'mountainash_rules module paths are private \u2014 import public names from the package root only'"
+    "Use package-root imports in reader examples; internal modules remain useful for maintainer explanations."
   ],
   "examples": [],
   "tests": [
@@ -81,10 +82,20 @@
     {
       "kind": "symbol",
       "path": "src/mountainash_rules/__init__.py",
-      "detail": "__all__ tuple, 30 exported names"
+      "detail": "__all__ declares 32 names; each is imported at module scope."
+    },
+    {
+      "kind": "test",
+      "path": "tests/test_public_api.py",
+      "detail": "Retained tests check root name availability and __all__ resolution; inspected, not executed in this profile run."
+    },
+    {
+      "kind": "documentation",
+      "path": "README.md",
+      "detail": "Quick Start, Match Strategies and Serialisable Metadata provide concrete examples for a non-specialist capability overview; no performance or deployment guarantees inferred."
     }
   ],
-  "source_hash": "7d0e3dcb747949bb2d7172a34135a7872b2ed55f",
+  "source_hash": "730a8583ee9d4fd6b52dc5350699eb66cc7487e9",
   "manual": {
     "notes": "",
     "editorial_status": "",

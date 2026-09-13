@@ -25,6 +25,7 @@
     "compile_coalesce_na_flag"
   ],
   "dependencies": [
+    "mountainash",
     "mountainash_rules.core.constants",
     "mountainash_rules.core.dimension",
     "mountainash_rules.core.set_wildcard"
@@ -50,7 +51,7 @@
       "detail": "_compatible_set_membership, _coalesce_set"
     }
   ],
-  "source_hash": "7d0e3dcb747949bb2d7172a34135a7872b2ed55f",
+  "source_hash": "730a8583ee9d4fd6b52dc5350699eb66cc7487e9",
   "manual": {
     "notes": "",
     "editorial_status": "",

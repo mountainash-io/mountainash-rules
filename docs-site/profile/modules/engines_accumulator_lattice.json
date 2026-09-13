@@ -27,21 +27,27 @@
     "Lattice.load"
   ],
   "dependencies": [
+    "mountainash",
+    "mountainash_rules.core.batch_result",
     "mountainash_rules.core.constants",
     "mountainash_rules.core.dimension",
     "mountainash_rules.engines.accumulator.aggregate",
-    "mountainash_rules.engines.filter.engine"
+    "mountainash_rules.engines.filter.engine",
+    "polars",
+    "yaml"
   ],
   "dependents": [
+    "mountainash_rules.__init__",
     "mountainash_rules.engines.accumulator.engine",
-    "mountainash_rules.engines.accumulator.result",
-    "mountainash_rules.__init__"
+    "mountainash_rules.engines.accumulator.result"
   ],
   "extension_points": [],
   "lifecycle_notes": [
     "Lattice.save/load added: parquet + manifest.yaml snapshot round-trip (a superset of babel's LatticeManifest) \u2014 the prior profile's coverage.md flagged 'no serialisation protocol' as an open question; that gap is now closed. 'Build offline, save, serve apply from load.'",
     "Lattice.is_composed added to distinguish build() output (has __prime_product) from flat/imported lattices.",
-    "LatticeIndex is new: routes CONTEXT_KEY-partitioned contexts via ternary + specificity semantics through an embedded meta-engine; index(lattices, validate=True, max_witnesses=1_000_000) runs an exhaustive witness-matrix ambiguity check at load time; ties raise AmbiguousPartitionError (a KeyError subclass)."
+    "LatticeIndex routes CONTEXT_KEY-partitioned contexts via ternary and specificity semantics through an embedded filter engine. index(lattices, validate=True, max_witnesses=1_000_000) checks ambiguity using a bounded witness matrix; it raises above the limit rather than sampling.",
+    "No-key routing bypasses the metadata routing engine; applying the selected lattice still requires at least one constraint dimension in the shared filter engine.",
+    "apply_batch evaluates partition frames separately, concatenates survivors and constructs a fresh BatchRuleResult. Its wrapper does not forward the per-partition selection_info; filter batch guarantees must not be assumed to cover the entire routing wrapper."
   ],
   "documentation_hooks": [
     "docs/superpowers/specs/2026-07-19-ternary-partition-routing-design.md",
@@ -53,17 +59,19 @@
     "tests/accumulator/test_lattice_properties.py"
   ],
   "risks": [
-    "Lattice.load carries a documented '# allow:' backend-purity exemption for the parquet read, pending backend-agnostic parquet.read_table support in mountainash."
+    "Lattice.load carries a documented '# allow:' backend-purity exemption for the parquet read, pending backend-agnostic parquet.read_table support in mountainash.",
+    "Caller context IDs reach per-partition evaluate_batch calls; global validation across different partitions is not established by those calls alone.",
+    "The partitioned apply_batch path has distinct empty-input, merged-order and selection-metadata handling from the direct filter path; those boundaries were inspected, not executed in this profile run."
   ],
   "open_questions": [],
   "evidence": [
     {
-      "kind": "doc",
-      "path": "CLAUDE.md",
-      "detail": "'Lattice.save(dir) / Lattice.load(dir) \u2014 snapshot persistence'"
+      "kind": "symbol",
+      "path": "src/mountainash_rules/engines/accumulator/lattice.py",
+      "detail": "Lattice.save/load; LatticeIndex._validate_ambiguity, apply and apply_batch, including no-key dispatch and the final BatchRuleResult construction."
     }
   ],
-  "source_hash": "7d0e3dcb747949bb2d7172a34135a7872b2ed55f",
+  "source_hash": "730a8583ee9d4fd6b52dc5350699eb66cc7487e9",
   "manual": {
     "notes": "",
     "editorial_status": "",

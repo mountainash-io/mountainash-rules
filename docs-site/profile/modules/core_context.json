@@ -1,13 +1,14 @@
 {
   "id": "mountainash_rules.core.context",
   "path": "src/mountainash_rules/core/context.py",
-  "summary": "extract_context_values(): pulls dimension values out of a Pydantic model or dict, filling type-correct NOT_SET sentinels for missing fields (bool dimensions get None, not a sentinel).",
+  "summary": "Extracts typed context values from dictionaries or Pydantic models, preserves Boolean absence during expression binding, and validates caller-supplied batch identity before backend conversion or chunking.",
   "role": "io",
   "visibility": "internal",
-  "stability": "stable",
+  "stability": "evolving",
   "audiences": [
     "maintainers",
-    "contributors"
+    "contributors",
+    "backend-architecture"
   ],
   "doc_priority": "internal-note",
   "confidence": "high",
@@ -16,31 +17,55 @@
   ],
   "key_classes": [],
   "key_functions": [
-    "extract_context_values"
+    "extract_context_values",
+    "_validate_context_ids",
+    "_absent_context_value",
+    "_nullable_bool",
+    "_context_literal"
   ],
   "dependencies": [
-    "mountainash_rules.core.constants"
+    "mountainash",
+    "mountainash_rules.core.constants",
+    "mountainash_rules.core.dimension",
+    "pydantic"
   ],
   "dependents": [
+    "mountainash_rules.core.batch_result",
     "mountainash_rules.engines.filter.engine"
   ],
   "extension_points": [],
-  "lifecycle_notes": [],
+  "lifecycle_notes": [
+    "extract_context_values resolves metadata context fields, normalizes missing/None to a typed NOT_SET sentinel (None for bool), and otherwise preserves the supplied value.",
+    "_context_literal and _nullable_bool preserve null Boolean inputs through backend casts; the nullable wrapper is used only where Boolean absence needs an explicit expression type.",
+    "_validate_context_ids verifies the field name and existence, then aggregates total/non-null/distinct counts in one query. A single null ID is invalid even if distinctness would pass.",
+    "ExpressionRulesEngine calls identity validation on the full submitted relation in _prepare_contexts before its chunk loop. BatchRuleResult.unmatched_context_ids uses it separately on the original submitted contexts."
+  ],
   "documentation_hooks": [],
   "examples": [],
   "tests": [
-    "tests/core/test_context.py"
+    "tests/core/test_context.py",
+    "tests/filter/test_batch_identity.py",
+    "tests/filter/test_typed_context.py"
   ],
-  "risks": [],
+  "risks": [
+    "Leading-underscore helpers are shared across modules: filter.engine imports all four; batch_result imports _validate_context_ids only. Internal names still require coordinated caller changes.",
+    "ID validation is global before chunking, not a uniqueness check within each independent chunk. Chunking therefore does not eliminate the full-input identity scan.",
+    "extract_context_values normalizes None, not arbitrary invalid or NaN values; do not infer broader normalization guarantees from typed missing-value handling."
+  ],
   "open_questions": [],
   "evidence": [
     {
       "kind": "symbol",
       "path": "src/mountainash_rules/core/context.py",
-      "detail": "extract_context_values(context, dimension_names, metadata=None)"
+      "detail": "extract_context_values; _validate_context_ids; _absent_context_value; _nullable_bool; _context_literal"
+    },
+    {
+      "kind": "documentation",
+      "path": "README.md",
+      "detail": "Missing-context semantics, policy/output schema restrictions, batch identity and input boundaries are documented in the current source checkout; source bodies are authoritative."
     }
   ],
-  "source_hash": "7d0e3dcb747949bb2d7172a34135a7872b2ed55f",
+  "source_hash": "730a8583ee9d4fd6b52dc5350699eb66cc7487e9",
   "manual": {
     "notes": "",
     "editorial_status": "",

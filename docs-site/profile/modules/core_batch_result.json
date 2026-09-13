@@ -1,7 +1,7 @@
 {
   "id": "mountainash_rules.core.batch_result",
   "path": "src/mountainash_rules/core/batch_result.py",
-  "summary": "BatchRuleResult: per-context accessors (survivors, best_matches, counts_per_context, matched/unmatched_context_ids, for_context) over the output of evaluate_batch. New module.",
+  "summary": "BatchRuleResult: per-context accessors (survivors, best_matches, counts_per_context, matched/unmatched_context_ids, for_context) over the output of evaluate_batch. best_matches now derives the minimum retained rank per context instead of assuming rank 1 survives; for_context sorts its per-context rows and preserves the batch's selection_info so re-selection truncation is still enforced on the returned RuleResult.",
   "role": "model",
   "visibility": "public",
   "stability": "evolving",
@@ -17,34 +17,68 @@
   "key_classes": [
     "BatchRuleResult"
   ],
-  "key_functions": [],
+  "key_functions": [
+    "BatchRuleResult.best_matches",
+    "BatchRuleResult.unmatched_context_ids",
+    "BatchRuleResult.for_context"
+  ],
   "dependencies": [
+    "mountainash",
+    "mountainash_rules.core.context",
     "mountainash_rules.core.hit_policy",
     "mountainash_rules.core.result"
   ],
   "dependents": [
-    "mountainash_rules.engines.filter.engine",
-    "mountainash_rules.__init__"
+    "mountainash_rules.__init__",
+    "mountainash_rules.engines.accumulator.lattice",
+    "mountainash_rules.engines.filter.engine"
   ],
   "extension_points": [],
   "lifecycle_notes": [
-    "Entirely new module: batch evaluation (evaluate_batch) of many contexts against the rules in one pass did not exist in the prior profile."
+    "BatchRuleResult existed at the accepted baseline; this refresh updates its retained-rank and context-identity behavior.",
+    "New dependency on mountainash_rules.core.context: unmatched_context_ids now calls the private _validate_context_ids() helper (shared with engines.filter.engine's context-id validation) instead of a bare '.unique()' projection.",
+    "best_matches now builds on hit_policy.first_per_context(relation), which group_by('__context_id').agg(min('__rank')) then inner-joins back, and explicitly '.sort(\"__context_id\", \"__rank\")' before collect \u2014 previously it filtered '__rank == 1', which assumed rank 1 always survives per context.",
+    "unmatched_context_ids: for a named context_id_field, it now validates the field via _validate_context_ids() (rejects null/duplicate/missing ids) and selects the field directly (no '.unique()') rather than silently deduplicating a caller-supplied id column; the '__context_id' fallback path is unchanged in effect (range(count_rows())).",
+    "for_context now appends '.sort(\"__rank\")' to the per-context filter before collect, and its docstring records that the returned RuleResult keeps the batch's selection_info \u2014 an empty or unmatched context still carries a possibly-truncated selection_info, so RuleResult.select() on it can still correctly raise."
   ],
   "documentation_hooks": [],
   "examples": [],
   "tests": [
     "tests/filter/test_batch_evaluation.py"
   ],
-  "risks": [],
+  "risks": [
+    "survivors returns the supplied frame without sorting; the filter caller establishes rank order. matched_context_ids sorts its own IDs, while counts_per_context groups retained rows without promising presentation order.",
+    "mountainash_rules.engines.accumulator.lattice.LatticeIndex.apply_batch constructs BatchRuleResult via a local, lazy import (line ~428); this dependent existed unchanged before this refresh window (no diff in lattice.py between the accepted and target SHAs) but was absent from the prior profile's dependents list \u2014 added here as a source-verified correction, not a new usage."
+  ],
   "open_questions": [],
   "evidence": [
     {
       "kind": "symbol",
       "path": "src/mountainash_rules/core/batch_result.py",
-      "detail": "for_context(context_id) -> RuleResult"
+      "detail": "best_matches: 'first_per_context(relation(self._df)).sort(\"__context_id\", \"__rank\").collect()'"
+    },
+    {
+      "kind": "symbol",
+      "path": "src/mountainash_rules/core/hit_policy.py",
+      "detail": "def first_per_context(rel): group_by('__context_id').agg(min('__rank')), then inner join on ['__context_id', '__rank']"
+    },
+    {
+      "kind": "symbol",
+      "path": "src/mountainash_rules/core/batch_result.py",
+      "detail": "unmatched_context_ids: '_validate_context_ids(ctx_rel, self._context_id_field)' then a direct (non-unique) select, replacing the prior '.unique()' projection"
+    },
+    {
+      "kind": "symbol",
+      "path": "src/mountainash_rules/engines/accumulator/lattice.py",
+      "detail": "apply_batch(): local 'from mountainash_rules.core.batch_result import BatchRuleResult' then 'return BatchRuleResult(dataframe=merged, active_dimensions=..., context_id_field=kwargs[\"context_id_field\"])' (line ~428-435)"
+    },
+    {
+      "kind": "test",
+      "path": "tests/filter/test_batch_evaluation.py",
+      "detail": "TestEvaluateBatchAgreement.test_best_matches_one_row_per_surviving_context asserts each best_matches row's __rank equals min(retained __rank) for that context; TestBatchAccessors.test_matched_and_unmatched, TestBatchAccessors.test_for_context_returns_rule_result"
     }
   ],
-  "source_hash": "7d0e3dcb747949bb2d7172a34135a7872b2ed55f",
+  "source_hash": "730a8583ee9d4fd6b52dc5350699eb66cc7487e9",
   "manual": {
     "notes": "",
     "editorial_status": "",

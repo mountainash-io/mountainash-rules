@@ -45,7 +45,7 @@ print(best)
 print(batch.count)
 ```
 
-`count` is the total number of survivor rows across all contexts, not the number of contexts. A batch with three matched contexts and two rules per context therefore has a count of six. `best_matches` filters the returned frame to rows whose per-context `__rank` is 1. With the collecting policy, this is one row per context that has at least one survivor; with a policy that has already reduced cardinality, it remains the rank-one row selected by that policy.
+`count` is the total number of survivor rows across all contexts, not the number of contexts. A batch with three matched contexts and two rules per context therefore has a count of six. `best_matches` selects, for each context with at least one retained row, the row at that context's minimum *retained* `__rank` — not necessarily `__rank == 1`. With the collecting policy and no truncation, minimum retained rank is rank 1 for every matched context, so this is one row per context that has at least one survivor. But `min_specificity` can remove a context's rank-1 row while keeping lower-ranked ones for that same context; `best_matches` still returns exactly one row per such context — the best of what remains, not necessarily the row that would have been rank 1 before filtering.
 
 The wrapper does not copy the original, unprojected context columns into every survivor row. It retains the normalized `__context_id` so that the rule output can be joined back to the caller's context frame when more context attributes are needed.
 
@@ -61,7 +61,7 @@ def evaluate_batch(
     *,
     context_id_field: str | None = None,
     dimensions: list[str] | None = None,
-    hit_policy: HitPolicy | None = None,
+    hit_policy: HitPolicy | str | None = None,
     priority_field: str | None = None,
     top_n_per_context: int | None = None,
     min_specificity: int | None = None,
@@ -70,20 +70,20 @@ def evaluate_batch(
 ) -> BatchRuleResult:
 ```
 
-The required `contexts` argument is a dataframe-like object. Each row is one context to evaluate. The optional `context_id_field` names a column whose values identify those rows. If it is omitted, the engine creates `__context_id` from a zero-based row index. If it is supplied, its values must be unique; duplicate identifiers raise `ValueError` during context preparation.
+The required `contexts` argument is a dataframe-like object. Each row is one context to evaluate. The optional `context_id_field` names a column whose values identify those rows. If it is omitted, the engine creates `__context_id` from a zero-based row index. If it is supplied, its values must be non-null and globally unique; a missing field, a null value, or a duplicate identifier raises `ValueError` during context preparation.
 
-`dimensions` selects the dimensions to evaluate. When it is omitted, all compiled dimensions are active. The implementation uses the same all-dimensions behavior when an empty list is supplied, because it chooses `dimensions if dimensions else all_dim_names`. Every requested name is checked against the compiled expressions, and an unknown name raises `KeyError` rather than being silently ignored.
+`dimensions` selects the dimensions to evaluate. Only `None` means all compiled dimensions are active; an empty list is no longer an all-dimensions alias. `dimensions=[]`, a non-list value, a duplicate name, or any non-string entry all raise `ValueError` before any expression is evaluated. Every remaining requested name is checked against the compiled expressions, and an unknown-but-well-formed name raises `KeyError` rather than being silently ignored.
 
 The remaining arguments control selection and output:
 
 | Argument | Effect |
 |---|---|
-| `hit_policy` | Uses this call's policy; otherwise uses metadata's policy, or `HitPolicy.COLLECT` when metadata is unavailable. |
+| `hit_policy` | Uses this call's policy (a `HitPolicy` member or its lowercase string value — an unrecognized string raises `ValueError`); otherwise uses metadata's policy, or `HitPolicy.COLLECT` when metadata is unavailable. |
 | `priority_field` | Supplies the descending priority column required by `HitPolicy.PRIORITY`. |
-| `top_n_per_context` | Keeps at most this many ranked survivors inside each context group. |
-| `min_specificity` | Removes per-context survivors below the hard-match threshold. |
+| `top_n_per_context` | Keeps at most this many ranked survivors inside each context group; must be a non-Boolean Python `int >= 0`, or `None`. |
+| `min_specificity` | Removes per-context survivors below the hard-match threshold; same `int >= 0` or `None` constraint as `top_n_per_context`. |
 | `include_observability` | Retains or drops the `__t_<dimension>` ternary columns. |
-| `chunk_size` | Switches from one whole-batch cross-join to opt-in chunks of prepared contexts. |
+| `chunk_size` | Switches from one whole-batch cross-join to opt-in chunks of prepared contexts; must be a non-Boolean Python `int >= 1`, or `None`. |
 
 The method prepares the contexts, then either evaluates one prepared frame or evaluates several chunks. In both modes it returns a `BatchRuleResult` with the active dimensions, the effective context-id field, and selection information attached. It does not call Python once for every context; the normal path scores the complete batch through relation operations.
 
@@ -112,7 +112,9 @@ __context_id | __ctx_region | __ctx_amount | __ctx_code
 
 All unrelated input columns are deliberately discarded. This prevents accidental collisions with rule columns during the join and keeps the cross-join payload limited to values that the compiled expressions actually read.
 
-For each active dimension, the method resolves the context field from metadata. A dimension may use a different `context_field` from its dimension name, as the `code` dimension does in the following grounded example. If the field is present, null values are replaced with the typed `NOT_SET` sentinel using `coalesce`. If the field is absent, the method creates the entire `__ctx_` column from that sentinel. With metadata, the sentinel is selected from the dimension's declared `data_type`; without metadata, the generic `NOT_SET` constant is used.
+For each active dimension, the method resolves the context field from metadata. A dimension may use a different `context_field` from its dimension name, as the `code` dimension does in the following grounded example. For a present, non-Boolean field, null values are replaced with the typed `NOT_SET` sentinel using `coalesce`. If the field is absent, the method creates the entire `__ctx_` column from that sentinel; with metadata, the sentinel is selected from the dimension's declared `data_type`, and without metadata the generic `NOT_SET` constant is used.
+
+A `BOOL` dimension is the one exception to sentinel substitution, because Boolean has no in-band "not set" value that cannot also be a real answer. When a Boolean field is present, its nulls are preserved rather than coalesced to a sentinel — the projection casts through `_nullable_bool()`, which keeps a null a null instead of letting a backend's Boolean cast silently turn it into `False`. When a Boolean field is absent entirely, the generated `__ctx_` column preserves absence as a nullable Boolean rather than being filled with `NOT_SET`, for the same reason.
 
 Consider the dimensions and context rows below. `amount` is a numeric range dimension, while the `code` dimension reads `product_code` from each context row.
 
@@ -146,6 +148,8 @@ contexts = pl.DataFrame({
 ```
 
 The third row's null values become typed sentinels in the projected frame. The `caller_note` column is not projected because it is not used by an active dimension. If no custom identifier is supplied, the same frame would receive context IDs `0`, `1`, and `2`. With `context_id_field="request_id"`, the IDs are the unique strings `r-100`, `r-101`, and `r-102`.
+
+Before any of this projection or later chunking happens, a caller-supplied `context_id_field` is validated: the engine aggregates the total row count, the non-null count, and the distinct count for that column in one pass and raises `ValueError` if any row's ID is null or if two rows share an ID, without ever collecting the full input merely to check identity. This runs before context IDs are converted into `__context_id` and before the frame can be sliced into chunks, so an identity problem is caught once, at the earliest point, regardless of which evaluation path follows.
 
 The projection also protects engine-owned names. `_check_reserved()` scans a caller-supplied frame and raises `ValueError` if any column is one of the batch-generated names or starts with `__t_` or `__ctx_`. The reserved tuple is:
 
@@ -220,13 +224,15 @@ The rank is consequently one-based within every context group. `ordering_keys()`
 
 The active hit policy is selected in this order:
 
-1. The `hit_policy` argument on this `evaluate_batch()` call.
+1. The `hit_policy` argument on this `evaluate_batch()` call — a `HitPolicy` member or its lowercase string value; an unrecognized string raises `ValueError` rather than falling through to `COLLECT`.
 2. `DimensionsMetadata.hit_policy`, when metadata is attached.
 3. `HitPolicy.COLLECT` when neither is available.
 
-Assertions run over the full survivor set for each context before result truncation. Under `HitPolicy.UNIQUE`, a context with more than one survivor raises `HitPolicyViolationError`. Under `HitPolicy.ANY`, the engine determines output fields and raises when multiple survivors disagree on their output values. If no metadata is available to infer output fields, `ANY` requires explicit output fields and otherwise raises `ValueError`.
+Configuration errors are checked before scoring, the same way they are for single-context `evaluate()`: `HitPolicy.PRIORITY` requires an existing `priority_field`, and an expressions-only `ANY` (no metadata) requires explicit `output_fields`, both checked up front regardless of how many rows any context will end up with.
 
-After assertions, `min_specificity` removes low-specificity rows and `top_n_per_context` retains only the first N ranks in each group. Finally, `FIRST`, `PRIORITY`, and `ANY` keep rank 1. `COLLECT` and `UNIQUE` retain their remaining rows, subject to the requested truncation.
+Assertions themselves run over the full survivor set for each context before result truncation. Under `HitPolicy.UNIQUE`, a context with more than one survivor raises `HitPolicyViolationError`. Under `HitPolicy.ANY`, the engine determines output fields (explicit, or inferred when metadata is attached) and raises when multiple survivors in one context disagree on their output values. A metadata-backed inferred output set that happens to be empty is only an error for a context where more than one row survives to be compared — a context with zero or one survivor is unaffected by an empty inferred set.
+
+After assertions, `min_specificity` removes low-specificity rows. `top_n_per_context` then keeps only the first N *retained* positions per group, counted after the `min_specificity` filter rather than against the original `__rank` values — so `__rank` itself is never renumbered by either filter, and a context's lowest surviving `__rank` after `min_specificity` can be greater than 1. Finally, `FIRST`, `PRIORITY`, and `ANY` keep the minimum retained rank in each context, which is rank 1 only when nothing earlier removed it. `COLLECT` and `UNIQUE` retain their remaining rows, subject to the requested truncation.
 
 The following table summarizes the batch-specific consequence of each policy. The policy meanings themselves are developed in Chapter 6; this table focuses on group cardinality.
 
@@ -234,9 +240,9 @@ The following table summarizes the batch-specific consequence of each policy. Th
 |---|---|---|
 | `COLLECT` | Specificity, then rule order | Keeps all surviving rows unless truncated. |
 | `UNIQUE` | Specificity, then rule order | Asserts at most one survivor in each context group. |
-| `FIRST` | Rule order | Keeps rank 1 independently for every context. |
-| `PRIORITY` | Priority, specificity, then rule order | Requires `priority_field` and selects rank 1 per context. |
-| `ANY` | Specificity, then rule order | Asserts output agreement within each context, then keeps rank 1. |
+| `FIRST` | Rule order | Keeps the minimum retained rank independently for every context. |
+| `PRIORITY` | Priority, specificity, then rule order | Requires `priority_field` and selects the minimum retained rank per context. |
+| `ANY` | Specificity, then rule order | Asserts output agreement within each context, then keeps the minimum retained rank. |
 | `RULE_ORDER` | Rule order | Preserves rule order; it does not itself reduce cardinality. |
 
 <!-- concept:117 -->
@@ -259,7 +265,7 @@ The design matters for two reasons. First, users can submit a familiar dataframe
 <!-- concept:118 -->
 ## Chunked Batch Evaluation
 
-A whole-batch cross-join is efficient when the intermediate relation fits comfortably in memory. For a very large batch, however, materializing all `m × n` candidate pairs at once may be too expensive. Passing `chunk_size` opts into chunked evaluation. The engine first prepares the complete context projection, converts it to Polars for slicing, and evaluates consecutive slices of at most `chunk_size` rows.
+A whole-batch cross-join is efficient when the intermediate relation fits comfortably in memory. For a very large batch, however, materializing all `m × n` candidate pairs at once may be too expensive. Passing `chunk_size` opts into chunked evaluation; it must be a non-Boolean Python `int >= 1`, validated the same way as `top_n_per_context` and `min_specificity`. The engine first prepares the complete context projection, converts it to Polars for slicing, and evaluates consecutive slices of at most `chunk_size` rows. An empty prepared projection (zero contexts) is handled directly through the ordinary single-frame evaluation path rather than being sliced into zero chunks.
 
 Each chunk runs the same `_evaluate_batch_frame()` pipeline: backend conformance, cross-join, ternary scoring, survival filtering, per-context ranking, assertions, and truncation. Successful chunk frames are concatenated and collected into the final `BatchRuleResult`.
 
@@ -275,21 +281,23 @@ batch = engine.evaluate_batch(
 
 Chunking has an important correctness detail for assertion policies. A `UNIQUE` or `ANY` violation may occur in one chunk and another violation may occur in a different chunk. The method catches each `HitPolicyViolationError`, stores its offending frame, and continues evaluating the remaining chunks. If any violations occurred, it concatenates all offending frames and raises one `HitPolicyViolationError` whose message includes the accumulated context IDs. A violation is therefore not lost merely because its context was in a different chunk from another violation.
 
-This accumulation is especially important when context IDs are automatically generated. For example, with `chunk_size=2`, input rows `0` and `3` can land in separate chunks; if both have multiple survivors under `UNIQUE`, the final error reports both IDs. Chunking limits peak materialization for the successful path, but it does not weaken hit-policy assertions or silently discard offending contexts.
+This accumulation is especially important when context IDs are automatically generated. For example, with `chunk_size=2`, input rows `0` and `3` can land in separate chunks; if both have multiple survivors under `UNIQUE`, the final error reports both IDs, sorted, and — for a very large violation set — bounded to the first 20 with a truncation note rather than growing the message without limit. Chunking limits peak materialization for the successful path, but it does not weaken hit-policy assertions or silently discard offending contexts.
+
+`chunk_size` bounds the size of a single cross-join, not the batch's total memory footprint: the engine still stages the complete prepared context projection up front, and it still holds every successful chunk's result frame (and any violation frames) in memory until they are concatenated into the final answer. This is chunked evaluation, not a streaming pipeline — it trades one large intermediate relation for several smaller ones, not for bounded total memory.
 
 Use chunking when the batch is too large for a single cross-join, and choose a chunk size that balances relation overhead against the size of each cross-product. The semantic contract remains the same as unchunked evaluation: for a given context and rule set, the same survivors, ranks, policy checks, and accessors are returned.
 
 <!-- concept:119 -->
 ## The For Context Accessor
 
-`BatchRuleResult.for_context(context_id)` extracts one context's rows and wraps them as an ordinary `RuleResult`. It filters the stored frame where `__context_id` equals the supplied value, collects that frame, and passes through the active dimensions and selection information. This makes a batch result compatible with the single-context result API without rerunning the rule engine.
+`BatchRuleResult.for_context(context_id)` extracts one context's rows and wraps them as an ordinary `RuleResult`. It filters the stored frame where `__context_id` equals the supplied value, collects that frame, and passes through the active dimensions and the batch's own `SelectionInfo` unchanged. This makes a batch result compatible with the single-context result API without rerunning the rule engine. An unmatched or never-submitted ID produces a typed empty `RuleResult` rather than an error, but it still carries that same `SelectionInfo` — emptiness does not make a batch that was truncated (by `top_n_per_context`, `min_specificity`, or a `FIRST`/`PRIORITY`/`ANY` policy) any more re-selectable than a nonempty per-context view would be.
 
 The other accessors answer batch-level questions:
 
-- **`best_matches`** returns the rank-one row for each matched context.
+- **`best_matches`** returns the row at each matched context's minimum retained `__rank` — rank one whenever nothing removed it, but not guaranteed to be rank one once per-context truncation has run.
 - **`counts_per_context`** groups by `__context_id` and returns a frame with `__context_id` and `__n`, the number of returned survivor rows in that group.
 - **`matched_context_ids`** returns sorted unique IDs present in the survivor frame.
-- **`unmatched_context_ids(contexts)`** compares those matched IDs with the supplied input contexts. It reads the configured context-id column when `context_id_field` was supplied; otherwise it compares against positional IDs `0` through `count_rows() - 1`.
+- **`unmatched_context_ids(contexts)`** compares those matched IDs with the supplied input contexts. When `context_id_field` was supplied, it first re-validates that column on the given `contexts` — present, non-null, and globally unique — the same check `evaluate_batch()` ran originally, rather than silently reading or deduplicating a column that may since have changed; otherwise it compares against positional IDs `0` through `count_rows() - 1`.
 - **`active_dimensions`** returns the dimensions used in this batch call.
 - **`context_id_field`** reports the source field name, or `"__context_id"` for generated IDs.
 
