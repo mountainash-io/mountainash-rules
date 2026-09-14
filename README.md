@@ -14,6 +14,69 @@ Built on [mountainash](https://github.com/mountainash-io/mountainash) expression
 - **Rules are auditable.** Every rule is a row with a name, dimensions, and match criteria. You can diff two rule sets, version them in a table, and explain exactly why a context matched — because the engine tracks per-dimension ternary results (match / unknown / non-match) for every rule.
 - **Rules scale without branching.** A hand-coded rule system with 2,000 rules is unmaintainable. A DataFrame with 2,000 rows is just data. The engine evaluates all of them in one vectorised pass regardless of count.
 
+## Installation
+
+End-user installations use interpreter/platform-specific wheels containing the
+Rust extension; no Rust toolchain is required to install a compatible wheel.
+There is no pure-Python fallback. Source and editable builds require Cargo and
+a Rust toolchain. `hatch build` builds the extension through the existing Hatch
+backend; `cargo test --locked --lib` exercises its language regressions.
+
+The release matrix targets CPython 3.10–3.14 and PyPy 3.10/3.11 on Linux
+x86_64/aarch64, macOS and Windows x86_64. macOS arm64 supports CPython;
+PyPy uses macOS x86_64. Local artifact verification does not certify the
+entire release matrix; CI builds and smoke-tests each configured artifact.
+
+Mountainash and its sibling dependencies are still required separately in
+development; native wheels do not resolve the existing publication-chain gap.
+
+## Exact String Languages
+
+`StringLanguage` provides an independent Rust-backed language API. It does not
+replace the filter engine's regex implementation or enable disjoint accumulator
+cells; that integration remains deferred.
+
+```python
+from mountainash_rules import LanguageLimits, StringLanguage
+
+limits = LanguageLimits(
+    max_input_bytes=2_000_000,
+    max_nesting=64,
+    max_nfa_states=50_000,
+    max_states=10_000,
+    max_transitions=500_000,
+    max_work=200_000_000,
+)
+words = StringLanguage.regex(r"\A(?:cat|car)\z", limits=limits)
+only_cat = words.difference(StringLanguage.literal("car", limits=limits), limits=limits)
+assert only_cat.witness(limits=limits) == "cat"
+assert only_cat.cardinality(10, limits=limits) == 1
+loaded = StringLanguage.from_json(only_cat.to_json(limits=limits), limits=limits)
+assert loaded.language_id(limits=limits) == only_cat.language_id(limits=limits)
+```
+
+Regex construction recognizes complete Unicode-scalar strings containing a search
+match. The pinned dialect is `regex-syntax 0.8.10` with Unicode 16.0.0; `RegexOptions`
+controls case folding, multiline, dot/newline, CRLF, greed, Unicode and whitespace
+flags. Inline flags retain their scope. Backreferences, lookahead and lookbehind
+are syntax errors. Literal, prefix, suffix and contains constructors never
+interpret their input as regex syntax.
+
+Languages support union, intersection, difference, complement, membership,
+emptiness, shortest/scalar-lexicographic witnesses and capped cardinality.
+Complement excludes surrogate codepoints and does not represent missing context.
+Canonical `language-1` JSON uses complete scalar ranges, minimal reachable states
+and BFS numbering. Loading rejects duplicate/unknown fields and noncanonical
+graphs; it does not compile a source pattern.
+
+Every operation takes explicit limits. Input-byte limits also bound JSON and
+witness output; work covers construction, traversal and conservative Unicode
+expansion reservations, not elapsed time. Nesting is limited to 256. Exhaustion
+raises `LanguageResourceError` with `resource` and `limit`, never a partial answer.
+Malformed patterns and wires raise `LanguageSyntaxError` and `LanguageWireError`.
+The example ceilings are illustrative, not benchmarked deployment defaults.
+Native dependency and Unicode notices are included in `THIRD_PARTY_LICENSES`.
+
 ## Quick Start
 
 ```python
@@ -75,13 +138,19 @@ print(result.explain("fallback"))    # {"region": 0, "spend": 0} — both wildca
 
 Wildcard values (`<NA>` for strings, `-999999999` for numerics, and typed date/datetime sentinels) produce an UNKNOWN result — the rule is not eliminated but scores lower on specificity.
 
+Missing context and explicit context sentinels earn no specificity in ordinary predicates, including PREFIX/SUFFIX/CONTAINS/per-row REGEX. Boolean absence is null, never a string marker. Strict `CONTEXT_REGEX` guards reject missing input; `EXACT_KEY` permits only rule-side wildcards against missing context. See [missing-context semantics](docs/user-quickstart.md#context-with-missing-fields).
+
 ## Hit Policies
 
-How many survivors come back, and in what order, is a **hit policy** (DMN-aligned, `HitPolicy` enum): `collect` (default — all survivors ranked by specificity), `unique` (exactly one or `HitPolicyViolationError`), `first` / `rule_order` (rule-definition order), `priority` (rank by a priority column), `any` (all survivors must agree on outputs). Set it on `DimensionsMetadata`, per `evaluate()` call, or re-select post-hoc with `result.select(policy)`.
+How many survivors come back, and in what order, is a **hit policy**: `collect` (default — all survivors ranked by specificity), `unique` (at most one survivor), `first` / `rule_order` (rule-definition order), `priority` (salience descending), and `any` (survivors must agree on output tuples, including nulls). Accepts `HitPolicy` members or exact lowercase strings; invalid values raise `ValueError`. Configure the policy on metadata or override it per evaluation.
 
 ```python
 result = engine.evaluate(context, hit_policy=HitPolicy.FIRST)
 ```
+
+Output declarations are validated against the original rule schema at construction. Metadata-backed engines use `DimensionsMetadata.output_fields`; an empty list infers outputs from non-condition columns. Expressions-only engines must supply the keyword-only `output_fields=["price", ...]` to use ANY—there is no guessed output schema. PRIORITY requires an existing field and non-null values on surviving rules. UNIQUE/ANY assertions run before limits or specificity filters.
+
+`result.select(policy)` is available only while the complete candidate set is retained. Any supplied limit/threshold or FIRST/PRIORITY/ANY selection marks the result potentially incomplete—even a no-op limit or singleton selection—and subsequent selection raises `ValueError`. Re-evaluate without those operations to choose another policy. See [policy and selection semantics](docs/user-quickstart.md#policies-output-schemas-and-re-selection).
 
 ## Batch Evaluation
 
@@ -91,12 +160,26 @@ Score thousands of contexts in one vectorised pass instead of looping:
 contexts = pl.DataFrame({"customer_id": [...], "region": [...], "spend": [...]})
 batch = engine.evaluate_batch(contexts, context_id_field="customer_id")
 
-batch.best_matches          # rank-1 rule per context
+batch.best_matches          # minimum retained rank per context (not necessarily 1)
 batch.counts_per_context    # survivors per context
 batch.for_context("C042")   # single-context RuleResult
 ```
 
-Contexts are automatically conformed to whatever backend the rules live in, and large batches can be chunked (`chunk_size=`).
+Contexts are conformed to the rules backend. `chunk_size` is `None` or a positive Python integer (not Boolean). Chunking bounds each contexts × rules evaluation, not total input staging, accumulated results, or violation diagnostics. Typed empty contexts and typed empty rules preserve the normal result schema, including when chunking is enabled.
+
+Filter batch rows are ordered by `__context_id` then `__rank`. Ranks describe the policy ordering before caller filters: if rank 1 is removed, rank 2 may be the best remaining match. Top-N applies to remaining positions without rewriting those ranks. `for_context()` preserves both rank order and the batch's re-selection restrictions.
+
+Caller ID columns must exist and contain globally unique, non-null values, validated before conversion or chunking. Rows always expose **`__context_id`**; `batch.context_id_field` records the source field (`"customer_id"` above), not an echoed context column. Without a source field, generated IDs are original zero-based input positions, assigned once before chunking. Their stability is within an evaluation, not across unordered database queries.
+
+`matched_context_ids` and `counts_per_context` describe retained rows after limits. `unmatched_context_ids(original_contexts)` returns submitted IDs absent from those rows in sorted order; custom IDs require the original non-null, unique source column. Generated IDs require the original input order and row count. `for_context()` cannot distinguish an unmatched submitted ID from one never submitted.
+
+### Input boundaries — correctness update
+
+Filter construction requires exactly one nonempty dimension definition: metadata or expressions, never both (even when one is empty). Empty shared metadata remains serializable; zero rules with a valid schema remain supported.
+
+On `evaluate`, `evaluate_batch`, and `explain`, `dimensions=None` means all configured dimensions. An explicit projection must be a nonempty list of distinct names; empty/duplicate/malformed projections raise `ValueError`, while well-formed unknown names retain `KeyError`. Requested order controls dimension presentation, not ranking.
+
+`top_n`, `top_n_per_context`, and `min_specificity` accept only `None` or nonnegative Python integers, excluding Boolean values. Zero top-N and thresholds above the active dimension count yield empty results **after** policy assertions. Invalid configuration is still rejected on empty input. These explicit failures replace previously inconsistent fallback or backend errors.
 
 ## Accumulator Engine
 
@@ -112,6 +195,8 @@ result = engine.apply(lattice, context)  # apply many times
 ```
 
 Dimensions marked `DimensionRole.CONTEXT_KEY` partition the rule space into separate lattices; `engine.index(lattices)` routes single or batched contexts to the right one. Combination provenance is tracked with prime products, and impossible widths fail fast with a sized `LatticeWidthExceededError`.
+
+Apply-phase filters require at least one constraint dimension. A context-key-only accumulator may build a lattice, but applying it raises an explicit dimension `ValueError`; unconditional application is not supported. No-key index routing remains supported when constraint dimensions exist.
 
 ## Serialisable Metadata
 
@@ -138,7 +223,14 @@ The engine is backend-agnostic. Pass any supported DataFrame type as `rules`:
 | Ibis (Polars) | `ibis.polars.connect().create_table(...)` |
 | Ibis (SQLite) | `ibis.sqlite.connect().create_table(...)` |
 
-All backends produce identical results. Polars is recommended for performance.
+Supported operations produce identical results; backend capability limits still apply:
+
+- SET_MEMBERSHIP/SET_EXCLUSION use `list.t_contains()`. Use Polars or Ibis-DuckDB for engine evaluation: Pandas/Narwhals reject column-valued needles, and SQLite has no list column type.
+- PREFIX/SUFFIX/CONTAINS require column-valued string predicates, unsupported by Pandas, Narwhals-Pandas and the Ibis-Polars translator.
+- Ibis-Polars cannot execute the engine's row indexing. Expression-level support does not imply engine-level support.
+- Per-row REGEX retains its Polars-native implementation.
+
+Polars is recommended for performance.
 
 ## Installation
 
@@ -150,6 +242,8 @@ hatch env create
 ```
 
 Requires sibling checkouts of `mountainash`, `mountainash-data`, and `mountainash-settings` (see `hatch.toml` for path configuration).
+
+Set strategies require mountainash's `list.t_contains()` API from current `develop`; older snapshots using scalar `t_is_in(list_column)` are incompatible. CI checks out the matching dependency branch or falls back to the PR base branch. Keep dependency source revisions and installed packages aligned when comparing local results with CI; an existing Hatch environment can contain older non-editable dependency copies.
 
 ## Textbook
 
@@ -167,55 +261,27 @@ skipped; a one-sided bootstrap cannot deploy an incomplete site.
 The source artifacts live together in this repository:
 
 - `docs-site/profile/`: package profile and source provenance.
-- `docs-site/learning-graph/`: internal graph, reports and preserved legacy FAQ data.
-- `docs-site/editorial-brief.md` and `docs-site/chapter-plan.md`: confirmed editorial scope and approved chapter structure.
-- `docs-site/site/`: MkDocs runtime, eight chapters, FAQ/glossary appendices and refresh state.
+- `docs-site/learning-graph/`: canonical graph and FAQ artifacts.
+- `docs-site/site/`: MkDocs configuration, textbook Markdown, and refresh state.
 
 Preview locally without installing the source package or sibling repositories:
 
 ```bash
-TEXTBOOK_SITE_URL=http://127.0.0.1:8000/ \
 uv run --no-project --with-requirements docs-site/requirements.txt \
   python -m mkdocs serve --config-file docs-site/site/mkdocs.yml
 ```
 
-Refreshes are manual. Load `textbook-refresh` from
-[Mountainash iBook skills](https://github.com/mountainash-io/mountainash-ibook-skills)
-and supply this worktree's absolute root as `source_repo`, starting with
-`mode: check`. Reuse the confirmed brief and approved chapter plan; reopen
-editorial questions only when their scope changes. Profile generation remains
-an agent workflow with `docs-site/profile/` as its explicit output.
+Refreshes are manual. Load `textbook-refresh` from the central
+`hiivmind-documentation-profile` tooling project and supply this repository's
+absolute root as `source_repo`, starting with `mode: check`. For a separate
+profile update, supply `docs-site/profile/` as the profiler's explicit output.
+Do not regenerate content merely to publish it or advance source baselines on
+a directory move. Preserve the existing FAQ format; the marker-only FAQ
+exporter does not support it and must not overwrite its JSON.
 
-Deterministic operations use the following full Git revision and its matching
-constraints. Run this from the selected source worktree:
-
-```bash
-set -eu
-IBOOK_REV=dfcda21b1403352e73560aa86d99ba624a0cfe1d
-source_repo=$(git rev-parse --show-toplevel)
-tooling_inputs=$(mktemp -d)
-trap 'rm -rf "$tooling_inputs"' EXIT
-source_url="https://raw.githubusercontent.com/mountainash-io/mountainash-ibook-skills/$IBOOK_REV"
-curl --fail --silent --show-error --location "$source_url/constraints.txt" -o "$tooling_inputs/constraints.txt"
-curl --fail --silent --show-error --location "$source_url/build-constraints.txt" -o "$tooling_inputs/build-constraints.txt"
-uvx --python 3.12 \
-  --constraints "$tooling_inputs/constraints.txt" \
-  --build-constraints "$tooling_inputs/build-constraints.txt" \
-  --from "git+https://github.com/mountainash-io/mountainash-ibook-skills.git@$IBOOK_REV" \
-  ibook profile validate "$source_repo/docs-site/profile"
-```
-
-Stop if either download fails; never retry unconstrained. Use the same prefix
-for `ibook graph validate`, `ibook graph reconcile`, `ibook refresh coverage`
-and targeted `ibook refresh plan` / `apply`, with explicit input/output paths.
-The tooling README documents their arguments. Generic helper scripts are not
-copied into this repository.
-
-Keep graph data, reports and editorial plans outside the site's source tree.
-Preserve the legacy FAQ Markdown/JSON under `docs-site/learning-graph/`: the
-marker-only exporter does not support that format. Updating the reader FAQ
-does not authorise overwriting its legacy JSON. Do not generate content merely
-to publish, and do not replace the live book before content/deployment acceptance.
+The inherited chapters include specifications for 32 simulations whose HTML
+implementations do not yet exist. Their missing embeds are an accepted
+pre-existing content gap for this migration, not a working simulation library.
 
 ## Development
 
@@ -238,7 +304,7 @@ The engine uses **signed-integer ternary logic** (-1 = non-match, 0 = unknown, 1
 1. **Compile** — `DimensionCompiler` converts dimension metadata into backend-agnostic expression templates at construction time.
 2. **Bind** — Context values are injected as literal columns alongside the rules DataFrame.
 3. **Evaluate** — All dimension expressions execute in one `with_columns` call, producing a ternary value per dimension per rule.
-4. **Rank** — Rules with any -1 are eliminated. Survivors are ranked by **specificity** (count of 1s). More specific rules rank higher.
+4. **Rank and select** — Rules with any -1 are eliminated. Survivors receive a pre-filter, 1-based policy rank (specificity descending by default); policy assertions precede caller filters and cardinality.
 
 The engine and result layer use only `mountainash.relations` and `mountainash.expressions` — no direct backend imports. See [CLAUDE.md](CLAUDE.md) for full architectural details.
 

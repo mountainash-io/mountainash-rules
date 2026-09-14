@@ -1,6 +1,6 @@
 # Mountainash Rules: approved reconciliation chapter plan
 
-**Status: complete, verified eleven-chapter reconciliation candidate.** Chapters 1, 2 and 3 are user-approved, and Chapter 6 remains the approved batch sample. The remaining seven chapters and both appendices have been completed under the user's autonomous-completion authorization. Five parallel authors drafted the independent chapter slices; Main reviewed every chapter continuously, integrated the book, and resolved the findings from two independent technical reviewers. Commit, publication and promotion of a completed source-refresh baseline remain separate user gates.
+**Status: complete eleven-chapter replacement; old book retired.** Chapters 1, 2 and 3 are user-approved, and Chapter 6 remains the approved batch sample. The remaining seven chapters and both appendices were completed under autonomous authorization, with five parallel authors and Main's continuous review plus two independent technical reviews. The user authorized committing, pushing and opening PR #61 to `develop`, then required complete retirement of the old book. The merge keeps the reconciled site rather than combining old and new manuscripts, while retaining `develop`'s code and tooling. Publication and promotion of a completed source-refresh baseline remain separate gates.
 
 ## Source, manuscript and editorial basis
 
@@ -9,7 +9,7 @@
 - Donor manuscript: `a862e3a53042058649aabb48b3ad31380d0426a0`; donor source basis `94659bb0c096485c87d329f09e944577427f129f`. Reuse diagrams and detailed examples selectively, not its compressed voice or obsolete source claims.
 - Editorial references: Chapters 1 and 2 are approved examples of the direct, patient explanatory voice. The approved batch sample at `docs-site/site/docs/chapters/06-batch-evaluation/index.md`, originally Chapter 4, remains a reference for worked-example depth. Preserve the approved chapters' bodies, examples and diagrams unless the user requests changes.
 - Profile input: current maintained manifest, all five audience facets, and relevant module/source evidence. The candidate profile remains historical; completion of this editorial reconciliation does not promote its source profile or refresh baseline.
-- Canonical assignments and teaching dependencies: `docs-site/learning-graph/learning-graph.json`. The CSV mirrors IDs, labels, taxonomy and dependencies; it does not have a chapter column. Supporting per-concept reconciliation evidence is in `docs-site/reconciliation-crosswalk.json`, including all 133 stable IDs, original enrichment, accepted/donor section locations and excerpts, correction requirements and old URL/anchor mapping.
+- Canonical assignments and teaching dependencies: `docs-site/learning-graph/learning-graph.json`. The CSV mirrors IDs, labels, taxonomy and dependencies; it does not have a chapter column. Supporting per-concept evidence in `docs-site/reconciliation-crosswalk.json` retains all 133 stable IDs, original enrichment, historical section locations, excerpt hashes, correction requirements and old URL/anchor mappings. Embedded copies of the retired prose have been removed.
 
 ## Reader progression and menus
 
@@ -21,7 +21,7 @@ Users receive practical shared-model and engine workflows in Chapters 1–8. Mai
 
 The contents page now links all eleven chapters and both appendices. It serves the reader: subjects, reading order and destinations. Approval status, concept mapping, manuscript history and verification evidence stay in these internal records.
 
-Nineteen earlier chapter URLs now serve explicit reference landing pages, outside navigation and search. They preserve 416 heading fragments, including primary and non-primary sections, and link to the appropriate current concepts, chapters or book contents. Six replaced reference manuscripts are preserved byte-for-byte under `docs-site/archive/book-reconciliation-reference/chapters/`, outside the published source tree.
+Only the eleven canonical chapter directories remain. The nineteen legacy reference pages, six archived manuscript copies, and old internal FAQ/JSON exports have been removed at the user's request. Old URLs and fragments are deliberately retired, not redirected or retained as compatibility pages. Git history, rather than an active archive directory, preserves the former book.
 
 ## Reconciliation workflow and future edits
 
@@ -29,7 +29,7 @@ Read `docs-site/editorial-brief.md` and this architecture before choosing a chap
 
 For each chapter:
 
-1. Read its boundary and complete primary list below. Resolve every ID against the canonical graph and the crosswalk. Read the full corresponding sections in both manuscript worktrees, not just labels, concept markers or the crosswalk's excerpts. Read relevant current profile descriptions and source evidence where technical claims need checking.
+1. Read the chapter boundary and complete primary list below. Resolve every ID against the canonical graph and crosswalk. Read the current chapter and relevant source/profile evidence before editing. When historical comparison is needed, retrieve the original section from its recorded Git revision; the crosswalk retains locations and hashes, not an alternative manuscript.
 2. Identify what the reader should understand by the end of this chapter and what belongs later. Prerequisite introductions must be understandable here; references to later chapters do not excuse relying on unexplained ideas.
 3. Read the corresponding maintained-textbook passages for their direct, patient explanatory voice and the approved batch sample for worked-example depth. Apply the brief's **Audience expectations and technical framing**, including **Direct, patient exposition**. Open with the package concept or API and its purpose; introduce scenarios only after establishing what they illustrate. Define concrete referents before using phrases such as "that metadata". Assume Python/DataFrame competence and retain consequential API boundaries without elementary reminders or implausible-misunderstanding asides. Do not substitute a last-minute humanizing pass for concept-led teaching.
 4. Use the matching skill with the confirmed brief, canonical graph and completed candidate. Preserve the approved structure and explanatory voice when updating source-backed claims; do not restart from a rejected or historical manuscript.
@@ -311,9 +311,9 @@ Edges point from dependent to prerequisite. The canonical graph now contains the
 
 The JSON crosswalk records every accepted/donor chapter URL and every primary anchor with a final destination. Several old pages split across the new chapters: for example, donor authoring splits into shared-model and matching chapters, decisions splits into engine usage and policy/results, and combinations splits into accumulator usage and lattice/routing. Do not choose one convenient new page and pretend it contains all the old material.
 
-All eleven current chapters occupy their final URLs. Current chapter and appendix links use canonical destinations. The nineteen earlier URLs have static reference landing pages rather than blanket redirects: a server cannot route a URL fragment, and several earlier pages split across multiple current chapters.
+All eleven current chapters occupy their final URLs, and chapter/appendix links use canonical destinations. The earlier reference-page policy was superseded by the user's request to retire the old book completely. No old chapter pages, fragment maps, blanket redirects or alternate manuscript archive remain in the replacement.
 
-All 416 retained heading fragments and their local destinations pass the built-site audit. Reference pages are intentionally absent from navigation and search. The historical seventy-question internal FAQ and chatbot JSON remain unchanged as a paired legacy export; they are not presented as the current seventy-eight-question FAQ export.
+The current FAQ and glossary are the only active appendices. The old seventy-question internal FAQ and chatbot export were deleted, not converted or silently relabelled as current. Historical URLs, source mappings and prior verification records in the crosswalk are audit evidence, not live destinations.
 
 ## Corrections and reuse safeguards
 
@@ -325,13 +325,13 @@ The opening workflow additionally verifies a frontier detail that a short API su
 
 - All 133 primary concepts occur exactly once, in their assigned chapters and approved order. All 226 teaching dependencies point backward in that order.
 - All 107 Python blocks execute against the maintained source at `730a8583ee9d4fd6b52dc5350699eb66cc7487e9`, using Python 3.12.12 and Polars 1.44.2. Published text/YAML outputs and the batch chapter's displayed tables were checked. This is not a claim that every backend was exercised.
-- The strict MkDocs build passes. Its 37 HTML pages contain no duplicate IDs or broken local references across 5,063 checked links and resources, with the configured `/mountainash-rules/` deployment prefix respected. Twenty cited source-file paths resolve in the maintained checkout.
-- All twelve Mermaid diagrams were visually inspected. Desktop and 390-pixel mobile layouts, the nested mobile chapter menu, FAQ-to-glossary navigation and an earlier-fragment-to-current-concept path were exercised in Chromium.
+- The original completed candidate passed a strict build and an audit of 5,063 local links/resources across 37 HTML pages, including legacy references. Retirement removes those references; the current replacement build and link counts are recorded in the crosswalk's retirement verification.
+- All twelve Mermaid diagrams were visually inspected during completion, along with desktop/mobile navigation. The current replacement's navigation and absence of old pages are checked again after retirement.
 - The current FAQ retains 78 questions in their original category order, with one false-premise Boolean question corrected while preserving its old anchor. The glossary retains all 97 terms. Source corrections include selection provenance, scalar versus batch violation frames, partition-filter omissions, Boolean accumulator limitations, context-key-only builds, and snapshot configuration/provenance boundaries.
 - Two independent reviewers reported sixteen findings; all were resolved in the chapters and repeated appendix claims. Focused accumulator probes confirmed the consequential construction and persistence boundaries rather than assuming the intended API contract.
-- Forty-three graph/profile/refresh-related files and the six archived reference bodies retain their recorded hashes. Historical node enrichment, CIS, profiles, refresh-state and the paired seventy-question legacy FAQ artifacts were not rewritten.
-- Evidence: `/home/nathanielramm/.cache/claude-tmp/rules-book-completion-bu_fhgei/`. `docs-site/reconciliation-crosswalk.json` records current delivery status, per-chapter verification and URL migration alongside preserved historical evidence.
-- Keep the candidate uncommitted and unpublished. A truthful profile/refresh-baseline update and disposable bounded-refresh exercise remain separately gated; editorial completion is not a completed source refresh.
+- Canonical node enrichment, CIS, source profiles and historical refresh-state are retained as provenance, not promoted to a new source baseline. The old FAQ pair and manuscript archive are intentionally deleted under the later retirement decision. The internal graph index now describes the current appendices and the 226-edge graph.
+- Original completion evidence: `/home/nathanielramm/.cache/claude-tmp/rules-book-completion-bu_fhgei/`. Retirement/integration evidence: `/home/nathanielramm/.cache/claude-tmp/rules-book-retirement-jd3n7_1m/`. `docs-site/reconciliation-crosswalk.json` distinguishes those stages.
+- The user authorized commit and PR updates. Publishing and a truthful profile/refresh-baseline update with a disposable bounded-refresh exercise remain separately gated. The book's exercised source basis remains `730a8583ee9d4fd6b52dc5350699eb66cc7487e9`; merging newer code from `develop` is not evidence of a source refresh.
 
 ## Marker-location handling
 

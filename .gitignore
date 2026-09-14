@@ -3,8 +3,10 @@ __pycache__/
 *.py[cod]
 *$py.class
 
-# C extensions
+# C extensions / compiled native artifacts (mountainash_rules._native)
 *.so
+*.pyd
+*.dylib
 
 # Distribution / packaging
 .Python
@@ -178,3 +180,6 @@ coverage.*
 
 .ruff_cache/
 benchmark_results
+
+# Rust / Cargo build output (native/ crate compiled by hatch_build.py)
+/target/

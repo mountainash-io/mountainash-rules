@@ -108,7 +108,7 @@ def validate_set_no_null_elements(rules_rel: t.Any, set_dims: list[Dimension]) -
 
     Uses ``list.drop_nulls`` (Ibis-unsupported), so this is called ONLY on the
     polars-internal accumulator build path. The filter engine does not call it:
-    ``t_is_in`` tolerates a null element (it matches nothing), so a standalone
+    ``list.t_contains`` tolerates a null element (it matches nothing), so a standalone
     filter engine over Ibis set rules is unaffected.
     """
     for dim in set_dims:

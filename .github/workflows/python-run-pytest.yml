@@ -5,6 +5,14 @@ on:
     paths:
       - "src/mountainash_rules/**"
       - "tests/**"
+      - "native/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "build.rs"
+      - "THIRD_PARTY_LICENSES"
+      - "scripts/native_wheel_smoke.py"
+      - ".github/workflows/python-run-pytest.yml"
+      - "hatch_build.py"
       - "pyproject.toml"
       - "hatch.toml"
   workflow_dispatch:
@@ -73,6 +81,12 @@ jobs:
           default-branch: ${{ env.FALLBACK_BRANCH }}
           token: ${{ steps.app-token.outputs.token }}
           org-name: mountainash-io
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Run native language regressions
+        run: cargo test --locked --lib
 
       - name: Install Hatch
         run: pip install hatch

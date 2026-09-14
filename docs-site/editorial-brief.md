@@ -1,6 +1,6 @@
 # mountainash-rules Editorial Brief
 
-**Status: CONFIRMED; approved architecture implemented as a complete, verified candidate.** The user approved the single-manual scope, thorough usage and internals, both appendices, and the eleven-chapter, four-part plan. Chapters 1, 2 and 3 are user-approved; Chapter 6 remains the approved worked-example reference. The other seven chapters were completed under autonomous authorization, with five parallel authors, Main's continuous editorial review and two independent technical reviews. All chapters and appendices are integrated. Commit, publication and promotion of a completed source-refresh baseline remain separate user gates.
+**Status: CONFIRMED; complete replacement with the old book retired.** The user approved the single-manual scope, thorough usage and internals, both appendices, and the eleven-chapter, four-part plan. Chapters 1, 2 and 3 are user-approved; Chapter 6 remains the approved worked-example reference. The other seven chapters were completed under autonomous authorization, with five parallel authors, Main's continuous review and two independent technical reviews. The user then authorized commit, push and PR #61 to `develop`, followed by complete old-book retirement. Publication and promotion of a source-refresh baseline remain separate gates.
 
 ## Start here for future editorial work
 
@@ -9,8 +9,8 @@ boundaries, primary teaching order and Chapter 1 boundary. Read
 `docs-site/learning-graph/learning-graph.json` for canonical concept assignments
 and prerequisites, then `docs-site/reconciliation-crosswalk.json` for the matching
 sections in both source manuscripts and their reconciliation requirements.
-Read those full sections before drafting; the crosswalk excerpts are not a
-replacement for them.
+Read full source sections when needed for historical comparison; the crosswalk
+retains their locations and hashes rather than copies of the retired prose.
 
 The approved voice references are Chapters 1 and 2. The approved worked-example
 depth reference is `docs-site/site/docs/chapters/06-batch-evaluation/index.md`,
@@ -80,7 +80,7 @@ parallel sections; exact boundaries will be proposed in the chapter plan.
 
 ## Reusable existing material (inventory, not a commitment)
 
-The maintained book and original donor preview remain read-only references. This reconciliation worktree now contains the complete candidate. Earlier chapter addresses serve reference landing pages, not competing manuscripts; six replaced reference bodies are archived outside the published source tree.
+The reconciled eleven-chapter book is the sole manuscript in this worktree. Old chapter pages, compatibility landings, six archived manuscript copies and duplicate internal FAQ exports have been removed. Earlier editions remain recoverable from Git history; do not reinstall them while resolving merges or refreshing the replacement.
 
 Within that accepted book and the surrounding repository, the following prose/examples are candidate reuse
 sources, selectively, where they remain accurate against the selected current source:
@@ -112,9 +112,9 @@ sources, selectively, where they remain accurate against the selected current so
 
 ## Reconciled appendices
 
-- **FAQ**: the current reader-facing appendix has 78 retained questions, with source-backed corrections and canonical chapter links. One false-premise Boolean question was renamed while retaining its original fragment. The internal seventy-question FAQ and chatbot JSON were verified as an equivalent historical pair and preserved byte-for-byte; they are not a newly generated export of the current FAQ. No unsupported marker-only conversion was used.
+- **FAQ**: the sole current appendix has 78 retained questions, with source-backed corrections and canonical chapter links. One false-premise Boolean question was renamed while retaining its original question anchor. The old internal seventy-question FAQ and chatbot JSON were retired at the user's request; no unsupported conversion or replacement export was fabricated.
 - **Glossary**: all 97 existing terms remain, with reconciled definitions and canonical primary destinations. There is one current glossary.
-- Nineteen earlier chapter URLs remain usable through search-excluded reference landing pages retaining 416 heading fragments. Archive and internal planning/profile files remain outside the published source tree.
+- Old chapter URLs and their fragment compatibility pages are retired. The eleven canonical chapter directories, FAQ and glossary are the complete reader-facing book; internal planning, graph and profile evidence remain outside the published source tree.
 - No quiz or course-page content exists to migrate (the accepted book has none), consistent with removing
   that framing from this workflow rather than needing to strip it out here.
 
@@ -203,4 +203,4 @@ The original approval and editorial principles are in the central repository at
 
 Preserve the maintained book's explanatory warmth and the approved sample's worked-example depth. The shared primitives and both engines are explicit in the opening and menus. Independent drafting may be parallel; Main retains interpretation, continuous editorial review and integration ownership.
 
-Completion evidence is recorded in `docs-site/chapter-plan.md` and `docs-site/reconciliation-crosswalk.json`: 107 executed Python blocks, 133 ordered primary explanations, 226 backward teaching dependencies, twelve visually checked diagrams, strict build success, and zero broken local references. The selected source is `730a8583ee9d4fd6b52dc5350699eb66cc7487e9`; Python 3.12.12 and Polars 1.44.2 were exercised. Canonical enrichment, historical CIS, profiles, refresh-state and the legacy FAQ pair remain unchanged. Do not mistake this editorial completion for user approval of publication or a promoted source-refresh baseline.
+Completion evidence is recorded in `docs-site/chapter-plan.md` and `docs-site/reconciliation-crosswalk.json`: 107 executed Python blocks, 133 ordered primary explanations, 226 backward teaching dependencies, twelve visually checked diagrams and strict build success. The exercised source is `730a8583ee9d4fd6b52dc5350699eb66cc7487e9`, using Python 3.12.12 and Polars 1.44.2. The subsequent retirement removes obsolete manuscripts and exports and rechecks the replacement's links and navigation. Canonical source enrichment, historical CIS, profiles and refresh-state remain provenance; neither the merge from newer `develop` nor retirement claims a promoted source-refresh baseline.
