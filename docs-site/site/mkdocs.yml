@@ -25,16 +25,26 @@ copyright: 'Copyright &copy; 2026 Nathaniel Ramm. Licensed under <a href="https:
 nav:
   - Home: index.md
 
-  - Chapters:
-      - List of Chapters: chapters/index.md
-      - 1. From Rule Tables to Decisions: chapters/01-rule-tables-and-decisions/index.md
-      - 2. Authoring and Evolving Rule Libraries: chapters/02-authoring-rule-libraries/index.md
-      - 3. Evaluating, Selecting and Explaining Decisions: chapters/03-evaluating-decisions/index.md
-      - 4. Scoring Batches of Contexts: chapters/04-scoring-batches/index.md
-      - 5. Combining, Persisting and Routing Rules: chapters/05-combining-and-persisting-rules/index.md
-      - 6. Inside Expression and Batch Evaluation: chapters/06-expression-execution-internals/index.md
-      - 7. Inside Combination Search: chapters/07-combination-search-internals/index.md
-      - 8. Extending and Maintaining the Engines: chapters/08-extending-and-maintaining/index.md
+  - Book contents: chapters/index.md
+
+  - Shared foundations:
+      - 1. Two Rule Engines, One Shared Model: chapters/01-two-rule-engines/index.md
+      - "2. The Shared Rule Model: Tables, Contexts and Dimensions": chapters/02-shared-rule-model/index.md
+      - "3. Matching Concepts: Strategies, Unknowns and Wildcards": chapters/03-matching-concepts/index.md
+
+  - The Expression Rules Engine:
+      - 4. Using the Expression Rules Engine: chapters/04-expression-rules-engine/index.md
+      - 5. Expression Engine Hit Policies, Results and Explanations: chapters/05-expression-results-and-policies/index.md
+      - 6. Expression Engine Batch Evaluation: chapters/06-batch-evaluation/index.md
+
+  - The Accumulator Engine:
+      - 7. Using the Accumulator Engine: chapters/07-accumulator-engine/index.md
+      - 8. Accumulator Lattices, Results and Routing: chapters/08-lattices-results-and-routing/index.md
+
+  - Implementation and extension:
+      - 9. Inside the Expression Rules Engine: chapters/09-expression-engine-internals/index.md
+      - 10. Inside the Accumulator Engine: chapters/10-accumulator-engine-internals/index.md
+      - 11. Extending and Maintaining Both Engines: chapters/11-extending-and-maintaining/index.md
 
   - Appendices:
       - FAQ: faq.md
@@ -58,8 +68,6 @@ theme:
     - content.action.edit
     - navigation.expand
     - navigation.path
-    - navigation.prune
-    - navigation.indexes
     - navigation.top
     - navigation.footer
     - toc.follow
@@ -94,6 +102,7 @@ markdown_extensions:
   - attr_list
   - footnotes
   - tables
+  - sane_lists
   - toc:
       permalink: true
   - pymdownx.details

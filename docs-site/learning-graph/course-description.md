@@ -1,96 +1,55 @@
 ---
 title: Mountainash Rules Package Description
-description: A detailed description of the mountainash-rules vectorized, backend-agnostic business rules engine
-quality_score: 87
+description: Internal scope and reader prerequisites for the four-part, eleven-chapter Mountainash Rules manual
 ---
 
 # Mountainash Rules Package Description
 
-## Title
+This is an internal input to book rebuilding, not a published chapter or a separate chapter plan. Use `docs-site/editorial-brief.md` and `docs-site/chapter-plan.md` as the editorial instructions. Canonical concept assignments and prerequisites are in `docs-site/learning-graph/learning-graph.json`; reconciliation evidence from both manuscripts is in `docs-site/reconciliation-crosswalk.json`.
 
-Mountainash Rules: Vectorized, Backend-Agnostic Business Rules Engine
+## Target audience
 
-## Target Audience
+Python developers using Mountainash Rules, and maintainers and contributors who need to understand or extend it. The manual teaches shared concepts, then practical use of each engine, then implementation and extension. It combines the maintained book's explanations with useful worked examples and diagrams from the donor book, checked against the selected current source.
 
-Python developers building configurable business logic systems who need to evaluate rules as tabular data — pricing engines, eligibility checkers, configuration selectors, and combinatorial accumulation problems — using a vectorized, backend-portable approach built on the mountainash expression library.
+## Reader prerequisites
 
-## Prerequisites
+Readers need basic Python and familiarity with dictionaries and DataFrames. Pydantic, ternary matching, dimension metadata, and the Mountainash expression and relation APIs are material to explain in the book, not assumed knowledge before Chapter 1. More advanced implementation detail belongs in Part 4.
 
-- Intermediate Python programming (classes, enums, type hints, Pydantic models)
-- Familiarity with DataFrame operations (filter, join, sort, group_by)
-- Understanding of the mountainash expression API (col, lit, when, t_col, ternary logic)
-- Basic understanding of the mountainash relation system (relation(), with_columns, filter, collect)
-- Familiarity with three-valued (ternary) logic concepts (TRUE/FALSE/UNKNOWN)
+## Approved architecture
 
-## Topics Covered
+### Shared foundations
 
-1. **Foundation** — Ternary logic semantics, match strategy patterns, Pydantic model validation, vectorized evaluation principles, sentinel values
-2. **Dimension Model** — Dimension class, DimensionsMetadata collection, MatchStrategy enum (11 types), DimensionRole enum, field resolution, model validation
-3. **Expression Rules Engine** — ExpressionRulesEngine class, DimensionCompiler, context extraction, single-pass evaluation pipeline, backend-agnostic operation
-4. **Expression Engine Results** — RuleResult wrapper, survivor ranking, specificity scoring, best-match selection, per-rule explainability, at_least filtering
-5. **Accumulator Engine** — AccumulatorEngine class, AccumulatorCompiler, prime encoding for combination identity, lattice building phases (partition, anchor, expand, frontier filter)
-6. **Accumulator Lattice** — Lattice data structure, coalesced dimension columns, NA flags, combination depth tracking, partition key isolation
-7. **Accumulator Results** — AccumulatorResult class, accumulated aggregates, provenance via prime products, lattice application via remapped metadata
-8. **Supporting Modules** — Context extraction, Aggregate model, partition keys, CONTEXT_KEY vs CONSTRAINT roles, backend portability patterns
+1. **Two Rule Engines, One Shared Model**: explain the two engines and their shared primitive structures, with a small contrasting example. Teach the four assigned foundational concepts without turning the opening into the full engine walkthroughs.
+2. **The Shared Rule Model: Tables, Contexts and Dimensions**: describe and validate dimensions, field mappings, types, roles and metadata; introduce expression and relation abstractions at a usable level.
+3. **Matching Concepts: Strategies, Unknowns and Wildcards**: explain matching outcomes and strategy families, including differences in engine support.
 
-## Topics Excluded
+### The Expression Rules Engine
 
-- Mountainash core expression internals (AST nodes, function registry, visitor compilation)
-- Mountainash relation backend implementations (Polars/Narwhals/Ibis compilation details)
-- Database administration or SQL optimization
-- Machine learning or statistical modeling
-- Web framework integration or API serving
-- Rule authoring UI or spreadsheet tooling
+4. **Using the Expression Rules Engine**: evaluate a context and interpret individual rule results through a complete workflow.
+5. **Expression Engine Hit Policies, Results and Explanations**: choose and explain results, distinguish ordering from filtering, and understand reselection limits.
+6. **Expression Engine Batch Evaluation**: evaluate many contexts while preserving their identity, ranking and results. The existing batch sample is approved and is the writing reference.
 
-## Learning Outcomes
+### The Accumulator Engine
 
-After studying this package, developers will be able to:
+7. **Using the Accumulator Engine**: build compatible combinations, define aggregates, and apply contexts through a complete workflow.
+8. **Accumulator Lattices, Results and Routing**: interpret combined conditions, aggregate values and provenance; route requests and save or load lattices.
 
-### Remember
+### Implementation and extension
 
-- List the 11 MatchStrategy enum values and their data type constraints
-- Identify the two DimensionRole values (CONSTRAINT, CONTEXT_KEY) and their purposes
-- Name the four sentinel values and their string/numeric variants
-- Recall the five phases of accumulator lattice building (partition, prime assignment, anchor, expand, frontier filter)
-- List the three key columns in RuleResult (__survived, __specificity, __rank)
+9. **Inside the Expression Rules Engine**: explain compilation, binding, comparison expressions and result selection after their public behavior.
+10. **Inside the Accumulator Engine**: explain compatibility, coalescing, combination identities, expansion and pruning, then connect application to the expression engine.
+11. **Extending and Maintaining Both Engines**: provide extension and maintenance recipes, revisiting earlier concepts where needed.
 
-### Understand
+FAQ and glossary are supporting appendices, not additional parts. The four parts also govern the actual menu structure.
 
-- Explain how ternary logic (1/0/-1) enables "don't care" wildcard matching in rule evaluation
-- Describe the single-pass vectorized evaluation pipeline from context binding through survival filtering
-- Explain how prime number encoding provides unique combination identity and subset detection via modular arithmetic
-- Describe the difference between the ExpressionRulesEngine (filter-based) and AccumulatorEngine (combinatorial lattice) approaches
-- Explain how the DimensionCompiler translates Dimension metadata into backend-agnostic expression templates
+## Scope boundaries
 
-### Apply
+Do not expand this manual into Mountainash core AST or backend implementation documentation, database administration, machine learning, web-framework integration, or a rule-authoring UI. Explain the shared abstractions sufficiently for using and understanding the Rules package.
 
-- Define DimensionsMetadata with mixed match strategies (EXACT, RANGE, PREFIX, SET_MEMBERSHIP)
-- Configure and run ExpressionRulesEngine to evaluate a context against a rules DataFrame
-- Use RuleResult accessors to retrieve ranked survivors, best match, and per-rule explanations
-- Build an AccumulatorEngine with CONTEXT_KEY partitioning and sum aggregates
-- Apply a context to a pre-built lattice and retrieve accumulated values with provenance
+Describe supported behavior precisely. A shared metadata model does not imply identical strategy support in both engines. Backend abstraction does not imply that every operation stays native on every backend. Column operations still process data, and building combinations is a different workload from evaluating a context.
 
-### Analyze
+## Rebuilding status
 
-- Analyze how sentinel values propagate through ternary expressions to produce UNKNOWN outcomes
-- Compare compatible and coalesce expression semantics in the accumulator compiler
-- Evaluate the frontier filter algorithm for removing dominated combinations
-- Analyze the trade-offs between ExpressionRulesEngine (fast single-pass) and AccumulatorEngine (exhaustive combinatorial)
+All 133 concepts now have canonical assignments to the eleven chapters. That mapping is preparation for rebuilding, not evidence that the prose is complete. Chapter 1 was rejected twice and must be rebuilt from its assigned concepts and architectural purpose. Do not use its existing outline as the template. The approved batch chapter, originally Chapter 4 and now Chapter 6, remains the editorial reference.
 
-### Evaluate
-
-- Assess whether a business problem requires filter-based or accumulator-based rule evaluation
-- Judge appropriate MatchStrategy selection for different dimension data types and semantics
-- Evaluate the int64 prime product overflow boundary and its impact on partition sizing
-- Assess when CONTEXT_KEY partitioning is necessary versus single-partition evaluation
-
-### Create
-
-- Design custom DimensionsMetadata schemas for domain-specific rule evaluation problems
-- Implement end-to-end rule evaluation pipelines combining both engines
-- Build partition-aware accumulator workflows with build_all and apply_auto
-- Create explainability reports using RuleResult.explain and AccumulatorResult.provenance
-
-## Context
-
-Mountainash Rules provides two complementary engines for evaluating business logic stored as tabular data. The ExpressionRulesEngine performs single-pass vectorized filter evaluation using mountainash's ternary expression system — ideal for "find the best matching rule" problems like pricing lookup or configuration selection. The AccumulatorEngine solves the harder combinatorial problem of finding all maximal consistent subsets of rules — ideal for accumulation problems like "which benefits apply and what is their total value." Both engines are backend-agnostic, operating through the mountainash expression and relation abstractions, though the AccumulatorEngine currently materializes to Polars for its lattice-building phase.
+The user will invoke the appropriate skill separately. Keep the selected technical source distinct from the candidate's historical profile and source checkout; follow the paths and provenance in the editorial brief. No commit or publication is authorized by this preparation.

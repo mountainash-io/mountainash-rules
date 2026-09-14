@@ -8,7 +8,7 @@ ConceptID,ConceptLabel,Dependencies,TaxonomyID
 7,DataFrame as Rule Store,5,FOUND
 8,Mountainash Expressions,5|6,FOUND
 9,Mountainash Relations,8|7,FOUND
-10,Context Object,4,FOUND
+10,Context Object,,FOUND
 11,MatchStrategy Enum,3,DIM
 12,EXACT Strategy,11,DIM
 13,NOT_EQUAL Strategy,11,DIM
@@ -27,8 +27,8 @@ ConceptID,ConceptLabel,Dependencies,TaxonomyID
 26,Dimension Class,4|11|23,DIM
 27,DimensionsMetadata,26,DIM
 28,Field Resolution,26,DIM
-29,Dimension Validator,26|14|20,DIM
-30,Data Type Constraints,26|12|14|15|16|17|20,DIM
+29,Dimension Validator,26,DIM
+30,Data Type Constraints,26|94,DIM
 31,DimensionCompiler,27|8,EXPR
 32,Compile Exact Expression,31|12|2,EXPR
 33,Compile Range Expression,31|14|2,EXPR
@@ -92,7 +92,7 @@ ConceptID,ConceptLabel,Dependencies,TaxonomyID
 91,EXACT_KEY Strategy,11|12,DIM
 92,CONTEXT_REGEX Strategy,20,DIM
 93,Bool Ternary Comparison,11|1,DIM
-94,DataType Enum,30,DIM
+94,DataType Enum,,DIM
 95,Temporal Sentinels,94|2,DIM
 96,YAML Round-Trip,27,DIM
 97,Table-Level Hit Policy Fields,27|100,POLICY

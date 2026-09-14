@@ -1,22 +1,58 @@
 # mountainash-rules Editorial Brief
 
-**Status: CONFIRMED — 2026-09-12.** The user approved the proposed single-manual scope
-with thorough usage and internals, and selected both FAQ and glossary appendices.
-This confirms the editorial brief only. The fresh chapter/section plan requires
-separate user approval before chapter prose is generated.
+**Status: CONFIRMED; approved architecture implemented as a complete, verified candidate.** The user approved the single-manual scope, thorough usage and internals, both appendices, and the eleven-chapter, four-part plan. Chapters 1, 2 and 3 are user-approved; Chapter 6 remains the approved worked-example reference. The other seven chapters were completed under autonomous authorization, with five parallel authors, Main's continuous editorial review and two independent technical reviews. All chapters and appendices are integrated. Commit, publication and promotion of a completed source-refresh baseline remain separate user gates.
+
+## Start here for future editorial work
+
+Use `docs-site/chapter-plan.md` as the writing workflow, including its chapter
+boundaries, primary teaching order and Chapter 1 boundary. Read
+`docs-site/learning-graph/learning-graph.json` for canonical concept assignments
+and prerequisites, then `docs-site/reconciliation-crosswalk.json` for the matching
+sections in both source manuscripts and their reconciliation requirements.
+Read those full sections before drafting; the crosswalk excerpts are not a
+replacement for them.
+
+The approved voice references are Chapters 1 and 2. The approved worked-example
+depth reference is `docs-site/site/docs/chapters/06-batch-evaluation/index.md`,
+originally Chapter 4. Chapter 1 teaches the four assigned foundations. Retain that
+boundary: a complete engine walkthrough does not replace a foundations chapter.
+
+### Input locations
+
+Paths below are relative to the reconciliation worktree root:
+
+| Input | Location |
+|---|---|
+| Maintained manuscript and current profile | `../mountainash-rules-adaptive-refresh-worktree/docs-site/` |
+| Selected current Rules source | `../mountainash-rules-adaptive-refresh-worktree/src/mountainash_rules/` |
+| Original donor manuscript | `../mountainash-rules-book-worktree/docs-site/site/docs/chapters/` |
+| Approved writing reference | `docs-site/site/docs/chapters/06-batch-evaluation/index.md` |
+| Architecture and per-chapter workflow | `docs-site/chapter-plan.md` |
+| Canonical concept graph | `docs-site/learning-graph/learning-graph.json` |
+| Reconciliation evidence | `docs-site/reconciliation-crosswalk.json` |
+| Output manuscript root | `docs-site/site/docs/chapters/` |
+
+Resolve graph `source_path` values against the maintained source worktree when
+checking current behavior, not against this candidate's older package checkout.
+Read the full manuscript sections named by each crosswalk record. Existing
+donor page directories do not override the final destinations in the plan.
 
 ## Source basis
 
-- Candidate worktree: `mountainash-rules-book-worktree`, branch `feat/chapter-focused-book`,
-  source revision `94659bb0c096485c87d329f09e944577427f129f`. Candidate documentation is reviewed separately from this source baseline.
-- Package source (`src/mountainash_rules/**/*.py`) is **byte-identical** between the profile's recorded
-  basis (`7d0e3dcb747949bb2d7172a34135a7872b2ed55f`, 2026-09-02) and the current candidate HEAD — confirmed
-  via `git diff --stat` (empty) and matching git tree object hashes
-  (`9723c20ae6b9933ad8c2259cc0ffb8cf79fc3364`). No commit between those two revisions touches
-  `src/mountainash_rules`; the only changes are to `README.md` and `.github/workflows/deploy-textbook.yml`.
-  The profile in `docs-site/profile/` is therefore current for this candidate and needed only
-  provenance/manifest updates plus completion of previously-missing profile fields (see
-  `docs-site/profile/coverage.md`, "Candidate Revalidation (2026-09-12)"), not a source re-scan.
+- Reconciliation worktree: `mountainash-rules-book-reconciliation-worktree`, branch
+  `docs/book-reconciliation-sample`. The approved batch sample is the editorial reference.
+- Technical source: maintained worktree `mountainash-rules-adaptive-refresh-worktree`,
+  source revision `730a8583ee9d4fd6b52dc5350699eb66cc7487e9`. Execute examples against
+  that source, not this candidate's older package checkout.
+- Maintained manuscript: `bccfc1f2d1d2b1486661c75b7ba49c158f5a18bf`, published through
+  develop merge `07a7a8a2104b453871aa56cfd814c7f2376d07f7`.
+- Donor manuscript: `a862e3a53042058649aabb48b3ad31380d0426a0`, with source basis
+  `94659bb0c096485c87d329f09e944577427f129f`. Use its examples and diagrams selectively.
+- Current profile evidence lives in the maintained worktree's `docs-site/profile/`.
+  The candidate's canonical graph has the approved eleven-chapter mapping, but its
+  source enrichment and CIS remain historical. The profile and refresh-state are
+  unchanged. Graph mapping readiness does not mean manuscript or source-refresh
+  completion.
 - Package: `mountainash-rules` — a vectorized, backend-agnostic business rules engine with
   `ExpressionRulesEngine` for filtering, ranking and hit-policy selection, and `AccumulatorEngine`
   for compatible rule combinations; 21 profiled modules.
@@ -44,13 +80,10 @@ parallel sections; exact boundaries will be proposed in the chapter plan.
 
 ## Reusable existing material (inventory, not a commitment)
 
-The existing book in `docs-site/site/docs/` remains read-only reference material for this work.
-It has eleven chapters, from `01-foundation-concepts` through `11-lattice-structures-and-results`.
-A new chapter/section plan must be derived from the confirmed brief and profile facets,
-not inherited automatically from these chapter boundaries.
+The maintained book and original donor preview remain read-only references. This reconciliation worktree now contains the complete candidate. Earlier chapter addresses serve reference landing pages, not competing manuscripts; six replaced reference bodies are archived outside the published source tree.
 
 Within that accepted book and the surrounding repository, the following prose/examples are candidate reuse
-sources, selectively, where still accurate against the confirmed-unchanged source above:
+sources, selectively, where they remain accurate against the selected current source:
 
 - `docs-site/site/docs/index.md` — book framing ("Why a Guided Manual?", "Key Capabilities", prerequisites)
   already narrates most of the `broader-hype` capability list and a `users`-oriented "What You'll Get" list.
@@ -77,15 +110,11 @@ sources, selectively, where still accurate against the confirmed-unchanged sourc
   published; candidate source for introduction/framing prose and for the `broader-hype`/`contributors`
   sections once a structure is confirmed.
 
-## Appendix candidates
+## Reconciled appendices
 
-- **FAQ**: `docs-site/site/docs/learning-graph/faq.md` contains substantial existing FAQ material.
-  Review its answers against source before reusing them as a confirmed appendix at `site/docs/faq.md`.
-  Absence from navigation does not establish that an MkDocs source page is unpublished.
-  The unsupported `faq-chatbot-training.json` under `docs-site/learning-graph/` remains
-  untouched; do not run it through the marker-only FAQ exporter.
-- **Glossary**: no `glossary.md` exists under `docs-site/` for this book.
-  The confirmed glossary appendix therefore needs to be produced, not migrated.
+- **FAQ**: the current reader-facing appendix has 78 retained questions, with source-backed corrections and canonical chapter links. One false-premise Boolean question was renamed while retaining its original fragment. The internal seventy-question FAQ and chatbot JSON were verified as an equivalent historical pair and preserved byte-for-byte; they are not a newly generated export of the current FAQ. No unsupported marker-only conversion was used.
+- **Glossary**: all 97 existing terms remain, with reconciled definitions and canonical primary destinations. There is one current glossary.
+- Nineteen earlier chapter URLs remain usable through search-excluded reference landing pages retaining 416 heading fragments. Archive and internal planning/profile files remain outside the published source tree.
 - No quiz or course-page content exists to migrate (the accepted book has none), consistent with removing
   that framing from this workflow rather than needing to strip it out here.
 
@@ -116,9 +145,62 @@ facet; selective reuse of verified material; Mermaid first; MicroSims only where
 adds explanatory value; no quizzes; internal graph and planning artifacts excluded from
 the published site. Exact chapters and sections require separate chapter-plan approval.
 
-## Subsequent chapter-plan approval
+## Audience expectations and technical framing
 
-On 2026-09-12 the user separately approved the eight-chapter plan and its documented
-teaching-dependency changes in `docs-site/chapter-plan.md`. Candidate graph promotion,
-deliberate chapter remapping and writing are authorised. Publication over the live book
-still requires separate acceptance.
+Assume a technically capable reader with Python and basic DataFrame experience.
+Explain unfamiliar package concepts and their consequences without teaching elementary
+programming habits or correcting implausible misunderstandings.
+
+- Describe the package's capabilities, APIs, behavior and design decisions directly.
+  Show how an enum configures a comparison; do not tell readers that they need not
+  recreate the enum. Explain what an engine returns; do not add disclaimers that it
+  will not physically pack or send a parcel.
+- Keep worked examples concrete and explanations thorough. Respect for the audience
+  means removing condescending framing, not compressing substantive teaching into
+  unexplained jargon.
+- Retain limitations that affect implementation or interpretation: metadata validation
+  versus application input validation, backend support, conversion costs, missing-value
+  semantics and engine-specific behavior. State the relevant contract and consequence
+  rather than inventing a naive mistake for the reader to avoid.
+- Avoid obvious real-world disclaimers, elementary reminders, playful corrective
+  asides and repeated reassurance about what readers do not need to implement.
+  Prefer a positive account of what the API does over unnecessary "not X" contrasts.
+- During drafting and review, ask whether each aside adds a package-specific fact or
+  a consequential boundary. If it merely explains the obvious or talks down to the
+  reader, remove it. Apply this standard to headings, examples and summaries as well
+  as the main prose.
+
+### Direct, patient exposition
+
+Use the maintained textbook's direct explanatory voice as the prose standard.
+The approved batch sample remains a reference for worked-example depth, not a
+requirement to imitate its scenario-led opening.
+
+- Open chapters and sections by naming the package concept or API being explained,
+  defining its purpose and stating the relevant scope. Establish the subject before
+  introducing a business scenario.
+- Introduce examples as examples of an already explained concept. State their inputs,
+  operation and intended result explicitly; do not assume the reader knows an
+  unstated workflow or why a fictional business situation matters.
+- Give references such as "that metadata", "these relationships" and "the model" a
+  concrete, established referent. Mentioning metadata is not the same as defining
+  a metadata object. Name the concept or object when a pronoun would obscure it.
+- Explain prerequisites locally enough to make the current passage understandable.
+  Cross-references provide further detail; they must not replace the explanation
+  or imply that an object has already been introduced when it has not.
+- Patient writing develops the subject in a clear sequence. It does not require
+  narrative hooks, abstract scene-setting, rhetorical suspense or vague promises
+  about what the chapter will eventually explain.
+
+## Reconciliation approval and execution
+
+The earlier eight-chapter candidate plan is superseded by the user-approved eleven
+chapters and four parts in `docs-site/chapter-plan.md`. The canonical mapping is
+`docs-site/learning-graph/learning-graph.json`; supporting reconciliation evidence
+and URL migration decisions are in `docs-site/reconciliation-crosswalk.json`.
+The original approval and editorial principles are in the central repository at
+`04.planning/mountainash/superpowers/specs/2026-09-13-book-reconciliation-principles.md`.
+
+Preserve the maintained book's explanatory warmth and the approved sample's worked-example depth. The shared primitives and both engines are explicit in the opening and menus. Independent drafting may be parallel; Main retains interpretation, continuous editorial review and integration ownership.
+
+Completion evidence is recorded in `docs-site/chapter-plan.md` and `docs-site/reconciliation-crosswalk.json`: 107 executed Python blocks, 133 ordered primary explanations, 226 backward teaching dependencies, twelve visually checked diagrams, strict build success, and zero broken local references. The selected source is `730a8583ee9d4fd6b52dc5350699eb66cc7487e9`; Python 3.12.12 and Polars 1.44.2 were exercised. Canonical enrichment, historical CIS, profiles, refresh-state and the legacy FAQ pair remain unchanged. Do not mistake this editorial completion for user approval of publication or a promoted source-refresh baseline.

@@ -1,10 +1,17 @@
 {
   "title": "Mountainash Rules Package Concept Graph",
-  "description": "Internal editorial dependency graph for the eight-chapter mountainash-rules manual. 133 concepts across nine taxonomy categories support source-backed authoring, coverage and targeted refresh; the graph is not part of the published reader surface.",
+  "description": "Internal teaching graph for the approved four-part, eleven-chapter Mountainash Rules manual. All 133 concepts have canonical chapter assignments; manuscript reconciliation and editorial acceptance remain incomplete.",
   "creator": "Nathaniel Ramm",
-  "date": "2026-09-12",
-  "version": "1.2",
+  "date": "2026-09-14",
+  "version": "1.3",
   "format": "Learning Graph JSON v1.0",
   "schema": "https://raw.githubusercontent.com/dmccreary/learning-graphs/refs/heads/main/src/schema/learning-graph-schema.json",
-  "license": "CC BY-NC-SA 4.0 DEED"
+  "license": "CC BY-NC-SA 4.0 DEED",
+  "source_commit": "94659bb0c096485c87d329f09e944577427f129f",
+  "profile_dir": "docs-site/profile",
+  "chapter_plan": "docs-site/chapter-plan.md",
+  "reconciliation_crosswalk": "docs-site/reconciliation-crosswalk.json",
+  "mapping_status": "canonical eleven-chapter assignments and reviewed teaching dependencies; not manuscript acceptance or a completed source refresh",
+  "target_source_commit": "730a8583ee9d4fd6b52dc5350699eb66cc7487e9",
+  "enrichment_provenance": "Existing source_commit, profile_dir, node source fields, match_confidence and CIS are inherited from the historical donor enrichment. They were preserved, not re-profiled or recalculated by this editorial remap."
 }
