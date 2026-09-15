@@ -1,14 +1,20 @@
 """Typed absence and sentinel precedence across the filter entry points."""
 
+from decimal import Decimal
+from enum import IntFlag
+
 from datetime import date, datetime
 
 import polars as pl
 import pytest
 from pydantic import BaseModel
+import numpy as np
+
 
 import mountainash.expressions as ma
 from mountainash.relations import relation
 from mountainash_rules import (
+    BooleanCoercion,
     DataType,
     Dimension,
     DimensionCompiler,
@@ -95,6 +101,49 @@ def test_boolean_truth_table_across_entry_points(backend_name, strategy):
                 contexts, context_id_field="cid", chunk_size=chunk_size
             )
             assert _scores(batch.survivors) == survivors
+
+
+@pytest.mark.parametrize(
+    "strategy",
+    [MatchStrategy.EXACT, MatchStrategy.NOT_EQUAL, MatchStrategy.EXACT_KEY],
+)
+@pytest.mark.parametrize("concrete", [2, -1])
+@pytest.mark.parametrize("entry_point", ["evaluate", "explain", "batch", "chunked"])
+def test_boolean_invalid_concrete_rejected_across_entry_points(
+    backend_name, strategy, concrete, entry_point
+):
+    rules = build_backend_df(
+        backend_name,
+        {
+            "rule_name": ["false", "true", "wildcard"],
+            "flag": [False, True, None],
+        },
+    )
+    engine = ExpressionRulesEngine(
+        rules,
+        DimensionsMetadata(
+            dimensions=[
+                Dimension(
+                    dimension_name="value",
+                    rule_field="flag",
+                    context_field="active",
+                    data_type=DataType.BOOL,
+                    match_strategy=strategy,
+                ),
+            ]
+        ),
+    )
+    context = {"active": concrete}
+    contexts = pl.DataFrame({"active": [concrete]})
+    entry_points = {
+        "evaluate": lambda: engine.evaluate(context),
+        "explain": lambda: engine.explain(context),
+        "batch": lambda: engine.evaluate_batch(contexts),
+        "chunked": lambda: engine.evaluate_batch(contexts, chunk_size=1),
+    }
+
+    with pytest.raises(ValueError):
+        entry_points[entry_point]()
 
 
 def test_boolean_all_null_and_empty_batches_without_wildcards(backend_name):
@@ -342,3 +391,338 @@ def test_expressions_only_retains_string_not_set_binding():
     assert _scores(engine.evaluate_batch(pl.DataFrame({"cid": [0]})).survivors) == [
         ("custom", 1, 1)
     ]
+
+
+def _boolean_coercion(bits: int):
+    from mountainash_rules import BooleanCoercion
+
+    return BooleanCoercion(bits)
+
+
+def _boolean_engine(policy=BooleanCoercion.NONE, *, rules=None, metadata=None):
+    return ExpressionRulesEngine(
+        (
+            pl.DataFrame(
+                {
+                    "rule_name": ["false", "true"],
+                    "flag": [False, True],
+                }
+            )
+            if rules is None
+            else rules
+        ),
+        dimension_metadata=(
+            DimensionsMetadata(
+                dimensions=[
+                    Dimension(
+                        dimension_name="value",
+                        rule_field="flag",
+                        context_field="active",
+                        data_type=DataType.BOOL,
+                    )
+                ]
+            )
+            if metadata is None
+            else metadata
+        ),
+        boolean_coercion=policy,
+    )
+
+
+def _boolean_survivors(engine, value):
+    return engine.evaluate({"active": value}).survivors["rule_name"].to_list()
+
+
+@pytest.mark.parametrize(
+    "policy,value,expected",
+    [
+        (0, True, ["true"]),
+        (1, np.int64(1), ["true"]),
+        (2, " \tTrUe\n", ["true"]),
+        (4, -0.0, ["false"]),
+        (3, "0", ["false"]),
+        (3, 1, ["true"]),
+        (5, np.int64(-1), ["true"]),
+        (6, 0.5, ["true"]),
+        (7, " \vFALSE\f", ["false"]),
+    ],
+)
+def test_boolean_coercion_combinations_admit_distinguishing_original_domains(
+    policy, value, expected
+):
+    assert (
+        _boolean_survivors(_boolean_engine(_boolean_coercion(policy)), value)
+        == expected
+    )
+
+
+@pytest.mark.parametrize(
+    "policy,value",
+    [
+        (0, 1),
+        (0, 0),
+        (0, 0.0),
+        (0, 1.0),
+        (0, "true"),
+        (0, "0"),
+        (1, 0.5),
+        (2, 1),
+        (4, "true"),
+        (3, "2"),
+        (5, float("inf")),
+        (6, "2"),
+        (7, "2"),
+    ],
+)
+def test_boolean_coercion_combinations_reject_unadmitted_original_domains(
+    policy, value
+):
+    with pytest.raises(ValueError):
+        _boolean_survivors(_boolean_engine(_boolean_coercion(policy)), value)
+
+
+@pytest.mark.parametrize(
+    "value,expected",
+    [
+        (0, ["false"]),
+        (-0.0, ["false"]),
+        (np.float64(1.0), ["true"]),
+    ],
+)
+def test_binary_boolean_coercion_accepts_only_exact_zero_or_one(value, expected):
+    assert _boolean_survivors(_boolean_engine(_boolean_coercion(1)), value) == expected
+
+
+@pytest.mark.parametrize(
+    "value",
+    [0.5, -1, 2**100 + 1, float("nan"), float("inf"), float("-inf")],
+)
+def test_binary_boolean_coercion_rejects_fraction_large_and_nonfinite_numbers(value):
+    with pytest.raises(ValueError):
+        _boolean_survivors(_boolean_engine(_boolean_coercion(1)), value)
+
+
+@pytest.mark.parametrize(
+    "value,expected",
+    [
+        (np.float64(-0.0), ["false"]),
+        (np.float64(0.5), ["true"]),
+        (np.int64(-1), ["true"]),
+        (2**100 + 1, ["true"]),
+    ],
+)
+def test_numeric_truthiness_preserves_numeric_meaning_without_narrowing(
+    value, expected
+):
+    assert _boolean_survivors(_boolean_engine(_boolean_coercion(4)), value) == expected
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "",
+        "yes",
+        "no",
+        "<NA>",
+        "<NOT_SET>",
+        "t rue",
+        "\u00a0true",
+        "true\u00a0",
+        "2",
+        b"true",
+        Decimal("1"),
+        1 + 0j,
+        [],
+        object(),
+    ],
+)
+def test_boolean_text_and_unsupported_scalars_reject_outside_exact_policy_domain(value):
+    policy = _boolean_coercion(7)
+    with pytest.raises(ValueError):
+        _boolean_survivors(_boolean_engine(policy), value)
+
+
+class _ForeignBooleanCoercion(IntFlag):
+    BINARY = 1
+
+
+@pytest.mark.parametrize(
+    "value,unknown_bits",
+    [
+        (0, False),
+        (False, False),
+        ("binary", False),
+        (None, False),
+        (_ForeignBooleanCoercion.BINARY, False),
+        (8, True),
+    ],
+)
+def test_boolean_coercion_constructor_rejects_non_enum_values_and_unknown_bits(
+    value, unknown_bits
+):
+    if unknown_bits:
+        value = _boolean_coercion(value)
+    with pytest.raises(ValueError):
+        _boolean_engine(value)
+
+
+def test_semantic_python_and_numpy_booleans_are_admitted_without_conversion():
+    engine = _boolean_engine()
+    assert _boolean_survivors(engine, False) == ["false"]
+    assert _boolean_survivors(engine, np.bool_(True)) == ["true"]
+
+
+@pytest.mark.parametrize(
+    "context_backend",
+    [
+        "polars",
+        "pandas",
+        "narwhals-polars",
+        "narwhals-pandas",
+        "ibis-duckdb",
+        "ibis-sqlite",
+    ],
+)
+def test_native_boolean_and_null_context_columns_retain_ternaries(context_backend):
+    contexts = build_backend_df(
+        context_backend,
+        {"cid": [0, 1, 2], "active": [True, False, None]},
+        table_name=f"boolean_context_{context_backend.replace('-', '_')}",
+    )
+    result = relation(
+        _boolean_engine().evaluate_batch(contexts, context_id_field="cid").survivors
+    ).to_polars()
+    assert result.sort("__context_id", "rule_name").select(
+        "__context_id", "rule_name", "__t_value", "__specificity"
+    ).rows() == [
+        (0, "true", 1, 1),
+        (1, "false", 1, 1),
+        (2, "false", 0, 0),
+        (2, "true", 0, 0),
+    ]
+
+
+@pytest.mark.parametrize(
+    "active",
+    [
+        pl.Series("active", [None, None], dtype=pl.Boolean),
+        pl.Series("active", [None, None], dtype=pl.Object),
+    ],
+)
+def test_boolean_nullable_and_object_all_null_batches_remain_absent(active):
+    contexts = pl.DataFrame({"cid": [0, 1], "active": active})
+    batch = relation(
+        _boolean_engine().evaluate_batch(contexts, context_id_field="cid").survivors
+    ).to_polars()
+    assert batch.sort("__context_id", "rule_name").select(
+        "__context_id", "rule_name", "__t_value", "__specificity"
+    ).rows() == [
+        (0, "false", 0, 0),
+        (0, "true", 0, 0),
+        (1, "false", 0, 0),
+        (1, "true", 0, 0),
+    ]
+    empty = (
+        _boolean_engine()
+        .evaluate_batch(contexts.head(0), context_id_field="cid")
+        .survivors
+    )
+    assert relation(empty).to_polars().schema["flag"] == pl.Boolean
+
+
+def test_object_context_values_are_classified_before_backend_conversion():
+    policy = (
+        BooleanCoercion.BINARY_NUMBERS
+        | BooleanCoercion.BOOLEAN_TEXT
+        | BooleanCoercion.NUMERIC_TRUTHINESS
+    )
+    engine = _boolean_engine(policy)
+    valid = pl.DataFrame(
+        {
+            "cid": [0, 1, 2, 3],
+            "active": pl.Series(
+                "active",
+                [np.bool_(True), np.int64(0), " false ", None],
+                dtype=pl.Object,
+            ),
+        }
+    )
+    result = relation(
+        engine.evaluate_batch(valid, context_id_field="cid").survivors
+    ).to_polars()
+    assert result.sort("__context_id", "rule_name").select(
+        "__context_id", "rule_name", "__t_value", "__specificity"
+    ).rows() == [
+        (0, "true", 1, 1),
+        (1, "false", 1, 1),
+        (2, "false", 1, 1),
+        (3, "false", 0, 0),
+        (3, "true", 0, 0),
+    ]
+    invalid = valid.vstack(
+        pl.DataFrame(
+            {
+                "cid": [4],
+                "active": pl.Series("active", [object()], dtype=pl.Object),
+            }
+        )
+    )
+    with pytest.raises(ValueError):
+        engine.evaluate_batch(invalid, context_id_field="cid")
+
+
+def test_boolean_alias_normalization_preserves_a_shared_nonboolean_binding():
+    rules = pl.DataFrame(
+        {
+            "rule_name": ["both"],
+            "bool_flag": [True],
+            "number_flag": [1],
+        }
+    )
+    metadata = DimensionsMetadata(
+        dimensions=[
+            Dimension(
+                dimension_name="as_boolean",
+                rule_field="bool_flag",
+                context_field="active",
+                data_type=DataType.BOOL,
+            ),
+            Dimension(
+                dimension_name="as_number",
+                rule_field="number_flag",
+                context_field="active",
+                data_type=DataType.INT,
+            ),
+        ]
+    )
+    contexts = pl.DataFrame({"cid": [7], "active": [1]})
+    result = _boolean_engine(
+        _boolean_coercion(1), rules=rules, metadata=metadata
+    ).evaluate_batch(contexts, context_id_field="cid")
+    assert relation(result.survivors).to_polars().select(
+        "rule_name", "__t_as_boolean", "__t_as_number", "__specificity"
+    ).rows() == [("both", 1, 1, 2)]
+    assert contexts.schema["active"] == pl.Int64
+    assert contexts["active"].to_list() == [1]
+
+
+def test_unselected_boolean_dimension_does_not_validate_its_source_field():
+    rules = pl.DataFrame({"rule_name": ["region"], "flag": [True], "region": ["AU"]})
+    metadata = DimensionsMetadata(
+        dimensions=[
+            Dimension(
+                dimension_name="boolean",
+                rule_field="flag",
+                context_field="active",
+                data_type=DataType.BOOL,
+            ),
+            Dimension(dimension_name="region"),
+        ]
+    )
+    result = _boolean_engine(
+        _boolean_coercion(0), rules=rules, metadata=metadata
+    ).evaluate_batch(
+        pl.DataFrame({"active": [2], "region": ["AU"]}),
+        dimensions=["region"],
+    )
+    assert result.survivors["rule_name"].to_list() == ["region"]

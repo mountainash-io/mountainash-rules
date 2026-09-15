@@ -15,8 +15,7 @@ cd mountainash-utils-rules
 hatch env create
 ```
 
-Requires sibling checkouts of `mountainash`, `mountainash-data`, and `mountainash-settings`
-(see `hatch.toml` for path configuration).
+Resolve the configured `mountainash` dependency at delivered merge `b9c0ab4ab6380712c89f27c8d083f658278d4593` or a descendant, together with `mountainash-data` and `mountainash-settings` (see `hatch.toml`). This is a delivered dependency revision requirement, not an implied release version or checkout layout.
 
 ---
 
@@ -248,6 +247,8 @@ With `context_id_field=None`, IDs are assigned once as original zero-based row p
 
 Chunking bounds the cross-product work per chunk, not total memory: prepared input, result frames, and grouped violation diagnostics are still accumulated. All offending UNIQUE/ANY contexts are reported before an exception is raised; no partial successful result is returned.
 
+Boolean batch admission validates every submitted Boolean field before policy evaluation, chunk work, or accumulator index routing. An invalid concrete Boolean anywhere in the batch raises `ValueError` naming its field and active policy; it is not hidden by an earlier UNIQUE/ANY violation, no routing partition, empty rules, or a zero-result limit.
+
 ---
 
 ### Excluding observability columns
@@ -263,7 +264,37 @@ result = engine.evaluate(context, include_observability=False)
 
 ### Context with missing fields
 
-For metadata-backed evaluation, an absent field or `None` binds to the datatype's NOT_SET sentinel; Boolean absence uses null instead of a string marker. Single, batch and chunked evaluation use the same matching semantics. Explicit UNKNOWN and NOT_SET markers remain distinct stored values. `False`, zero and an empty string are concrete inputs.
+For metadata-backed evaluation, an absent field or `None` binds to the datatype's NOT_SET sentinel; Boolean absence uses null instead of a string marker. Single, batch and chunked evaluation use the same matching semantics. Explicit UNKNOWN and NOT_SET markers remain distinct stored values.
+
+Boolean dimensions default to `BooleanCoercion.NONE` (`0`), admitting only semantic `True`/`False` plus absence. Add only the original input domains your boundary accepts:
+
+| Flag | Value | Additional accepted values |
+|------|-------|----------------------------|
+| `BINARY_NUMBERS` | `1` | Finite numeric `0` and `1` only |
+| `BOOLEAN_TEXT` | `2` | ASCII-whitespace-trimmed, ASCII-case `true`/`false`, and text `1`/`0` |
+| `NUMERIC_TRUTHINESS` | `4` | Any finite number (`0` false; all other values true) |
+
+Pass actual `BooleanCoercion` members, combining flags with `|`; non-enum settings and unknown bits raise `ValueError`. Both engine constructors take the same keyword-only policy:
+
+```python
+from mountainash_rules import (
+    AccumulatorEngine, BooleanCoercion, ExpressionRulesEngine,
+)
+
+boolean_inputs = (
+    BooleanCoercion.BOOLEAN_TEXT | BooleanCoercion.NUMERIC_TRUTHINESS
+)
+filter_engine = ExpressionRulesEngine(
+    rules=rules, dimension_metadata=metadata, boolean_coercion=boolean_inputs,
+)
+accumulator_engine = AccumulatorEngine(
+    dimension_metadata=metadata, boolean_coercion=boolean_inputs,
+)
+```
+
+Classification never chains through another domain: numeric `2` is true with `NUMERIC_TRUTHINESS`, but text `"2"` is invalid even when text and truthiness are combined. Missing/`None` is absence; concrete numeric `0` requires a numeric flag, and empty text is invalid under every policy. Any other invalid concrete value raises `ValueError` naming the context field and policy. Backend capability errors remain explicit rather than falling back to another backend.
+
+Semantic scalars include Python `bool` and NumPy `bool_`. Numeric flags admit Python/NumPy integers and floats, not Decimal, complex, bytes, or custom truthiness objects. Recognized backend nulls remain absent; concrete NaN/infinity is invalid. Rules sees values after Pydantic `model_dump` or dataframe ingestion and cannot recover types already changed by the caller.
 
 Ordinary comparisons and string predicates treat unavailable context as ternary 0: the rule may survive, but that dimension earns no specificity. In particular, PREFIX, SUFFIX, CONTAINS and per-row REGEX never match the spelling of a missing-value marker.
 
@@ -454,7 +485,7 @@ Build once. Apply many times.
 ```python
 import polars as pl
 from mountainash_rules import (
-    AccumulatorEngine, Aggregate,
+    AccumulatorEngine, Aggregate, BooleanCoercion,
     Dimension, DimensionsMetadata, MatchStrategy, DimensionRole,
 )
 
@@ -473,6 +504,9 @@ metadata = DimensionsMetadata(dimensions=[
 engine = AccumulatorEngine(
     dimension_metadata=metadata,
     aggregates=[Aggregate(column_name="fee", operation="sum")],
+    boolean_coercion=(
+        BooleanCoercion.BOOLEAN_TEXT | BooleanCoercion.NUMERIC_TRUTHINESS
+    ),
 )
 
 # Build the lattice (do this once at startup)

@@ -75,12 +75,8 @@ class Lattice:
         dir_path.mkdir(parents=True, exist_ok=True)
         relation(self._df).to_polars().write_parquet(dir_path / "lattice.parquet")
         manifest = {
-            "dimensions": self._metadata.model_dump(
-                mode="json", exclude_defaults=True
-            ),
-            "aggregates": [
-                a.model_dump(mode="json") for a in self._aggregates
-            ],
+            "dimensions": self._metadata.model_dump(mode="json", exclude_defaults=True),
+            "aggregates": [a.model_dump(mode="json") for a in self._aggregates],
             "partition_key": self._partition_key,
         }
         (dir_path / "manifest.yaml").write_text(
@@ -102,9 +98,7 @@ class Lattice:
         return cls(
             dataframe=pl.read_parquet(dir_path / "lattice.parquet"),
             metadata=DimensionsMetadata.model_validate(raw["dimensions"]),
-            aggregates=[
-                Aggregate.model_validate(a) for a in raw.get("aggregates", [])
-            ],
+            aggregates=[Aggregate.model_validate(a) for a in raw.get("aggregates", [])],
             partition_key=raw.get("partition_key"),
         )
 
@@ -155,9 +149,8 @@ class LatticeIndex:
             else:
                 key = ()
             for d, v in zip(self._context_key_dims, key):
-                if (
-                    d.data_type is not DataType.BOOL
-                    and v == not_set_sentinel_for(d.data_type)
+                if d.data_type is not DataType.BOOL and v == not_set_sentinel_for(
+                    d.data_type
                 ):
                     raise ValueError(
                         f"Partition key {key!r} contains the NOT_SET "
@@ -192,7 +185,7 @@ class LatticeIndex:
             dimensions=[
                 Dimension(
                     dimension_name=d.dimension_name,
-                    context_field=d.resolved_context_field,
+                    context_field=d.dimension_name,
                     match_strategy=MatchStrategy.EXACT_KEY,
                     data_type=d.data_type,
                 )
@@ -203,6 +196,7 @@ class LatticeIndex:
         return ExpressionRulesEngine(
             rules=relation(columns).collect(),
             dimension_metadata=meta_metadata,
+            boolean_coercion=self._engine._boolean_coercion,
         )
 
     _WITNESS_CHUNK = 100_000
@@ -242,19 +236,18 @@ class LatticeIndex:
                 f"tie check), or restructure the key dimensions"
             )
 
-        fields = [d.resolved_context_field for d in self._context_key_dims]
+        fields = [d.dimension_name for d in self._context_key_dims]
         witnesses = itertools.product(*classes)
         while True:
             chunk = list(itertools.islice(witnesses, self._WITNESS_CHUNK))
             if not chunk:
                 return
-            contexts = relation({
-                "__witness_id": list(range(len(chunk))),
-                **{
-                    f: [w[i] for w in chunk]
-                    for i, f in enumerate(fields)
-                },
-            }).collect()
+            contexts = relation(
+                {
+                    "__witness_id": list(range(len(chunk))),
+                    **{f: [w[i] for w in chunk] for i, f in enumerate(fields)},
+                }
+            ).collect()
             survivors = relation(
                 self._meta_engine.evaluate_batch(
                     contexts, context_id_field="__witness_id"
@@ -280,10 +273,7 @@ class LatticeIndex:
                         pk = self._lattices[p].partition_key
                         assert pk is not None
                         tied_keys.append(
-                            tuple(
-                                pk[d.dimension_name]
-                                for d in self._context_key_dims
-                            )
+                            tuple(pk[d.dimension_name] for d in self._context_key_dims)
                         )
                     raise AmbiguousPartitionError(
                         f"Partition suite is ambiguous: witness context "
@@ -292,10 +282,7 @@ class LatticeIndex:
 
     def _route(self, key: tuple) -> "Lattice":
         """Ternary + specificity routing for a normalised key tuple."""
-        ctx = {
-            d.resolved_context_field: key[i]
-            for i, d in enumerate(self._context_key_dims)
-        }
+        ctx = {d.dimension_name: key[i] for i, d in enumerate(self._context_key_dims)}
         assert self._meta_engine is not None  # dict miss with key dims ⇒ non-None
         rows = relation(self._meta_engine.evaluate(ctx).survivors).to_dict()
         idxs = rows["__partition_idx"]
@@ -305,19 +292,14 @@ class LatticeIndex:
                 f"keys: {sorted(self._map, key=repr)!r}"
             )
         top = rows["__specificity"][0]  # survivors are rank-sorted
-        tied = [
-            i for i, s in zip(idxs, rows["__specificity"]) if s == top
-        ]
+        tied = [i for i, s in zip(idxs, rows["__specificity"]) if s == top]
         if len(tied) > 1:
             tied_keys = []
             for i in tied:
                 pk = self._lattices[i].partition_key
                 assert pk is not None
                 tied_keys.append(
-                    tuple(
-                        pk[d.dimension_name]
-                        for d in self._context_key_dims
-                    )
+                    tuple(pk[d.dimension_name] for d in self._context_key_dims)
                 )
             raise AmbiguousPartitionError(
                 f"Context key {key!r} ties {len(tied)} partitions at "
@@ -332,104 +314,89 @@ class LatticeIndex:
             lattice = self._route(key)
         return self._engine.apply(lattice, context, dimensions=dimensions)
 
-    def apply_batch(self, contexts, **kwargs):
-        """Partition contexts by CONTEXT_KEY fields; evaluate_batch per lattice."""
+    def apply_batch(
+        self,
+        contexts,
+        *,
+        context_id_field=None,
+        dimensions=None,
+        hit_policy=None,
+        priority_field=None,
+        top_n_per_context=None,
+        min_specificity=None,
+        include_observability=True,
+        chunk_size=None,
+    ):
+        """Admit the whole original batch before grouping or partition lookup."""
         import mountainash.expressions as ma
         from mountainash.relations import concat
+        from mountainash_rules.core.batch_result import BatchRuleResult
 
-        rel = relation(contexts)
-        key_fields = [d.resolved_context_field for d in self._context_key_dims]
-        if not key_fields:
-            (single,) = self._map.values()
-            return self._engine._filter_engine_for(single).evaluate_batch(
-                contexts, **kwargs
-            )
-
-        # Synthesise a GLOBAL context id before partitioning: per-partition
-        # batches would otherwise restart ids at 0 and collide after concat.
-        if not kwargs.get("context_id_field"):
-            # relation(...collect()) (not just .collect()): `.columns` on a
-            # lazy relation doesn't reflect a just-added with_row_index
-            # column until materialised, and `passthrough` below reads
-            # `.columns`. A bare `.collect()` also degrades to a raw
-            # DataFrame that no longer dispatches with_columns() through the
-            # mountainash expression layer — re-wrapping keeps that intact.
-            rel = relation(rel.with_row_index(name="__lattice_ctx_id").collect())
-            kwargs["context_id_field"] = "__lattice_ctx_id"
-
-        # Normalise the key columns once so batch routing mirrors single
-        # apply(): a key column absent from the whole batch is treated as
-        # missing; null/NaN coalesce to the typed NOT_SET sentinel (bool keeps
-        # null — its don't-care). Combo grouping AND per-partition filtering
-        # both use these normalised columns, so a missing/NaN context routes
-        # exactly as _extract_partition_key would, and no row is silently
-        # dropped or double-counted.
-        passthrough = list(rel.columns)
-        existing = set(passthrough)
-        norm_fields: list[str] = []
-        norm_exprs = []
-        for d in self._context_key_dims:
-            f = d.resolved_context_field
-            nf = "__key_" + f
-            norm_fields.append(nf)
-            if f not in existing:
-                fill = (
-                    None
-                    if d.data_type is DataType.BOOL
-                    else not_set_sentinel_for(d.data_type)
-                )
-                norm_exprs.append(ma.lit(fill).alias(nf))
-            elif d.data_type is DataType.BOOL:
-                norm_exprs.append(ma.col(f).alias(nf))
-            elif d.data_type is DataType.FLOAT:
-                sentinel = not_set_sentinel_for(d.data_type)
-                norm_exprs.append(
-                    ma.when(ma.col(f).is_null() | ma.col(f).is_nan())
-                    .then(ma.lit(sentinel))
-                    .otherwise(ma.col(f))
-                    .alias(nf)
-                )
-            else:
-                sentinel = not_set_sentinel_for(d.data_type)
-                norm_exprs.append(
-                    ma.coalesce(ma.col(f), ma.lit(sentinel)).alias(nf)
-                )
-        rel = rel.with_columns(*norm_exprs)
-
-        combos = (
-            rel.select(*[ma.col(nf) for nf in norm_fields]).unique().to_dict()
+        engine = self._engine._filter_engine_for(self._lattices[0])
+        options = dict(
+            context_id_field=context_id_field,
+            top_n_per_context=top_n_per_context,
+            min_specificity=min_specificity,
+            include_observability=include_observability,
+            chunk_size=chunk_size,
         )
+        if not self._context_key_dims:
+            return engine.evaluate_batch(
+                contexts,
+                dimensions=dimensions,
+                hit_policy=hit_policy,
+                priority_field=priority_field,
+                **options,
+            )
+        active_dims = engine._active_dimensions(dimensions)
+        engine._validate_limit("top_n_per_context", top_n_per_context)
+        engine._validate_limit("min_specificity", min_specificity)
+        engine._validate_limit("chunk_size", chunk_size, minimum=1)
+        selection = engine._selection_config(
+            hit_policy, priority_field, include_observability
+        )
+        rel = engine._prepare_contexts(
+            contexts,
+            active_dims,
+            context_id_field,
+            routing_dims=self._context_key_dims,
+        )
+        norm_fields = [f"__key_{d.dimension_name}" for d in self._context_key_dims]
+        prepared_fields = ["__context_id", *[f"__ctx_{name}" for name in active_dims]]
+        combos = rel.select(*[ma.col(nf) for nf in norm_fields]).unique().to_dict()
         frames = []
-        n = len(combos[norm_fields[0]])
-        for i in range(n):
-            # Combos are already normalised; only bool positions can be None.
+        for i in range(len(combos[norm_fields[0]])):
             key = tuple(combos[nf][i] for nf in norm_fields)
             lattice = self._map.get(key)
             if lattice is None:
                 lattice = self._route(key)
             part = rel
-            for nf, v in zip(norm_fields, key):
+            for nf, value in zip(norm_fields, key):
                 part = part.filter(
                     ma.col(nf).is_null()
-                    if v is None
-                    else ma.col(nf).eq(ma.lit(v))
+                    if value is None
+                    else ma.col(nf).eq(ma.lit(value))
                 )
-            # Drop the transient __key_* columns so the filter engine sees the
-            # original context frame unchanged.
-            part = part.select(*[ma.col(c) for c in passthrough])
-            engine = self._engine._filter_engine_for(lattice)
-            frames.append(
-                relation(
-                    engine.evaluate_batch(part.collect(), **kwargs).survivors
-                )
+            apply_engine = self._engine._filter_engine_for(lattice)
+            result = apply_engine._evaluate_prepared_batch(
+                part.select(*[ma.col(c) for c in prepared_fields]),
+                active_dims,
+                apply_engine._selection_config(
+                    hit_policy, priority_field, include_observability
+                ),
+                **options,
             )
-        merged = concat(frames).collect()
-
-        from mountainash_rules.core.batch_result import BatchRuleResult
+            frames.append(relation(result.survivors))
+        if not frames:
+            return engine._evaluate_prepared_batch(
+                rel.select(*[ma.col(c) for c in prepared_fields]),
+                active_dims,
+                selection,
+                **options,
+            )
         return BatchRuleResult(
-            dataframe=merged,
-            active_dimensions=[
-                d.dimension_name for d in self._engine._constraint_dims
-            ],
-            context_id_field=kwargs["context_id_field"],
+            dataframe=concat(frames).sort("__context_id", "__rank").collect(),
+            active_dimensions=active_dims,
+            context_id_field=context_id_field or "__context_id",
+            selection_info=result._selection_info,
         )

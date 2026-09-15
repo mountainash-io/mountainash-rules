@@ -6,6 +6,7 @@ import pytest
 import mountainash.expressions as ma
 
 from mountainash_rules import (
+    DataType,
     Dimension,
     DimensionsMetadata,
     ExpressionRulesEngine,
@@ -210,3 +211,61 @@ def test_empty_batches_do_not_skip_configuration_or_reserved_column_validation()
     unconfigured = ExpressionRulesEngine(_rules(), dimension_expressions=expressions)
     with pytest.raises(ValueError, match="output_fields"):
         unconfigured.evaluate_batch(contexts, hit_policy="any", chunk_size=1)
+
+
+def _boolean_coercion_none():
+    from mountainash_rules import BooleanCoercion
+
+    return BooleanCoercion.NONE
+
+
+def _boolean_boundary_engine(rules):
+    return ExpressionRulesEngine(
+        rules,
+        dimension_metadata=DimensionsMetadata(
+            dimensions=[
+                Dimension(
+                    dimension_name="value",
+                    rule_field="flag",
+                    context_field="active",
+                    data_type=DataType.BOOL,
+                )
+            ]
+        ),
+        boolean_coercion=_boolean_coercion_none(),
+    )
+
+
+@pytest.mark.parametrize("chunk_size", [None, 1])
+def test_late_invalid_boolean_value_precedes_earlier_unique_violation(chunk_size):
+    engine = _boolean_boundary_engine(
+        pl.DataFrame(
+            {
+                "rule_name": ["true", "wildcard"],
+                "flag": [True, None],
+            }
+        )
+    )
+    contexts = pl.DataFrame(
+        {"cid": [0, 1], "active": pl.Series("active", [True, 2], dtype=pl.Object)}
+    )
+    with pytest.raises(ValueError) as exc:
+        engine.evaluate_batch(
+            contexts,
+            context_id_field="cid",
+            hit_policy="unique",
+            chunk_size=chunk_size,
+        )
+    assert not isinstance(exc.value, HitPolicyViolationError)
+
+
+@pytest.mark.parametrize("case", ["top_n_zero", "no_match", "empty_rules"])
+def test_invalid_boolean_batch_value_is_not_hidden_by_empty_result_paths(case):
+    rules = pl.DataFrame({"rule_name": ["false"], "flag": [False]})
+    if case == "empty_rules":
+        rules = rules.head(0)
+    options = {"top_n_per_context": 0} if case == "top_n_zero" else {}
+    with pytest.raises(ValueError):
+        _boolean_boundary_engine(rules).evaluate_batch(
+            pl.DataFrame({"active": [2]}), **options
+        )

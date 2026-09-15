@@ -8,7 +8,14 @@ from mountainash.relations import relation
 from mountainash_rules.engines.accumulator.engine import AccumulatorEngine
 from mountainash_rules.engines.accumulator.result import AccumulatorResult
 from mountainash_rules.engines.accumulator.aggregate import Aggregate
-from mountainash_rules.core.constants import DataType, UNKNOWN, UNKNOWN_NUMERIC, NOT_SET_NUMERIC, MatchStrategy, DimensionRole
+from mountainash_rules.core.constants import (
+    DataType,
+    UNKNOWN,
+    UNKNOWN_NUMERIC,
+    NOT_SET_NUMERIC,
+    MatchStrategy,
+    DimensionRole,
+)
 from mountainash_rules.core.dimension import Dimension, DimensionsMetadata
 
 
@@ -28,14 +35,21 @@ class PartitionedContext(BaseModel):
 
 
 def _worked_example_engine():
-    metadata = DimensionsMetadata(dimensions=[
-        Dimension(dimension_name="channel", match_strategy=MatchStrategy.EXACT),
-        Dimension(
-            dimension_name="lvr", match_strategy=MatchStrategy.RANGE,
-            data_type=int, range_min_field="lvr_min", range_max_field="lvr_max",
-        ),
-        Dimension(dimension_name="foreign_resident", match_strategy=MatchStrategy.EXACT),
-    ])
+    metadata = DimensionsMetadata(
+        dimensions=[
+            Dimension(dimension_name="channel", match_strategy=MatchStrategy.EXACT),
+            Dimension(
+                dimension_name="lvr",
+                match_strategy=MatchStrategy.RANGE,
+                data_type=int,
+                range_min_field="lvr_min",
+                range_max_field="lvr_max",
+            ),
+            Dimension(
+                dimension_name="foreign_resident", match_strategy=MatchStrategy.EXACT
+            ),
+        ]
+    )
     return AccumulatorEngine(
         dimension_metadata=metadata,
         aggregates=[Aggregate(column_name="margin")],
@@ -43,33 +57,41 @@ def _worked_example_engine():
 
 
 def _worked_example_rules():
-    return pl.DataFrame({
-        "rule_name": ["R1", "R2", "R3"],
-        "channel": ["BROKER", UNKNOWN, "BROKER"],
-        "lvr_min": [60, 70, UNKNOWN_NUMERIC],
-        "lvr_max": [80, 90, UNKNOWN_NUMERIC],
-        "foreign_resident": [UNKNOWN, "false", "false"],
-        "margin": [-0.10, -0.05, -0.15],
-    })
+    return pl.DataFrame(
+        {
+            "rule_name": ["R1", "R2", "R3"],
+            "channel": ["BROKER", UNKNOWN, "BROKER"],
+            "lvr_min": [60, 70, UNKNOWN_NUMERIC],
+            "lvr_max": [80, 90, UNKNOWN_NUMERIC],
+            "foreign_resident": [UNKNOWN, "false", "false"],
+            "margin": [-0.10, -0.05, -0.15],
+        }
+    )
 
 
 class TestApplyWorkedExample:
     def test_returns_accumulator_result(self):
         engine = _worked_example_engine()
         lattice = engine.build(_worked_example_rules())
-        result = engine.apply(lattice, PricingContext(channel="BROKER", lvr=75, foreign_resident="false"))
+        result = engine.apply(
+            lattice, PricingContext(channel="BROKER", lvr=75, foreign_resident="false")
+        )
         assert isinstance(result, AccumulatorResult)
 
     def test_all_outermost_match_full_context(self):
         engine = _worked_example_engine()
         lattice = engine.build(_worked_example_rules())
-        result = engine.apply(lattice, PricingContext(channel="BROKER", lvr=75, foreign_resident="false"))
+        result = engine.apply(
+            lattice, PricingContext(channel="BROKER", lvr=75, foreign_resident="false")
+        )
         assert result.count == 6
 
     def test_best_combination_has_max_specificity(self):
         engine = _worked_example_engine()
         lattice = engine.build(_worked_example_rules())
-        result = engine.apply(lattice, PricingContext(channel="BROKER", lvr=75, foreign_resident="false"))
+        result = engine.apply(
+            lattice, PricingContext(channel="BROKER", lvr=75, foreign_resident="false")
+        )
         best = _rows(result.best_combination)
         # Best combination has the highest specificity (3 — all dimensions matched)
         assert best["__specificity"][0] == 3
@@ -77,7 +99,9 @@ class TestApplyWorkedExample:
     def test_deepest_combination_is_triple(self):
         engine = _worked_example_engine()
         lattice = engine.build(_worked_example_rules())
-        result = engine.apply(lattice, PricingContext(channel="BROKER", lvr=75, foreign_resident="false"))
+        result = engine.apply(
+            lattice, PricingContext(channel="BROKER", lvr=75, foreign_resident="false")
+        )
         rows = _rows(result.survivors)
         pp_to_margin = dict(zip(rows["__prime_product"], rows["__agg_margin"]))
         # The triple (R1+R2+R3, prime_product=30) has accumulated margin of -0.30
@@ -86,13 +110,17 @@ class TestApplyWorkedExample:
     def test_partial_context_fewer_matches(self):
         engine = _worked_example_engine()
         lattice = engine.build(_worked_example_rules())
-        result = engine.apply(lattice, PricingContext(channel="BROKER", lvr=95, foreign_resident="false"))
+        result = engine.apply(
+            lattice, PricingContext(channel="BROKER", lvr=95, foreign_resident="false")
+        )
         assert result.count < 6
 
     def test_accumulated_margin_values(self):
         engine = _worked_example_engine()
         lattice = engine.build(_worked_example_rules())
-        result = engine.apply(lattice, PricingContext(channel="BROKER", lvr=75, foreign_resident="false"))
+        result = engine.apply(
+            lattice, PricingContext(channel="BROKER", lvr=75, foreign_resident="false")
+        )
         acc = _rows(result.accumulated("margin"))
         margins = sorted(acc["__agg_margin"])
         assert pytest.approx(-0.30) in margins
@@ -101,21 +129,25 @@ class TestApplyWorkedExample:
 
 class TestApplyAutoWithPartitions:
     def test_apply_auto_selects_correct_lattice(self):
-        rules = pl.DataFrame({
-            "product_id": [1, 1, 2],
-            "rule_name": ["r1", "r2", "r3"],
-            "channel": ["BROKER", UNKNOWN, "DIRECT"],
-            "margin": [1.0, 2.0, 3.0],
-        })
-        metadata = DimensionsMetadata(dimensions=[
-            Dimension(
-                dimension_name="product_id",
-                match_strategy=MatchStrategy.EXACT,
-                data_type=int,
-                role=DimensionRole.CONTEXT_KEY,
-            ),
-            Dimension(dimension_name="channel", match_strategy=MatchStrategy.EXACT),
-        ])
+        rules = pl.DataFrame(
+            {
+                "product_id": [1, 1, 2],
+                "rule_name": ["r1", "r2", "r3"],
+                "channel": ["BROKER", UNKNOWN, "DIRECT"],
+                "margin": [1.0, 2.0, 3.0],
+            }
+        )
+        metadata = DimensionsMetadata(
+            dimensions=[
+                Dimension(
+                    dimension_name="product_id",
+                    match_strategy=MatchStrategy.EXACT,
+                    data_type=int,
+                    role=DimensionRole.CONTEXT_KEY,
+                ),
+                Dimension(dimension_name="channel", match_strategy=MatchStrategy.EXACT),
+            ]
+        )
         engine = AccumulatorEngine(
             dimension_metadata=metadata,
             aggregates=[Aggregate(column_name="margin")],
@@ -131,21 +163,25 @@ class TestApplyAutoWithPartitions:
         assert result.count >= 1
 
     def test_apply_auto_missing_key_raises(self):
-        rules = pl.DataFrame({
-            "product_id": [1],
-            "rule_name": ["r1"],
-            "channel": ["BROKER"],
-            "margin": [1.0],
-        })
-        metadata = DimensionsMetadata(dimensions=[
-            Dimension(
-                dimension_name="product_id",
-                match_strategy=MatchStrategy.EXACT,
-                data_type=int,
-                role=DimensionRole.CONTEXT_KEY,
-            ),
-            Dimension(dimension_name="channel", match_strategy=MatchStrategy.EXACT),
-        ])
+        rules = pl.DataFrame(
+            {
+                "product_id": [1],
+                "rule_name": ["r1"],
+                "channel": ["BROKER"],
+                "margin": [1.0],
+            }
+        )
+        metadata = DimensionsMetadata(
+            dimensions=[
+                Dimension(
+                    dimension_name="product_id",
+                    match_strategy=MatchStrategy.EXACT,
+                    data_type=int,
+                    role=DimensionRole.CONTEXT_KEY,
+                ),
+                Dimension(dimension_name="channel", match_strategy=MatchStrategy.EXACT),
+            ]
+        )
         engine = AccumulatorEngine(
             dimension_metadata=metadata,
             aggregates=[Aggregate(column_name="margin")],
@@ -158,15 +194,17 @@ class TestApplyAutoWithPartitions:
 
 class TestExtractPartitionKey:
     def _engine(self):
-        metadata = DimensionsMetadata(dimensions=[
-            Dimension(
-                dimension_name="product_id",
-                match_strategy=MatchStrategy.EXACT,
-                data_type=int,
-                role=DimensionRole.CONTEXT_KEY,
-            ),
-            Dimension(dimension_name="channel", match_strategy=MatchStrategy.EXACT),
-        ])
+        metadata = DimensionsMetadata(
+            dimensions=[
+                Dimension(
+                    dimension_name="product_id",
+                    match_strategy=MatchStrategy.EXACT,
+                    data_type=int,
+                    role=DimensionRole.CONTEXT_KEY,
+                ),
+                Dimension(dimension_name="channel", match_strategy=MatchStrategy.EXACT),
+            ]
+        )
         return AccumulatorEngine(
             dimension_metadata=metadata,
             aggregates=[Aggregate(column_name="margin")],
@@ -196,15 +234,17 @@ class TestExtractPartitionKey:
 
 class TestApplyAutoAndNaN:
     def _float_engine(self):
-        metadata = DimensionsMetadata(dimensions=[
-            Dimension(
-                dimension_name="score",
-                match_strategy=MatchStrategy.EXACT,
-                data_type="float",
-                role=DimensionRole.CONTEXT_KEY,
-            ),
-            Dimension(dimension_name="channel", match_strategy=MatchStrategy.EXACT),
-        ])
+        metadata = DimensionsMetadata(
+            dimensions=[
+                Dimension(
+                    dimension_name="score",
+                    match_strategy=MatchStrategy.EXACT,
+                    data_type="float",
+                    role=DimensionRole.CONTEXT_KEY,
+                ),
+                Dimension(dimension_name="channel", match_strategy=MatchStrategy.EXACT),
+            ]
+        )
         return AccumulatorEngine(
             dimension_metadata=metadata,
             aggregates=[Aggregate(column_name="margin")],
@@ -212,7 +252,9 @@ class TestApplyAutoAndNaN:
 
     def test_nan_key_field_normalizes_to_not_set(self):
         engine = self._float_engine()
-        key = engine._extract_partition_key({"score": float("nan"), "channel": "BROKER"})
+        key = engine._extract_partition_key(
+            {"score": float("nan"), "channel": "BROKER"}
+        )
         assert key == (NOT_SET_NUMERIC,)
 
     def test_normalize_partition_key_handles_nan(self):
@@ -224,22 +266,34 @@ class TestApplyAutoAndNaN:
         # A crossing pair (AU,*)/(*,BROKER) is ambiguous -> index(validate=True)
         # would raise. apply_auto must not pay that: a context that routes
         # unambiguously still succeeds.
-        metadata = DimensionsMetadata(dimensions=[
-            Dimension(dimension_name="region", match_strategy=MatchStrategy.EXACT, role=DimensionRole.CONTEXT_KEY),
-            Dimension(dimension_name="channel", match_strategy=MatchStrategy.EXACT, role=DimensionRole.CONTEXT_KEY),
-            Dimension(dimension_name="product", match_strategy=MatchStrategy.EXACT),
-        ])
+        metadata = DimensionsMetadata(
+            dimensions=[
+                Dimension(
+                    dimension_name="region",
+                    match_strategy=MatchStrategy.EXACT,
+                    role=DimensionRole.CONTEXT_KEY,
+                ),
+                Dimension(
+                    dimension_name="channel",
+                    match_strategy=MatchStrategy.EXACT,
+                    role=DimensionRole.CONTEXT_KEY,
+                ),
+                Dimension(dimension_name="product", match_strategy=MatchStrategy.EXACT),
+            ]
+        )
         engine = AccumulatorEngine(
             dimension_metadata=metadata,
             aggregates=[Aggregate(column_name="margin")],
         )
-        rules = pl.DataFrame({
-            "region": ["AU", UNKNOWN],
-            "channel": [UNKNOWN, "BROKER"],
-            "rule_name": ["r0", "r1"],
-            "product": ["GOLD", "GOLD"],
-            "margin": [1.0, 1.0],
-        })
+        rules = pl.DataFrame(
+            {
+                "region": ["AU", UNKNOWN],
+                "channel": [UNKNOWN, "BROKER"],
+                "rule_name": ["r0", "r1"],
+                "product": ["GOLD", "GOLD"],
+                "margin": [1.0, 1.0],
+            }
+        )
         lattices = engine.build_all(rules)
         # (AU, DIRECT): only (AU,*) survives -> unambiguous route, no raise.
         result = engine.apply_auto(
@@ -250,26 +304,149 @@ class TestApplyAutoAndNaN:
 
 class TestSetMembershipApply:
     def _metadata(self):
-        return DimensionsMetadata(dimensions=[
-            Dimension(dimension_name="region", match_strategy=MatchStrategy.SET_MEMBERSHIP, data_type=DataType.STR),
-        ])
+        return DimensionsMetadata(
+            dimensions=[
+                Dimension(
+                    dimension_name="region",
+                    match_strategy=MatchStrategy.SET_MEMBERSHIP,
+                    data_type=DataType.STR,
+                ),
+            ]
+        )
 
     def test_context_in_intersection_matches_combination(self):
-        rules = pl.DataFrame({
-            "rule_name": ["R1", "R2"],
-            "region": pl.Series("region", [["AU", "NZ", "UK"], ["NZ", "UK", "US"]], dtype=pl.List(pl.Utf8)),
-        })
+        rules = pl.DataFrame(
+            {
+                "rule_name": ["R1", "R2"],
+                "region": pl.Series(
+                    "region",
+                    [["AU", "NZ", "UK"], ["NZ", "UK", "US"]],
+                    dtype=pl.List(pl.Utf8),
+                ),
+            }
+        )
         engine = AccumulatorEngine(dimension_metadata=self._metadata())
         lattice = engine.build(rules)
         result = engine.apply(lattice, {"region": "NZ"})
         assert 6 in set(_rows(result.provenance)["__prime_product"])
 
     def test_wildcard_combination_matches_any_context_exact_count(self):
-        rules = pl.DataFrame({
-            "rule_name": ["R1"],
-            "region": pl.Series("region", [None], dtype=pl.List(pl.Utf8)),
-        })
+        rules = pl.DataFrame(
+            {
+                "rule_name": ["R1"],
+                "region": pl.Series("region", [None], dtype=pl.List(pl.Utf8)),
+            }
+        )
         engine = AccumulatorEngine(dimension_metadata=self._metadata())
         lattice = engine.build(rules)
         result = engine.apply(lattice, {"region": "ANYTHING"})
         assert result.count == 1  # exactly the single wildcard combination
+
+
+def _boolean_constraint_engine(*, boolean_coercion):
+    metadata = DimensionsMetadata(
+        dimensions=[
+            Dimension(
+                dimension_name="flag",
+                match_strategy=MatchStrategy.EXACT,
+                data_type="bool",
+            ),
+        ]
+    )
+    return AccumulatorEngine(
+        dimension_metadata=metadata,
+        aggregates=[Aggregate(column_name="margin")],
+        boolean_coercion=boolean_coercion,
+    )
+
+
+def _boolean_constraint_rules():
+    return pl.DataFrame(
+        {
+            "flag": [True, False],
+            "rule_name": ["enabled", "disabled"],
+            "margin": [10.0, 20.0],
+        }
+    )
+
+
+def _aggregate_values(result):
+    return sorted(_rows(result.accumulated("margin"))["__agg_margin"])
+
+
+class TestAccumulatorBooleanPolicy:
+    def test_constructor_rejects_non_flag_boolean_settings(self):
+        from mountainash_rules import BooleanCoercion
+
+        metadata = DimensionsMetadata(dimensions=[])
+        for value in (None, 0, True, "binary", BooleanCoercion(8)):
+            with pytest.raises(ValueError):
+                AccumulatorEngine(
+                    dimension_metadata=metadata,
+                    boolean_coercion=value,
+                )
+
+    def test_cached_direct_apply_keeps_default_boolean_policy(self):
+        from mountainash_rules import BooleanCoercion
+
+        engine = _boolean_constraint_engine(boolean_coercion=BooleanCoercion.NONE)
+        lattice = engine.build(_boolean_constraint_rules())
+
+        assert _aggregate_values(engine.apply(lattice, {"flag": False})) == [20.0]
+        with pytest.raises(ValueError):
+            engine.apply(lattice, {"flag": 0})
+
+    def test_direct_apply_composes_all_boolean_policy_domains(self):
+        from mountainash_rules import BooleanCoercion
+
+        cases = [
+            (BooleanCoercion.NONE, False, False),
+            (BooleanCoercion.BINARY_NUMBERS, 1, True),
+            (BooleanCoercion.BOOLEAN_TEXT, " \tFALSE\r\n", False),
+            (BooleanCoercion.NUMERIC_TRUTHINESS, -2, True),
+            (BooleanCoercion.BINARY_NUMBERS | BooleanCoercion.BOOLEAN_TEXT, "1", True),
+            (
+                BooleanCoercion.BINARY_NUMBERS | BooleanCoercion.NUMERIC_TRUTHINESS,
+                2,
+                True,
+            ),
+            (
+                BooleanCoercion.BOOLEAN_TEXT | BooleanCoercion.NUMERIC_TRUTHINESS,
+                "true",
+                True,
+            ),
+            (
+                BooleanCoercion.BINARY_NUMBERS
+                | BooleanCoercion.BOOLEAN_TEXT
+                | BooleanCoercion.NUMERIC_TRUTHINESS,
+                0,
+                False,
+            ),
+        ]
+
+        for policy, original, semantic in cases:
+            engine = _boolean_constraint_engine(boolean_coercion=policy)
+            lattice = engine.build(_boolean_constraint_rules())
+            assert _aggregate_values(engine.apply(lattice, {"flag": original})) == (
+                _aggregate_values(engine.apply(lattice, {"flag": semantic}))
+            )
+
+        text_only = _boolean_constraint_engine(
+            boolean_coercion=BooleanCoercion.BOOLEAN_TEXT
+        )
+        binary_only = _boolean_constraint_engine(
+            boolean_coercion=BooleanCoercion.BINARY_NUMBERS
+        )
+        for engine, original in ((text_only, 1), (binary_only, "1")):
+            with pytest.raises(ValueError):
+                engine.apply(
+                    engine.build(_boolean_constraint_rules()), {"flag": original}
+                )
+
+        engine = _boolean_constraint_engine(
+            boolean_coercion=(
+                BooleanCoercion.BOOLEAN_TEXT | BooleanCoercion.NUMERIC_TRUTHINESS
+            )
+        )
+        with pytest.raises(ValueError):
+            engine.apply(engine.build(_boolean_constraint_rules()), {"flag": "2"})
