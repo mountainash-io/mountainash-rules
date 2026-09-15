@@ -1,12 +1,12 @@
 {
   "profile_version": "1.0",
-  "generated_at": "2026-09-13T07:41:53.750877+00:00",
+  "generated_at": "2026-09-12T04:14:55+00:00",
   "source": {
     "root": ".",
     "git": {
       "previous_hash": "7d0e3dcb747949bb2d7172a34135a7872b2ed55f",
-      "current_hash": "730a8583ee9d4fd6b52dc5350699eb66cc7487e9",
-      "branch": "detached HEAD",
+      "current_hash": "94659bb0c096485c87d329f09e944577427f129f",
+      "branch": "feat/chapter-focused-book",
       "working_tree_dirty": true
     }
   },
@@ -37,36 +37,13 @@
   },
   "changed_scopes": {
     "files": [
-      "src/mountainash_rules/core/batch_result.py",
-      "src/mountainash_rules/core/compiler.py",
-      "src/mountainash_rules/core/context.py",
-      "src/mountainash_rules/core/hit_policy.py",
-      "src/mountainash_rules/core/result.py",
-      "src/mountainash_rules/core/set_wildcard.py",
-      "src/mountainash_rules/engines/filter/engine.py"
+      "full refresh at 7d0e3dc: package root renamed src/mountainash_utils_rules -> src/mountainash_rules and reorganised into core/ + engines/{filter,accumulator}/ (23a29d6); all 21 module paths changed relative to the previous_hash profile",
+      "candidate revalidation 7d0e3dc..94659bb: git diff --stat 7d0e3dcb747949bb2d7172a34135a7872b2ed55f..94659bb0c096485c87d329f09e944577427f129f -- src/mountainash_rules is empty and the src/mountainash_rules tree object hash is identical (9723c20ae6b9933ad8c2259cc0ffb8cf79fc3364) at both revisions; no package source changed, so no module was reclassified or re-scanned",
+      "this pass only completed pre-existing profile artifacts against unchanged source evidence: added the required documentation_plan array to every facet, added concept-level recommended_docs/evidence to every existing concept (users, maintainers, contributors, backend-architecture), added a missing concepts array to facets/broader-hype.json, and added a concepts array/documentation_plan to broader-hype; no new source evidence was invented and no manual field was touched"
     ],
     "modules": [
-      "mountainash_rules.__init__",
-      "mountainash_rules.__version__",
-      "mountainash_rules.core.__init__",
-      "mountainash_rules.core.batch_result",
-      "mountainash_rules.core.compiler",
-      "mountainash_rules.core.constants",
-      "mountainash_rules.core.context",
-      "mountainash_rules.core.dimension",
-      "mountainash_rules.core.hit_policy",
-      "mountainash_rules.core.result",
-      "mountainash_rules.core.set_wildcard",
-      "mountainash_rules.engines.__init__",
-      "mountainash_rules.engines.accumulator.__init__",
-      "mountainash_rules.engines.accumulator.aggregate",
-      "mountainash_rules.engines.accumulator.compiler",
-      "mountainash_rules.engines.accumulator.engine",
-      "mountainash_rules.engines.accumulator.lattice",
-      "mountainash_rules.engines.accumulator.primes",
-      "mountainash_rules.engines.accumulator.result",
-      "mountainash_rules.engines.filter.__init__",
-      "mountainash_rules.engines.filter.engine"
+      "audience-membership corrections only (source unchanged, source_hash left at 7d0e3dcb747949bb2d7172a34135a7872b2ed55f): mountainash_rules.core.result (+backend-architecture, +broader-hype), mountainash_rules.core.batch_result (+broader-hype), mountainash_rules.core.constants (+broader-hype), mountainash_rules.engines.filter.engine (+broader-hype), mountainash_rules.engines.accumulator.engine (+broader-hype), mountainash_rules.engines.accumulator.result (+broader-hype), mountainash_rules.engines.accumulator.lattice (+broader-hype), mountainash_rules.engines.accumulator.aggregate (+contributors), mountainash_rules.core.dimension (+backend-architecture) \u2014 each addition backed by that module's own pre-existing evidence/lifecycle_notes and its existing use in a facet's featured_modules or concept module_ids that previously lacked matching membership",
+      "all other modules unchanged; all 21 module source_hash values remain 7d0e3dcb747949bb2d7172a34135a7872b2ed55f and are STALE relative to the new current_hash (source confirmed byte-identical, so re-verified rather than re-scanned; see coverage.md)"
     ],
     "facets": [
       "users",

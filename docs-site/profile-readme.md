@@ -85,8 +85,8 @@ an aspiration and becomes an architectural guarantee.
 
 Dimensions describe the axes your rules operate on. Each dimension pairs a data
 column with a match strategy, giving you fine-grained control over how context
-values are compared to rule metadata. Twelve match strategies cover the full
-range of real-world business logic: exact match, an exact-key strategy for
+values are compared to rule metadata. Thirteen match strategies cover the
+range of real-world business logic: exact match and inequality, an exact-key strategy for
 partition routing, ranges, greater-than and less-than comparisons, prefix,
 suffix, contains, per-row regex, context-level regex, set membership, and set
 exclusion. Wildcard dimensions match everything, enabling graduated specificity
@@ -193,7 +193,7 @@ The ternary logic invariant -- where 1 represents a match, 0 represents unknown,
 and -1 represents a non-match -- is the foundation of evaluation correctness
 across both engines. Sentinels map to the unknown state through the ternary
 column wrapper, and specificity is computed by counting only definite matches.
-This invariant must hold across all twelve match strategies and all backends,
+This invariant must hold across all thirteen match strategies on their supported backends,
 and verifying it should be the first concern when modifying evaluation logic.
 
 The filter engine's compiled pipeline -- bind context columns, add ternary

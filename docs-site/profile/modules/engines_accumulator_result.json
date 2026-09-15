@@ -7,7 +7,8 @@
   "stability": "stable",
   "audiences": [
     "users",
-    "maintainers"
+    "maintainers",
+    "broader-hype"
   ],
   "doc_priority": "useful",
   "confidence": "high",
@@ -19,23 +20,17 @@
   ],
   "key_functions": [],
   "dependencies": [
-    "mountainash",
     "mountainash_rules.core.result",
     "mountainash_rules.engines.accumulator.aggregate",
     "mountainash_rules.engines.accumulator.lattice"
   ],
   "dependents": [
-    "mountainash_rules.__init__",
-    "mountainash_rules.engines.accumulator.engine"
+    "mountainash_rules.engines.accumulator.engine",
+    "mountainash_rules.__init__"
   ],
   "extension_points": [],
-  "lifecycle_notes": [
-    "best_combination delegates to the current RuleResult.best_match, which selects the minimum retained __rank rather than assuming the first stored row is best.",
-    "The constructor forwards only dataframe and active_dimensions to RuleResult; it does not preserve the filter result's explicit selection_info."
-  ],
-  "documentation_hooks": [
-    "Separate accumulator accessors from inherited filtering and selection methods; do not imply that wrapping a filter result preserves all of its operational metadata."
-  ],
+  "lifecycle_notes": [],
+  "documentation_hooks": [],
   "examples": [],
   "tests": [
     "tests/accumulator/test_result.py"
@@ -46,10 +41,10 @@
     {
       "kind": "symbol",
       "path": "src/mountainash_rules/engines/accumulator/result.py",
-      "detail": "AccumulatorResult.__init__ calls RuleResult without selection_info; best_combination delegates to best_match; accumulated, provenance and depths project named result columns."
+      "detail": "class AccumulatorResult(RuleResult)"
     }
   ],
-  "source_hash": "730a8583ee9d4fd6b52dc5350699eb66cc7487e9",
+  "source_hash": "7d0e3dcb747949bb2d7172a34135a7872b2ed55f",
   "manual": {
     "notes": "",
     "editorial_status": "",

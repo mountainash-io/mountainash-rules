@@ -1,6 +1,6 @@
 # Concept List
 
-130 concepts for the mountainash-rules learning graph, in ID order.
+133 internal editorial concepts for the mountainash-rules manual, in stable ID order. Chapter assignments and teaching order are recorded in the approved chapter plan.
 
 1. Ternary Logic
 2. Sentinel Values
@@ -132,3 +132,6 @@
 128. LatticeIndex Router
 129. AmbiguousPartitionError
 130. EXACT_KEY Partition Routing
+131. Backend Purity Enforcement
+132. CTX_PREFIX Column Injection Pattern
+133. LatticeWidthExceededError
