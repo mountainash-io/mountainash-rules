@@ -7,7 +7,8 @@
   "stability": "stable",
   "audiences": [
     "users",
-    "maintainers"
+    "maintainers",
+    "contributors"
   ],
   "doc_priority": "useful",
   "confidence": "high",
@@ -20,14 +21,12 @@
     "AggregateOp"
   ],
   "key_functions": [],
-  "dependencies": [
-    "pydantic"
-  ],
+  "dependencies": [],
   "dependents": [
-    "mountainash_rules.__init__",
-    "mountainash_rules.engines.accumulator.engine",
     "mountainash_rules.engines.accumulator.lattice",
-    "mountainash_rules.engines.accumulator.result"
+    "mountainash_rules.engines.accumulator.engine",
+    "mountainash_rules.engines.accumulator.result",
+    "mountainash_rules.__init__"
   ],
   "extension_points": [],
   "lifecycle_notes": [
@@ -48,7 +47,7 @@
       "detail": "AggregateOp docstring: 'All four operations are commutative and associative'"
     }
   ],
-  "source_hash": "730a8583ee9d4fd6b52dc5350699eb66cc7487e9",
+  "source_hash": "7d0e3dcb747949bb2d7172a34135a7872b2ed55f",
   "manual": {
     "notes": "",
     "editorial_status": "",
