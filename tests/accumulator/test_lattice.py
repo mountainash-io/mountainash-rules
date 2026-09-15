@@ -26,15 +26,19 @@ class TestAggregate:
 class TestLattice:
     @pytest.fixture
     def sample_lattice(self):
-        df = pl.DataFrame({
-            "co_channel": ["BROKER", "BROKER"],
-            "__prime_product": [6, 10],
-            "__level": [1, 1],
-            "__agg_margin": [-0.15, -0.25],
-        })
-        metadata = DimensionsMetadata(dimensions=[
-            Dimension(dimension_name="channel", match_strategy=MatchStrategy.EXACT),
-        ])
+        df = pl.DataFrame(
+            {
+                "co_channel": ["BROKER", "BROKER"],
+                "__prime_product": [6, 10],
+                "__level": [1, 1],
+                "__agg_margin": [-0.15, -0.25],
+            }
+        )
+        metadata = DimensionsMetadata(
+            dimensions=[
+                Dimension(dimension_name="channel", match_strategy=MatchStrategy.EXACT),
+            ]
+        )
         return Lattice(
             dataframe=df,
             metadata=metadata,
@@ -53,10 +57,14 @@ class TestLattice:
 
     def test_partition_key_none_when_not_set(self):
         df = pl.DataFrame({"co_channel": ["BROKER"], "__prime_product": [2]})
-        metadata = DimensionsMetadata(dimensions=[
-            Dimension(dimension_name="channel", match_strategy=MatchStrategy.EXACT),
-        ])
-        lattice = Lattice(dataframe=df, metadata=metadata, aggregates=[], partition_key=None)
+        metadata = DimensionsMetadata(
+            dimensions=[
+                Dimension(dimension_name="channel", match_strategy=MatchStrategy.EXACT),
+            ]
+        )
+        lattice = Lattice(
+            dataframe=df, metadata=metadata, aggregates=[], partition_key=None
+        )
         assert lattice.partition_key is None
 
 
@@ -67,9 +75,11 @@ from mountainash_rules.engines.accumulator.engine import AccumulatorEngine
 
 class TestIsComposed:
     def _metadata(self):
-        return DimensionsMetadata(dimensions=[
-            Dimension(dimension_name="region"),
-        ])
+        return DimensionsMetadata(
+            dimensions=[
+                Dimension(dimension_name="region"),
+            ]
+        )
 
     def test_built_lattice_is_composed(self):
         engine = AccumulatorEngine(dimension_metadata=self._metadata())
@@ -87,8 +97,10 @@ class TestIsComposed:
 
     def test_empty_build_is_still_composed(self):
         engine = AccumulatorEngine(dimension_metadata=self._metadata())
-        rules = pl.DataFrame({"rule_name": [], "region": []},
-                             schema={"rule_name": pl.Utf8, "region": pl.Utf8})
+        rules = pl.DataFrame(
+            {"rule_name": [], "region": []},
+            schema={"rule_name": pl.Utf8, "region": pl.Utf8},
+        )
         lattice = engine.build(rules)
         assert lattice.count == 0
         assert lattice.is_composed is True
@@ -112,8 +124,16 @@ def built_lattice_and_engine():
 
     metadata = DimensionsMetadata(
         dimensions=[
-            Dimension(dimension_name="region", match_strategy=MatchStrategy.EXACT, data_type="str"),
-            Dimension(dimension_name="channel", match_strategy=MatchStrategy.EXACT, data_type="str"),
+            Dimension(
+                dimension_name="region",
+                match_strategy=MatchStrategy.EXACT,
+                data_type="str",
+            ),
+            Dimension(
+                dimension_name="channel",
+                match_strategy=MatchStrategy.EXACT,
+                data_type="str",
+            ),
         ]
     )
     rules = pl.DataFrame(
@@ -197,19 +217,21 @@ class RoutingContext(BaseModel):
 
 
 def _routing_engine():
-    metadata = DimensionsMetadata(dimensions=[
-        Dimension(
-            dimension_name="region",
-            match_strategy=MatchStrategy.EXACT,
-            role=DimensionRole.CONTEXT_KEY,
-        ),
-        Dimension(
-            dimension_name="channel",
-            match_strategy=MatchStrategy.EXACT,
-            role=DimensionRole.CONTEXT_KEY,
-        ),
-        Dimension(dimension_name="product", match_strategy=MatchStrategy.EXACT),
-    ])
+    metadata = DimensionsMetadata(
+        dimensions=[
+            Dimension(
+                dimension_name="region",
+                match_strategy=MatchStrategy.EXACT,
+                role=DimensionRole.CONTEXT_KEY,
+            ),
+            Dimension(
+                dimension_name="channel",
+                match_strategy=MatchStrategy.EXACT,
+                role=DimensionRole.CONTEXT_KEY,
+            ),
+            Dimension(dimension_name="product", match_strategy=MatchStrategy.EXACT),
+        ]
+    )
     return AccumulatorEngine(
         dimension_metadata=metadata,
         aggregates=[Aggregate(column_name="margin")],
@@ -218,13 +240,15 @@ def _routing_engine():
 
 def _routing_rules(keys: list[tuple[str, str]]) -> pl.DataFrame:
     """One rule per (region, channel) partition key; UNKNOWN = wildcard."""
-    return pl.DataFrame({
-        "region": [k[0] for k in keys],
-        "channel": [k[1] for k in keys],
-        "rule_name": [f"r{i}" for i in range(len(keys))],
-        "product": ["GOLD"] * len(keys),
-        "margin": [1.0] * len(keys),
-    })
+    return pl.DataFrame(
+        {
+            "region": [k[0] for k in keys],
+            "channel": [k[1] for k in keys],
+            "rule_name": [f"r{i}" for i in range(len(keys))],
+            "product": ["GOLD"] * len(keys),
+            "margin": [1.0] * len(keys),
+        }
+    )
 
 
 def _index_for(keys, validate=True):
@@ -236,19 +260,25 @@ def _index_for(keys, validate=True):
 class TestTernaryRouting:
     def test_default_partition_catches_unmatched_context(self):
         engine, index = _index_for([("AU", "BROKER"), (UNKNOWN, UNKNOWN)])
-        result = index.apply(RoutingContext(region="NZ", channel="DIRECT", product="GOLD"))
+        result = index.apply(
+            RoutingContext(region="NZ", channel="DIRECT", product="GOLD")
+        )
         assert result.count >= 1  # routed to the all-wildcard default
 
     def test_partial_specific_miss_falls_to_default(self):
         engine, index = _index_for([("AU", "BROKER"), (UNKNOWN, UNKNOWN)])
         # Exercise _route (not the dict fast path): (AU, DIRECT) is not an
         # exact key; (AU, BROKER) dies on channel; default survives.
-        result = index.apply(RoutingContext(region="AU", channel="DIRECT", product="GOLD"))
+        result = index.apply(
+            RoutingContext(region="AU", channel="DIRECT", product="GOLD")
+        )
         assert result.count >= 1
 
     def test_exact_hit_uses_fast_path_and_wins(self):
         engine, index = _index_for([("AU", "BROKER"), (UNKNOWN, UNKNOWN)])
-        result = index.apply(RoutingContext(region="AU", channel="BROKER", product="GOLD"))
+        result = index.apply(
+            RoutingContext(region="AU", channel="BROKER", product="GOLD")
+        )
         assert result.count >= 1
 
     def test_runtime_ambiguity_raises(self):
@@ -319,11 +349,13 @@ class TestIndexStructuralChecks:
 class TestTernaryRoutingBatch:
     def test_batch_mixes_specific_and_default(self):
         engine, index = _index_for([("AU", "BROKER"), (UNKNOWN, UNKNOWN)])
-        contexts = pl.DataFrame({
-            "region": ["AU", "NZ", None],
-            "channel": ["BROKER", "DIRECT", None],
-            "product": ["GOLD", "GOLD", "GOLD"],
-        })
+        contexts = pl.DataFrame(
+            {
+                "region": ["AU", "NZ", None],
+                "channel": ["BROKER", "DIRECT", None],
+                "product": ["GOLD", "GOLD", "GOLD"],
+            }
+        )
         result = index.apply_batch(contexts)
         rows = relation(result.survivors).to_dict()
         # every context produced at least one survivor row
@@ -331,11 +363,13 @@ class TestTernaryRoutingBatch:
 
     def test_batch_unroutable_combo_raises(self):
         engine, index = _index_for([("AU", "BROKER")])
-        contexts = pl.DataFrame({
-            "region": ["AU", "US"],
-            "channel": ["BROKER", "X"],
-            "product": ["GOLD", "GOLD"],
-        })
+        contexts = pl.DataFrame(
+            {
+                "region": ["AU", "US"],
+                "channel": ["BROKER", "X"],
+                "product": ["GOLD", "GOLD"],
+            }
+        )
         with pytest.raises(KeyError, match="No lattice"):
             index.apply_batch(contexts)
 
@@ -343,11 +377,13 @@ class TestTernaryRoutingBatch:
         engine, index = _index_for(
             [("AU", UNKNOWN), (UNKNOWN, "BROKER")], validate=False
         )
-        contexts = pl.DataFrame({
-            "region": ["AU"],
-            "channel": ["BROKER"],
-            "product": ["GOLD"],
-        })
+        contexts = pl.DataFrame(
+            {
+                "region": ["AU"],
+                "channel": ["BROKER"],
+                "product": ["GOLD"],
+            }
+        )
         with pytest.raises(AmbiguousPartitionError):
             index.apply_batch(contexts)
 
@@ -362,30 +398,36 @@ class TestTernaryRoutingBatch:
         assert set(rows["__context_id"]) == {0, 1}
 
     def test_batch_nan_key_value_routes_to_default_not_dropped(self):
-        metadata = DimensionsMetadata(dimensions=[
-            Dimension(
-                dimension_name="score",
-                match_strategy=MatchStrategy.EXACT,
-                data_type="float",
-                role=DimensionRole.CONTEXT_KEY,
-            ),
-            Dimension(dimension_name="product", match_strategy=MatchStrategy.EXACT),
-        ])
+        metadata = DimensionsMetadata(
+            dimensions=[
+                Dimension(
+                    dimension_name="score",
+                    match_strategy=MatchStrategy.EXACT,
+                    data_type="float",
+                    role=DimensionRole.CONTEXT_KEY,
+                ),
+                Dimension(dimension_name="product", match_strategy=MatchStrategy.EXACT),
+            ]
+        )
         engine = AccumulatorEngine(
             dimension_metadata=metadata,
             aggregates=[Aggregate(column_name="margin")],
         )
-        rules = pl.DataFrame({
-            "score": [1.5, float(UNKNOWN_NUMERIC)],  # specific + float wildcard
-            "rule_name": ["r0", "r1"],
-            "product": ["GOLD", "GOLD"],
-            "margin": [1.0, 1.0],
-        })
+        rules = pl.DataFrame(
+            {
+                "score": [1.5, float(UNKNOWN_NUMERIC)],  # specific + float wildcard
+                "rule_name": ["r0", "r1"],
+                "product": ["GOLD", "GOLD"],
+                "margin": [1.0, 1.0],
+            }
+        )
         index = engine.index(engine.build_all(rules))
-        contexts = pl.DataFrame({
-            "score": [1.5, float("nan")],   # second row NaN -> NOT_SET -> default
-            "product": ["GOLD", "GOLD"],
-        })
+        contexts = pl.DataFrame(
+            {
+                "score": [1.5, float("nan")],  # second row NaN -> NOT_SET -> default
+                "product": ["GOLD", "GOLD"],
+            }
+        )
         result = index.apply_batch(contexts)
         rows = relation(result.survivors).to_dict()
         # BOTH context ids present: the NaN row must be routed, not silently dropped.
@@ -396,12 +438,14 @@ class TestTernaryRoutingBatch:
         # __lattice_ctx_id synthesis; the caller's ids must still survive
         # routing (specific + default + missing) through a partitioned index.
         engine, index = _index_for([("AU", "BROKER"), (UNKNOWN, UNKNOWN)])
-        contexts = pl.DataFrame({
-            "my_id": [100, 200, 300],
-            "region": ["AU", "NZ", None],
-            "channel": ["BROKER", "DIRECT", None],
-            "product": ["GOLD", "GOLD", "GOLD"],
-        })
+        contexts = pl.DataFrame(
+            {
+                "my_id": [100, 200, 300],
+                "region": ["AU", "NZ", None],
+                "channel": ["BROKER", "DIRECT", None],
+                "product": ["GOLD", "GOLD", "GOLD"],
+            }
+        )
         result = index.apply_batch(contexts, context_id_field="my_id")
         rows = relation(result.survivors).to_dict()
         assert set(rows["__context_id"]) == {100, 200, 300}
@@ -420,9 +464,15 @@ class TestIndexValidation:
 
     def test_crossing_pair_with_cover_validates_and_routes(self):
         engine = _routing_engine()
-        lattices = engine.build_all(_routing_rules([
-            ("AU", UNKNOWN), (UNKNOWN, "BROKER"), ("AU", "BROKER"),
-        ]))
+        lattices = engine.build_all(
+            _routing_rules(
+                [
+                    ("AU", UNKNOWN),
+                    (UNKNOWN, "BROKER"),
+                    ("AU", "BROKER"),
+                ]
+            )
+        )
         index = engine.index(lattices)  # must NOT raise (false-positive guard)
         result = index.apply(
             RoutingContext(region="AU", channel="BROKER", product="GOLD")
@@ -448,36 +498,83 @@ class TestIndexValidation:
             engine.index(lattices, max_witnesses=4)
 
     def test_bool_key_dim_full_domain_validates(self):
-        metadata = DimensionsMetadata(dimensions=[
-            Dimension(
-                dimension_name="flag",
-                match_strategy=MatchStrategy.EXACT,
-                data_type="bool",
-                role=DimensionRole.CONTEXT_KEY,
-            ),
-            Dimension(dimension_name="product", match_strategy=MatchStrategy.EXACT),
-        ])
+        metadata = DimensionsMetadata(
+            dimensions=[
+                Dimension(
+                    dimension_name="flag",
+                    match_strategy=MatchStrategy.EXACT,
+                    data_type="bool",
+                    role=DimensionRole.CONTEXT_KEY,
+                ),
+                Dimension(dimension_name="product", match_strategy=MatchStrategy.EXACT),
+            ]
+        )
         engine = AccumulatorEngine(
             dimension_metadata=metadata,
             aggregates=[Aggregate(column_name="margin")],
         )
-        rules = pl.DataFrame({
-            "flag": [True, False, None],   # null rule value = bool wildcard
-            "rule_name": ["r0", "r1", "r2"],
-            "product": ["GOLD"] * 3,
-            "margin": [1.0] * 3,
-        })
+        rules = pl.DataFrame(
+            {
+                "flag": [True, False, None],  # null rule value = bool wildcard
+                "rule_name": ["r0", "r1", "r2"],
+                "product": ["GOLD"] * 3,
+                "margin": [1.0] * 3,
+            }
+        )
         index = engine.index(engine.build_all(rules))  # OTHER = None, no raise
-        result = index.apply({"product": "GOLD"})      # flag missing -> wildcard
+        result = index.apply({"product": "GOLD"})  # flag missing -> wildcard
         assert result.count >= 1
+
+    @pytest.mark.parametrize("value", [0, 1])
+    @pytest.mark.parametrize("entry_point", ["scalar", "batch"])
+    def test_boolean_partition_key_rejected_before_lookup(self, value, entry_point):
+        metadata = DimensionsMetadata(
+            dimensions=[
+                Dimension(
+                    dimension_name="flag",
+                    match_strategy=MatchStrategy.EXACT,
+                    data_type="bool",
+                    role=DimensionRole.CONTEXT_KEY,
+                ),
+                Dimension(
+                    dimension_name="product",
+                    match_strategy=MatchStrategy.EXACT,
+                    data_type="str",
+                ),
+            ]
+        )
+        engine = AccumulatorEngine(
+            dimension_metadata=metadata,
+            aggregates=[Aggregate(column_name="margin")],
+        )
+        rules = pl.DataFrame(
+            {
+                "flag": [True, False],
+                "rule_name": ["r0", "r1"],
+                "product": ["GOLD", "GOLD"],
+                "margin": [1.0, 1.0],
+            }
+        )
+        index = engine.index(engine.build_all(rules), validate=True)
+
+        with pytest.raises(ValueError):
+            if entry_point == "scalar":
+                index.apply({"flag": value, "product": "GOLD"})
+            else:
+                index.apply_batch(
+                    pl.DataFrame(
+                        {
+                            "flag": pl.Series("flag", [value], dtype=pl.Int64),
+                            "product": ["GOLD"],
+                        }
+                    )
+                )
 
 
 class TestRoutingPersistence:
     def test_saved_wildcard_suite_routes_after_load(self, tmp_path):
         engine = _routing_engine()
-        built = engine.build_all(
-            _routing_rules([("AU", "BROKER"), (UNKNOWN, UNKNOWN)])
-        )
+        built = engine.build_all(_routing_rules([("AU", "BROKER"), (UNKNOWN, UNKNOWN)]))
         loaded = [
             Lattice.load(lattice.save(tmp_path / f"part{i}"))
             for i, lattice in enumerate(built)
@@ -489,25 +586,29 @@ class TestRoutingPersistence:
         assert result.count >= 1  # sentinel key survived the round-trip
 
     def test_saved_numeric_wildcard_suite_routes_after_load(self, tmp_path):
-        metadata = DimensionsMetadata(dimensions=[
-            Dimension(
-                dimension_name="tier",
-                match_strategy=MatchStrategy.EXACT,
-                data_type="int",
-                role=DimensionRole.CONTEXT_KEY,
-            ),
-            Dimension(dimension_name="product", match_strategy=MatchStrategy.EXACT),
-        ])
+        metadata = DimensionsMetadata(
+            dimensions=[
+                Dimension(
+                    dimension_name="tier",
+                    match_strategy=MatchStrategy.EXACT,
+                    data_type="int",
+                    role=DimensionRole.CONTEXT_KEY,
+                ),
+                Dimension(dimension_name="product", match_strategy=MatchStrategy.EXACT),
+            ]
+        )
         engine = AccumulatorEngine(
             dimension_metadata=metadata,
             aggregates=[Aggregate(column_name="margin")],
         )
-        rules = pl.DataFrame({
-            "tier": [1, UNKNOWN_NUMERIC],   # specific + numeric wildcard
-            "rule_name": ["r0", "r1"],
-            "product": ["GOLD", "GOLD"],
-            "margin": [1.0, 1.0],
-        })
+        rules = pl.DataFrame(
+            {
+                "tier": [1, UNKNOWN_NUMERIC],  # specific + numeric wildcard
+                "rule_name": ["r0", "r1"],
+                "product": ["GOLD", "GOLD"],
+                "margin": [1.0, 1.0],
+            }
+        )
         built = engine.build_all(rules)
         loaded = [
             Lattice.load(lattice.save(tmp_path / f"part{i}"))
@@ -518,25 +619,29 @@ class TestRoutingPersistence:
         assert result.count >= 1
 
     def test_saved_bool_wildcard_suite_routes_after_load(self, tmp_path):
-        metadata = DimensionsMetadata(dimensions=[
-            Dimension(
-                dimension_name="flag",
-                match_strategy=MatchStrategy.EXACT,
-                data_type="bool",
-                role=DimensionRole.CONTEXT_KEY,
-            ),
-            Dimension(dimension_name="product", match_strategy=MatchStrategy.EXACT),
-        ])
+        metadata = DimensionsMetadata(
+            dimensions=[
+                Dimension(
+                    dimension_name="flag",
+                    match_strategy=MatchStrategy.EXACT,
+                    data_type="bool",
+                    role=DimensionRole.CONTEXT_KEY,
+                ),
+                Dimension(dimension_name="product", match_strategy=MatchStrategy.EXACT),
+            ]
+        )
         engine = AccumulatorEngine(
             dimension_metadata=metadata,
             aggregates=[Aggregate(column_name="margin")],
         )
-        rules = pl.DataFrame({
-            "flag": [True, None],   # specific + bool wildcard (null)
-            "rule_name": ["r0", "r1"],
-            "product": ["GOLD", "GOLD"],
-            "margin": [1.0, 1.0],
-        })
+        rules = pl.DataFrame(
+            {
+                "flag": [True, None],  # specific + bool wildcard (null)
+                "rule_name": ["r0", "r1"],
+                "product": ["GOLD", "GOLD"],
+                "margin": [1.0, 1.0],
+            }
+        )
         built = engine.build_all(rules)
         loaded = [
             Lattice.load(lattice.save(tmp_path / f"part{i}"))
@@ -553,35 +658,258 @@ class TestRoutingErrorContract:
     so the service's `except KeyError -> 422` handler still catches it."""
 
     def test_bool_wildcard_miss_raises_keyerror_not_typeerror(self):
-        metadata = DimensionsMetadata(dimensions=[
-            Dimension(
-                dimension_name="region",
-                match_strategy=MatchStrategy.EXACT,
-                role=DimensionRole.CONTEXT_KEY,
-            ),
-            Dimension(
-                dimension_name="flag",
-                match_strategy=MatchStrategy.EXACT,
-                data_type="bool",
-                role=DimensionRole.CONTEXT_KEY,
-            ),
-            Dimension(dimension_name="product", match_strategy=MatchStrategy.EXACT),
-        ])
+        metadata = DimensionsMetadata(
+            dimensions=[
+                Dimension(
+                    dimension_name="region",
+                    match_strategy=MatchStrategy.EXACT,
+                    role=DimensionRole.CONTEXT_KEY,
+                ),
+                Dimension(
+                    dimension_name="flag",
+                    match_strategy=MatchStrategy.EXACT,
+                    data_type="bool",
+                    role=DimensionRole.CONTEXT_KEY,
+                ),
+                Dimension(dimension_name="product", match_strategy=MatchStrategy.EXACT),
+            ]
+        )
         engine = AccumulatorEngine(
             dimension_metadata=metadata,
             aggregates=[Aggregate(column_name="margin")],
         )
         # Two partitions sharing region 'AU': one specific flag, one bool
         # wildcard (null). served-keys list therefore mixes None and True.
-        rules = pl.DataFrame({
-            "region": ["AU", "AU"],
-            "flag": [True, None],
-            "rule_name": ["r0", "r1"],
-            "product": ["GOLD", "GOLD"],
-            "margin": [1.0, 1.0],
-        })
+        rules = pl.DataFrame(
+            {
+                "region": ["AU", "AU"],
+                "flag": [True, None],
+                "rule_name": ["r0", "r1"],
+                "product": ["GOLD", "GOLD"],
+                "margin": [1.0, 1.0],
+            }
+        )
         index = engine.index(engine.build_all(rules))  # validate=True default
         # region 'US' misses both partitions -> no survivor -> the served-keys
         # message sorts {('AU', True), ('AU', None)}; must not TypeError.
         with pytest.raises(KeyError, match="No lattice"):
             index.apply({"region": "US", "flag": True, "product": "GOLD"})
+
+
+def _boolean_routing_engine(*, boolean_coercion):
+    metadata = DimensionsMetadata(
+        dimensions=[
+            Dimension(
+                dimension_name="flag",
+                match_strategy=MatchStrategy.EXACT,
+                data_type="bool",
+                role=DimensionRole.CONTEXT_KEY,
+            ),
+            Dimension(
+                dimension_name="approved",
+                match_strategy=MatchStrategy.EXACT,
+                data_type="bool",
+            ),
+        ]
+    )
+    return AccumulatorEngine(
+        dimension_metadata=metadata,
+        aggregates=[Aggregate(column_name="margin")],
+        boolean_coercion=boolean_coercion,
+    )
+
+
+def _boolean_routing_rules():
+    return pl.DataFrame(
+        {
+            "flag": [True, False, None],
+            "approved": [True, False, None],
+            "rule_name": ["enabled", "disabled", "default"],
+            "margin": [10.0, 20.0, 30.0],
+        }
+    )
+
+
+def _routing_aggregate_values(result):
+    return sorted(relation(result.accumulated("margin")).to_dict()["__agg_margin"])
+
+
+class TestBooleanRoutingPolicy:
+    def test_index_and_auto_route_converted_values_like_semantic_booleans(self):
+        from mountainash_rules import BooleanCoercion
+
+        policy = (
+            BooleanCoercion.BINARY_NUMBERS
+            | BooleanCoercion.BOOLEAN_TEXT
+            | BooleanCoercion.NUMERIC_TRUTHINESS
+        )
+        engine = _boolean_routing_engine(boolean_coercion=policy)
+        lattices = engine.build_all(_boolean_routing_rules())
+        index = engine.index(lattices)
+
+        for original, semantic in ((0, False), (" \tFALSE\n", False), (-2, True)):
+            assert _routing_aggregate_values(
+                index.apply({"flag": original, "approved": original})
+            ) == [10.0 if semantic else 20.0]
+
+        false_result = _routing_aggregate_values(
+            index.apply({"flag": False, "approved": False})
+        )
+        default_result = _routing_aggregate_values(index.apply({"approved": None}))
+        assert false_result == [20.0]
+        assert default_result == [10.0, 20.0, 30.0]
+
+        assert (
+            _routing_aggregate_values(
+                engine.apply_auto(lattices, {"flag": "false", "approved": "false"})
+            )
+            == false_result
+        )
+
+    def test_indexed_batch_rejects_late_invalid_constraint_before_routing(self):
+        from mountainash_rules import BooleanCoercion
+
+        metadata = DimensionsMetadata(
+            dimensions=[
+                Dimension(
+                    dimension_name="region",
+                    match_strategy=MatchStrategy.EXACT,
+                    role=DimensionRole.CONTEXT_KEY,
+                ),
+                Dimension(
+                    dimension_name="flag",
+                    match_strategy=MatchStrategy.EXACT,
+                    data_type="bool",
+                    role=DimensionRole.CONTEXT_KEY,
+                ),
+                Dimension(
+                    dimension_name="approved",
+                    match_strategy=MatchStrategy.EXACT,
+                    data_type="bool",
+                ),
+            ]
+        )
+        engine = AccumulatorEngine(
+            dimension_metadata=metadata,
+            aggregates=[Aggregate(column_name="margin")],
+            boolean_coercion=BooleanCoercion.NONE,
+        )
+        lattices = engine.build_all(
+            pl.DataFrame(
+                {
+                    "region": ["AU"],
+                    "flag": [True],
+                    "approved": [True],
+                    "rule_name": ["eligible"],
+                    "margin": [10.0],
+                }
+            )
+        )
+        index = engine.index(lattices)
+        contexts = pl.DataFrame(
+            {
+                "region": ["NO_ROUTE", "AU"],
+                "flag": [True, True],
+                "approved": pl.Series("approved", [True, 2], dtype=pl.Object),
+            }
+        )
+
+        with pytest.raises(ValueError):
+            index.apply_batch(contexts)
+
+    def test_shared_boolean_key_preserves_original_non_boolean_bindings(self):
+        from mountainash_rules import BooleanCoercion
+
+        metadata = DimensionsMetadata(
+            dimensions=[
+                Dimension(
+                    dimension_name="route_flag",
+                    context_field="shared",
+                    match_strategy=MatchStrategy.EXACT,
+                    data_type="bool",
+                    role=DimensionRole.CONTEXT_KEY,
+                ),
+                Dimension(
+                    dimension_name="route_text",
+                    context_field="shared",
+                    match_strategy=MatchStrategy.EXACT,
+                    data_type="str",
+                    role=DimensionRole.CONTEXT_KEY,
+                ),
+                Dimension(
+                    dimension_name="constraint_text",
+                    context_field="shared",
+                    match_strategy=MatchStrategy.EXACT,
+                    data_type="str",
+                ),
+            ]
+        )
+        engine = AccumulatorEngine(
+            dimension_metadata=metadata,
+            aggregates=[Aggregate(column_name="margin")],
+            boolean_coercion=BooleanCoercion.BOOLEAN_TEXT,
+        )
+        lattices = engine.build_all(
+            pl.DataFrame(
+                {
+                    "route_flag": [True],
+                    "route_text": [" true "],
+                    "constraint_text": [" true "],
+                    "rule_name": ["preserve-source"],
+                    "margin": [10.0],
+                }
+            )
+        )
+        result = engine.index(lattices).apply({"shared": " true "})
+
+        assert _routing_aggregate_values(result) == [10.0]
+        contexts = pl.DataFrame({"cid": [41], "shared": [" true "]})
+        batch = engine.index(lattices).apply_batch(contexts, context_id_field="cid")
+        assert relation(batch.survivors).to_polars().select(
+            "__context_id", "__agg_margin"
+        ).rows() == [(41, 10.0)]
+        assert contexts.to_dict(as_series=False) == {"cid": [41], "shared": [" true "]}
+
+    def test_indexed_binary_batch_preserves_supplied_ids(self):
+        from mountainash_rules import BooleanCoercion
+
+        engine = _boolean_routing_engine(
+            boolean_coercion=BooleanCoercion.BINARY_NUMBERS
+        )
+        index = engine.index(engine.build_all(_boolean_routing_rules()))
+        result = index.apply_batch(
+            pl.DataFrame(
+                {
+                    "source_id": [101, 503],
+                    "flag": pl.Series("flag", [0, 1], dtype=pl.Int64),
+                    "approved": [0, 1],
+                }
+            ),
+            context_id_field="source_id",
+        )
+
+        assert relation(result.survivors).to_polars().sort("__context_id").select(
+            "__context_id", "__agg_margin"
+        ).rows() == [(101, 20.0), (503, 10.0)]
+
+    def test_restored_lattice_obeys_applying_engine_policy(self, tmp_path):
+        from mountainash_rules import BooleanCoercion
+
+        builder = _boolean_routing_engine(boolean_coercion=BooleanCoercion.NONE)
+        restored = [
+            Lattice.load(lattice.save(tmp_path / f"part{index}"))
+            for index, lattice in enumerate(builder.build_all(_boolean_routing_rules()))
+        ]
+        default_engine = _boolean_routing_engine(boolean_coercion=BooleanCoercion.NONE)
+        with pytest.raises(ValueError):
+            default_engine.index(restored).apply({"flag": 0, "approved": False})
+
+        binary_engine = _boolean_routing_engine(
+            boolean_coercion=BooleanCoercion.BINARY_NUMBERS
+        )
+        binary_index = binary_engine.index(restored)
+        assert _routing_aggregate_values(
+            binary_index.apply({"flag": 0, "approved": 0})
+        ) == [20.0]
+        with pytest.raises(ValueError):
+            default_engine.apply(restored[0], {"approved": 0})

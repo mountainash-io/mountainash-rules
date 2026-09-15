@@ -27,8 +27,7 @@ x86_64/aarch64, macOS and Windows x86_64. macOS arm64 supports CPython;
 PyPy uses macOS x86_64. Local artifact verification does not certify the
 entire release matrix; CI builds and smoke-tests each configured artifact.
 
-Mountainash and its sibling dependencies are still required separately in
-development; native wheels do not resolve the existing publication-chain gap.
+Development must resolve `mountainash` at delivered merge `b9c0ab4ab6380712c89f27c8d083f658278d4593` or a descendant, alongside its configured sibling dependencies. Do not infer an unreleased Mountainash version from this requirement; native wheels do not resolve the existing publication-chain gap.
 
 ## Exact String Languages
 
@@ -140,6 +139,38 @@ Wildcard values (`<NA>` for strings, `-999999999` for numerics, and typed date/d
 
 Missing context and explicit context sentinels earn no specificity in ordinary predicates, including PREFIX/SUFFIX/CONTAINS/per-row REGEX. Boolean absence is null, never a string marker. Strict `CONTEXT_REGEX` guards reject missing input; `EXACT_KEY` permits only rule-side wildcards against missing context. See [missing-context semantics](docs/user-quickstart.md#context-with-missing-fields).
 
+### Boolean context inputs
+
+Boolean dimensions use the semantic default `BooleanCoercion.NONE` (`0`): native `True`/`False` and missing/`None` are admitted. Other concrete values require an explicit `BooleanCoercion` flag:
+
+| Flag | Value | Additional original input domain |
+|------|-------|----------------------------------|
+| `BINARY_NUMBERS` | `1` | Finite numeric `0` or `1` only |
+| `BOOLEAN_TEXT` | `2` | ASCII-whitespace-trimmed, ASCII-case `true`/`false`, or text `1`/`0` |
+| `NUMERIC_TRUTHINESS` | `4` | Any finite number (`0` is false; any other value is true) |
+
+Combine the actual enum flags with `|`; constructors reject non-enum settings and unknown bits. For example, both engines can admit Boolean text and finite numeric truthiness:
+
+```python
+from mountainash_rules import (
+    AccumulatorEngine, BooleanCoercion, ExpressionRulesEngine,
+)
+
+boolean_inputs = (
+    BooleanCoercion.BOOLEAN_TEXT | BooleanCoercion.NUMERIC_TRUTHINESS
+)
+filter_engine = ExpressionRulesEngine(
+    rules=rules, dimension_metadata=metadata, boolean_coercion=boolean_inputs,
+)
+accumulator_engine = AccumulatorEngine(
+    dimension_metadata=metadata, boolean_coercion=boolean_inputs,
+)
+```
+
+Admission always examines the original input domain; it never chains conversions. Thus numeric `2` is true under `NUMERIC_TRUTHINESS`, but text `"2"` is invalid even when text and truthiness flags are combined. `None` or a missing field is absence, while concrete numeric `0` requires a numeric flag and empty text is invalid under every policy. An invalid concrete value raises `ValueError` naming the context field and active policy. Backend capability failures remain explicit; Boolean admission does not substitute a fallback backend.
+
+Semantic scalars include Python `bool` and NumPy `bool_`; numeric coercion covers Python/NumPy integers and floats, not Decimal, complex, bytes, or arbitrary truthiness protocols. Recognized backend nulls remain absent; concrete non-finite numbers are invalid. Input is interpreted after any caller-model or dataframe ingestion conversion.
+
 ## Hit Policies
 
 How many survivors come back, and in what order, is a **hit policy**: `collect` (default — all survivors ranked by specificity), `unique` (at most one survivor), `first` / `rule_order` (rule-definition order), `priority` (salience descending), and `any` (survivors must agree on output tuples, including nulls). Accepts `HitPolicy` members or exact lowercase strings; invalid values raise `ValueError`. Configure the policy on metadata or override it per evaluation.
@@ -171,6 +202,8 @@ Filter batch rows are ordered by `__context_id` then `__rank`. Ranks describe th
 
 Caller ID columns must exist and contain globally unique, non-null values, validated before conversion or chunking. Rows always expose **`__context_id`**; `batch.context_id_field` records the source field (`"customer_id"` above), not an echoed context column. Without a source field, generated IDs are original zero-based input positions, assigned once before chunking. Their stability is within an evaluation, not across unordered database queries.
 
+Boolean batch admission validates the complete submitted input before policy evaluation, chunk work, or accumulator index routing. A late invalid concrete Boolean therefore raises its `ValueError` even if an earlier row would violate UNIQUE/ANY, has no route, or produces no retained result.
+
 `matched_context_ids` and `counts_per_context` describe retained rows after limits. `unmatched_context_ids(original_contexts)` returns submitted IDs absent from those rows in sorted order; custom IDs require the original non-null, unique source column. Generated IDs require the original input order and row count. `for_context()` cannot distinguish an unmatched submitted ID from one never submitted.
 
 ### Input boundaries — correctness update
@@ -186,10 +219,15 @@ On `evaluate`, `evaluate_batch`, and `explain`, `dimensions=None` means all conf
 Where the filter engine picks the best *single* rule, `AccumulatorEngine` precomputes every **maximal consistent combination** of rules — coalescing dimension values and accumulating numerics (sum/min/max/product) — into a `Lattice`, then applies contexts against it:
 
 ```python
-from mountainash_rules import AccumulatorEngine, Aggregate
+from mountainash_rules import AccumulatorEngine, Aggregate, BooleanCoercion
 
-engine = AccumulatorEngine(dimension_metadata=metadata,
-                           aggregates=[Aggregate(column_name="margin")])
+engine = AccumulatorEngine(
+    dimension_metadata=metadata,
+    aggregates=[Aggregate(column_name="margin")],
+    boolean_coercion=(
+        BooleanCoercion.BOOLEAN_TEXT | BooleanCoercion.NUMERIC_TRUTHINESS
+    ),
+)
 lattice = engine.build(rules)          # build once
 result = engine.apply(lattice, context)  # apply many times
 ```
@@ -241,9 +279,9 @@ cd mountainash-rules
 hatch env create
 ```
 
-Requires sibling checkouts of `mountainash`, `mountainash-data`, and `mountainash-settings` (see `hatch.toml` for path configuration).
+Resolve the configured `mountainash` dependency at delivered merge `b9c0ab4ab6380712c89f27c8d083f658278d4593` or a descendant, together with `mountainash-data` and `mountainash-settings` (see `hatch.toml`). This requirement names a delivered dependency revision, not an invented release version or checkout layout.
 
-Set strategies require mountainash's `list.t_contains()` API from current `develop`; older snapshots using scalar `t_is_in(list_column)` are incompatible. CI checks out the matching dependency branch or falls back to the PR base branch. Keep dependency source revisions and installed packages aligned when comparing local results with CI; an existing Hatch environment can contain older non-editable dependency copies.
+Set strategies require that merge's `list.t_contains()` API; older snapshots using scalar `t_is_in(list_column)` are incompatible. Keep resolved dependency revisions and installed packages aligned when comparing local results with CI; an existing Hatch environment can contain older non-editable dependency copies.
 
 ## Textbook
 

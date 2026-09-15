@@ -17,6 +17,7 @@ from mountainash_rules.engines.accumulator.compiler import AccumulatorCompiler
 from mountainash_rules.engines.accumulator.result import AccumulatorResult
 from mountainash_rules.engines.accumulator.aggregate import Aggregate, AggregateOp
 from mountainash_rules.core.constants import (
+    BooleanCoercion,
     DataType,
     DimensionRole,
     HitPolicy,
@@ -25,6 +26,10 @@ from mountainash_rules.core.constants import (
     unknown_sentinel_for,
 )
 from mountainash_rules.core.dimension import Dimension, DimensionsMetadata
+from mountainash_rules.core.context import (
+    _normalize_boolean,
+    _validate_boolean_coercion,
+)
 from mountainash_rules.core.set_wildcard import (
     validate_set_columns,
     validate_set_no_null_elements,
@@ -60,13 +65,17 @@ class AccumulatorEngine:
         self,
         dimension_metadata: DimensionsMetadata,
         aggregates: list[Aggregate] | None = None,
+        *,
+        boolean_coercion: BooleanCoercion = BooleanCoercion.NONE,
     ) -> None:
+        _validate_boolean_coercion(boolean_coercion)
+        self._boolean_coercion = boolean_coercion
         self._metadata = dimension_metadata
         self._aggregates = aggregates or []
         self._compiler = AccumulatorCompiler()
-        self._apply_engines: weakref.WeakKeyDictionary[Lattice, ExpressionRulesEngine] = (
-            weakref.WeakKeyDictionary()
-        )
+        self._apply_engines: weakref.WeakKeyDictionary[
+            Lattice, ExpressionRulesEngine
+        ] = weakref.WeakKeyDictionary()
 
         # Separate context-key dims from constraint dims
         self._context_key_dims: list[Dimension] = []
@@ -131,9 +140,7 @@ class AccumulatorEngine:
 
         if n_rules == 0:
             # Return an empty lattice that still carries the composed schema
-            empty = rules_pl.with_columns(
-                pl.Series("__prime", [], dtype=pl.Int64)
-            )
+            empty = rules_pl.with_columns(pl.Series("__prime", [], dtype=pl.Int64))
             anchor = self._create_anchor(empty)
             return Lattice(
                 dataframe=anchor.collect(),
@@ -162,7 +169,9 @@ class AccumulatorEngine:
 
         for level_num in range(1, n_rules):
             new_combos = self._expand_level(
-                current_level, rhs_rules, level_num,
+                current_level,
+                rhs_rules,
+                level_num,
                 overflow_possible=overflow_possible,
                 partition_key=partition_key,
             )
@@ -227,8 +236,10 @@ class AccumulatorEngine:
 
     def _set_dims(self) -> list[Dimension]:
         return [
-            d for d in self._constraint_dims
-            if d.match_strategy in (MatchStrategy.SET_MEMBERSHIP, MatchStrategy.SET_EXCLUSION)
+            d
+            for d in self._constraint_dims
+            if d.match_strategy
+            in (MatchStrategy.SET_MEMBERSHIP, MatchStrategy.SET_EXCLUSION)
         ]
 
     def _normalize_set_columns(self, rules_pl: t.Any) -> t.Any:
@@ -239,12 +250,18 @@ class AccumulatorEngine:
         if not set_dims:
             return rules_pl
         rel = relation(rules_pl)
-        validate_set_columns(rel, set_dims)          # reservation (portable)
-        validate_set_no_null_elements(rel, set_dims)  # element-nulls (polars build only)
-        rel = rel.with_columns(*[
-            normalize_set_expr(dim, ma.col(dim.resolved_rule_field)).alias(dim.resolved_rule_field)
-            for dim in set_dims
-        ])
+        validate_set_columns(rel, set_dims)  # reservation (portable)
+        validate_set_no_null_elements(
+            rel, set_dims
+        )  # element-nulls (polars build only)
+        rel = rel.with_columns(
+            *[
+                normalize_set_expr(dim, ma.col(dim.resolved_rule_field)).alias(
+                    dim.resolved_rule_field
+                )
+                for dim in set_dims
+            ]
+        )
         return rel.to_polars()
 
     def _assert_set_columns_non_null(self, all_combos: t.Any) -> None:
@@ -289,14 +306,18 @@ class AccumulatorEngine:
             if dim.match_strategy == MatchStrategy.RANGE:
                 sentinel = unknown_sentinel_for(dim.data_type)
                 na_exprs.append(
-                    ma.col(dim.range_min_field).eq(ma.lit(sentinel))
+                    ma.col(dim.range_min_field)
+                    .eq(ma.lit(sentinel))
                     .__and__(ma.col(dim.range_max_field).eq(ma.lit(sentinel)))
                     .cast(int)
                     .alias(f"co_{dim.dimension_name}_na")
                 )
             else:
                 field = dim.resolved_rule_field
-                if dim.match_strategy in (MatchStrategy.SET_MEMBERSHIP, MatchStrategy.SET_EXCLUSION):
+                if dim.match_strategy in (
+                    MatchStrategy.SET_MEMBERSHIP,
+                    MatchStrategy.SET_EXCLUSION,
+                ):
                     na_exprs.append(
                         set_wildcard_predicate(dim, ma.col(field))
                         .cast(int)
@@ -305,7 +326,8 @@ class AccumulatorEngine:
                 else:
                     sentinel = unknown_sentinel_for(dim.data_type)
                     na_exprs.append(
-                        ma.col(field).eq(ma.lit(sentinel))
+                        ma.col(field)
+                        .eq(ma.lit(sentinel))
                         .cast(int)
                         .alias(f"co_{field}_na")
                     )
@@ -371,14 +393,15 @@ class AccumulatorEngine:
 
         # Coalesce NA flags
         na_flag_all = [
-            self._coalesce_na_exprs[dim.dimension_name]
-            for dim in self._constraint_dims
+            self._coalesce_na_exprs[dim.dimension_name] for dim in self._constraint_dims
         ]
 
         # Update tracking columns
         tracking = [
             ma.col("__prime_rhs").alias("__prime"),
-            ma.col("__prime_product").mul(ma.col("__prime_rhs")).alias("__prime_product"),
+            ma.col("__prime_product")
+            .mul(ma.col("__prime_rhs"))
+            .alias("__prime_product"),
             ma.lit(level_num).alias("__level"),
         ]
 
@@ -398,7 +421,9 @@ class AccumulatorEngine:
                 case AggregateOp.PRODUCT:
                     folded = acc.mul(rhs)
                 case _:  # pragma: no cover — validation blocks this at construction
-                    raise ValueError(f"Unsupported aggregate operation: {agg.operation}")
+                    raise ValueError(
+                        f"Unsupported aggregate operation: {agg.operation}"
+                    )
             agg_updates.append(folded.alias(agg_col))
 
         all_updates = coalesce_all + na_flag_all + tracking + agg_updates
@@ -482,10 +507,16 @@ class AccumulatorEngine:
         )
 
         # Find dominated: super % sub == 0 AND super != sub
-        dominated = joined.filter(
-            ma.col("__pp_super").mod(ma.col("__pp_sub")).eq(ma.lit(0))
-            .__and__(ma.col("__pp_super").ne(ma.col("__pp_sub")))
-        ).select(ma.col("__pp_sub").alias("__prime_product")).unique()
+        dominated = (
+            joined.filter(
+                ma.col("__pp_super")
+                .mod(ma.col("__pp_sub"))
+                .eq(ma.lit(0))
+                .__and__(ma.col("__pp_super").ne(ma.col("__pp_sub")))
+            )
+            .select(ma.col("__pp_sub").alias("__prime_product"))
+            .unique()
+        )
 
         # Anti-join to keep non-dominated
         result = combos_sub.join(
@@ -522,8 +553,7 @@ class AccumulatorEngine:
         lattices = []
         for row in unique_keys.iter_rows(named=True):
             partition_key = {
-                name: row[field]
-                for name, field in zip(key_names, key_fields)
+                name: row[field] for name, field in zip(key_names, key_fields)
             }
             lattice = self.build(rules, partition_key=partition_key)
             lattices.append(lattice)
@@ -541,24 +571,28 @@ class AccumulatorEngine:
         dims: list[Dimension] = []
         for d in self._constraint_dims:
             if d.match_strategy == MatchStrategy.RANGE:
-                dims.append(Dimension(
-                    dimension_name=d.dimension_name,
-                    context_field=d.resolved_context_field,
-                    match_strategy=d.match_strategy,
-                    data_type=d.data_type,
-                    range_min_field=f"co_{d.range_min_field}",
-                    range_max_field=f"co_{d.range_max_field}",
-                    range_min_inclusive=d.range_min_inclusive,
-                    range_max_inclusive=d.range_max_inclusive,
-                ))
+                dims.append(
+                    Dimension(
+                        dimension_name=d.dimension_name,
+                        context_field=d.resolved_context_field,
+                        match_strategy=d.match_strategy,
+                        data_type=d.data_type,
+                        range_min_field=f"co_{d.range_min_field}",
+                        range_max_field=f"co_{d.range_max_field}",
+                        range_min_inclusive=d.range_min_inclusive,
+                        range_max_inclusive=d.range_max_inclusive,
+                    )
+                )
             else:
-                dims.append(Dimension(
-                    dimension_name=d.dimension_name,
-                    context_field=d.resolved_context_field,
-                    rule_field=f"co_{d.resolved_rule_field}",
-                    match_strategy=d.match_strategy,
-                    data_type=d.data_type,
-                ))
+                dims.append(
+                    Dimension(
+                        dimension_name=d.dimension_name,
+                        context_field=d.resolved_context_field,
+                        rule_field=f"co_{d.resolved_rule_field}",
+                        match_strategy=d.match_strategy,
+                        data_type=d.data_type,
+                    )
+                )
         return DimensionsMetadata(
             dimensions=dims,
             hit_policy=HitPolicy.COLLECT,  # never inherit a table policy here
@@ -600,6 +634,7 @@ class AccumulatorEngine:
             engine = ExpressionRulesEngine(
                 rules=lattice.combinations,
                 dimension_metadata=self._build_apply_metadata(),
+                boolean_coercion=self._boolean_coercion,
             )
             self._apply_engines[lattice] = engine
         return engine
@@ -621,9 +656,13 @@ class AccumulatorEngine:
                 it index() raises ValueError rather than sampling.
         """
         from mountainash_rules.engines.accumulator.lattice import LatticeIndex
+
         return LatticeIndex(
-            self, lattices, self._context_key_dims,
-            validate=validate, max_witnesses=max_witnesses,
+            self,
+            lattices,
+            self._context_key_dims,
+            validate=validate,
+            max_witnesses=max_witnesses,
         )
 
     def _extract_partition_key(self, context: t.Any) -> tuple:
@@ -641,10 +680,18 @@ class AccumulatorEngine:
             raise TypeError(
                 f"Context must be a BaseModel or dict, got {type(context).__name__}"
             )
-        return self._normalize_partition_key(tuple(
-            raw.get(d.resolved_context_field)
-            for d in self._context_key_dims
-        ))
+        return self._normalize_partition_key(
+            tuple(
+                _normalize_boolean(
+                    raw.get(d.resolved_context_field),
+                    d.resolved_context_field,
+                    self._boolean_coercion,
+                )
+                if d.data_type is DataType.BOOL
+                else raw.get(d.resolved_context_field)
+                for d in self._context_key_dims
+            )
+        )
 
     def _normalize_partition_key(self, key: tuple) -> tuple:
         """Map missing key values to the typed NOT_SET sentinel (None for bool).

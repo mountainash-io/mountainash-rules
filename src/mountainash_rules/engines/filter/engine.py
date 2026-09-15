@@ -16,18 +16,20 @@ import dataclasses
 from mountainash_rules.core.compiler import DimensionCompiler
 from mountainash_rules.core.constants import (
     CTX_PREFIX,
+    BooleanCoercion,
     DataType,
     HitPolicy,
     MatchStrategy,
 )
 from mountainash_rules.core.context import (
     _absent_context_value,
+    _boolean_columns,
     _context_literal,
-    _nullable_bool,
+    _validate_boolean_coercion,
     _validate_context_ids,
     extract_context_values,
 )
-from mountainash_rules.core.dimension import DimensionsMetadata
+from mountainash_rules.core.dimension import Dimension, DimensionsMetadata
 from mountainash_rules.core.batch_result import BatchRuleResult
 from mountainash_rules.core.hit_policy import (
     HitPolicyViolationError,
@@ -75,7 +77,10 @@ class ExpressionRulesEngine:
         dimension_expressions: dict[str, BaseExpressionAPI] | None = None,
         *,
         output_fields: list[str] | None = None,
+        boolean_coercion: BooleanCoercion = BooleanCoercion.NONE,
     ) -> None:
+        _validate_boolean_coercion(boolean_coercion)
+        self._boolean_coercion = boolean_coercion
         if dimension_metadata is not None and dimension_expressions is not None:
             raise ValueError(
                 "Provide dimension_metadata or dimension_expressions, not both"
@@ -234,7 +239,10 @@ class ExpressionRulesEngine:
         )
 
         context_values = extract_context_values(
-            context, active_dims, metadata=self._metadata
+            context,
+            active_dims,
+            metadata=self._metadata,
+            boolean_coercion=self._boolean_coercion,
         )
         result_df, truncated = self._evaluate(
             active_dims=active_dims,
@@ -265,7 +273,10 @@ class ExpressionRulesEngine:
         active_dims = self._active_dimensions(dimensions)
 
         context_values = extract_context_values(
-            context, active_dims, metadata=self._metadata
+            context,
+            active_dims,
+            metadata=self._metadata,
+            boolean_coercion=self._boolean_coercion,
         )
         rel = self._scored_relation(active_dims, context_values)
         rel = rel.drop(*[f"{CTX_PREFIX}{d}" for d in active_dims])
@@ -301,32 +312,54 @@ class ExpressionRulesEngine:
         contexts: t.Any,
         active_dims: list[str],
         context_id_field: str | None,
+        *,
+        routing_dims: t.Sequence[Dimension] = (),
     ) -> t.Any:
-        """Project contexts to __context_id + __ctx_<dim> columns with sentinels."""
+        """Admit original fields, then project dimension-addressed bindings."""
         rel = relation(contexts)
         self._check_reserved(rel, "Contexts")
-
+        bindings = []
+        for name in active_dims:
+            dim = self._metadata.get_dimension(name) if self._metadata else None
+            bindings.append(
+                (
+                    f"{CTX_PREFIX}{name}",
+                    dim.resolved_context_field if dim is not None else name,
+                    dim.data_type if dim is not None else None,
+                    False,
+                )
+            )
+        bindings.extend(
+            (f"__key_{d.dimension_name}", d.resolved_context_field, d.data_type, True)
+            for d in routing_dims
+        )
+        boolean_columns = _boolean_columns(
+            rel,
+            (field for _, field, dtype, _ in bindings if dtype is DataType.BOOL),
+            self._boolean_coercion,
+        )
+        available = set(rel.columns)
         if context_id_field is None:
             rel = rel.with_row_index(name="__context_id")
         else:
             _validate_context_ids(rel, context_id_field)
             rel = rel.with_columns(ma.col(context_id_field).alias("__context_id"))
-
-        available = set(rel.columns)
         ctx_exprs: list[t.Any] = [ma.col("__context_id")]
-        for name in active_dims:
-            dim = self._metadata.get_dimension(name) if self._metadata else None
-            field = dim.resolved_context_field if dim is not None else name
-            data_type = dim.data_type if dim is not None else None
-            alias = f"{CTX_PREFIX}{name}"
+        for alias, field, data_type, routing in bindings:
             if field in available and data_type is DataType.BOOL:
-                # Preserve nulls, including a present all-null/empty column.
-                expr = _nullable_bool(ma.col(field))
+                expr = boolean_columns[field]
             else:
                 absent = _context_literal(_absent_context_value(data_type), data_type)
-                expr = (
-                    ma.coalesce(ma.col(field), absent) if field in available else absent
-                )
+                if field not in available:
+                    expr = absent
+                elif routing and data_type is DataType.FLOAT:
+                    expr = (
+                        ma.when(ma.col(field).is_null() | ma.col(field).is_nan())
+                        .then(absent)
+                        .otherwise(ma.col(field))
+                    )
+                else:
+                    expr = ma.coalesce(ma.col(field), absent)
             ctx_exprs.append(expr.alias(alias))
         return rel.select(*ctx_exprs)
 
@@ -355,9 +388,33 @@ class ExpressionRulesEngine:
         selection = self._selection_config(
             hit_policy, priority_field, include_observability
         )
-        selected_policy, info = selection
 
         prepared = self._prepare_contexts(contexts, active_dims, context_id_field)
+        return self._evaluate_prepared_batch(
+            prepared,
+            active_dims,
+            selection,
+            context_id_field=context_id_field,
+            top_n_per_context=top_n_per_context,
+            min_specificity=min_specificity,
+            include_observability=include_observability,
+            chunk_size=chunk_size,
+        )
+
+    def _evaluate_prepared_batch(
+        self,
+        prepared: t.Any,
+        active_dims: list[str],
+        selection: tuple[HitPolicy, SelectionInfo],
+        *,
+        context_id_field: str | None = None,
+        top_n_per_context: int | None = None,
+        min_specificity: int | None = None,
+        include_observability: bool = True,
+        chunk_size: int | None = None,
+    ) -> BatchRuleResult:
+        """Evaluate already admitted bindings without reclassifying converted values."""
+        selected_policy, info = selection
         if chunk_size is None:
             result_df = self._evaluate_batch_frame(
                 prepared,

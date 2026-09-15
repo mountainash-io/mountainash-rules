@@ -1,7 +1,16 @@
 """Constants for the expression-based rules engine."""
 
 import datetime
-from enum import StrEnum
+from enum import IntFlag, StrEnum
+
+
+class BooleanCoercion(IntFlag):
+    """Additional original input domains admitted by Boolean dimensions."""
+
+    NONE = 0
+    BINARY_NUMBERS = 1
+    BOOLEAN_TEXT = 2
+    NUMERIC_TRUTHINESS = 4
 
 
 class MatchStrategy(StrEnum):
@@ -25,11 +34,11 @@ class MatchStrategy(StrEnum):
 class HitPolicy(StrEnum):
     """Selection semantics applied over surviving rules."""
 
-    COLLECT = "collect"        # all survivors, specificity order (default)
-    UNIQUE = "unique"          # assert <= 1 survivor
-    FIRST = "first"            # single survivor, rule order wins
-    PRIORITY = "priority"      # single survivor, priority_field wins
-    ANY = "any"                # survivors must agree on outputs; return one
+    COLLECT = "collect"  # all survivors, specificity order (default)
+    UNIQUE = "unique"  # assert <= 1 survivor
+    FIRST = "first"  # single survivor, rule order wins
+    PRIORITY = "priority"  # single survivor, priority_field wins
+    ANY = "any"  # survivors must agree on outputs; return one
     RULE_ORDER = "rule_order"  # all survivors, rule order
 
 

@@ -3,16 +3,136 @@
 from __future__ import annotations
 
 import typing as t
+from itertools import product
 
 from pydantic import BaseModel
 
 import mountainash.expressions as ma
+from mountainash import (
+    CaseFailureBehaviour,
+    ValueKind,
+    boolean_value,
+    text_value,
+    value_kind,
+)
 from mountainash.expressions import BaseExpressionAPI
 
-from mountainash_rules.core.constants import NOT_SET, DataType, not_set_sentinel_for
+from mountainash_rules.core.constants import (
+    NOT_SET,
+    BooleanCoercion,
+    DataType,
+    not_set_sentinel_for,
+)
 
 if t.TYPE_CHECKING:
     from mountainash_rules.core.dimension import DimensionsMetadata
+
+
+_BOOLEAN_TRIM = " \t\n\r\f\v"
+_BOOLEAN_TRUE = tuple(
+    "".join(chars) for chars in product(*[(c, c.upper()) for c in "true"])
+) + ("1",)
+_BOOLEAN_FALSE = tuple(
+    "".join(chars) for chars in product(*[(c, c.upper()) for c in "false"])
+) + ("0",)
+
+
+def _validate_boolean_coercion(policy: BooleanCoercion) -> None:
+    """Reject implicit configuration conversions and unknown flag bits."""
+    if not isinstance(policy, BooleanCoercion) or int(policy) & ~7:
+        raise ValueError(
+            "boolean_coercion must be a BooleanCoercion with only known flags"
+        )
+
+
+def _numeric_boolean_source(policy: BooleanCoercion) -> str | None:
+    if policy & BooleanCoercion.NUMERIC_TRUTHINESS:
+        return "finite_number"
+    if policy & BooleanCoercion.BINARY_NUMBERS:
+        return "binary_number"
+    return None
+
+
+def _normalize_boolean(
+    value: t.Any,
+    field: str,
+    policy: BooleanCoercion = BooleanCoercion.NONE,
+) -> bool | None:
+    """Admit candidates from the original domain, never a conversion chain."""
+    if value_kind(value) is ValueKind.ABSENT:
+        return None
+    normalized = boolean_value(value, source="boolean")
+    if normalized is not None:
+        return normalized
+    numeric_source = _numeric_boolean_source(policy)
+    if numeric_source is not None:
+        normalized = boolean_value(value, source=numeric_source)
+        if normalized is not None:
+            return normalized
+    if policy & BooleanCoercion.BOOLEAN_TEXT:
+        text = text_value(value)
+        if text is not None:
+            token = text.strip(_BOOLEAN_TRIM)
+            if token in _BOOLEAN_TRUE:
+                return True
+            if token in _BOOLEAN_FALSE:
+                return False
+    raise ValueError(
+        f"Invalid Boolean input for context field {field!r} under {policy!r}"
+    )
+
+
+def _boolean_columns(
+    rel: t.Any,
+    fields: t.Iterable[str],
+    policy: BooleanCoercion = BooleanCoercion.NONE,
+) -> dict[str, BaseExpressionAPI]:
+    """Validate original fields in one aggregate and return nullable bindings."""
+    candidates = {}
+    available = set(rel.columns)
+    numeric_source = _numeric_boolean_source(policy)
+    for field in dict.fromkeys(fields):
+        if field not in available:
+            continue
+        original = ma.col(field)
+        enabled = [original.boolean_value(source="boolean")]
+        if numeric_source is not None:
+            enabled.append(original.boolean_value(source=numeric_source))
+        if policy & BooleanCoercion.BOOLEAN_TEXT:
+            enabled.append(
+                original.text_value()
+                .str.strip_chars(_BOOLEAN_TRIM)
+                .parse_boolean(
+                    true_values=_BOOLEAN_TRUE,
+                    false_values=_BOOLEAN_FALSE,
+                    field_name=field,
+                    failure_behavior=CaseFailureBehaviour.NULL,
+                )
+            )
+        candidates[field] = enabled[0] if len(enabled) == 1 else ma.coalesce(*enabled)
+    if candidates:
+        invalid = (
+            rel.group_by()
+            .agg(
+                *[
+                    (
+                        ma.col(field).value_kind().ne(ValueKind.ABSENT.value)
+                        & candidate.is_null()
+                    )
+                    .any()
+                    .fill_null(False)
+                    .alias(field)
+                    for field, candidate in candidates.items()
+                ]
+            )
+            .to_dict()
+        )
+        for field, values in invalid.items():
+            if values[0]:
+                raise ValueError(
+                    f"Invalid Boolean input for context field {field!r} under {policy!r}"
+                )
+    return candidates
 
 
 def _validate_context_ids(rel: t.Any, context_id_field: str) -> None:
@@ -76,6 +196,8 @@ def extract_context_values(
     context: BaseModel | dict,
     dimension_names: list[str],
     metadata: DimensionsMetadata | None = None,
+    *,
+    boolean_coercion: BooleanCoercion = BooleanCoercion.NONE,
 ) -> dict[str, t.Any]:
     """Extract context values for the given dimension names.
 
@@ -104,7 +226,9 @@ def extract_context_values(
         dim = metadata.get_dimension(name) if metadata is not None else None
         field = dim.resolved_context_field if dim is not None else name
         value = raw.get(field)
-        if value is None:
+        if dim is not None and dim.data_type is DataType.BOOL:
+            result[name] = _normalize_boolean(value, field, boolean_coercion)
+        elif value is None:
             result[name] = _absent_context_value(
                 dim.data_type if dim is not None else None
             )
