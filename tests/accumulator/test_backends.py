@@ -300,3 +300,190 @@ class TestBooleanNativeContexts:
             (13, 20.0, 1, 1),
             (14, 10.0, 1, 1),
         ]
+
+
+@pytest.fixture
+def identity_lattices():
+    from mountainash_rules import (
+        AccumulatorEngine,
+        Aggregate,
+        Dimension,
+        DimensionRole,
+        DimensionsMetadata,
+    )
+
+    engine = AccumulatorEngine(
+        dimension_metadata=DimensionsMetadata(
+            dimensions=[
+                Dimension(dimension_name="tenant", role=DimensionRole.CONTEXT_KEY),
+                Dimension(dimension_name="region"),
+            ]
+        ),
+        aggregates=[Aggregate(column_name="margin")],
+    )
+    rules = pl.DataFrame(
+        {
+            "rule_name": ["a-au", "a-nz", "b-au", "b-nz"],
+            "tenant": ["A", "A", "B", "B"],
+            "region": ["AU", "NZ", "AU", "NZ"],
+            "margin": [10.0, 11.0, 20.0, 21.0],
+        }
+    )
+    return engine, engine.build_all(rules)
+
+
+_EXECUTABLE_IDENTITY_BACKENDS = [name for name in ALL_BACKENDS if name != "ibis-polars"]
+
+
+def _native_schema(frame):
+    """Inspect native types without inferring types from empty Python rows."""
+    if hasattr(frame, "schema"):
+        schema = frame.schema
+        return dict(schema() if callable(schema) else schema)
+    return dict(frame.dtypes)
+
+
+@pytest.mark.parametrize("context_backend", _EXECUTABLE_IDENTITY_BACKENDS)
+@pytest.mark.parametrize("ids", [None, [51, 29, 73], ["z", "a", "m"]])
+def test_partition_native_context_identity(identity_lattices, context_backend, ids):
+    engine, lattices = identity_lattices
+    index = engine.index(lattices)
+    data = {
+        "position": [0, 1, 2],
+        "tenant": ["A", "B", "A"],
+        "region": ["AU", "XX", "NZ"],
+    }
+    if ids is not None:
+        data["request_id"] = ids
+    contexts = build_backend_df(context_backend, data, table_name="identity_contexts")
+    if context_backend.startswith("ibis-"):
+        contexts = contexts.order_by("position")
+    original = relation(contexts).to_dict()
+    result = index.apply_batch(
+        contexts, context_id_field=None if ids is None else "request_id", chunk_size=1
+    )
+    submitted = [0, 1, 2] if ids is None else ids
+    assert result.matched_context_ids == sorted([submitted[0], submitted[2]])
+    assert result.unmatched_context_ids(contexts) == [submitted[1]]
+    for cid, expected in zip(submitted, [[10.0], [], [11.0]]):
+        assert (
+            relation(result.for_context(cid).survivors).to_dict()["__agg_margin"]
+            == expected
+        )
+    assert relation(contexts).to_dict() == original
+
+
+@pytest.mark.parametrize("context_backend", _EXECUTABLE_IDENTITY_BACKENDS)
+def test_partition_native_invalid_identity(identity_lattices, context_backend):
+    engine, lattices = identity_lattices
+    index = engine.index(lattices)
+    for ids in [[7, 7], [7, None]]:
+        contexts = build_backend_df(
+            context_backend,
+            {
+                "request_id": ids,
+                "tenant": ["A", "B"],
+                "region": ["AU", "XX"],
+            },
+            table_name="invalid_identity",
+        )
+        with pytest.raises(ValueError):
+            index.apply_batch(contexts, context_id_field="request_id", chunk_size=1)
+
+
+@pytest.mark.parametrize("lattice_backend", _EXECUTABLE_IDENTITY_BACKENDS)
+def test_partition_apply_representation_identity(identity_lattices, lattice_backend):
+    from mountainash_rules import Lattice, UNKNOWN
+    import ibis
+
+    engine, lattices = identity_lattices
+    connection = None
+    if lattice_backend == "ibis-duckdb":
+        connection = ibis.duckdb.connect()
+    elif lattice_backend == "ibis-sqlite":
+        connection = ibis.sqlite.connect(":memory:")
+    try:
+        converted = []
+        for position, lattice in enumerate(lattices):
+            data = relation(lattice.combinations).to_dict()
+            name = f"identity_partition_{position}"
+            frame = (
+                connection.create_table(name, data)
+                if connection is not None
+                else build_backend_df(lattice_backend, data, table_name=name)
+            )
+            converted.append(
+                Lattice(
+                    dataframe=frame,
+                    metadata=lattice.metadata,
+                    aggregates=lattice.aggregates,
+                    partition_key=lattice.partition_key,
+                )
+            )
+        for ids in [None, [30, 10, 20], ["z", "a", "m"]]:
+            contexts = pl.DataFrame(
+                {
+                    "tenant": ["B", "A", "B"],
+                    "region": [UNKNOWN] * 3,
+                    **({} if ids is None else {"request_id": ids}),
+                }
+            )
+            original = contexts.clone()
+            submitted = [0, 1, 2] if ids is None else ids
+            expected = sorted(
+                (cid, rank, margin)
+                for cid, margins in zip(
+                    submitted, [[20.0, 21.0], [10.0, 11.0], [20.0, 21.0]]
+                )
+                for rank, margin in enumerate(margins, 1)
+            )
+            field = None if ids is None else "request_id"
+            for reverse in [False, True]:
+                index = engine.index(
+                    list(reversed(converted)) if reverse else converted
+                )
+                for chunk in [None, 1, 2]:
+                    result = index.apply_batch(
+                        contexts, context_id_field=field, chunk_size=chunk
+                    )
+                    rows = relation(result.survivors).to_dict()
+                    assert (
+                        list(
+                            zip(
+                                rows["__context_id"],
+                                rows["__rank"],
+                                rows["__agg_margin"],
+                            )
+                        )
+                        == expected
+                    )
+                    assert result.unmatched_context_ids(contexts) == []
+                    for cid, margins in zip(
+                        submitted, [[20.0, 21.0], [10.0, 11.0], [20.0, 21.0]]
+                    ):
+                        view = result.for_context(cid)
+                        assert (
+                            relation(view.survivors).to_dict()["__agg_margin"]
+                            == margins
+                        )
+                        with pytest.raises(ValueError):
+                            view.select("first")
+            for options in [{"min_specificity": 1}, {"top_n_per_context": 0}]:
+                empty = index.apply_batch(
+                    contexts, context_id_field=field, chunk_size=2, **options
+                )
+                assert empty.count == 0
+                assert empty.unmatched_context_ids(contexts) == sorted(submitted)
+                assert _native_schema(empty.survivors) == _native_schema(
+                    result.survivors
+                )
+                view = empty.for_context(submitted[0])
+                assert _native_schema(view.survivors) == _native_schema(
+                    result.for_context(submitted[0]).survivors
+                )
+                with pytest.raises(ValueError):
+                    view.select("collect")
+            assert contexts.equals(original)
+    finally:
+        if connection is not None:
+            connection.disconnect()
