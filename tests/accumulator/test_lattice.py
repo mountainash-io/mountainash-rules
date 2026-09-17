@@ -3,10 +3,22 @@
 import polars as pl
 import pytest
 
-from mountainash_rules.engines.accumulator.aggregate import Aggregate
-from mountainash_rules.engines.accumulator.lattice import Lattice
-from mountainash_rules.core.constants import MatchStrategy
-from mountainash_rules.core.dimension import Dimension, DimensionsMetadata
+from pydantic import BaseModel
+
+from mountainash.relations import relation
+from mountainash_rules import (
+    NOT_SET,
+    UNKNOWN,
+    UNKNOWN_NUMERIC,
+    AccumulatorEngine,
+    Aggregate,
+    AmbiguousPartitionError,
+    Dimension,
+    DimensionRole,
+    DimensionsMetadata,
+    Lattice,
+    MatchStrategy,
+)
 
 
 class TestAggregate:
@@ -68,10 +80,6 @@ class TestLattice:
         assert lattice.partition_key is None
 
 
-from mountainash.relations import relation
-
-from mountainash_rules.engines.accumulator.engine import AccumulatorEngine
-
 
 class TestIsComposed:
     def _metadata(self):
@@ -106,16 +114,6 @@ class TestIsComposed:
         assert lattice.is_composed is True
         assert "co_region" in relation(lattice.combinations).columns
 
-
-from mountainash_rules import (
-    AccumulatorEngine,
-    Aggregate,
-    Dimension,
-    DimensionsMetadata,
-    Lattice,
-    MatchStrategy,
-    UNKNOWN,
-)
 
 
 @pytest.fixture
@@ -194,20 +192,6 @@ class TestLatticeSaveLoad:
         with pytest.raises(FileNotFoundError):
             Lattice.load(tmp_path / "empty")
 
-
-from pydantic import BaseModel
-
-from mountainash_rules import AmbiguousPartitionError
-from mountainash_rules.engines.accumulator.engine import AccumulatorEngine
-from mountainash_rules.engines.accumulator.aggregate import Aggregate
-from mountainash_rules.core.constants import (
-    UNKNOWN,
-    UNKNOWN_NUMERIC,
-    NOT_SET,
-    DimensionRole,
-    MatchStrategy,
-)
-from mountainash_rules.core.dimension import Dimension, DimensionsMetadata
 
 
 class RoutingContext(BaseModel):
@@ -732,22 +716,15 @@ def _routing_aggregate_values(result):
 
 
 class TestBooleanRoutingPolicy:
-    def test_index_and_auto_route_converted_values_like_semantic_booleans(self):
+    def test_index_and_auto_preserve_strict_boolean_routing(self):
         from mountainash_rules import BooleanCoercion
 
-        policy = (
-            BooleanCoercion.BINARY_NUMBERS
-            | BooleanCoercion.BOOLEAN_TEXT
-            | BooleanCoercion.NUMERIC_TRUTHINESS
-        )
-        engine = _boolean_routing_engine(boolean_coercion=policy)
+        engine = _boolean_routing_engine(boolean_coercion=BooleanCoercion.NONE)
         lattices = engine.build_all(_boolean_routing_rules())
         index = engine.index(lattices)
-
-        for original, semantic in ((0, False), (" \tFALSE\n", False), (-2, True)):
-            assert _routing_aggregate_values(
+        for original in (0, " \tFALSE\n", -2):
+            with pytest.raises(ValueError):
                 index.apply({"flag": original, "approved": original})
-            ) == [10.0 if semantic else 20.0]
 
         false_result = _routing_aggregate_values(
             index.apply({"flag": False, "approved": False})
@@ -758,7 +735,7 @@ class TestBooleanRoutingPolicy:
 
         assert (
             _routing_aggregate_values(
-                engine.apply_auto(lattices, {"flag": "false", "approved": "false"})
+                engine.apply_auto(lattices, {"flag": False, "approved": False})
             )
             == false_result
         )
@@ -814,72 +791,25 @@ class TestBooleanRoutingPolicy:
         with pytest.raises(ValueError):
             index.apply_batch(contexts)
 
-    def test_shared_boolean_key_preserves_original_non_boolean_bindings(self):
+    def test_boolean_text_configuration_fails_before_routing(self):
         from mountainash_rules import BooleanCoercion
 
-        metadata = DimensionsMetadata(
-            dimensions=[
-                Dimension(
-                    dimension_name="route_flag",
-                    context_field="shared",
-                    match_strategy=MatchStrategy.EXACT,
-                    data_type="bool",
-                    role=DimensionRole.CONTEXT_KEY,
-                ),
-                Dimension(
-                    dimension_name="route_text",
-                    context_field="shared",
-                    match_strategy=MatchStrategy.EXACT,
-                    data_type="str",
-                    role=DimensionRole.CONTEXT_KEY,
-                ),
-                Dimension(
-                    dimension_name="constraint_text",
-                    context_field="shared",
-                    match_strategy=MatchStrategy.EXACT,
-                    data_type="str",
-                ),
-            ]
-        )
-        engine = AccumulatorEngine(
-            dimension_metadata=metadata,
-            aggregates=[Aggregate(column_name="margin")],
-            boolean_coercion=BooleanCoercion.BOOLEAN_TEXT,
-        )
-        lattices = engine.build_all(
-            pl.DataFrame(
-                {
-                    "route_flag": [True],
-                    "route_text": [" true "],
-                    "constraint_text": [" true "],
-                    "rule_name": ["preserve-source"],
-                    "margin": [10.0],
-                }
-            )
-        )
-        result = engine.index(lattices).apply({"shared": " true "})
+        with pytest.raises(ValueError):
+            _boolean_routing_engine(boolean_coercion=BooleanCoercion.BOOLEAN_TEXT)
 
-        assert _routing_aggregate_values(result) == [10.0]
-        contexts = pl.DataFrame({"cid": [41], "shared": [" true "]})
-        batch = engine.index(lattices).apply_batch(contexts, context_id_field="cid")
-        assert relation(batch.survivors).to_polars().select(
-            "__context_id", "__agg_margin"
-        ).rows() == [(41, 10.0)]
-        assert contexts.to_dict(as_series=False) == {"cid": [41], "shared": [" true "]}
-
-    def test_indexed_binary_batch_preserves_supplied_ids(self):
+    def test_indexed_boolean_batch_preserves_supplied_ids(self):
         from mountainash_rules import BooleanCoercion
 
         engine = _boolean_routing_engine(
-            boolean_coercion=BooleanCoercion.BINARY_NUMBERS
+            boolean_coercion=BooleanCoercion.NONE
         )
         index = engine.index(engine.build_all(_boolean_routing_rules()))
         result = index.apply_batch(
             pl.DataFrame(
                 {
                     "source_id": [101, 503],
-                    "flag": pl.Series("flag", [0, 1], dtype=pl.Int64),
-                    "approved": [0, 1],
+                    "flag": [False, True],
+                    "approved": [False, True],
                 }
             ),
             context_id_field="source_id",
@@ -901,12 +831,8 @@ class TestBooleanRoutingPolicy:
         with pytest.raises(ValueError):
             default_engine.index(restored).apply({"flag": 0, "approved": False})
 
-        binary_engine = _boolean_routing_engine(
-            boolean_coercion=BooleanCoercion.BINARY_NUMBERS
-        )
-        binary_index = binary_engine.index(restored)
         assert _routing_aggregate_values(
-            binary_index.apply({"flag": 0, "approved": 0})
+            default_engine.index(restored).apply({"flag": False, "approved": False})
         ) == [20.0]
         with pytest.raises(ValueError):
             default_engine.apply(restored[0], {"approved": 0})

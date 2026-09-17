@@ -396,57 +396,9 @@ class TestAccumulatorBooleanPolicy:
         with pytest.raises(ValueError):
             engine.apply(lattice, {"flag": 0})
 
-    def test_direct_apply_composes_all_boolean_policy_domains(self):
+    def test_constructor_rejects_every_non_none_boolean_policy(self):
         from mountainash_rules import BooleanCoercion
 
-        cases = [
-            (BooleanCoercion.NONE, False, False),
-            (BooleanCoercion.BINARY_NUMBERS, 1, True),
-            (BooleanCoercion.BOOLEAN_TEXT, " \tFALSE\r\n", False),
-            (BooleanCoercion.NUMERIC_TRUTHINESS, -2, True),
-            (BooleanCoercion.BINARY_NUMBERS | BooleanCoercion.BOOLEAN_TEXT, "1", True),
-            (
-                BooleanCoercion.BINARY_NUMBERS | BooleanCoercion.NUMERIC_TRUTHINESS,
-                2,
-                True,
-            ),
-            (
-                BooleanCoercion.BOOLEAN_TEXT | BooleanCoercion.NUMERIC_TRUTHINESS,
-                "true",
-                True,
-            ),
-            (
-                BooleanCoercion.BINARY_NUMBERS
-                | BooleanCoercion.BOOLEAN_TEXT
-                | BooleanCoercion.NUMERIC_TRUTHINESS,
-                0,
-                False,
-            ),
-        ]
-
-        for policy, original, semantic in cases:
-            engine = _boolean_constraint_engine(boolean_coercion=policy)
-            lattice = engine.build(_boolean_constraint_rules())
-            assert _aggregate_values(engine.apply(lattice, {"flag": original})) == (
-                _aggregate_values(engine.apply(lattice, {"flag": semantic}))
-            )
-
-        text_only = _boolean_constraint_engine(
-            boolean_coercion=BooleanCoercion.BOOLEAN_TEXT
-        )
-        binary_only = _boolean_constraint_engine(
-            boolean_coercion=BooleanCoercion.BINARY_NUMBERS
-        )
-        for engine, original in ((text_only, 1), (binary_only, "1")):
+        for bits in range(1, 8):
             with pytest.raises(ValueError):
-                engine.apply(
-                    engine.build(_boolean_constraint_rules()), {"flag": original}
-                )
-
-        engine = _boolean_constraint_engine(
-            boolean_coercion=(
-                BooleanCoercion.BOOLEAN_TEXT | BooleanCoercion.NUMERIC_TRUTHINESS
-            )
-        )
-        with pytest.raises(ValueError):
-            engine.apply(engine.build(_boolean_constraint_rules()), {"flag": "2"})
+                _boolean_constraint_engine(boolean_coercion=BooleanCoercion(bits))

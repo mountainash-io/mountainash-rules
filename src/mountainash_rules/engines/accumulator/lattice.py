@@ -76,7 +76,7 @@ class Lattice:
         relation(self._df).to_polars().write_parquet(dir_path / "lattice.parquet")
         manifest = {
             "dimensions": self._metadata.model_dump(mode="json", exclude_defaults=True),
-            "aggregates": [a.model_dump(mode="json") for a in self._aggregates],
+            "aggregates": [a.model_dump(mode="json", exclude_none=True) for a in self._aggregates],
             "partition_key": self._partition_key,
         }
         (dir_path / "manifest.yaml").write_text(

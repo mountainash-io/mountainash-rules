@@ -16,6 +16,7 @@ from mountainash_rules.core.constants import (
     HitPolicy,
     MatchStrategy,
 )
+from mountainash_rules.core.contracts import ContextContract
 
 
 class Dimension(BaseModel):
@@ -131,18 +132,6 @@ class Dimension(BaseModel):
                     f"temporal type"
                 )
 
-        if self.match_strategy in (
-            MatchStrategy.SET_MEMBERSHIP,
-            MatchStrategy.SET_EXCLUSION,
-        ):
-            if self.data_type is DataType.BOOL:
-                raise ValueError(
-                    f"Dimension '{self.dimension_name}' uses "
-                    f"{self.match_strategy.value} with data_type bool; boolean "
-                    f"set dimensions are not supported (no typed wildcard sentinel "
-                    f"exists and a set over {{true, false}} is degenerate)"
-                )
-
         return self
 
 
@@ -153,6 +142,29 @@ class DimensionsMetadata(BaseModel):
     hit_policy: HitPolicy = HitPolicy.COLLECT
     priority_field: t.Optional[str] = None
     output_fields: list[str] = Field(default_factory=list)
+    context_contracts: list[ContextContract] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _validate_context_contracts(self) -> "DimensionsMetadata":
+        ids: set[str] = set()
+        ordinary = {
+            dim.dimension_name for dim in self.dimensions
+            if dim.role is DimensionRole.CONSTRAINT
+            and dim.match_strategy is not MatchStrategy.CONTEXT_REGEX
+        }
+        for contract in self.context_contracts:
+            if contract.contract_id in ids:
+                raise ValueError(f"Duplicate context contract {contract.contract_id!r}")
+            ids.add(contract.contract_id)
+            fields = {field.name: field for field in contract.fields}
+            for dim in self.dimensions:
+                field = fields.get(dim.resolved_context_field)
+                if field is None or field.data_type is not dim.data_type:
+                    raise ValueError(f"Undeclared or incompatible physical field {dim.resolved_context_field!r}")
+            for profile in contract.profiles:
+                if not set(profile.dimensions) <= ordinary:
+                    raise ValueError("Profiles may select only ordinary constraint dimensions; keys and guards remain mandatory")
+        return self
 
     @model_validator(mode="after")
     def _validate_hit_policy(self) -> "DimensionsMetadata":

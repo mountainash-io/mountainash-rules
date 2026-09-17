@@ -28,7 +28,6 @@ from mountainash_rules.core.constants import (
 from mountainash_rules.core.dimension import Dimension, DimensionsMetadata
 from mountainash_rules.core.context import (
     _normalize_boolean,
-    _validate_boolean_coercion,
 )
 from mountainash_rules.core.set_wildcard import (
     validate_set_columns,
@@ -68,7 +67,8 @@ class AccumulatorEngine:
         *,
         boolean_coercion: BooleanCoercion = BooleanCoercion.NONE,
     ) -> None:
-        _validate_boolean_coercion(boolean_coercion)
+        if boolean_coercion is not BooleanCoercion.NONE:
+            raise ValueError("Accumulator boolean_coercion must be BooleanCoercion.NONE")
         self._boolean_coercion = boolean_coercion
         self._metadata = dimension_metadata
         self._aggregates = aggregates or []

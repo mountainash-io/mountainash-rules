@@ -141,7 +141,7 @@ Missing context and explicit context sentinels earn no specificity in ordinary p
 
 ### Boolean context inputs
 
-Boolean dimensions use the semantic default `BooleanCoercion.NONE` (`0`): native `True`/`False` and missing/`None` are admitted. Other concrete values require an explicit `BooleanCoercion` flag:
+Boolean dimensions use the semantic default `BooleanCoercion.NONE` (`0`): native `True`/`False` and missing/`None` are admitted. The standalone filter can admit additional concrete input domains with explicit flags:
 
 | Flag | Value | Additional original input domain |
 |------|-------|----------------------------------|
@@ -149,7 +149,7 @@ Boolean dimensions use the semantic default `BooleanCoercion.NONE` (`0`): native
 | `BOOLEAN_TEXT` | `2` | ASCII-whitespace-trimmed, ASCII-case `true`/`false`, or text `1`/`0` |
 | `NUMERIC_TRUTHINESS` | `4` | Any finite number (`0` is false; any other value is true) |
 
-Combine the actual enum flags with `|`; constructors reject non-enum settings and unknown bits. For example, both engines can admit Boolean text and finite numeric truthiness:
+Combine actual enum flags with `|` for the standalone filter. `AccumulatorEngine` accepts only the actual `BooleanCoercion.NONE` member; every other flag, combination or policy type raises `ValueError` at construction.
 
 ```python
 from mountainash_rules import (
@@ -163,7 +163,7 @@ filter_engine = ExpressionRulesEngine(
     rules=rules, dimension_metadata=metadata, boolean_coercion=boolean_inputs,
 )
 accumulator_engine = AccumulatorEngine(
-    dimension_metadata=metadata, boolean_coercion=boolean_inputs,
+    dimension_metadata=metadata, boolean_coercion=BooleanCoercion.NONE,
 )
 ```
 
@@ -226,9 +226,7 @@ from mountainash_rules import AccumulatorEngine, Aggregate, BooleanCoercion
 engine = AccumulatorEngine(
     dimension_metadata=metadata,
     aggregates=[Aggregate(column_name="margin")],
-    boolean_coercion=(
-        BooleanCoercion.BOOLEAN_TEXT | BooleanCoercion.NUMERIC_TRUTHINESS
-    ),
+    boolean_coercion=BooleanCoercion.NONE,
 )
 lattice = engine.build(rules)          # build once
 result = engine.apply(lattice, context)  # apply many times
@@ -237,6 +235,35 @@ result = engine.apply(lattice, context)  # apply many times
 Dimensions marked `DimensionRole.CONTEXT_KEY` partition the rule space into separate lattices; `engine.index(lattices)` routes single or batched contexts to the right one. Combination provenance is tracked with prime products, and impossible widths fail fast with a sized `LatticeWidthExceededError`.
 
 Apply-phase filters require at least one constraint dimension. A context-key-only accumulator may build a lattice, but applying it raises an explicit dimension `ValueError`; unconditional application is not supported. No-key index routing remains supported when constraint dimensions exist.
+
+### Exact-accumulator declarations
+
+`DomainDefinition`, `ContextContract`, `ContextField`, `ResolutionProfile`, and the
+explicit `ExactLimits`/typed-error records are available from the package root.
+`DimensionsMetadata.context_contracts` preserves immutable contract declarations
+through YAML; it does not change the legacy `apply` contract above.
+
+An exact aggregate declaration supplies `output_name` (a qualified name such as
+`charge.sum`), `data_type`, and `numeric_semantics="numeric-1"` together. DATETIME
+also requires `timezone="naive"` or `"utc"`. Partial native declarations are
+rejected. Name/operation-only declarations retain the existing flat manifest
+shape; they do not acquire exact semantics through inferred defaults. These
+declarations do not yet select a native build, binding, or persistence path.
+
+The private analysis kernel supports typed exact predicates, correlated reasoning,
+canonical connected-cell normalization (`normalization-2`), and reproducible
+`numeric-1` folds. Caller-supplied source UUIDs preserve distinct contributions;
+labels and amounts do not determine cell identity. Amount changes do change
+outputs and artifact identity.
+
+Neutral source/profile proofs and immutable permission-record checks use that same
+geometry. Explicit operation budgets bound input, work, native/theory storage,
+normalization state, and output; exhaustion raises a typed error, not a partial
+or approvable result. These kernels do not supply a public provider facade,
+author approvals, publish a lattice, or change legacy build/apply/save/load.
+
+Boolean set strategies can be declared for exact analysis. The existing ternary
+filter and legacy accumulator still reject Boolean set dimensions explicitly.
 
 ## Serialisable Metadata
 
