@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import math
 import typing as t
 from itertools import product
+from dataclasses import dataclass
+from types import MappingProxyType
 
 from pydantic import BaseModel
 
@@ -25,7 +28,8 @@ from mountainash_rules.core.constants import (
 )
 
 if t.TYPE_CHECKING:
-    from mountainash_rules.core.dimension import DimensionsMetadata
+    from mountainash_rules.core.contracts import ContextContract, Issue, ResolutionProfile
+    from mountainash_rules.core.dimension import Dimension, DimensionsMetadata
 
 
 _BOOLEAN_TRIM = " \t\n\r\f\v"
@@ -235,3 +239,101 @@ def extract_context_values(
         else:
             result[name] = value
     return result
+
+
+@dataclass(frozen=True, slots=True)
+class ClassifiedContext:
+    """Supplied facts remain separate from observations retained by a profile.
+
+    This boundary classifies availability and types only. Joint-domain, guard
+    and routing admission must still run before effective facts are reasoned on.
+    """
+
+    provided_values: t.Mapping[str, t.Any]
+    effective_values: t.Mapping[str, t.Any]
+    observations: t.Mapping[str, str]
+    issues: tuple[Issue, ...]
+
+
+def classify_exact_context(
+    context: BaseModel | t.Mapping[str, t.Any],
+    metadata: DimensionsMetadata,
+    contract: ContextContract,
+    profile: ResolutionProfile,
+    *,
+    dont_care: t.Sequence[str] = (),
+) -> ClassifiedContext:
+    """Classify original values before masking, casting or sentinel filling."""
+    from mountainash_rules.core.constants import (
+        DimensionRole,
+        MatchStrategy,
+        unknown_sentinel_for,
+    )
+    from mountainash_rules.core.contracts import Issue
+    from mountainash_rules.core.scalar import normalize_scalar
+
+    if isinstance(context, BaseModel):
+        raw = {name: getattr(context, name) for name in context.model_fields_set}
+    elif isinstance(context, t.Mapping):
+        raw = context
+    else:
+        raise ValueError("Context must be a mapping or Pydantic model")
+    if isinstance(dont_care, (str, bytes)) or not isinstance(dont_care, t.Sequence):
+        raise ValueError("dont_care must be a sequence of dimension names")
+    if any(type(name) is not str for name in dont_care) or len(set(dont_care)) != len(dont_care):
+        raise ValueError("dont_care requires unique dimension names")
+    issues = []
+    masks = set(dont_care)
+    provided = {}
+    states = {}
+    aliases: dict[str, list[Dimension]] = {}
+    for dim in metadata.dimensions:
+        aliases.setdefault(dim.resolved_context_field, []).append(dim)
+    allowed = set(profile.allow_dont_care)
+    selected = set(profile.dimensions)
+
+    def issue(field, dimension, code, message):
+        issues.append(Issue(field=field, dimension=dimension, code=code, message=message))
+
+    for name in sorted(masks - allowed):
+        dim = next((d for d in metadata.dimensions if d.dimension_name == name), None)
+        issue(dim.resolved_context_field if dim else None, name, "forbidden_projection", "Mask is not permitted by the profile")
+    for field in contract.fields:
+        name = field.name
+        if name not in raw:
+            states[name] = "omitted"
+        elif raw[name] is None:
+            states[name] = "null"
+        elif value_kind(raw[name]) is ValueKind.ABSENT or (
+            value_kind(raw[name]) is ValueKind.FLOAT and math.isnan(raw[name])
+        ):
+            states[name] = "native_missing"
+        else:
+            try:
+                value = normalize_scalar(raw[name], field.data_type, timezone=field.timezone, context=True, allow_reserved=True)
+            except ValueError as exc:
+                states[name] = "invalid"
+                issue(name, None, "invalid_type", str(exc))
+                continue
+            marker_value = value.replace(tzinfo=None) if field.data_type is DataType.DATETIME else value
+            if field.data_type is not DataType.BOOL and marker_value == not_set_sentinel_for(field.data_type):
+                states[name] = "not_set"
+            elif field.data_type is not DataType.BOOL and marker_value == unknown_sentinel_for(field.data_type):
+                states[name] = "dont_care"
+                for dim in aliases.get(name, ()):
+                    masks.add(dim.dimension_name)
+                    if dim.dimension_name not in allowed:
+                        issue(name, dim.dimension_name, "forbidden_projection", "UNKNOWN masks every alias and requires permission")
+            else:
+                states[name] = "concrete"
+                provided[name] = value
+        if field.required and states[name] != "concrete":
+            issue(name, None, "missing_required", "Required field needs a concrete supplied value")
+    effective = {}
+    for name, value in provided.items():
+        for dim in aliases.get(name, ()):
+            mandatory = dim.role is DimensionRole.CONTEXT_KEY or dim.match_strategy is MatchStrategy.CONTEXT_REGEX
+            if mandatory or (dim.dimension_name in selected and dim.dimension_name not in masks):
+                effective[name] = value
+                break
+    return ClassifiedContext(MappingProxyType(provided), MappingProxyType(effective), MappingProxyType(states), tuple(issues))

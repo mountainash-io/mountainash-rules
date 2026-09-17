@@ -266,7 +266,7 @@ result = engine.evaluate(context, include_observability=False)
 
 For metadata-backed evaluation, an absent field or `None` binds to the datatype's NOT_SET sentinel; Boolean absence uses null instead of a string marker. Single, batch and chunked evaluation use the same matching semantics. Explicit UNKNOWN and NOT_SET markers remain distinct stored values.
 
-Boolean dimensions default to `BooleanCoercion.NONE` (`0`), admitting only semantic `True`/`False` plus absence. Add only the original input domains your boundary accepts:
+Boolean dimensions default to `BooleanCoercion.NONE` (`0`), admitting only semantic `True`/`False` plus absence. The standalone filter supports these additional input domains:
 
 | Flag | Value | Additional accepted values |
 |------|-------|----------------------------|
@@ -274,7 +274,7 @@ Boolean dimensions default to `BooleanCoercion.NONE` (`0`), admitting only seman
 | `BOOLEAN_TEXT` | `2` | ASCII-whitespace-trimmed, ASCII-case `true`/`false`, and text `1`/`0` |
 | `NUMERIC_TRUTHINESS` | `4` | Any finite number (`0` false; all other values true) |
 
-Pass actual `BooleanCoercion` members, combining flags with `|`; non-enum settings and unknown bits raise `ValueError`. Both engine constructors take the same keyword-only policy:
+Pass actual `BooleanCoercion` members to the filter, combining flags with `|`; non-enum settings and unknown bits raise `ValueError`. The accumulator accepts only the actual `BooleanCoercion.NONE` member and rejects all other policies at construction:
 
 ```python
 from mountainash_rules import (
@@ -288,7 +288,7 @@ filter_engine = ExpressionRulesEngine(
     rules=rules, dimension_metadata=metadata, boolean_coercion=boolean_inputs,
 )
 accumulator_engine = AccumulatorEngine(
-    dimension_metadata=metadata, boolean_coercion=boolean_inputs,
+    dimension_metadata=metadata, boolean_coercion=BooleanCoercion.NONE,
 )
 ```
 
@@ -504,9 +504,7 @@ metadata = DimensionsMetadata(dimensions=[
 engine = AccumulatorEngine(
     dimension_metadata=metadata,
     aggregates=[Aggregate(column_name="fee", operation="sum")],
-    boolean_coercion=(
-        BooleanCoercion.BOOLEAN_TEXT | BooleanCoercion.NUMERIC_TRUTHINESS
-    ),
+    boolean_coercion=BooleanCoercion.NONE,
 )
 
 # Build the lattice (do this once at startup)

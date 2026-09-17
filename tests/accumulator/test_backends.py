@@ -232,7 +232,7 @@ class TestBooleanNativeContexts:
         engine = AccumulatorEngine(
             dimension_metadata=metadata,
             aggregates=[Aggregate(column_name="margin")],
-            boolean_coercion=BooleanCoercion.BINARY_NUMBERS,
+            boolean_coercion=BooleanCoercion.NONE,
         )
         rules = pl.DataFrame(
             {
@@ -243,21 +243,21 @@ class TestBooleanNativeContexts:
         )
         lattice = _build_lattice_in_backend(engine, rules, lattice_backend)
 
-        assert _boolean_backend_values(engine.apply(lattice, {"flag": 0})) == [20.0]
+        assert _boolean_backend_values(engine.apply(lattice, {"flag": False})) == [20.0]
+        with pytest.raises(ValueError):
+            engine.apply(lattice, {"flag": 0})
 
     @pytest.mark.parametrize(
         "context_backend",
         ["polars", "pandas", "narwhals-polars", "narwhals-pandas"],
     )
-    def test_mixed_object_contexts_keep_original_boolean_domains(self, context_backend):
+    def test_mixed_object_contexts_reject_non_boolean_values(self, context_backend):
         from mountainash_rules import BooleanCoercion
         import narwhals as nw
         import pandas as pd
 
         engine = _boolean_backend_engine(
-            boolean_coercion=(
-                BooleanCoercion.BOOLEAN_TEXT | BooleanCoercion.NUMERIC_TRUTHINESS
-            )
+            boolean_coercion=BooleanCoercion.NONE
         )
         index = engine.index(engine.build_all(_boolean_backend_rules()))
         values = [True, 0, " FALSE ", 2]
@@ -290,13 +290,5 @@ class TestBooleanNativeContexts:
                 eager_only=True,
             )
 
-        result = index.apply_batch(contexts, context_id_field="source_id")
-
-        assert relation(result.survivors).to_polars().sort("__context_id").select(
-            "__context_id", "__agg_margin", "__t_approved", "__specificity"
-        ).rows() == [
-            (11, 10.0, 1, 1),
-            (12, 20.0, 1, 1),
-            (13, 20.0, 1, 1),
-            (14, 10.0, 1, 1),
-        ]
+        with pytest.raises(ValueError):
+            index.apply_batch(contexts, context_id_field="source_id")

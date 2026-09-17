@@ -39,6 +39,10 @@ class DimensionCompiler:
 
     def compile_dimension(self, dim: Dimension) -> BaseExpressionAPI:
         """Compile a single dimension to an expression template."""
+        if dim.data_type is DataType.BOOL and dim.match_strategy in (
+            MatchStrategy.SET_MEMBERSHIP, MatchStrategy.SET_EXCLUSION
+        ):
+            raise ValueError("Boolean set strategies require exact-accumulator analysis; the ternary filter has no Boolean list wildcard")
         match dim.match_strategy:
             case MatchStrategy.EXACT:
                 return self._compile_exact(dim)

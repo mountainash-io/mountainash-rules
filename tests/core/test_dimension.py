@@ -192,31 +192,13 @@ class TestDimensionRole:
         assert all(d.role == DimensionRole.CONSTRAINT for d in metadata.dimensions)
 
 
-class TestSetDimensionBoolRejected:
-    def test_bool_set_membership_rejected(self):
-        import pytest
-        from pydantic import ValidationError
-        from mountainash_rules import Dimension
-        from mountainash_rules.core.constants import MatchStrategy, DataType
-        with pytest.raises(ValidationError, match="bool"):
-            Dimension(dimension_name="flags", match_strategy=MatchStrategy.SET_MEMBERSHIP, data_type=DataType.BOOL)
+@pytest.mark.parametrize("strategy", [MatchStrategy.SET_MEMBERSHIP, MatchStrategy.SET_EXCLUSION])
+def test_boolean_sets_are_declarable_without_broadening_filter(strategy):
+    import polars as pl
+    from mountainash_rules import ExpressionRulesEngine
 
-    def test_bool_set_exclusion_rejected(self):
-        import pytest
-        from pydantic import ValidationError
-        from mountainash_rules import Dimension
-        from mountainash_rules.core.constants import MatchStrategy, DataType
-        with pytest.raises(ValidationError, match="bool"):
-            Dimension(dimension_name="flags", match_strategy=MatchStrategy.SET_EXCLUSION, data_type=DataType.BOOL)
-
-    def test_str_set_membership_allowed(self):
-        from mountainash_rules import Dimension
-        from mountainash_rules.core.constants import MatchStrategy, DataType
-        d = Dimension(dimension_name="region", match_strategy=MatchStrategy.SET_MEMBERSHIP, data_type=DataType.STR)
-        assert d.data_type is DataType.STR
-
-    def test_int_set_membership_allowed(self):
-        from mountainash_rules import Dimension
-        from mountainash_rules.core.constants import MatchStrategy, DataType
-        d = Dimension(dimension_name="tiers", match_strategy=MatchStrategy.SET_MEMBERSHIP, data_type=DataType.INT)
-        assert d.data_type is DataType.INT
+    dimension = Dimension(dimension_name="flags", match_strategy=strategy, data_type="bool")
+    metadata = DimensionsMetadata(dimensions=[dimension])
+    restored = DimensionsMetadata.from_yaml(metadata.to_yaml())
+    with pytest.raises(ValueError):
+        ExpressionRulesEngine(pl.DataFrame({"flags": [[False], [True]]}), restored)
