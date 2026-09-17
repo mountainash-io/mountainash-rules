@@ -3,10 +3,22 @@
 import polars as pl
 import pytest
 
-from mountainash_rules.engines.accumulator.aggregate import Aggregate
-from mountainash_rules.engines.accumulator.lattice import Lattice
-from mountainash_rules.core.constants import MatchStrategy
-from mountainash_rules.core.dimension import Dimension, DimensionsMetadata
+from pydantic import BaseModel
+
+from mountainash.relations import relation
+from mountainash_rules import (
+    NOT_SET,
+    UNKNOWN,
+    UNKNOWN_NUMERIC,
+    AccumulatorEngine,
+    Aggregate,
+    AmbiguousPartitionError,
+    Dimension,
+    DimensionRole,
+    DimensionsMetadata,
+    Lattice,
+    MatchStrategy,
+)
 
 
 class TestAggregate:
@@ -68,10 +80,6 @@ class TestLattice:
         assert lattice.partition_key is None
 
 
-from mountainash.relations import relation
-
-from mountainash_rules.engines.accumulator.engine import AccumulatorEngine
-
 
 class TestIsComposed:
     def _metadata(self):
@@ -106,16 +114,6 @@ class TestIsComposed:
         assert lattice.is_composed is True
         assert "co_region" in relation(lattice.combinations).columns
 
-
-from mountainash_rules import (
-    AccumulatorEngine,
-    Aggregate,
-    Dimension,
-    DimensionsMetadata,
-    Lattice,
-    MatchStrategy,
-    UNKNOWN,
-)
 
 
 @pytest.fixture
@@ -194,20 +192,6 @@ class TestLatticeSaveLoad:
         with pytest.raises(FileNotFoundError):
             Lattice.load(tmp_path / "empty")
 
-
-from pydantic import BaseModel
-
-from mountainash_rules import AmbiguousPartitionError
-from mountainash_rules.engines.accumulator.engine import AccumulatorEngine
-from mountainash_rules.engines.accumulator.aggregate import Aggregate
-from mountainash_rules.core.constants import (
-    UNKNOWN,
-    UNKNOWN_NUMERIC,
-    NOT_SET,
-    DimensionRole,
-    MatchStrategy,
-)
-from mountainash_rules.core.dimension import Dimension, DimensionsMetadata
 
 
 class RoutingContext(BaseModel):
@@ -434,9 +418,6 @@ class TestTernaryRoutingBatch:
         assert set(rows["__context_id"]) == {0, 1}
 
     def test_batch_respects_caller_context_id_field(self):
-        # The caller-supplied context_id_field branch skips the internal
-        # __lattice_ctx_id synthesis; the caller's ids must still survive
-        # routing (specific + default + missing) through a partitioned index.
         engine, index = _index_for([("AU", "BROKER"), (UNKNOWN, UNKNOWN)])
         contexts = pl.DataFrame(
             {
@@ -855,3 +836,251 @@ class TestBooleanRoutingPolicy:
         ) == [20.0]
         with pytest.raises(ValueError):
             default_engine.apply(restored[0], {"approved": 0})
+
+
+@pytest.fixture
+def partition_identity_index():
+    from mountainash_rules import (
+        AccumulatorEngine,
+        Aggregate,
+        Dimension,
+        DimensionRole,
+        DimensionsMetadata,
+    )
+
+    engine = AccumulatorEngine(
+        dimension_metadata=DimensionsMetadata(
+            dimensions=[
+                Dimension(dimension_name="tenant", role=DimensionRole.CONTEXT_KEY),
+                Dimension(dimension_name="region"),
+            ]
+        ),
+        aggregates=[Aggregate(column_name="margin")],
+    )
+    rules = pl.DataFrame(
+        {
+            "rule_name": ["a", "b"],
+            "tenant": ["A", "B"],
+            "region": ["AU", "AU"],
+            "margin": [10.0, 20.0],
+        }
+    )
+    return engine.index(engine.build_all(rules))
+
+
+def test_partition_generated_identity_accessors(partition_identity_index):
+    contexts = pl.DataFrame({"tenant": ["A", "B", "A"], "region": ["AU", "NZ", "AU"]})
+    original = contexts.clone()
+    result = partition_identity_index.apply_batch(contexts)
+    assert result.matched_context_ids == [0, 2]
+    assert result.unmatched_context_ids(contexts) == [1]
+    for context_id, expected in [(0, [10.0]), (1, []), (2, [10.0])]:
+        assert (
+            relation(result.for_context(context_id).survivors).to_dict()["__agg_margin"]
+            == expected
+        )
+    assert contexts.equals(original)
+
+
+def test_partition_duplicate_ids_rejected_globally(partition_identity_index):
+    contexts = pl.DataFrame(
+        {"request_id": [7, 7], "tenant": ["A", "B"], "region": ["AU", "AU"]}
+    )
+    with pytest.raises(ValueError):
+        partition_identity_index.apply_batch(contexts, context_id_field="request_id")
+
+
+@pytest.mark.parametrize(
+    "context_id", [0, 1, 99], ids=["matched", "unmatched", "unsubmitted"]
+)
+def test_partition_extracted_views_reject_reselection(
+    partition_identity_index, context_id
+):
+    contexts = pl.DataFrame({"tenant": ["A", "B"], "region": ["AU", "NZ"]})
+    result = partition_identity_index.apply_batch(contexts)
+    with pytest.raises(ValueError):
+        result.for_context(context_id).select("collect")
+
+
+@pytest.mark.parametrize("ids", [[501, 19, 73], ["z", "a", "m"]])
+def test_partition_supplied_identity_correlation(partition_identity_index, ids):
+    contexts = pl.DataFrame(
+        {"request_id": ids, "tenant": ["A", "B", "A"], "region": ["AU", "NZ", "AU"]}
+    )
+    original = contexts.clone()
+    result = partition_identity_index.apply_batch(
+        contexts, context_id_field="request_id", chunk_size=1
+    )
+    assert result.matched_context_ids == sorted([ids[0], ids[2]])
+    assert result.unmatched_context_ids(contexts) == [ids[1]]
+    for context_id, expected in zip(ids, [[10.0], [], [10.0]]):
+        assert (
+            relation(result.for_context(context_id).survivors).to_dict()["__agg_margin"]
+            == expected
+        )
+    assert result.survivors.schema["__context_id"] == contexts.schema["request_id"]
+    assert contexts.equals(original)
+    with pytest.raises(ValueError):
+        result.unmatched_context_ids(contexts.drop("request_id"))
+
+
+@pytest.mark.parametrize(
+    ("tenants", "regions"),
+    [
+        (["A", "A"], ["AU", "AU"]),
+        (["A", "B"], ["AU", "NZ"]),
+        (["A", "unroutable"], ["AU", "AU"]),
+    ],
+    ids=["within-partition", "filtered-duplicate", "before-routing"],
+)
+def test_partition_duplicate_ids_precede_filtering_and_routing(
+    partition_identity_index, tenants, regions
+):
+    contexts = pl.DataFrame(
+        {"request_id": [7, 7], "tenant": tenants, "region": regions}
+    )
+    with pytest.raises(ValueError):
+        partition_identity_index.apply_batch(
+            contexts, context_id_field="request_id", chunk_size=1
+        )
+
+
+@pytest.mark.parametrize("field", ["missing", "", False, 0])
+def test_partition_invalid_id_field_is_not_regenerated(partition_identity_index, field):
+    contexts = pl.DataFrame({"tenant": ["A"], "region": ["AU"]})
+    with pytest.raises(ValueError):
+        partition_identity_index.apply_batch(contexts, context_id_field=field)
+
+
+def test_partition_null_id_is_not_regenerated(partition_identity_index):
+    contexts = pl.DataFrame(
+        {"request_id": [7, None], "tenant": ["A", "B"], "region": ["AU", "NZ"]}
+    )
+    with pytest.raises(ValueError):
+        partition_identity_index.apply_batch(contexts, context_id_field="request_id")
+
+
+@pytest.mark.parametrize("options", [{"min_specificity": 2}, {"top_n_per_context": 0}])
+def test_partition_zero_retained_preserves_schema_and_identity(
+    partition_identity_index, options
+):
+    contexts = pl.DataFrame({"tenant": ["A", "B"], "region": ["AU", "AU"]})
+    retained = partition_identity_index.apply_batch(contexts)
+    empty = partition_identity_index.apply_batch(contexts, chunk_size=1, **options)
+    assert empty.count == 0
+    assert empty.matched_context_ids == []
+    assert empty.unmatched_context_ids(contexts) == [0, 1]
+    assert empty.survivors.schema == retained.survivors.schema
+    for context_id in [0, 99]:
+        view = empty.for_context(context_id)
+        assert view.survivors.schema == retained.for_context(0).survivors.schema
+        with pytest.raises(ValueError):
+            view.select("first")
+
+
+def test_partition_canonical_id_collision_is_rejected(partition_identity_index):
+    contexts = pl.DataFrame({"__context_id": [42], "tenant": ["A"], "region": ["AU"]})
+    with pytest.raises(ValueError):
+        partition_identity_index.apply_batch(contexts)
+
+
+@pytest.mark.parametrize("field", [None, "__lattice_ctx_id"])
+def test_partition_former_synthetic_name_is_ordinary_input(
+    partition_identity_index, field
+):
+    contexts = pl.DataFrame(
+        {"__lattice_ctx_id": [42, 17], "tenant": ["A", "B"], "region": ["AU", "NZ"]}
+    )
+    original = contexts.clone()
+    result = partition_identity_index.apply_batch(contexts, context_id_field=field)
+    matched, unmatched = ([0], [1]) if field is None else ([42], [17])
+    assert result.matched_context_ids == matched
+    assert result.unmatched_context_ids(contexts) == unmatched
+    assert relation(result.for_context(matched[0]).survivors).to_dict()[
+        "__agg_margin"
+    ] == [10.0]
+    assert contexts.equals(original)
+
+
+def test_keyless_index_preserves_identity_and_reselection():
+    from mountainash_rules import (
+        AccumulatorEngine,
+        Aggregate,
+        Dimension,
+        DimensionsMetadata,
+    )
+
+    engine = AccumulatorEngine(
+        dimension_metadata=DimensionsMetadata(
+            dimensions=[Dimension(dimension_name="region")]
+        ),
+        aggregates=[Aggregate(column_name="margin")],
+    )
+    index = engine.index(
+        engine.build_all(
+            pl.DataFrame({"rule_name": ["a"], "region": ["AU"], "margin": [10.0]})
+        )
+    )
+    contexts = pl.DataFrame({"request_id": [51, 29], "region": ["AU", "NZ"]})
+    for field, matched, unmatched in [(None, 0, 1), ("request_id", 51, 29)]:
+        result = index.apply_batch(contexts, context_id_field=field, chunk_size=1)
+        assert result.matched_context_ids == [matched]
+        assert result.unmatched_context_ids(contexts) == [unmatched]
+        assert result.for_context(matched).select("first").count == 1
+        assert result.for_context(unmatched).select("collect").count == 0
+        truncated = index.apply_batch(
+            contexts, context_id_field=field, top_n_per_context=0
+        )
+        with pytest.raises(ValueError):
+            truncated.for_context(matched).select("collect")
+
+
+def test_partition_aliased_typed_keys_preserve_exact_and_default_correlation():
+    from mountainash_rules import (
+        AccumulatorEngine,
+        Aggregate,
+        Dimension,
+        DimensionRole,
+        DimensionsMetadata,
+        UNKNOWN_NUMERIC,
+    )
+
+    engine = AccumulatorEngine(
+        dimension_metadata=DimensionsMetadata(
+            dimensions=[
+                Dimension(
+                    dimension_name="tenant",
+                    context_field="account",
+                    data_type="int",
+                    role=DimensionRole.CONTEXT_KEY,
+                ),
+                Dimension(dimension_name="region"),
+            ]
+        ),
+        aggregates=[Aggregate(column_name="margin")],
+    )
+    index = engine.index(
+        engine.build_all(
+            pl.DataFrame(
+                {
+                    "rule_name": ["exact", "default"],
+                    "tenant": [7, UNKNOWN_NUMERIC],
+                    "region": ["AU", "AU"],
+                    "margin": [10.0, 20.0],
+                }
+            )
+        )
+    )
+    contexts = pl.DataFrame(
+        {
+            "request_id": ["exact", "default", "missing"],
+            "account": [7, 8, None],
+            "region": ["AU", "AU", "AU"],
+        }
+    )
+    result = index.apply_batch(contexts, context_id_field="request_id", chunk_size=1)
+    assert result.unmatched_context_ids(contexts) == []
+    for cid, margin in [("exact", 10.0), ("default", 20.0), ("missing", 20.0)]:
+        assert relation(result.for_context(cid).survivors).to_dict()[
+            "__agg_margin"
+        ] == [margin]

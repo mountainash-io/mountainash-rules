@@ -398,5 +398,4 @@ class LatticeIndex:
             dataframe=concat(frames).sort("__context_id", "__rank").collect(),
             active_dimensions=active_dims,
             context_id_field=context_id_field or "__context_id",
-            selection_info=result._selection_info,
         )

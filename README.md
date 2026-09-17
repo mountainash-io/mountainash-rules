@@ -200,11 +200,13 @@ Contexts are conformed to the rules backend. `chunk_size` is `None` or a positiv
 
 Filter batch rows are ordered by `__context_id` then `__rank`. Ranks describe the policy ordering before caller filters: if rank 1 is removed, rank 2 may be the best remaining match. Top-N applies to remaining positions without rewriting those ranks. `for_context()` preserves both rank order and the batch's re-selection restrictions.
 
-Caller ID columns must exist and contain globally unique, non-null values, validated before conversion or chunking. Rows always expose **`__context_id`**; `batch.context_id_field` records the source field (`"customer_id"` above), not an echoed context column. Without a source field, generated IDs are original zero-based input positions, assigned once before chunking. Their stability is within an evaluation, not across unordered database queries.
+Caller ID columns must exist and contain globally unique, non-null values, validated globally before conversion, partition routing or chunking. Rows always expose **`__context_id`**; `batch.context_id_field` records the source field (`"customer_id"` above), not an echoed context column. Without a source field, generated IDs are original zero-based input positions, assigned once before partitioning or chunking. Their stability is within an evaluation, not across unordered database queries.
 
 Boolean batch admission validates the complete submitted input before policy evaluation, chunk work, or accumulator index routing. A late invalid concrete Boolean therefore raises its `ValueError` even if an earlier row would violate UNIQUE/ANY, has no route, or produces no retained result.
 
-`matched_context_ids` and `counts_per_context` describe retained rows after limits. `unmatched_context_ids(original_contexts)` returns submitted IDs absent from those rows in sorted order; custom IDs require the original non-null, unique source column. Generated IDs require the original input order and row count. `for_context()` cannot distinguish an unmatched submitted ID from one never submitted.
+`matched_context_ids` and `counts_per_context` describe retained rows after limits. `unmatched_context_ids(original_contexts)` returns submitted IDs absent from those rows in sorted order; custom IDs require the original non-null, unique source column. Generated IDs require the original input order and row count. `for_context()` cannot distinguish an unmatched submitted ID from one never submitted. Pass the original, unmodified contexts to unmatched access; a missing genuine caller-ID field remains an error, not a positional fallback.
+
+For nonempty keyed `LatticeIndex.apply_batch()` input, assembled results have unspecified completeness. Their `for_context()` views reject `select()`, including matched, unmatched and never-submitted IDs and batches retaining zero rows. Re-evaluate through the engine instead. This restriction does not change direct filter evaluation or no-key index delegation.
 
 ### Input boundaries — correctness update
 
