@@ -27,6 +27,7 @@ from mountainash_rules.core.contracts import (
     DiagnosticRule,
     DomainDefinition,
     Finding,
+    OperationBudget,
     ReportCheck,
     ResolutionProfile,
     Scope,

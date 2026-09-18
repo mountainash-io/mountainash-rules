@@ -2,7 +2,7 @@
 
 Mirrors the mountainash exemplar: data-as-dict fixtures + a
 `backend_name` param fixture + per-backend DataFrame factory fixtures that
-auto-parametrize every dependent test across all 7 supported backends.
+auto-parametrize across 7 supported backends, selected by `--backends`.
 """
 
 from __future__ import annotations
@@ -104,14 +104,61 @@ _UPSTREAM_XFAILS: list[tuple[set[str], str, list[str]]] = [
 ]
 
 
+def pytest_addoption(parser):
+    parser.addoption(
+        "--backends",
+        default="polars,ibis-duckdb",
+        help="Comma-separated test backends, or 'all' (default: polars,ibis-duckdb).",
+    )
+
+
 def pytest_collection_modifyitems(config, items):
-    """Mark specific test × backend combinations as strict xfail."""
+    """Deselect unused backend variants and mark known upstream failures."""
+    requested = config.getoption("--backends")
+    selected = (
+        set(ALL_BACKENDS)
+        if requested == "all"
+        else {name.strip() for name in requested.split(",")}
+    )
+    unknown = selected.difference(ALL_BACKENDS)
+    if unknown:
+        raise pytest.UsageError(
+            f"Unknown --backends values: {sorted(unknown)!r}; "
+            f"choose from {ALL_BACKENDS!r} or 'all'"
+        )
+    backend_params = (
+        "backend_name",
+        "list_backend_name",
+        "list_backend",
+        "apply_backend",
+        "source_backend",
+        "context_backend",
+    )
+    retained, deselected = [], []
+    for item in items:
+        callspec = getattr(item, "callspec", None)
+        if callspec is not None and any(
+            name in callspec.params and callspec.params[name] not in selected
+            for name in backend_params
+        ):
+            deselected.append(item)
+        else:
+            retained.append(item)
+    if deselected:
+        config.hook.pytest_deselected(items=deselected)
+        items[:] = retained
+
     for item in items:
         callspec = getattr(item, "callspec", None)
         if callspec is None:
             continue
         backend = None
-        for param_name in ("backend_name", "list_backend_name", "list_backend", "apply_backend"):
+        for param_name in (
+            "backend_name",
+            "list_backend_name",
+            "list_backend",
+            "apply_backend",
+        ):
             backend = callspec.params.get(param_name)
             if backend is not None:
                 break
@@ -121,15 +168,14 @@ def pytest_collection_modifyitems(config, items):
             if backend not in backends:
                 continue
             if any(p in item.nodeid for p in patterns):
-                item.add_marker(
-                    pytest.mark.xfail(strict=True, reason=reason)
-                )
+                item.add_marker(pytest.mark.xfail(strict=True, reason=reason))
                 break
 
 
 # ---------------------------------------------------------------------------
 # Backend DataFrame construction
 # ---------------------------------------------------------------------------
+
 
 def build_backend_df(backend: str, data: dict, table_name: str = "t") -> Any:
     """Dispatch a data dict into the requested backend's DataFrame type."""
@@ -157,6 +203,7 @@ def build_backend_df(backend: str, data: dict, table_name: str = "t") -> Any:
 # Backend param fixtures
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture(params=ALL_BACKENDS)
 def backend_name(request) -> str:
     return request.param
@@ -171,6 +218,7 @@ def list_backend_name(request) -> str:
 # Context model + data dicts
 # ---------------------------------------------------------------------------
 
+
 class TestContext(BaseModel):
     region: str
     amount: int
@@ -182,7 +230,7 @@ def rules_data() -> dict[str, list]:
     """Standard 3-dimension rules as plain Python."""
     return {
         "rule_name": ["specific", "general", "mid", "no_match"],
-        "region":     ["AU", UNKNOWN, "AU", "US"],
+        "region": ["AU", UNKNOWN, "AU", "US"],
         "amount_min": [0, UNKNOWN_NUMERIC, 0, 0],
         "amount_max": [100, UNKNOWN_NUMERIC, 100, 100],
     }
@@ -191,6 +239,7 @@ def rules_data() -> dict[str, list]:
 # ---------------------------------------------------------------------------
 # Backend DataFrame fixtures
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture
 def backend_rules_df(backend_name: str, rules_data: dict) -> Any:
@@ -201,29 +250,38 @@ def backend_rules_df(backend_name: str, rules_data: dict) -> Any:
 # Metadata + engine
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture
 def basic_metadata() -> DimensionsMetadata:
-    return DimensionsMetadata(dimensions=[
-        Dimension(dimension_name="region", match_strategy=MatchStrategy.EXACT, data_type=str),
-        Dimension(
-            dimension_name="amount",
-            match_strategy=MatchStrategy.RANGE,
-            data_type=int,
-            range_min_field="amount_min",
-            range_max_field="amount_max",
-        ),
-        Dimension(
-            dimension_name="code",
-            match_strategy=MatchStrategy.CONTEXT_REGEX,
-            data_type=str,
-            regex_pattern="^PRE.*",
-        ),
-    ])
+    return DimensionsMetadata(
+        dimensions=[
+            Dimension(
+                dimension_name="region",
+                match_strategy=MatchStrategy.EXACT,
+                data_type=str,
+            ),
+            Dimension(
+                dimension_name="amount",
+                match_strategy=MatchStrategy.RANGE,
+                data_type=int,
+                range_min_field="amount_min",
+                range_max_field="amount_max",
+            ),
+            Dimension(
+                dimension_name="code",
+                match_strategy=MatchStrategy.CONTEXT_REGEX,
+                data_type=str,
+                regex_pattern="^PRE.*",
+            ),
+        ]
+    )
 
 
 @pytest.fixture
 def basic_engine(backend_rules_df, basic_metadata) -> ExpressionRulesEngine:
-    return ExpressionRulesEngine(rules=backend_rules_df, dimension_metadata=basic_metadata)
+    return ExpressionRulesEngine(
+        rules=backend_rules_df, dimension_metadata=basic_metadata
+    )
 
 
 @pytest.fixture

@@ -13,6 +13,7 @@ import typing as t
 
 from mountainash_rules.core.codec import validate_id
 from mountainash_rules.core.constants import DataType
+from mountainash_rules.core.contracts import OperationBudget
 from mountainash_rules.core.normalization import Fragment, Overlay, covered_overlay
 from mountainash_rules.core.reasoner import Reasoner
 from mountainash_rules.core.scalar import decode_scalar, rank, rank_bounds, unrank

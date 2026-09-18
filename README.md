@@ -434,6 +434,16 @@ pre-existing content gap for this migration, not a working simulation library.
 | `hatch run mypy:check` | Type check |
 | `hatch run radon:radon-cc` | Cyclomatic complexity |
 
+Routine local tests and PR CI select **Polars and Ibis-DuckDB**. Other
+backend-parametrized cases are deselected before fixture setup; tests without
+backend parameters still run. This is a reduced feedback matrix, not full
+portability acceptance.
+
+- Full seven-backend release check: `hatch run test:test-target-quick --backends=all`.
+- Specific backends: `hatch run test:test-target-quick --backends=polars,pandas`.
+- Direct pytest accepts the same `--backends` option; omitting it selects the
+  routine pair. Existing benchmark/marker selection remains independent.
+
 ## Architecture
 
 The engine uses **signed-integer ternary logic** (-1 = non-match, 0 = unknown, 1 = match) to evaluate each rule dimension independently, then combines results in a single vectorised pass:
