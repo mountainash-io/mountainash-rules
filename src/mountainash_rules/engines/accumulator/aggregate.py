@@ -47,31 +47,49 @@ class Aggregate(BaseModel):
             try:
                 value.encode("utf-8")
             except UnicodeEncodeError as exc:
-                raise ValueError("Aggregate names must contain Unicode scalars") from exc
+                raise ValueError(
+                    "Aggregate names must contain Unicode scalars"
+                ) from exc
         return value
 
     @model_validator(mode="after")
     def _validate_declaration(self) -> "Aggregate":
         native = (self.output_name, self.data_type, self.numeric_semantics)
-        if any(value is not None for value in native) and not all(value is not None for value in native):
-            raise ValueError("Native aggregates require output_name, data_type and numeric_semantics together")
+        if any(value is not None for value in native) and not all(
+            value is not None for value in native
+        ):
+            raise ValueError(
+                "Native aggregates require output_name, data_type and numeric_semantics together"
+            )
         if self.output_name is not None:
             parts = self.output_name.split(".")
             if len(parts) < 2 or not all(parts):
-                raise ValueError("output_name requires nonempty dot-separated namespace and local name")
+                raise ValueError(
+                    "output_name requires nonempty dot-separated namespace and local name"
+                )
         if self.data_type is DataType.DATETIME:
             if self.timezone is None:
                 raise ValueError("DATETIME aggregate requires explicit timezone")
         elif self.timezone is not None:
             raise ValueError("timezone is only valid for DATETIME aggregates")
-        if self.data_type is not None and self.operation in (AggregateOp.SUM, AggregateOp.PRODUCT) and not self.data_type.is_numeric:
+        if (
+            self.data_type is not None
+            and self.operation in (AggregateOp.SUM, AggregateOp.PRODUCT)
+            and not self.data_type.is_numeric
+        ):
             raise ValueError("sum/product require an INT or FLOAT declaration")
         return self
 
     def native_record(self) -> dict[str, t.Any]:
         """Return complete semantic metadata, rejecting inspection-only inputs."""
-        if self.output_name is None or self.data_type is None or self.numeric_semantics is None:
-            raise ValueError(f"Incomplete exact aggregate declaration for {self.column_name!r}")
+        if (
+            self.output_name is None
+            or self.data_type is None
+            or self.numeric_semantics is None
+        ):
+            raise ValueError(
+                f"Incomplete exact aggregate declaration for {self.column_name!r}"
+            )
         result = self.model_dump(mode="json")
         if self.data_type is not DataType.DATETIME:
             result.pop("timezone")
@@ -90,8 +108,13 @@ def validate_aggregates(aggregates: t.Iterable[Aggregate]) -> tuple[Aggregate, .
             raise ValueError(f"Duplicate aggregate output {output!r}")
         outputs.add(output)
         signature = aggregate.data_type, aggregate.timezone
-        if aggregate.column_name in sources and sources[aggregate.column_name] != signature:
-            raise ValueError(f"Incompatible declarations for source column {aggregate.column_name!r}")
+        if (
+            aggregate.column_name in sources
+            and sources[aggregate.column_name] != signature
+        ):
+            raise ValueError(
+                f"Incompatible declarations for source column {aggregate.column_name!r}"
+            )
         sources[aggregate.column_name] = signature
     return declarations
 
@@ -112,12 +135,18 @@ def lineage_relation(aggregates: t.Iterable[Aggregate], contributors: t.Any) -> 
         return contributors.filter(ma.lit(False)).select(
             *[ma.col("source_id").cast(str).alias(name) for name in names]
         )
-    outputs = relation({
-        "output_name": [item.output_name for item in declarations],
-        "column_name": [item.column_name for item in declarations],
-        "operation": [item.operation.value for item in declarations],
-    })
-    return contributors.select("source_id", "source_label").cross_join(outputs).select(*names)
+    outputs = relation(
+        {
+            "output_name": [item.output_name for item in declarations],
+            "column_name": [item.column_name for item in declarations],
+            "operation": [item.operation.value for item in declarations],
+        }
+    )
+    return (
+        contributors.select("source_id", "source_label")
+        .cross_join(outputs)
+        .select(*names)
+    )
 
 
 _INT64_MIN = -(1 << 63)
@@ -265,8 +294,11 @@ def _round_dyadic(mantissa: int, exponent: int) -> float:
 def _sum_bits(parts: t.Sequence[tuple[int, int]]) -> int:
     """Return the deterministic fixed-exponent accumulator capacity."""
     coefficient_bits = max(
-        (abs(mantissa).bit_length() + exponent + 1074
-         for mantissa, exponent in parts if mantissa),
+        (
+            abs(mantissa).bit_length() + exponent + 1074
+            for mantissa, exponent in parts
+            if mantissa
+        ),
         default=0,
     )
     return coefficient_bits + (len(parts) - 1).bit_length()
@@ -274,14 +306,16 @@ def _sum_bits(parts: t.Sequence[tuple[int, int]]) -> int:
 
 def _product_bits(parts: t.Sequence[tuple[int, int]]) -> int:
     """Return the deterministic exact product coefficient/exponent capacity."""
-    return (
-        sum(abs(mantissa).bit_length() for mantissa, _ in parts)
-        + max(1, (1074 * len(parts)).bit_length())
+    return sum(abs(mantissa).bit_length() for mantissa, _ in parts) + max(
+        1, (1074 * len(parts)).bit_length()
     )
 
 
 def _integer_sum_bits(values: t.Sequence[int]) -> int:
-    return max((abs(value).bit_length() for value in values), default=0) + (len(values) - 1).bit_length()
+    return (
+        max((abs(value).bit_length() for value in values), default=0)
+        + (len(values) - 1).bit_length()
+    )
 
 
 def _integer_product_bits(values: t.Sequence[int]) -> int:
@@ -314,7 +348,9 @@ def _reserve_workspace(
             units="integer-word operations",
         )
         requested_live_bytes = _workspace_live_bytes(bits)
-        budget.reserve("max_live_bytes", requested_live_bytes, phase="exact_fold", units="bytes")
+        budget.reserve(
+            "max_live_bytes", requested_live_bytes, phase="exact_fold", units="bytes"
+        )
         live_bytes = requested_live_bytes
     except BaseException:
         if live_bytes:
@@ -333,12 +369,16 @@ def _exact_integer_fold(
     if operation is AggregateOp.SUM:
         bits = _integer_sum_bits(values)
     else:
-        budget.reserve("max_work", len(values), phase="exact_fold", units="zero-product checks")
+        budget.reserve(
+            "max_work", len(values), phase="exact_fold", units="zero-product checks"
+        )
         if any(value == 0 for value in values):
             return 0
         bits = _integer_product_bits(values)
 
-    numeric_bits, live_bytes = _reserve_workspace(budget, bits=bits, contributors=len(values))
+    numeric_bits, live_bytes = _reserve_workspace(
+        budget, bits=bits, contributors=len(values)
+    )
     try:
         if operation is AggregateOp.SUM:
             result = 0
@@ -365,13 +405,17 @@ def _exact_float_fold(
         bits = _sum_bits(parts)
         exponent = -1074
     else:
-        budget.reserve("max_work", len(parts), phase="exact_fold", units="zero-product checks")
+        budget.reserve(
+            "max_work", len(parts), phase="exact_fold", units="zero-product checks"
+        )
         if any(mantissa == 0 for mantissa, _ in parts):
             return 0.0
         bits = _product_bits(parts)
         exponent = 0
 
-    numeric_bits, live_bytes = _reserve_workspace(budget, bits=bits, contributors=len(parts))
+    numeric_bits, live_bytes = _reserve_workspace(
+        budget, bits=bits, contributors=len(parts)
+    )
     try:
         if operation is AggregateOp.SUM:
             mantissa = 0
@@ -428,15 +472,19 @@ def exact_fold(
                 phase="exact_fold",
                 units="normalization steps",
             )
-            retained_length = None if operation in (AggregateOp.MIN, AggregateOp.MAX) else (
-                0 if retained is None else len(retained)
+            retained_length = (
+                None
+                if operation in (AggregateOp.MIN, AggregateOp.MAX)
+                else (0 if retained is None else len(retained))
             )
             candidate_bytes = _candidate_live_bytes(
                 data_type,
                 text_length,
                 retained_length=retained_length,
             )
-            budget.reserve("max_live_bytes", candidate_bytes, phase="exact_fold", units="bytes")
+            budget.reserve(
+                "max_live_bytes", candidate_bytes, phase="exact_fold", units="bytes"
+            )
             try:
                 normalized = normalize_scalar(
                     value,
@@ -459,8 +507,10 @@ def exact_fold(
                             units="Unicode scalar comparisons",
                         )
                     wins = (
-                        operation is AggregateOp.MIN and normalized < selected
-                        or operation is AggregateOp.MAX and normalized > selected
+                        operation is AggregateOp.MIN
+                        and normalized < selected
+                        or operation is AggregateOp.MAX
+                        and normalized > selected
                     )
                 else:
                     wins = True
@@ -474,7 +524,11 @@ def exact_fold(
                 continue
 
             try:
-                folded = _float_parts(normalized) if data_type is DataType.FLOAT else normalized
+                folded = (
+                    _float_parts(normalized)
+                    if data_type is DataType.FLOAT
+                    else normalized
+                )
                 if retained is None:
                     retained = []
                 retained.append(folded)
@@ -492,7 +546,9 @@ def exact_fold(
         if data_type is DataType.INT:
             return _exact_integer_fold(t.cast(list[int], retained), operation, budget)
         if data_type is DataType.FLOAT:
-            return _exact_float_fold(t.cast(list[tuple[int, int]], retained), operation, budget)
+            return _exact_float_fold(
+                t.cast(list[tuple[int, int]], retained), operation, budget
+            )
         raise ValueError("sum/product require an INT or FLOAT declaration")
     finally:
         if retained_bytes:

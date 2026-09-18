@@ -24,8 +24,8 @@ Read the shared foundations first, then follow the part for the engine you need.
 ## Implementation and extension
 
 9. **[Inside the Expression Rules Engine](09-expression-engine-internals/index.md)** — Dimension compilation, context binding, matching, ranking and selection.
-10. **[Inside the Accumulator Engine](10-accumulator-engine-internals/index.md)** — Compatibility, coalescing, prime-based combination identities, search and pruning; reuse of expression matching during context application.
-11. **[Extending and Maintaining Both Engines](11-extending-and-maintaining/index.md)** — Shared-model changes, engine-specific extensions and verification of observable behavior.
+10. **[Inside the Exact Accumulator](10-accumulator-engine-internals/index.md)** — Source validation, normalized predicates, disjoint cells, bounded narrow state, numeric-1 folds, and strict artifact restoration.
+11. **[Extending and Maintaining Both Engines](11-extending-and-maintaining/index.md)** — Public boundaries, filter contracts, and the exact accumulator's source-to-runtime obligations.
 
 ## Appendices
 

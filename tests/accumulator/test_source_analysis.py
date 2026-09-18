@@ -42,6 +42,100 @@ def test_f01_clean_public_source_handoff():
     assert gate(iter(rows), kwargs, bundle).approval_ids == ()
 
 
+def test_e6_private_build_gate_reuses_selected_source_evidence_for_clean_compilation():
+    """One caller budget admits source evidence and emits clean artifact evidence."""
+    from mountainash_rules.core.contracts import OperationBudget
+    from mountainash_rules.engines.accumulator import analysis as build_gate
+
+    kwargs, _ = case()
+    rows = [row(1)]
+    source_bundle = rules.analyze_sources(rows, **kwargs)
+    validation = gate(rows, kwargs, source_bundle)
+    budget = OperationBudget(kwargs["limits"], "e6-private-build-gate")
+    preparation = build_gate.prepare_build(
+        rows,
+        validation=validation,
+        metadata=kwargs["metadata"],
+        aggregates=kwargs["aggregates"],
+        budget=budget,
+    )
+    analysis = build_gate._analyze_partition(
+        preparation.prepared,
+        key_values=preparation.material.selected_scope.partition_refs[0]["key_values"],
+    )
+    evidence = build_gate.produce_compiled_evidence(
+        preparation, analysis, budget=budget
+    )
+    reports = {report.id: report for report in evidence.validation["reports"]}
+    compiled = next(report for report in reports.values() if report.stage == "compiled")
+    assert reports[validation.source_report_id].id == preparation.source_report.id
+    assert compiled.artifact_id == analysis.artifact_id
+    assert {check.check_id for check in compiled.checks} == {
+        "cell_nonempty",
+        "cell_disjointness",
+        "source_union",
+        "source_membership",
+        "output_folds",
+        "profile_consistency",
+    }
+    assert all(check.status == "passed" and check.complete for check in compiled.checks)
+    assert evidence.validation["approvals"] == source_bundle.validation["approvals"]
+    assert evidence.validation["bindings"] == ()
+
+
+def test_compiled_evidence_rejects_cell_geometry_outside_declared_domain():
+    from dataclasses import replace
+    from mountainash_rules.core.contracts import OperationBudget
+    from mountainash_rules.engines.accumulator import analysis as build_gate
+
+    kwargs, _ = case()
+    rows = [row(1, rules.UNKNOWN_NUMERIC, rules.UNKNOWN_NUMERIC)]
+    source_bundle = rules.analyze_sources(rows, **kwargs)
+    validation = gate(rows, kwargs, source_bundle)
+    budget = OperationBudget(kwargs["limits"], "build")
+    preparation = build_gate.prepare_build(
+        rows,
+        validation=validation,
+        metadata=kwargs["metadata"],
+        aggregates=kwargs["aggregates"],
+        budget=budget,
+    )
+    analysis = build_gate._analyze_partition(preparation.prepared, key_values=[])
+    corrupt = replace(
+        analysis,
+        cells=tuple(
+            replace(cell, predicate_id=preparation.prepared.graph.true)
+            for cell in analysis.cells
+        ),
+    )
+    with pytest.raises(ValueError):
+        build_gate.produce_compiled_evidence(preparation, corrupt, budget=budget)
+
+
+def test_compiled_evidence_obeys_remaining_operation_output_budget():
+    from mountainash_rules.core.contracts import OperationBudget
+    from mountainash_rules.engines.accumulator import analysis as build_gate
+
+    kwargs, _ = case()
+    rows = [row(1)]
+    source_bundle = rules.analyze_sources(rows, **kwargs)
+    validation = gate(rows, kwargs, source_bundle)
+    budget = OperationBudget(kwargs["limits"], "build")
+    preparation = build_gate.prepare_build(
+        rows,
+        validation=validation,
+        metadata=kwargs["metadata"],
+        aggregates=kwargs["aggregates"],
+        budget=budget,
+    )
+    analysis = build_gate._analyze_partition(preparation.prepared, key_values=[])
+    budget.limits = budget.limits.model_copy(update={"max_output_bytes": 0})
+    with pytest.raises(rules.ExactResourceError) as failure:
+        build_gate.produce_compiled_evidence(preparation, analysis, budget=budget)
+    assert failure.value.counter == "max_output_bytes"
+    assert failure.value.operation == "build"
+
+
 @pytest.mark.parametrize("extruded", [False, True])
 def test_f02_boundary_review_is_independent_of_permission(extruded):
     kwargs, _ = case(extra_field=extruded)
@@ -122,6 +216,71 @@ def test_f03_all_duplicate_pairs_gaps_and_unreachable_sources_survive_permutatio
         (rows[3]["id"],)
     ]
     assert all(not f.witnesses for f in findings)
+
+
+@pytest.mark.parametrize(
+    "segmentation,reverse", [((), False), (("x",), False), (("x",), True)]
+)
+def test_source_diagnostics_are_invariant_under_scoped_physical_construction(
+    segmentation, reverse
+):
+    from mountainash_rules.core.contracts import OperationBudget
+    from mountainash_rules.core.validation import produce_source_report
+    from mountainash_rules.engines.accumulator.analysis import _prepare
+    from mountainash_rules.engines.accumulator.compiler import (
+        analyze_sources,
+        analysis_geometry,
+    )
+    from mountainash_rules.engines.accumulator.layout import (
+        discover_scoped,
+        materialize_layout,
+        validate_layout,
+    )
+
+    kwargs, _ = case(coverage=True, witnesses=0)
+    rows = [row(1, 0, 5), row(2, 0, 5), row(3, 0, 5), row(4, 30, 40)]
+    public = rules.analyze_sources(rows, **kwargs)
+    options = {key: value for key, value in kwargs.items() if key != "limits"}
+    options.setdefault("source_label_field", None)
+    options.setdefault("regex_options", None)
+    budget = OperationBudget(kwargs["limits"], "physical-source-conformance")
+    (
+        prepared,
+        domains,
+        contracts,
+        _,
+        partitions,
+        counts,
+        current,
+        _,
+        dimension_fields,
+        guards,
+        ordered_fields,
+    ) = _prepare(rows, budget=budget, **options)
+    order = tuple(item["id"] for item in (list(reversed(rows)) if reverse else rows))
+    discovery = discover_scoped(
+        prepared, key_values=[], segmentation_fields=segmentation, order=order
+    )
+    analysis = analyze_sources(prepared, key_values=[], overlay=discovery.overlay)
+    layout = materialize_layout(analysis, discovery)
+    validate_layout(analysis, layout, budget=budget)
+    geometry = analysis_geometry(analysis, provider_domains=domains)
+    findings, _ = produce_source_report(
+        current,
+        lambda partition: geometry,
+        contracts,
+        dimension_fields=dimension_fields,
+        partition_refs=partitions,
+        source_counts=counts,
+        guard_fields=guards,
+        ordered_fields=ordered_fields,
+    )
+    assert sorted(
+        (f.code, f.source_ids, f.region_predicate_id) for f in findings
+    ) == sorted(
+        (f.code, f.source_ids, f.region_predicate_id)
+        for f in public.validation["findings"]
+    )
 
 
 def test_f04_invalid_sources_and_false_definite_promise_cannot_be_approved():
@@ -1172,9 +1331,11 @@ def test_f03_gate_rejects_rehashed_definite_profile_warning_downgrade():
     altered = _rehash_analysis_findings_and_report(
         payload,
         policy,
-        lambda finding: finding.update({"severity": "warning"})
-        if finding["code"] == "profile_counterexample"
-        else None,
+        lambda finding: (
+            finding.update({"severity": "warning"})
+            if finding["code"] == "profile_counterexample"
+            else None
+        ),
     )
     finding = next(
         item

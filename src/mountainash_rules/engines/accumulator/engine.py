@@ -1,64 +1,24 @@
-"""AccumulatorEngine: builds a lattice of maximal consistent rule combinations."""
+"""Exact accumulator construction and contract-bound context resolution."""
 
 from __future__ import annotations
 
-import math
 import typing as t
-import weakref
 
-import polars as pl  # allow: empty-build schema seed pending backend-agnostic empty-frame support
-
-import mountainash.expressions as ma
-from mountainash.relations import relation, concat
-
-from pydantic import BaseModel
-
-from mountainash_rules.engines.accumulator.compiler import AccumulatorCompiler
-from mountainash_rules.engines.accumulator.result import AccumulatorResult
-from mountainash_rules.engines.accumulator.aggregate import Aggregate, AggregateOp
+from mountainash_rules.engines.accumulator.aggregate import Aggregate
 from mountainash_rules.core.constants import (
     BooleanCoercion,
-    DataType,
     DimensionRole,
-    HitPolicy,
-    MatchStrategy,
-    not_set_sentinel_for,
     unknown_sentinel_for,
 )
-from mountainash_rules.core.dimension import Dimension, DimensionsMetadata
-from mountainash_rules.core.context import (
-    _normalize_boolean,
-)
-from mountainash_rules.core.set_wildcard import (
-    validate_set_columns,
-    validate_set_no_null_elements,
-    normalize_set_expr,
-    set_wildcard_predicate,
-)
-from mountainash_rules.engines.filter.engine import ExpressionRulesEngine
+from mountainash_rules.core.dimension import DimensionsMetadata
 from mountainash_rules.engines.accumulator.lattice import Lattice
-from mountainash_rules.engines.accumulator.primes import (
-    _INT64_MAX,
-    LatticeWidthExceededError,
-    checked_multiply,
-    get_prime,
-)
 
 if t.TYPE_CHECKING:
-    from mountainash_rules.engines.accumulator.lattice import LatticeIndex
+    pass
 
 
 class AccumulatorEngine:
-    """Builds a lattice of maximal consistent rule combinations.
-
-    The build phase:
-    1. Partition rules by context-key values (if any CONTEXT_KEY dimensions)
-    2. Assign each rule a unique prime number
-    3. Create singleton anchor combinations (level 0)
-    4. Recursively expand: cross-join current level with rules, filter compatible,
-       coalesce dimensions, accumulate aggregates
-    5. Remove dominated combinations (frontier filter)
-    """
+    """Build immutable exact cells under source-validation and resource gates."""
 
     def __init__(
         self,
@@ -66,675 +26,183 @@ class AccumulatorEngine:
         aggregates: list[Aggregate] | None = None,
         *,
         boolean_coercion: BooleanCoercion = BooleanCoercion.NONE,
-    ) -> None:
+        segmentation_dimensions=(),
+        limits,
+    ):
+        from mountainash_rules.core.contracts import ExactLimits
+        from mountainash_rules.engines.accumulator.aggregate import validate_aggregates
+        from mountainash_rules.engines.accumulator.compiler import _dimension_record
+
         if boolean_coercion is not BooleanCoercion.NONE:
-            raise ValueError("Accumulator boolean_coercion must be BooleanCoercion.NONE")
-        self._boolean_coercion = boolean_coercion
-        self._metadata = dimension_metadata
-        self._aggregates = aggregates or []
-        self._compiler = AccumulatorCompiler()
-        self._apply_engines: weakref.WeakKeyDictionary[
-            Lattice, ExpressionRulesEngine
-        ] = weakref.WeakKeyDictionary()
-
-        # Separate context-key dims from constraint dims
-        self._context_key_dims: list[Dimension] = []
-        self._constraint_dims: list[Dimension] = []
-        for dim in dimension_metadata.dimensions:
-            if dim.role == DimensionRole.CONTEXT_KEY:
-                self._context_key_dims.append(dim)
-            else:
-                self._constraint_dims.append(dim)
-
-        # Pre-compile expressions for constraint dimensions
-        self._compatible_exprs = {
-            dim.dimension_name: self._compiler.compile_compatible(dim)
-            for dim in self._constraint_dims
-        }
-        self._coalesce_exprs = {
-            dim.dimension_name: self._compiler.compile_coalesce(dim)
-            for dim in self._constraint_dims
-        }
-        self._coalesce_na_exprs = {
-            dim.dimension_name: self._compiler.compile_coalesce_na_flag(dim)
-            for dim in self._constraint_dims
-        }
-
-    def build(
-        self,
-        rules: t.Any,
-        partition_key: dict[str, t.Any] | None = None,
-    ) -> Lattice:
-        """Build the lattice of maximal consistent rule combinations.
-
-        Args:
-            rules: DataFrame of rules (polars or anything relation() accepts).
-            partition_key: Values for CONTEXT_KEY dimensions to filter by.
-                Required if any dimensions have role=CONTEXT_KEY.
-
-        Returns:
-            Lattice containing the outermost (non-dominated) combinations.
-        """
-        # Validate partition key
-        if self._context_key_dims and not partition_key:
             raise ValueError(
-                "partition_key is required when CONTEXT_KEY dimensions are present. "
-                f"Expected keys: {[d.dimension_name for d in self._context_key_dims]}"
+                "Accumulator boolean_coercion must be BooleanCoercion.NONE"
             )
-
-        rel = relation(rules)
-
-        # Step 1: Partition — filter rules by context-key values
-        if partition_key:
-            for dim in self._context_key_dims:
-                key_val = partition_key.get(dim.dimension_name)
-                if key_val is not None:
-                    rel = rel.filter(
-                        ma.col(dim.resolved_rule_field).eq(ma.lit(key_val))
-                    )
-
-        # Materialize to polars for prime injection
-        rules_pl = rel.to_polars()
-        rules_pl = self._normalize_set_columns(rules_pl)
-        n_rules = len(rules_pl)
-
-        if n_rules == 0:
-            # Return an empty lattice that still carries the composed schema
-            empty = rules_pl.with_columns(pl.Series("__prime", [], dtype=pl.Int64))
-            anchor = self._create_anchor(empty)
-            return Lattice(
-                dataframe=anchor.collect(),
-                metadata=self._metadata,
-                aggregates=self._aggregates,
-                partition_key=partition_key,
+        if not isinstance(limits, ExactLimits):
+            raise ValueError("limits must be ExactLimits")
+        if not isinstance(dimension_metadata, DimensionsMetadata):
+            raise ValueError("dimension_metadata must be DimensionsMetadata")
+        if isinstance(segmentation_dimensions, (str, bytes)) or not isinstance(
+            segmentation_dimensions, t.Sequence
+        ):
+            raise ValueError(
+                "segmentation_dimensions must be a dimension-name sequence"
             )
-
-        # Step 2: Assign primes
-        primes = [get_prime(i) for i in range(n_rules)]
-        rules_pl = rules_pl.with_columns(pl.Series("__prime", primes))
-
-        # Tier 1: if the product of ALL assigned primes fits int64, no
-        # combination can ever overflow — skip per-level verification.
-        overflow_possible = math.prod(primes) > _INT64_MAX
-
-        # Step 3: Create anchor (level 0) — each rule is a singleton combination
-        anchor = self._create_anchor(rules_pl)
-
-        # Step 4: Recursive iteration — breadth-first expansion
-        # Prepare the RHS rules relation (just the original rule columns + __prime)
-        rhs_rules = relation(rules_pl)
-
-        all_levels = [anchor]
-        current_level = anchor
-
-        for level_num in range(1, n_rules):
-            new_combos = self._expand_level(
-                current_level,
-                rhs_rules,
-                level_num,
-                overflow_possible=overflow_possible,
-                partition_key=partition_key,
+        dimensions = {d.dimension_name: d for d in dimension_metadata.dimensions}
+        if any(
+            type(name) is not str or name not in dimensions
+            for name in segmentation_dimensions
+        ):
+            raise ValueError("Unknown segmentation dimension")
+        if len(set(segmentation_dimensions)) != len(segmentation_dimensions):
+            raise ValueError("Repeated segmentation dimensions")
+        self._limits = limits
+        self._metadata = dimension_metadata.model_copy(deep=True)
+        self._dimension_records = tuple(
+            _dimension_record(dimension)
+            for dimension in sorted(
+                self._metadata.dimensions, key=lambda item: item.dimension_name
             )
-            if new_combos is None:
-                break
-            all_levels.append(new_combos)
-            current_level = new_combos
+        )
+        self._aggregates = tuple(
+            sorted(
+                validate_aggregates(aggregates or ()), key=lambda item: item.output_name
+            )
+        )
+        self._segmentation_fields = tuple(
+            sorted(
+                {
+                    dimensions[name].resolved_context_field
+                    for name in segmentation_dimensions
+                }
+            )
+        )
+        self._context_key_dims = tuple(
+            d for d in self._metadata.dimensions if d.role is DimensionRole.CONTEXT_KEY
+        )
 
-        # Combine all levels
-        all_combos = concat(all_levels)
+    def _prepare_build(self, rules, validation, budget):
+        from mountainash_rules.engines.accumulator.analysis import prepare_build
+        from mountainash_rules.engines.accumulator.tables import source_rows
 
-        # Step 5: Frontier filter — remove dominated combinations
-        self._assert_set_columns_non_null(all_combos)
-        result = self._frontier_filter(all_combos)
-
-        return Lattice(
-            dataframe=result.collect(),
+        return prepare_build(
+            source_rows(rules, budget=budget),
+            validation=validation,
             metadata=self._metadata,
             aggregates=self._aggregates,
-            partition_key=partition_key,
+            budget=budget,
         )
 
-    def _rule_fields(self) -> list[str]:
-        """All rule-side column names used by constraint dimensions."""
-        fields: list[str] = []
-        for dim in self._constraint_dims:
-            if dim.match_strategy == MatchStrategy.RANGE:
-                fields.append(dim.range_min_field)
-                fields.append(dim.range_max_field)
-            else:
-                fields.append(dim.resolved_rule_field)
-        return fields
+    def _build_partition(self, preparation, key_values, budget):
+        from mountainash_rules.engines.accumulator.analysis import (
+            produce_compiled_evidence,
+        )
+        from mountainash_rules.engines.accumulator.compiler import analyze_sources
+        from mountainash_rules.engines.accumulator.layout import (
+            discover_scoped,
+            materialize_layout,
+            validate_layout,
+        )
+        from mountainash_rules.engines.accumulator.state import materialize_state
 
-    def _co_fields(self) -> list[str]:
-        """All coalesced (co_) column names."""
-        fields: list[str] = []
-        for dim in self._constraint_dims:
-            if dim.match_strategy == MatchStrategy.RANGE:
-                fields.append(f"co_{dim.range_min_field}")
-                fields.append(f"co_{dim.range_max_field}")
-            else:
-                fields.append(f"co_{dim.resolved_rule_field}")
-        return fields
+        discovery = discover_scoped(
+            preparation.prepared,
+            key_values=key_values,
+            segmentation_fields=self._segmentation_fields,
+        )
+        analysis = analyze_sources(
+            preparation.prepared, key_values=key_values, overlay=discovery.overlay
+        )
+        layout = materialize_layout(analysis, discovery)
+        validate_layout(analysis, layout, budget=budget)
+        evidence = produce_compiled_evidence(preparation, analysis, budget=budget)
+        state = materialize_state(analysis, layout, budget=budget)
+        return Lattice._from_exact(state, self._metadata, evidence)
 
-    def _na_flag_fields(self) -> list[str]:
-        """All NA flag column names."""
-        fields: list[str] = []
-        for dim in self._constraint_dims:
-            if dim.match_strategy == MatchStrategy.RANGE:
-                fields.append(f"co_{dim.dimension_name}_na")
-            else:
-                fields.append(f"co_{dim.resolved_rule_field}_na")
-        return fields
+    def build(self, rules, *, validation, partition_key=None):
+        from mountainash_rules.core.contracts import OperationBudget
+        from mountainash_rules.core.scalar import decode_scalar
 
-    def _agg_fields(self) -> list[str]:
-        """All aggregate column names."""
-        return [f"__agg_{agg.column_name}" for agg in self._aggregates]
-
-    def _tracking_columns(self) -> list[str]:
-        """All tracking column names."""
-        return ["__prime", "__prime_product", "__level"] + self._agg_fields()
-
-    def _set_dims(self) -> list[Dimension]:
-        return [
-            d
-            for d in self._constraint_dims
-            if d.match_strategy
-            in (MatchStrategy.SET_MEMBERSHIP, MatchStrategy.SET_EXCLUSION)
-        ]
-
-    def _normalize_set_columns(self, rules_pl: t.Any) -> t.Any:
-        """Validate + normalize every set-dimension rule column to the non-null,
-        canonical in-band-sentinel form. Runs for EVERY build path before the
-        empty-frame branch and the anchor, so set co_ columns are never null."""
-        set_dims = self._set_dims()
-        if not set_dims:
-            return rules_pl
-        rel = relation(rules_pl)
-        validate_set_columns(rel, set_dims)  # reservation (portable)
-        validate_set_no_null_elements(
-            rel, set_dims
-        )  # element-nulls (polars build only)
-        rel = rel.with_columns(
-            *[
-                normalize_set_expr(dim, ma.col(dim.resolved_rule_field)).alias(
-                    dim.resolved_rule_field
+        budget = OperationBudget(self._limits, "build")
+        preparation = self._prepare_build(rules, validation, budget)
+        if self._context_key_dims:
+            names = {d.dimension_name for d in self._context_key_dims}
+            if not isinstance(partition_key, dict) or set(partition_key) != names:
+                raise ValueError("partition_key must name every context-key dimension")
+        elif partition_key not in (None, {}):
+            raise ValueError("Unpartitioned build cannot select partition keys")
+        wildcards = {
+            d.dimension_name: None
+            if d.data_type == "bool"
+            else unknown_sentinel_for(d.data_type)
+            for d in self._context_key_dims
+        }
+        for keys in preparation.prepared.routing["payload"]["partition_keys"]:
+            values = {
+                key["dimension_name"]: (
+                    decode_scalar(dict(key["match"]["value"]))
+                    if key["match"]["kind"] == "value"
+                    else wildcards[key["dimension_name"]]
                 )
-                for dim in set_dims
-            ]
-        )
-        return rel.to_polars()
-
-    def _assert_set_columns_non_null(self, all_combos: t.Any) -> None:
-        """Safety net for the frontier 'no change' invariant: every set co_ column
-        must be non-null before the dominance self-join (null keys silently defeat
-        pruning). Runs only when set dims are present."""
-        set_dims = self._set_dims()
-        if not set_dims:
-            return
-        # all_combos is already a mountainash Relation (concat of levels); do not
-        # re-wrap it. count_rows() is the portable row count (backend-pure).
-        cols = [f"co_{d.resolved_rule_field}" for d in set_dims]
-        for c in cols:
-            if all_combos.filter(ma.col(c).is_null()).count_rows() > 0:
-                raise AssertionError(
-                    f"set co_ column {c!r} contains null before frontier filter — "
-                    f"normalization did not reach every build path"
-                )
-
-    def _create_anchor(self, rules_pl: pl.DataFrame) -> t.Any:
-        """Create level-0 singleton combinations from rules."""
-        # Start with all original columns plus __prime
-        rel = relation(rules_pl)
-
-        # Add coalesced columns (co_ prefix) — initially copies of rule columns
-        co_exprs = []
-        for dim in self._constraint_dims:
-            if dim.match_strategy == MatchStrategy.RANGE:
-                co_exprs.append(
-                    ma.col(dim.range_min_field).alias(f"co_{dim.range_min_field}")
-                )
-                co_exprs.append(
-                    ma.col(dim.range_max_field).alias(f"co_{dim.range_max_field}")
-                )
-            else:
-                field = dim.resolved_rule_field
-                co_exprs.append(ma.col(field).alias(f"co_{field}"))
-
-        # Add NA flag columns
-        na_exprs = []
-        for dim in self._constraint_dims:
-            if dim.match_strategy == MatchStrategy.RANGE:
-                sentinel = unknown_sentinel_for(dim.data_type)
-                na_exprs.append(
-                    ma.col(dim.range_min_field)
-                    .eq(ma.lit(sentinel))
-                    .__and__(ma.col(dim.range_max_field).eq(ma.lit(sentinel)))
-                    .cast(int)
-                    .alias(f"co_{dim.dimension_name}_na")
-                )
-            else:
-                field = dim.resolved_rule_field
-                if dim.match_strategy in (
-                    MatchStrategy.SET_MEMBERSHIP,
-                    MatchStrategy.SET_EXCLUSION,
-                ):
-                    na_exprs.append(
-                        set_wildcard_predicate(dim, ma.col(field))
-                        .cast(int)
-                        .alias(f"co_{field}_na")
-                    )
-                else:
-                    sentinel = unknown_sentinel_for(dim.data_type)
-                    na_exprs.append(
-                        ma.col(field)
-                        .eq(ma.lit(sentinel))
-                        .cast(int)
-                        .alias(f"co_{field}_na")
-                    )
-
-        # Add tracking columns
-        tracking_exprs = [
-            ma.col("__prime").alias("__prime_product"),
-            ma.lit(0).alias("__level"),
-        ]
-
-        # Add aggregate columns
-        agg_exprs = [
-            ma.col(agg.column_name).alias(f"__agg_{agg.column_name}")
-            for agg in self._aggregates
-        ]
-
-        all_exprs = co_exprs + na_exprs + tracking_exprs + agg_exprs
-        rel = rel.with_columns(*all_exprs)
-
-        return rel
-
-    def _expand_level(
-        self,
-        current_level: t.Any,
-        rhs_rules: t.Any,
-        level_num: int,
-        overflow_possible: bool = False,
-        partition_key: dict[str, t.Any] | None = None,
-    ) -> t.Any | None:
-        """Expand current level by cross-joining with rules and filtering compatible pairs."""
-        # Cross-join current level with RHS rules
-        joined = current_level.join(rhs_rules, how="cross", suffix="_rhs")
-
-        # Guard 1: canonical ordering — last-added prime must increase
-        guard1 = ma.col("__prime").lt(ma.col("__prime_rhs"))
-
-        # Guard 2: candidate not already in combination
-        guard2 = ma.col("__prime_product").mod(ma.col("__prime_rhs")).ne(ma.lit(0))
-
-        # All dimensions must be compatible
-        compat_exprs = list(self._compatible_exprs.values())
-
-        all_guards = guard1.__and__(guard2)
-        for expr in compat_exprs:
-            all_guards = all_guards.__and__(expr)
-
-        # Materialise each level: without this the lazy plan re-derives every
-        # prior level on each expansion, which is exponential in level depth.
-        filtered = relation(joined.filter(all_guards).collect())
-
-        # Check if any new combinations were produced
-        count = filtered.count_rows()
-        if count == 0:
-            return None
-
-        if overflow_possible:
-            self._check_overflow(filtered, level_num, partition_key)
-
-        # Coalesce dimensions
-        coalesce_all = []
-        for dim in self._constraint_dims:
-            coalesce_all.extend(self._coalesce_exprs[dim.dimension_name])
-
-        # Coalesce NA flags
-        na_flag_all = [
-            self._coalesce_na_exprs[dim.dimension_name] for dim in self._constraint_dims
-        ]
-
-        # Update tracking columns
-        tracking = [
-            ma.col("__prime_rhs").alias("__prime"),
-            ma.col("__prime_product")
-            .mul(ma.col("__prime_rhs"))
-            .alias("__prime_product"),
-            ma.lit(level_num).alias("__level"),
-        ]
-
-        # Accumulate aggregates
-        agg_updates = []
-        for agg in self._aggregates:
-            agg_col = f"__agg_{agg.column_name}"
-            acc = ma.col(agg_col)
-            rhs = ma.col(f"{agg.column_name}_rhs")
-            match agg.operation:
-                case AggregateOp.SUM:
-                    folded = acc.add(rhs)
-                case AggregateOp.MIN:
-                    folded = ma.least(acc, rhs)
-                case AggregateOp.MAX:
-                    folded = ma.greatest(acc, rhs)
-                case AggregateOp.PRODUCT:
-                    folded = acc.mul(rhs)
-                case _:  # pragma: no cover — validation blocks this at construction
-                    raise ValueError(
-                        f"Unsupported aggregate operation: {agg.operation}"
-                    )
-            agg_updates.append(folded.alias(agg_col))
-
-        all_updates = coalesce_all + na_flag_all + tracking + agg_updates
-        updated = filtered.with_columns(*all_updates)
-
-        # Select only the columns we need for the next iteration
-        keep_cols = self._columns_to_keep(current_level)
-        updated = updated.select(*[ma.col(c) for c in keep_cols])
-
-        return updated
-
-    def _check_overflow(
-        self,
-        filtered: t.Any,
-        level_num: int,
-        partition_key: dict[str, t.Any] | None,
-    ) -> None:
-        """Raise LatticeWidthExceededError if any pending multiply overflows int64.
-
-        Screen with two aggregates (exact Python-int arithmetic on the maxima
-        is conservative); only a suspect level pays the exact per-row check,
-        which materialises just the two tracking columns.
-        """
-        maxima = filtered.select(
-            ma.col("__prime_product").max().alias("__max_pp"),
-            ma.col("__prime_rhs").max().alias("__max_prhs"),
-        ).to_dict()
-        if maxima["__max_pp"][0] * maxima["__max_prhs"][0] <= _INT64_MAX:
-            return
-        pairs = filtered.select(
-            ma.col("__prime_product"), ma.col("__prime_rhs")
-        ).to_polars()
-        for pp, prhs in zip(pairs["__prime_product"], pairs["__prime_rhs"]):
-            try:
-                checked_multiply(pp, prhs)
-            except OverflowError as exc:
-                raise LatticeWidthExceededError(
-                    f"Prime-product overflow at level {level_num} "
-                    f"(clique size {level_num + 1}) for partition "
-                    f"{partition_key!r}: {exc} "
-                    f"Split the partition with a CONTEXT_KEY dimension or "
-                    f"reduce the mutually compatible rule clique."
-                ) from exc
-
-    def _columns_to_keep(self, level_rel: t.Any) -> list[str]:
-        """Columns to retain after each expansion step."""
-        return level_rel.columns
-
-    def _frontier_filter(self, all_combos: t.Any) -> t.Any:
-        """Remove dominated combinations.
-
-        A combination is dominated if another combination in the same
-        fingerprint namespace (all co_ columns equal) has a prime product
-        that is a strict superset (super % sub == 0 AND super != sub).
-        """
-        co_cols = self._co_fields()
-        na_cols = self._na_flag_fields()
-        fingerprint_cols = co_cols + na_cols
-
-        # If no constraint dims, nothing to filter
-        if not fingerprint_cols:
-            return all_combos
-
-        # Self-join on fingerprint columns to find domination
-        # Add a sub column for the join
-        combos_sub = all_combos.with_columns(
-            ma.col("__prime_product").alias("__pp_sub")
-        )
-
-        combos_super = all_combos.select(
-            *[ma.col(c) for c in fingerprint_cols],
-            ma.col("__prime_product").alias("__pp_super"),
-        )
-
-        # Join on fingerprint columns
-        joined = combos_sub.join(
-            combos_super,
-            on=fingerprint_cols,
-            how="inner",
-            suffix="_dom",
-        )
-
-        # Find dominated: super % sub == 0 AND super != sub
-        dominated = (
-            joined.filter(
-                ma.col("__pp_super")
-                .mod(ma.col("__pp_sub"))
-                .eq(ma.lit(0))
-                .__and__(ma.col("__pp_super").ne(ma.col("__pp_sub")))
-            )
-            .select(ma.col("__pp_sub").alias("__prime_product"))
-            .unique()
-        )
-
-        # Anti-join to keep non-dominated
-        result = combos_sub.join(
-            dominated,
-            on="__prime_product",
-            how="anti",
-        ).drop("__pp_sub")
-
-        return result
-
-    def build_all(
-        self,
-        rules: t.Any,
-    ) -> list[Lattice]:
-        """Build lattices for all partitions found in the rules.
-
-        Groups rules by CONTEXT_KEY dimension values and builds a Lattice
-        for each unique partition.
-
-        Returns:
-            List of Lattice objects, one per partition.
-        """
-        if not self._context_key_dims:
-            return [self.build(rules)]
-
-        rel = relation(rules)
-        rules_pl = rel.to_polars()
-
-        # Get unique partition key combinations
-        key_fields = [d.resolved_rule_field for d in self._context_key_dims]
-        key_names = [d.dimension_name for d in self._context_key_dims]
-        unique_keys = rules_pl.select(key_fields).unique()
-
-        lattices = []
-        for row in unique_keys.iter_rows(named=True):
-            partition_key = {
-                name: row[field] for name, field in zip(key_names, key_fields)
+                for key in keys
             }
-            lattice = self.build(rules, partition_key=partition_key)
-            lattices.append(lattice)
+            if values == (partition_key or {}):
+                return self._build_partition(preparation, keys, budget)
+        raise ValueError("partition_key is not declared by source validation")
 
-        return lattices
+    def build_all(self, rules, *, validation):
+        """Prepare once and publish all declared partitions atomically."""
+        from mountainash_rules.core.contracts import OperationBudget
 
-    def _build_apply_metadata(self) -> DimensionsMetadata:
-        """Create a DimensionsMetadata that remaps CONSTRAINT dims to co_ columns.
+        budget = OperationBudget(self._limits, "build_all")
+        preparation = self._prepare_build(rules, validation, budget)
+        return [
+            self._build_partition(preparation, keys, budget)
+            for keys in preparation.prepared.routing["payload"]["partition_keys"]
+        ]
 
-        The lattice stores coalesced values in co_-prefixed columns. This method
-        builds dimension metadata that points the filter engine at those columns
-        while keeping context field names as the original dimension names (since
-        the context comes from the user, not the lattice).
-        """
-        dims: list[Dimension] = []
-        for d in self._constraint_dims:
-            if d.match_strategy == MatchStrategy.RANGE:
-                dims.append(
-                    Dimension(
-                        dimension_name=d.dimension_name,
-                        context_field=d.resolved_context_field,
-                        match_strategy=d.match_strategy,
-                        data_type=d.data_type,
-                        range_min_field=f"co_{d.range_min_field}",
-                        range_max_field=f"co_{d.range_max_field}",
-                        range_min_inclusive=d.range_min_inclusive,
-                        range_max_inclusive=d.range_max_inclusive,
-                    )
-                )
-            else:
-                dims.append(
-                    Dimension(
-                        dimension_name=d.dimension_name,
-                        context_field=d.resolved_context_field,
-                        rule_field=f"co_{d.resolved_rule_field}",
-                        match_strategy=d.match_strategy,
-                        data_type=d.data_type,
-                    )
-                )
-        return DimensionsMetadata(
-            dimensions=dims,
-            hit_policy=HitPolicy.COLLECT,  # never inherit a table policy here
-        )
+    def _check_lattice(self, lattice):
+        if not isinstance(lattice, Lattice):
+            raise ValueError("lattice must be Lattice")
+        lattice._require_exact()
+        if self._dimension_records != tuple(
+            lattice._state.analysis.prepared.metadata["payload"]["dimensions"]
+        ):
+            raise ValueError("Engine dimensions disagree with the compiled artifact")
+        if self._aggregates != tuple(
+            sorted(lattice._aggregates, key=lambda item: item.output_name)
+        ):
+            raise ValueError("Engine aggregates disagree with the compiled artifact")
 
-    def apply(
-        self,
-        lattice: Lattice,
-        context: t.Any,
-        dimensions: list[str] | None = None,
-    ) -> AccumulatorResult:
-        """Apply a context to a lattice to find matching combinations.
+    def apply(self, lattice, context, *, contract_id, profile_id, dont_care=None):
+        from mountainash_rules.core.contracts import OperationBudget
+        from mountainash_rules.engines.accumulator.runtime import EvaluationSession
 
-        Builds remapped metadata that points at the co_ columns in the lattice,
-        creates an ExpressionRulesEngine with the lattice as rules, evaluates
-        the context, and wraps the result in an AccumulatorResult.
+        self._check_lattice(lattice)
+        session = EvaluationSession(OperationBudget(self._limits, "apply"))
+        return session.resolve(
+            lattice,
+            context,
+            contract_id=contract_id,
+            profile_id=profile_id,
+            dont_care=dont_care,
+        ).raise_for_status()
 
-        Args:
-            lattice: A pre-built Lattice from build() or build_all().
-            context: A Pydantic model or dict with context values.
-            dimensions: Optional subset of dimensions to evaluate.
-
-        Returns:
-            AccumulatorResult wrapping the matching combinations.
-        """
-        filter_engine = self._filter_engine_for(lattice)
-        filter_result = filter_engine.evaluate(context, dimensions=dimensions)
-        return AccumulatorResult(
-            dataframe=filter_result.survivors,
-            active_dimensions=filter_result.active_dimensions,
-            aggregates=self._aggregates,
-            lattice=lattice,
-        )
-
-    def _filter_engine_for(self, lattice: Lattice) -> ExpressionRulesEngine:
-        """Memoised apply-phase filter engine, keyed on lattice identity."""
-        engine = self._apply_engines.get(lattice)
-        if engine is None:
-            engine = ExpressionRulesEngine(
-                rules=lattice.combinations,
-                dimension_metadata=self._build_apply_metadata(),
-                boolean_coercion=self._boolean_coercion,
-            )
-            self._apply_engines[lattice] = engine
-        return engine
-
-    def index(
-        self,
-        lattices: list[Lattice],
-        validate: bool = True,
-        max_witnesses: int = 1_000_000,
-    ) -> LatticeIndex:
-        """Build a partition-key routing index over pre-built lattices.
-
-        Args:
-            lattices: List of Lattice objects from build_all() or load().
-            validate: Run the exhaustive load-time ambiguity check
-                (structural checks — empty/duplicate/NOT_SET keys — run
-                regardless).
-            max_witnesses: Ceiling on the validation matrix size; above
-                it index() raises ValueError rather than sampling.
-        """
+    def index(self, lattices):
         from mountainash_rules.engines.accumulator.lattice import LatticeIndex
 
-        return LatticeIndex(
-            self,
-            lattices,
-            self._context_key_dims,
-            validate=validate,
-            max_witnesses=max_witnesses,
-        )
+        return LatticeIndex(self, lattices)
 
-    def _extract_partition_key(self, context: t.Any) -> tuple:
-        """Extract the partition key tuple from a context object.
+    def apply_auto(self, lattices, context, *, contract_id, profile_id, dont_care=None):
+        from mountainash_rules.core.contracts import OperationBudget
+        from mountainash_rules.engines.accumulator.lattice import LatticeIndex
+        from mountainash_rules.engines.accumulator.runtime import EvaluationSession
 
-        Missing or explicitly-null key fields become the typed NOT_SET
-        sentinel (None for bool) so the context can still route — a
-        NOT_SET value matches wildcard partitions only.
-        """
-        if isinstance(context, BaseModel):
-            raw = context.model_dump()
-        elif isinstance(context, dict):
-            raw = context
-        else:
-            raise TypeError(
-                f"Context must be a BaseModel or dict, got {type(context).__name__}"
-            )
-        return self._normalize_partition_key(
-            tuple(
-                _normalize_boolean(
-                    raw.get(d.resolved_context_field),
-                    d.resolved_context_field,
-                    self._boolean_coercion,
-                )
-                if d.data_type is DataType.BOOL
-                else raw.get(d.resolved_context_field)
-                for d in self._context_key_dims
-            )
-        )
-
-    def _normalize_partition_key(self, key: tuple) -> tuple:
-        """Map missing key values to the typed NOT_SET sentinel (None for bool).
-
-        A value counts as missing when it is None or a float NaN — backend
-        nulls and NaN are treated identically to an absent field (spec §1).
-        """
-        out = []
-        for v, d in zip(key, self._context_key_dims):
-            missing = v is None or (isinstance(v, float) and v != v)
-            if not missing:
-                out.append(v)
-            elif d.data_type is DataType.BOOL:
-                out.append(None)
-            else:
-                out.append(not_set_sentinel_for(d.data_type))
-        return tuple(out)
-
-    def apply_auto(
-        self,
-        lattices: list[Lattice],
-        context: t.Any,
-        dimensions: list[str] | None = None,
-    ) -> AccumulatorResult:
-        """Select the correct lattice by partition key and apply the context.
-
-        Args:
-            lattices: List of Lattice objects from build_all().
-            context: A Pydantic model or dict with context values.
-            dimensions: Optional subset of dimensions to evaluate.
-
-        Returns:
-            AccumulatorResult wrapping the matching combinations.
-
-        Raises:
-            KeyError: If no lattice matches the partition key from the context.
-
-        Note:
-            Convenience wrapper; hot paths should hold a LatticeIndex.
-            Load-time ambiguity validation is skipped here (it would rerun
-            the witness matrix every call); routing still raises
-            AmbiguousPartitionError at apply time on a genuine tie.
-        """
-        return self.index(lattices, validate=False).apply(
-            context, dimensions=dimensions
-        )
+        budget = OperationBudget(self._limits, "apply_auto")
+        index = LatticeIndex._with_budget(self, lattices, budget)
+        return index._apply(
+            context,
+            contract_id=contract_id,
+            profile_id=profile_id,
+            dont_care=dont_care,
+            session=EvaluationSession(budget),
+        ).raise_for_status()

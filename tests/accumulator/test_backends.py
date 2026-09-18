@@ -1,479 +1,433 @@
-"""Cross-backend tests for AccumulatorEngine apply phase."""
+"""Native-backend admission and exact runtime batch contracts."""
 
 import polars as pl
 import pytest
-from pydantic import BaseModel
-from mountainash.relations import relation
-from mountainash.core.types import BackendCapabilityError
 
-from mountainash_rules.engines.accumulator.engine import AccumulatorEngine
-from mountainash_rules.engines.accumulator.aggregate import Aggregate
-from mountainash_rules.core.constants import (
-    DimensionRole,
-    MatchStrategy,
-    UNKNOWN,
-    UNKNOWN_NUMERIC,
-)
-from mountainash_rules.core.dimension import Dimension, DimensionsMetadata
-from mountainash_rules.engines.accumulator.lattice import Lattice
+import mountainash_rules as rules
+from tests.accumulator.exact_runtime_fixtures import declarations, gate, uuid
 from tests.conftest import ALL_BACKENDS, build_backend_df
 
 
-class PricingContext(BaseModel):
-    channel: str
-    lvr: int
-    foreign_resident: str
+TOTAL = rules.Aggregate(
+    column_name="amount",
+    output_name="pricing.total",
+    data_type="float",
+    numeric_semantics="numeric-1",
+)
 
 
-def _worked_example_metadata():
-    return DimensionsMetadata(
-        dimensions=[
-            Dimension(dimension_name="channel", match_strategy=MatchStrategy.EXACT),
-            Dimension(
-                dimension_name="lvr",
-                match_strategy=MatchStrategy.RANGE,
-                data_type=int,
-                range_min_field="lvr_min",
-                range_max_field="lvr_max",
-            ),
-            Dimension(
-                dimension_name="foreign_resident", match_strategy=MatchStrategy.EXACT
-            ),
-        ]
-    )
+def _columns(rows):
+    names = set().union(*(row.keys() for row in rows))
+    return {name: [row.get(name) for row in rows] for name in sorted(names)}
 
 
-def _worked_example_engine():
-    return AccumulatorEngine(
-        dimension_metadata=_worked_example_metadata(),
-        aggregates=[Aggregate(column_name="margin")],
-    )
-
-
-def _worked_example_rules():
-    return pl.DataFrame(
-        {
-            "rule_name": ["R1", "R2", "R3"],
-            "channel": ["BROKER", UNKNOWN, "BROKER"],
-            "lvr_min": [60, 70, UNKNOWN_NUMERIC],
-            "lvr_max": [80, 90, UNKNOWN_NUMERIC],
-            "foreign_resident": [UNKNOWN, "false", "false"],
-            "margin": [-0.10, -0.05, -0.15],
-        }
-    )
-
-
-def _build_lattice_in_backend(engine, rules, backend_name):
-    """Build with polars, then convert lattice DataFrame to target backend."""
-    lattice = engine.build(rules)
-    lattice_data = relation(lattice.combinations).to_dict()
-    backend_df = build_backend_df(backend_name, lattice_data, table_name="lattice")
-    return Lattice(
-        dataframe=backend_df,
-        metadata=lattice._metadata,
-        aggregates=lattice._aggregates,
-        partition_key=lattice.partition_key,
-    )
-
-
-@pytest.fixture(params=ALL_BACKENDS)
-def apply_backend(request):
-    return request.param
-
-
-class TestApplyCrossBackend:
-    """Verify the apply phase works across all 7 backends."""
-
-    def test_apply_reports_unsupported_row_index(self):
-        engine = _worked_example_engine()
-        lattice = _build_lattice_in_backend(
-            engine, _worked_example_rules(), "ibis-polars"
-        )
-        context = PricingContext(channel="BROKER", lvr=75, foreign_resident="false")
-        with pytest.raises(BackendCapabilityError) as error:
-            engine.apply(lattice, context)
-        assert error.value.backend == "ibis"
-
-    def test_apply_correct_count(self, apply_backend):
-        engine = _worked_example_engine()
-        lattice = _build_lattice_in_backend(
-            engine, _worked_example_rules(), apply_backend
-        )
-        context = PricingContext(channel="BROKER", lvr=75, foreign_resident="false")
-        result = engine.apply(lattice, context)
-        assert result.count == 6
-
-    def test_apply_accumulated_margin(self, apply_backend):
-        engine = _worked_example_engine()
-        lattice = _build_lattice_in_backend(
-            engine, _worked_example_rules(), apply_backend
-        )
-        context = PricingContext(channel="BROKER", lvr=75, foreign_resident="false")
-        result = engine.apply(lattice, context)
-        rows = relation(result.survivors).to_dict()
-        margins = dict(zip(rows["__prime_product"], rows["__agg_margin"]))
-        assert margins[30] == pytest.approx(-0.30)
-
-    def test_apply_partial_match(self, apply_backend):
-        engine = _worked_example_engine()
-        lattice = _build_lattice_in_backend(
-            engine, _worked_example_rules(), apply_backend
-        )
-        context = PricingContext(channel="DIRECT", lvr=75, foreign_resident="false")
-        result = engine.apply(lattice, context)
-        # DIRECT doesn't match BROKER — only wildcards survive
-        assert result.count < 6
-
-
-def _boolean_backend_engine(*, boolean_coercion):
-    metadata = DimensionsMetadata(
-        dimensions=[
-            Dimension(
-                dimension_name="flag",
-                match_strategy=MatchStrategy.EXACT,
-                data_type="bool",
-                role=DimensionRole.CONTEXT_KEY,
-            ),
-            Dimension(
-                dimension_name="approved",
-                match_strategy=MatchStrategy.EXACT,
-                data_type="bool",
-            ),
-        ]
-    )
-    return AccumulatorEngine(
-        dimension_metadata=metadata,
-        aggregates=[Aggregate(column_name="margin")],
-        boolean_coercion=boolean_coercion,
-    )
-
-
-def _boolean_backend_rules():
-    return pl.DataFrame(
-        {
-            "flag": [True, False, None],
-            "approved": [True, False, None],
-            "rule_name": ["enabled", "disabled", "default"],
-            "margin": [10.0, 20.0, 30.0],
-        }
-    )
-
-
-def _boolean_backend_values(result):
-    return sorted(relation(result.accumulated("margin")).to_dict()["__agg_margin"])
-
-
-class TestBooleanNativeContexts:
-    @pytest.mark.parametrize(
-        "context_backend",
-        [
-            "polars",
-            "pandas",
-            "narwhals-polars",
-            "narwhals-pandas",
-            "ibis-duckdb",
-            "ibis-sqlite",
+def _candidate_contract(
+    dimensions, outputs, *, contract_id="client", profile_id="inspect", masks=()
+):
+    return rules.ContextContract(
+        schema_version=1,
+        contract_id=contract_id,
+        domain_ref="D",
+        fields=[
+            rules.ContextField(
+                name=dimension.resolved_context_field,
+                data_type=dimension.data_type,
+                required=False,
+            )
+            for dimension in sorted(dimensions, key=lambda item: item.dimension_name)
         ],
-    )
-    def test_index_accepts_native_boolean_context_frame(self, context_backend):
-        from mountainash_rules import BooleanCoercion
-
-        engine = _boolean_backend_engine(boolean_coercion=BooleanCoercion.NONE)
-        index = engine.index(engine.build_all(_boolean_backend_rules()))
-        contexts = build_backend_df(
-            context_backend,
-            {
-                "source_id": [100, 200, 300],
-                "flag": [True, False, None],
-                "approved": [True, False, None],
-            },
-            table_name=f"native_boolean_context_{context_backend}",
-        )
-
-        result = index.apply_batch(contexts, context_id_field="source_id")
-
-        assert relation(result.survivors).to_polars().sort(
-            "__context_id", "__agg_margin"
-        ).select(
-            "__context_id", "__agg_margin", "__t_approved", "__specificity"
-        ).rows() == [
-            (100, 10.0, 1, 1),
-            (200, 20.0, 1, 1),
-            (300, 10.0, 0, 0),
-            (300, 20.0, 0, 0),
-            (300, 30.0, 0, 0),
-        ]
-
-    @pytest.mark.parametrize(
-        "lattice_backend",
-        [
-            "polars",
-            "pandas",
-            "narwhals-polars",
-            "narwhals-pandas",
-            "ibis-duckdb",
-            "ibis-sqlite",
-        ],
-    )
-    def test_converted_lattice_apply_accepts_normalized_boolean_input(
-        self, lattice_backend
-    ):
-        from mountainash_rules import BooleanCoercion
-
-        metadata = DimensionsMetadata(
-            dimensions=[
-                Dimension(
-                    dimension_name="flag",
-                    match_strategy=MatchStrategy.EXACT,
-                    data_type="bool",
+        profiles=[
+            rules.ResolutionProfile(
+                profile_id=profile_id,
+                mode="candidates",
+                output_fields=sorted(outputs),
+                provenance="none",
+                dimensions=sorted(
+                    dimension.dimension_name
+                    for dimension in dimensions
+                    if dimension.role == rules.DimensionRole.CONSTRAINT
+                    and dimension.match_strategy != rules.MatchStrategy.CONTEXT_REGEX
                 ),
-            ]
-        )
-        engine = AccumulatorEngine(
-            dimension_metadata=metadata,
-            aggregates=[Aggregate(column_name="margin")],
-            boolean_coercion=BooleanCoercion.NONE,
-        )
-        rules = pl.DataFrame(
+                allow_dont_care=sorted(masks),
+                promise="candidate_only",
+            )
+        ],
+    )
+
+
+def _build_native(
+    rows,
+    dimensions,
+    aggregates,
+    source_backend,
+    *,
+    decisions=(),
+    partition_keys=((),),
+    all_partitions=False,
+):
+    contract = _candidate_contract(
+        dimensions, [aggregate.output_name for aggregate in aggregates]
+    )
+    kwargs = declarations(
+        dimensions,
+        aggregates,
+        contracts=[contract],
+        partition_keys=partition_keys,
+    )
+    validation = gate(rows, kwargs, decisions=decisions)
+    engine = rules.AccumulatorEngine(
+        kwargs["metadata"], kwargs["aggregates"], limits=kwargs["limits"]
+    )
+    source = build_backend_df(
+        source_backend,
+        _columns(rows),
+        table_name=f"exact_sources_{source_backend}",
+    )
+    if all_partitions:
+        return engine, engine.build_all(source, validation=validation)
+    return engine, engine.build(source, validation=validation)
+
+
+def _candidate_facts(result, output):
+    values = {row["cell_id"]: row[output] for row in result.candidate_cells.to_dicts()}
+    contributors = {}
+    for row in result.candidate_contributors.to_dicts():
+        contributors.setdefault(row["cell_id"], set()).add(row["source_id"])
+    return sorted(
+        (values[cell_id], tuple(sorted(source_ids)))
+        for cell_id, source_ids in contributors.items()
+    )
+
+
+def _worked_example():
+    dimensions = [
+        rules.Dimension(dimension_name="channel"),
+        rules.Dimension(
+            dimension_name="lvr",
+            data_type="int",
+            match_strategy="range",
+            range_min_field="lvr_min",
+            range_max_field="lvr_max",
+        ),
+        rules.Dimension(dimension_name="foreign_resident"),
+    ]
+    rows = [
+        {
+            "id": uuid(1),
+            "channel": "BROKER",
+            "lvr_min": 60,
+            "lvr_max": 80,
+            "foreign_resident": rules.UNKNOWN,
+            "amount": -0.10,
+        },
+        {
+            "id": uuid(2),
+            "channel": rules.UNKNOWN,
+            "lvr_min": 70,
+            "lvr_max": 90,
+            "foreign_resident": "false",
+            "amount": -0.05,
+        },
+        {
+            "id": uuid(3),
+            "channel": "BROKER",
+            "lvr_min": rules.UNKNOWN_NUMERIC,
+            "lvr_max": rules.UNKNOWN_NUMERIC,
+            "foreign_resident": "false",
+            "amount": -0.15,
+        },
+    ]
+    decisions = [
+        ("source_overlap", (uuid(left), uuid(right)))
+        for left, right in ((1, 2), (1, 3), (2, 3))
+    ]
+    return rows, dimensions, decisions
+
+
+@pytest.mark.parametrize("source_backend", ALL_BACKENDS)
+def test_each_native_source_backend_builds_a_real_exact_artifact(source_backend):
+    rows, dimensions, decisions = _worked_example()
+    engine, lattice = _build_native(
+        rows,
+        dimensions,
+        [TOTAL],
+        source_backend,
+        decisions=decisions,
+    )
+
+    result = engine.apply(
+        lattice,
+        {"channel": "BROKER", "lvr": 75, "foreign_resident": "false"},
+        contract_id="client",
+        profile_id="inspect",
+    )
+
+    assert lattice.artifact_kind == "exact_cells"
+    assert _candidate_facts(result, "pricing.total") == [
+        (pytest.approx(-0.30), (uuid(1), uuid(2), uuid(3))),
+    ]
+
+
+def _boolean_artifact():
+    dimensions = [
+        rules.Dimension(
+            dimension_name="flag",
+            data_type="bool",
+            match_strategy="exact_key",
+            role=rules.DimensionRole.CONTEXT_KEY,
+        ),
+        rules.Dimension(
+            dimension_name="approved",
+            data_type="bool",
+            match_strategy="exact",
+        ),
+    ]
+    aggregate = rules.Aggregate(
+        column_name="margin",
+        output_name="pricing.margin",
+        data_type="float",
+        numeric_semantics="numeric-1",
+    )
+    rows = [
+        {"id": uuid(11), "flag": True, "approved": True, "margin": 10.0},
+        {"id": uuid(12), "flag": False, "approved": False, "margin": 20.0},
+        {"id": uuid(13), "flag": None, "approved": None, "margin": 30.0},
+    ]
+    contract = _candidate_contract(
+        dimensions,
+        [aggregate.output_name],
+        masks=("approved",),
+    )
+    kwargs = declarations(
+        dimensions,
+        [aggregate],
+        contracts=[contract],
+        partition_keys=((True,), (False,), (None,)),
+    )
+    validation = gate(rows, kwargs)
+    engine = rules.AccumulatorEngine(
+        kwargs["metadata"], kwargs["aggregates"], limits=kwargs["limits"]
+    )
+    return engine, engine.build_all(rows, validation=validation)
+
+
+@pytest.mark.parametrize("context_backend", ALL_BACKENDS)
+def test_index_accepts_native_boolean_contexts(context_backend):
+    engine, lattices = _boolean_artifact()
+    index = engine.index(lattices)
+    contexts = build_backend_df(
+        context_backend,
+        {
+            "request_id": [100, 200],
+            "flag": [True, False],
+            "approved": [True, False],
+        },
+        table_name=f"native_boolean_context_{context_backend}",
+    )
+
+    batch = index.apply_batch(
+        contexts,
+        contract_id="client",
+        profile_id="inspect",
+        context_id_field="request_id",
+    )
+
+    assert list(batch.records) == [100, 200]
+    assert _candidate_facts(batch.for_context(100), "pricing.margin") == [
+        (10.0, (uuid(11),)),
+    ]
+    assert _candidate_facts(batch.for_context(200), "pricing.margin") == [
+        (20.0, (uuid(12),)),
+    ]
+
+
+@pytest.mark.parametrize(
+    "context_backend",
+    ["polars", "pandas", "narwhals-polars", "narwhals-pandas"],
+)
+def test_mixed_boolean_carriers_keep_valid_siblings_and_reject_raw_invalid_values(
+    context_backend,
+):
+    import narwhals as nw
+    import pandas as pd
+
+    engine, lattices = _boolean_artifact()
+    index = engine.index(lattices)
+    values = [True, 0, " FALSE ", 2]
+    data = {
+        "request_id": [11, 12, 13, 14],
+        "flag": values,
+        "approved": [True, False, False, True],
+        "mask": [["approved"]] * 4,
+    }
+    if context_backend == "polars":
+        contexts = pl.DataFrame(
             {
-                "flag": [True, False],
-                "rule_name": ["enabled", "disabled"],
-                "margin": [10.0, 20.0],
+                **{name: value for name, value in data.items() if name != "flag"},
+                "flag": pl.Series("flag", values, dtype=pl.Object),
             }
         )
-        lattice = _build_lattice_in_backend(engine, rules, lattice_backend)
-
-        assert _boolean_backend_values(engine.apply(lattice, {"flag": False})) == [20.0]
-        with pytest.raises(ValueError):
-            engine.apply(lattice, {"flag": 0})
-
-    @pytest.mark.parametrize(
-        "context_backend",
-        ["polars", "pandas", "narwhals-polars", "narwhals-pandas"],
-    )
-    def test_mixed_object_contexts_reject_non_boolean_values(self, context_backend):
-        from mountainash_rules import BooleanCoercion
-        import narwhals as nw
-        import pandas as pd
-
-        engine = _boolean_backend_engine(boolean_coercion=BooleanCoercion.NONE)
-        index = engine.index(engine.build_all(_boolean_backend_rules()))
-        values = [True, 0, " FALSE ", 2]
-        data = {
-            "source_id": [11, 12, 13, 14],
-            "flag": values,
-            "approved": [True, False, False, True],
-        }
-        if context_backend == "polars":
-            contexts = pl.DataFrame(
+    elif context_backend == "pandas":
+        contexts = pd.DataFrame(data).astype({"flag": "object"})
+    elif context_backend == "narwhals-polars":
+        contexts = nw.from_native(
+            pl.DataFrame(
                 {
-                    **{key: value for key, value in data.items() if key != "flag"},
+                    **{name: value for name, value in data.items() if name != "flag"},
                     "flag": pl.Series("flag", values, dtype=pl.Object),
                 }
             )
-        elif context_backend == "pandas":
-            contexts = pd.DataFrame(data).astype({"flag": "object"})
-        elif context_backend == "narwhals-polars":
-            contexts = nw.from_native(
-                pl.DataFrame(
-                    {
-                        **{key: value for key, value in data.items() if key != "flag"},
-                        "flag": pl.Series("flag", values, dtype=pl.Object),
-                    }
-                )
-            )
-        else:
-            contexts = nw.from_native(
-                pd.DataFrame(data).astype({"flag": "object"}),
-                eager_only=True,
-            )
+        )
+    else:
+        contexts = nw.from_native(
+            pd.DataFrame(data).astype({"flag": "object"}), eager_only=True
+        )
 
-        with pytest.raises(ValueError):
-            index.apply_batch(contexts, context_id_field="source_id")
-
-
-@pytest.fixture
-def identity_lattices():
-    from mountainash_rules import (
-        AccumulatorEngine,
-        Aggregate,
-        Dimension,
-        DimensionRole,
-        DimensionsMetadata,
+    batch = index.apply_batch(
+        contexts,
+        contract_id="client",
+        profile_id="inspect",
+        context_id_field="request_id",
+        dont_care_field="mask",
+        chunk_size=1,
     )
 
-    engine = AccumulatorEngine(
-        dimension_metadata=DimensionsMetadata(
-            dimensions=[
-                Dimension(dimension_name="tenant", role=DimensionRole.CONTEXT_KEY),
-                Dimension(dimension_name="region"),
-            ]
+    assert batch.records[11].status == "candidates"
+    for context_id in (12, 13, 14):
+        assert batch.records[context_id].status == "invalid_context"
+        with pytest.raises(rules.InvalidContextError) as failure:
+            batch.for_context(context_id)
+        assert failure.value.outcome is batch.records[context_id]
+        assert failure.value.result.outcome is batch.records[context_id]
+
+
+def _identity_artifact():
+    dimensions = [
+        rules.Dimension(
+            dimension_name="tenant",
+            data_type="str",
+            match_strategy="exact_key",
+            role=rules.DimensionRole.CONTEXT_KEY,
         ),
-        aggregates=[Aggregate(column_name="margin")],
+        rules.Dimension(dimension_name="region"),
+    ]
+    aggregate = rules.Aggregate(
+        column_name="margin",
+        output_name="pricing.margin",
+        data_type="float",
+        numeric_semantics="numeric-1",
     )
-    rules = pl.DataFrame(
-        {
-            "rule_name": ["a-au", "a-nz", "b-au", "b-nz"],
-            "tenant": ["A", "A", "B", "B"],
-            "region": ["AU", "NZ", "AU", "NZ"],
-            "margin": [10.0, 11.0, 20.0, 21.0],
-        }
+    rows = [
+        {"id": uuid(21), "tenant": "A", "region": "AU", "margin": 10.0},
+        {"id": uuid(22), "tenant": "A", "region": "NZ", "margin": 11.0},
+        {"id": uuid(23), "tenant": "B", "region": "AU", "margin": 20.0},
+        {"id": uuid(24), "tenant": "B", "region": "NZ", "margin": 21.0},
+    ]
+    return _build_native(
+        rows,
+        dimensions,
+        [aggregate],
+        "polars",
+        partition_keys=(("A",), ("B",), (None,)),
+        all_partitions=True,
     )
-    return engine, engine.build_all(rules)
 
 
-_EXECUTABLE_IDENTITY_BACKENDS = [name for name in ALL_BACKENDS if name != "ibis-polars"]
-
-
-def _native_schema(frame):
-    """Inspect native types without inferring types from empty Python rows."""
-    if hasattr(frame, "schema"):
-        schema = frame.schema
-        return dict(schema() if callable(schema) else schema)
-    return dict(frame.dtypes)
-
-
-@pytest.mark.parametrize("context_backend", _EXECUTABLE_IDENTITY_BACKENDS)
+@pytest.mark.parametrize("context_backend", ALL_BACKENDS)
 @pytest.mark.parametrize("ids", [None, [51, 29, 73], ["z", "a", "m"]])
-def test_partition_native_context_identity(identity_lattices, context_backend, ids):
-    engine, lattices = identity_lattices
+def test_partition_batch_preserves_generated_and_custom_native_id_order(
+    context_backend, ids
+):
+    engine, lattices = _identity_artifact()
     index = engine.index(lattices)
     data = {
         "position": [0, 1, 2],
         "tenant": ["A", "B", "A"],
-        "region": ["AU", "XX", "NZ"],
+        "region": ["AU", "NZ", "NZ"],
     }
     if ids is not None:
         data["request_id"] = ids
-    contexts = build_backend_df(context_backend, data, table_name="identity_contexts")
+    contexts = build_backend_df(
+        context_backend, data, table_name=f"identity_context_{context_backend}"
+    )
     if context_backend.startswith("ibis-"):
         contexts = contexts.order_by("position")
-    original = relation(contexts).to_dict()
-    result = index.apply_batch(
-        contexts, context_id_field=None if ids is None else "request_id", chunk_size=1
+
+    batch = index.apply_batch(
+        contexts,
+        contract_id="client",
+        profile_id="inspect",
+        context_id_field=None if ids is None else "request_id",
+        chunk_size=1,
     )
-    submitted = [0, 1, 2] if ids is None else ids
-    assert result.matched_context_ids == sorted([submitted[0], submitted[2]])
-    assert result.unmatched_context_ids(contexts) == [submitted[1]]
-    for cid, expected in zip(submitted, [[10.0], [], [11.0]]):
-        assert (
-            relation(result.for_context(cid).survivors).to_dict()["__agg_margin"]
-            == expected
-        )
-    assert relation(contexts).to_dict() == original
+    expected_ids = [0, 1, 2] if ids is None else ids
+
+    assert list(batch.records) == expected_ids
+    for context_id, margin, source_id, context in zip(
+        expected_ids,
+        [10.0, 21.0, 11.0],
+        [uuid(21), uuid(24), uuid(22)],
+        [
+            {"tenant": "A", "region": "AU"},
+            {"tenant": "B", "region": "NZ"},
+            {"tenant": "A", "region": "NZ"},
+        ],
+        strict=True,
+    ):
+        view = batch.for_context(context_id)
+        direct = index.apply(context, contract_id="client", profile_id="inspect")
+        assert view.outcome == batch.records[context_id] == direct.outcome
+        assert _candidate_facts(view, "pricing.margin") == [(margin, (source_id,))]
 
 
-@pytest.mark.parametrize("context_backend", _EXECUTABLE_IDENTITY_BACKENDS)
-def test_partition_native_invalid_identity(identity_lattices, context_backend):
-    engine, lattices = identity_lattices
+@pytest.mark.parametrize("context_backend", ALL_BACKENDS)
+def test_partition_batch_rejects_duplicate_or_null_native_ids(context_backend):
+    engine, lattices = _identity_artifact()
     index = engine.index(lattices)
-    for ids in [[7, 7], [7, None]]:
+    for ids in ([7, 7], [7, None]):
         contexts = build_backend_df(
             context_backend,
             {
                 "request_id": ids,
                 "tenant": ["A", "B"],
-                "region": ["AU", "XX"],
+                "region": ["AU", "NZ"],
             },
-            table_name="invalid_identity",
+            table_name=f"invalid_identity_{context_backend}",
         )
         with pytest.raises(ValueError):
-            index.apply_batch(contexts, context_id_field="request_id", chunk_size=1)
+            index.apply_batch(
+                contexts,
+                contract_id="client",
+                profile_id="inspect",
+                context_id_field="request_id",
+            )
 
 
-@pytest.mark.parametrize("lattice_backend", _EXECUTABLE_IDENTITY_BACKENDS)
-def test_partition_apply_representation_identity(identity_lattices, lattice_backend):
-    from mountainash_rules import Lattice, UNKNOWN
-    import ibis
+def test_empty_batch_retains_typed_identity_outcome_and_candidate_relations():
+    engine, lattices = _identity_artifact()
+    index = engine.index(lattices)
+    contexts = pl.DataFrame(
+        schema={"request_id": pl.Int64, "tenant": pl.Utf8, "region": pl.Utf8}
+    )
+    batch = index.apply_batch(
+        contexts,
+        contract_id="client",
+        profile_id="inspect",
+        context_id_field="request_id",
+    )
 
-    engine, lattices = identity_lattices
-    connection = None
-    if lattice_backend == "ibis-duckdb":
-        connection = ibis.duckdb.connect()
-    elif lattice_backend == "ibis-sqlite":
-        connection = ibis.sqlite.connect(":memory:")
-    try:
-        converted = []
-        for position, lattice in enumerate(lattices):
-            data = relation(lattice.combinations).to_dict()
-            name = f"identity_partition_{position}"
-            frame = (
-                connection.create_table(name, data)
-                if connection is not None
-                else build_backend_df(lattice_backend, data, table_name=name)
-            )
-            converted.append(
-                Lattice(
-                    dataframe=frame,
-                    metadata=lattice.metadata,
-                    aggregates=lattice.aggregates,
-                    partition_key=lattice.partition_key,
-                )
-            )
-        for ids in [None, [30, 10, 20], ["z", "a", "m"]]:
-            contexts = pl.DataFrame(
-                {
-                    "tenant": ["B", "A", "B"],
-                    "region": [UNKNOWN] * 3,
-                    **({} if ids is None else {"request_id": ids}),
-                }
-            )
-            original = contexts.clone()
-            submitted = [0, 1, 2] if ids is None else ids
-            expected = sorted(
-                (cid, rank, margin)
-                for cid, margins in zip(
-                    submitted, [[20.0, 21.0], [10.0, 11.0], [20.0, 21.0]]
-                )
-                for rank, margin in enumerate(margins, 1)
-            )
-            field = None if ids is None else "request_id"
-            for reverse in [False, True]:
-                index = engine.index(
-                    list(reversed(converted)) if reverse else converted
-                )
-                for chunk in [None, 1, 2]:
-                    result = index.apply_batch(
-                        contexts, context_id_field=field, chunk_size=chunk
-                    )
-                    rows = relation(result.survivors).to_dict()
-                    assert (
-                        list(
-                            zip(
-                                rows["__context_id"],
-                                rows["__rank"],
-                                rows["__agg_margin"],
-                            )
-                        )
-                        == expected
-                    )
-                    assert result.unmatched_context_ids(contexts) == []
-                    for cid, margins in zip(
-                        submitted, [[20.0, 21.0], [10.0, 11.0], [20.0, 21.0]]
-                    ):
-                        view = result.for_context(cid)
-                        assert (
-                            relation(view.survivors).to_dict()["__agg_margin"]
-                            == margins
-                        )
-                        with pytest.raises(ValueError):
-                            view.select("first")
-            for options in [{"min_specificity": 1}, {"top_n_per_context": 0}]:
-                empty = index.apply_batch(
-                    contexts, context_id_field=field, chunk_size=2, **options
-                )
-                assert empty.count == 0
-                assert empty.unmatched_context_ids(contexts) == sorted(submitted)
-                assert _native_schema(empty.survivors) == _native_schema(
-                    result.survivors
-                )
-                view = empty.for_context(submitted[0])
-                assert _native_schema(view.survivors) == _native_schema(
-                    result.for_context(submitted[0]).survivors
-                )
-                with pytest.raises(ValueError):
-                    view.select("collect")
-            assert contexts.equals(original)
-    finally:
-        if connection is not None:
-            connection.disconnect()
+    assert list(batch.records) == []
+    assert batch.context_ids.collect().columns == ["__context_id"]
+    assert batch.outcomes.collect().columns[:2] == ["__context_id", "status"]
+    assert batch.candidate_cells.collect().columns == [
+        "__context_id",
+        "cell_id",
+        "predicate_id",
+        "contributor_set_id",
+        "pricing.margin",
+    ]
+    assert batch.candidate_contributors.collect().columns == [
+        "__context_id",
+        "cell_id",
+        "source_id",
+    ]

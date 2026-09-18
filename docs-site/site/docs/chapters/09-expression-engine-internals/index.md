@@ -71,7 +71,7 @@ For non-Boolean `EXACT`, the compiler creates ternary columns for the rule value
 
 Boolean dimensions require a separate template. Booleans have no spare in-band value that could safely represent absence, so a null rule or context is the unknown state. The compiler explicitly returns `0` if either side is null and otherwise compares the two Boolean values. It must not cast a null context to `False`: that would make an absent fact contradict a `True` rule and falsely match a `False` rule.
 
-`EXACT_KEY` is deliberately stricter than ordinary exact matching. It first accepts a rule-side wildcard as `0`, then returns `-1` when a concrete key rule meets a non-concrete context, then compares two concrete values. That order matters to partition routing: an unknown key may keep a wildcard partition in consideration, but it must not match a specific partition key. The routing workflow belongs to [Chapter 8](../08-lattices-results-and-routing/index.md#exact_key-partition-routing).
+`EXACT_KEY` is deliberately stricter than ordinary exact matching. It first accepts a rule-side wildcard as `0`, then returns `-1` when a concrete key rule meets a non-concrete context, then compares two concrete values. That order matters to partition routing: an unknown key may keep a wildcard partition in consideration, but it must not match a specific partition key. The routing workflow belongs to [Chapter 8](../08-lattices-results-and-routing/index.md#routed-exact-views).
 
 <!-- concept:33 -->
 ## Range templates {#compile-range-expression}

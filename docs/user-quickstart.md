@@ -3,7 +3,7 @@
 This guide covers the two evaluation paths in `mountainash_rules`:
 
 - **ExpressionRulesEngine** — direct context evaluation against a rules DataFrame.
-- **AccumulatorEngine** — build a lattice of consistent rule combinations once, then evaluate any context against it.
+- **AccumulatorEngine** — build validated exact cells, then resolve named contract/profile requests.
 
 ---
 
@@ -243,7 +243,6 @@ With `context_id_field=None`, IDs are assigned once as original zero-based row p
 
 `matched_context_ids` and `counts_per_context` describe retained rows, not all pre-filter candidates. Top-N zero can make every submitted ID unmatched by these accessors. `unmatched_context_ids(original_contexts)` returns absent IDs sorted; it validates the recorded custom source field rather than guessing positions if that field is missing. For generated IDs, preserve original row order and count. The result does not store the full request universe, so `for_context()` returns the same typed empty view for unmatched and never-submitted IDs, with unchanged re-selection restrictions. The original unmodified input works for unmatched access after partitioned evaluation as well.
 
-For nonempty keyed `LatticeIndex.apply_batch()` input, assembled results carry unspecified completeness: every extracted view rejects `select()`, whether matched, unmatched or never submitted, including when all rows were filtered out. Re-evaluate through the engine to change selection. Direct filter results and no-key index delegation retain their ordinary re-selection rules.
 
 `chunk_size` must be `None` or a positive Python integer, excluding Boolean values. Typed empty contexts and typed empty rules produce the normal typed empty result, with requested observability, identity metadata, and conservative completeness state. Empty chunked input follows normal evaluation once; it does not fabricate a row or untyped schema. Empty input still validates policy configuration and reserved fields.
 
@@ -291,6 +290,7 @@ filter_engine = ExpressionRulesEngine(
 )
 accumulator_engine = AccumulatorEngine(
     dimension_metadata=metadata, boolean_coercion=BooleanCoercion.NONE,
+    limits=limits,  # application-owned ExactLimits
 )
 ```
 
@@ -461,103 +461,174 @@ engine = ExpressionRulesEngine(rules=table, dimension_metadata=metadata)
 
 ---
 
-## Part 2: AccumulatorEngine
+## Part 2: Exact AccumulatorEngine
 
-Use `AccumulatorEngine` when you need to find the most constrained rule *combination* that is consistent with a context — not just the best individual rule.
+Use `AccumulatorEngine` for an authorized, contract-bound exact-cell artifact.
+It is not the legacy combination/ranking API: source material is analyzed and
+gated before build, and an application resolves a named contract/profile
+against the resulting immutable lattice.
 
-Application requires at least one constraint dimension. Context-key-only metadata can still build a lattice, but applying it raises an explicit filter dimension `ValueError`; no implicit match-all or dummy dimension is supplied. No-key index routing works normally when constraint dimensions exist.
+### Inputs the application must own
 
-### When to use it
+There are no default resource ceilings. Create and retain an `ExactLimits`
+instance appropriate to the application, then pass it to the engine and every
+analysis, approval-attachment, snapshot, or binding operation. The source
+workflow also needs the application's:
 
-- Rules define constraints that accumulate (e.g. multiple fee rules that all apply to a transaction).
-- You want the most specific *set* of rules that all agree with each other.
-- You need numeric aggregation across matched rules (e.g. sum of applicable charges).
+- native source rows with a stable UUID in the declared `source_id_field`;
+- `DimensionsMetadata`, including its `ContextContract` declarations;
+- complete native `Aggregate` declarations (`output_name`, `data_type`, and
+  `numeric_semantics="numeric-1"` together);
+- `ruleset_id`, source-ID field, compilation domain, domains, predicate and
+  language envelopes, routing, and `ValidationPolicy`.
 
-### How it works
+`analyze_sources()` accepts those inputs explicitly. It returns a
+`ValidationBundle` containing findings and a complete source report; it does
+not make an approval decision.
 
-1. **Build phase** (`build`): Computes all maximal consistent rule combinations from the rules DataFrame. Output is a `Lattice`.
-2. **Apply phase** (`apply`): Evaluates a context against the lattice in one vectorised pass. Output is an `AccumulatorResult`.
+### Authorize the current source material
 
-Build once. Apply many times.
-
----
-
-### Quick example
+The following is a runnable handoff once `source_inputs` is the application's
+complete dictionary of the inputs above, `rows` is its current native source
+material, and `limits` is its chosen `ExactLimits`. It deliberately does not
+invent records, limits, policy, reviewer identity, trust, or a successful
+analysis.
 
 ```python
-import polars as pl
 from mountainash_rules import (
-    AccumulatorEngine, Aggregate, BooleanCoercion,
-    Dimension, DimensionsMetadata, MatchStrategy, DimensionRole,
+    analyze_sources,
+    attach_warning_approvals,
+    validate_build_input,
 )
 
-rules = pl.DataFrame({
-    "rule_name":  ["base_fee",  "au_fee",    "premium_fee"],
-    "region":     ["<NA>",      "AU",        "<NA>"],
-    "tier":       ["<NA>",      "<NA>",      "premium"],
-    "fee":        [10,          5,           20],
-})
+bundle = analyze_sources(rows, limits=limits, **source_inputs)
+source_report = bundle.validation["reports"][0]
 
-metadata = DimensionsMetadata(dimensions=[
-    Dimension(dimension_name="region", match_strategy=MatchStrategy.EXACT, data_type=str),
-    Dimension(dimension_name="tier",   match_strategy=MatchStrategy.EXACT, data_type=str),
-])
+# The application obtains these only from its review process. Each approval is
+# scoped to findings in source_report and carries its authority and actor.
+approvals = reviewed_warning_approvals
+reviewed_bundle = attach_warning_approvals(
+    bundle,
+    approvals,
+    limits=limits,
+)
+
+validated_build = validate_build_input(
+    rows,
+    bundle=reviewed_bundle,
+    analysis_input_id=source_report.analysis_input_id,
+    source_report_id=source_report.id,
+    approvals=approvals,
+    limits=limits,
+    **source_inputs,
+)
+```
+
+For a clean report, `reviewed_warning_approvals` is empty. For warnings, the
+application must create explicit scoped `WarningApproval` records before the
+gate can pass. Errors, incomplete checks, stale material, and missing or
+mis-scoped approvals do not produce `ValidatedBuildInput`.
+
+### Build, route, and resolve
+
+```python
+from mountainash_rules import AccumulatorEngine
 
 engine = AccumulatorEngine(
-    dimension_metadata=metadata,
-    aggregates=[Aggregate(column_name="fee", operation="sum")],
-    boolean_coercion=BooleanCoercion.NONE,
+    dimension_metadata=source_inputs["metadata"],
+    aggregates=source_inputs["aggregates"],
+    limits=limits,
 )
+lattice = engine.build(rows, validation=validated_build)
 
-# Build the lattice (do this once at startup)
-lattice = engine.build(rules)
-
-# Apply a context
-result = engine.apply(lattice, {"region": "AU", "tier": "premium"})
-
-print(result.count)            # number of matching combinations
-print(result.best_combination) # most specific matching combination
-print(result.accumulated("fee"))  # summed fee for each matching combination
-print(result.provenance)       # prime products identifying which rules contributed
-print(result.depths)           # number of rules in each combination
+result = engine.apply(
+    lattice,
+    context,
+    contract_id=contract_id,
+    profile_id=profile_id,
+    dont_care=dont_care,
+)
 ```
 
----
-
-### Partitioned lattices (CONTEXT_KEY dimensions)
-
-If your rules are segmented by a fixed context attribute (e.g. product type, country), use `DimensionRole.CONTEXT_KEY` to partition the lattice:
+`contract_id` and `profile_id` must name a binding active on `lattice`;
+`dont_care` is accepted only for fields permitted by that profile. For
+context-key dimensions, use `build_all(rows, validation=validated_build)` or
+call `build(..., partition_key=...)` with exactly every declared key. Repeated
+routed requests use `engine.index(lattices)`, then:
 
 ```python
-metadata = DimensionsMetadata(dimensions=[
-    Dimension(
-        dimension_name="product",
-        match_strategy=MatchStrategy.EXACT,
-        data_type=str,
-        role=DimensionRole.CONTEXT_KEY,   # partitions the build
-    ),
-    Dimension(dimension_name="tier", match_strategy=MatchStrategy.EXACT, data_type=str),
-])
-
-engine = AccumulatorEngine(dimension_metadata=metadata)
-
-# Build all partitions in one call
-lattices = engine.build_all(rules)
-
-# Apply — automatically selects the right lattice by partition key
-result = engine.apply_auto(lattices, {"product": "loans", "tier": "premium"})
+result = index.apply(
+    context,
+    contract_id=contract_id,
+    profile_id=profile_id,
+    dont_care=dont_care,
+)
 ```
 
----
+`index.apply_batch()` takes the same named contract/profile and optionally
+`context_id_field`, `dont_care_field`, and `chunk_size`. `batch.for_context()`
+raises `KeyError` for an unknown context ID; it does not fabricate an outcome.
 
-### AccumulatorEngine limitations
+### Read certainty and evidence
 
-| Limitation | Detail |
-|-----------|--------|
-| Supported strategies | EXACT, RANGE, GREATER_THAN, LESS_THAN only. String/set strategies raise `ValueError`. |
-| Aggregate operations | Only `"sum"` is currently implemented. |
-| Rules per partition | ~500 maximum. Larger partitions raise `IndexError` from the prime table. |
-| Lattice persistence | No built-in serialisation. Cache and reload the `Lattice` object yourself if needed. |
+`AccumulatorResult` exposes one normalized outcome:
+
+| Accessor | Meaning |
+|---|---|
+| `status`, `reason` | The resolution state and its defined reason |
+| `values` | Established output values for a `decision`; otherwise `None` |
+| `may_have_no_match` | Whether supplied facts leave an uncovered possibility |
+| `binding_id`, `contract_id`, `profile_id` | The permission and request labels used |
+| `cell_id`, `contributor_ids` | Definite identity/provenance, available only for a decision when established |
+| `issues`, `observations` | Admission diagnostics and normalized request observations |
+| `candidate_cells`, `candidate_contributors` | Possible cells/contributor edges; never a promoted decision |
+| `lineage` | Definite requested-output lineage only |
+
+Candidate-mode profiles report `status="candidates"` and make the candidate
+relations available. For an inspected candidate, use
+`candidate_lineage(cell_id)`; it remains candidate evidence rather than
+definite lineage. `raise_for_status()` returns normal outcomes but raises the
+typed request error for `invalid_context` or a profile that rejected unresolved
+input.
+
+### Bind, save, load, and inspect
+
+Binding is additive and immutable:
+
+```python
+bound_view = lattice.with_binding(
+    binding,
+    evidence=binding_evidence,
+    limits=limits,
+)
+```
+
+The original lattice remains unchanged. `binding_evidence` must be the complete
+portable evidence for that supplied binding; loading it alone grants no
+permission.
+
+Save or load a native artifact with explicit limits:
+
+```python
+from mountainash_rules import Lattice
+
+snapshot = bound_view.save(snapshot_directory, limits=limits)
+loaded = Lattice.load(snapshot, limits=limits)
+compatible_engine = AccumulatorEngine(
+    loaded.metadata,
+    loaded.aggregates,
+    limits=limits,
+)
+```
+
+The compatible engine must have dimensions and aggregate declarations matching
+the compiled artifact. A native snapshot has 11 files: `manifest.yaml`; eight
+Parquet relations—`lattice`, `sources`, `contributors`, `scopes`, `scope_keys`,
+`source_maps`, `vectors`, and `words`; and `predicates.json` plus
+`validation.json`. Inspect native artifacts via `artifact_kind` and typed
+`partition_identity`, not legacy `is_composed`. Flat legacy/imported lattices
+are inspection-only: their rows can be read, but they cannot serve exact build,
+binding, routing, or application.
 
 ---
 
@@ -569,6 +640,6 @@ result = engine.apply_auto(lattices, {"product": "loans", "tier": "premium"})
 | Get the single best-matching rule | `result.best_match` |
 | Explain why a rule matched | `result.explain(rule_name)` |
 | Filter by minimum match specificity | `result.at_least(n)` or `evaluate(min_specificity=n)` |
-| Find all consistent rule combinations | `AccumulatorEngine.build()` + `apply()` |
-| Sum a numeric column across matched rules | `AccumulatorResult.accumulated("column_name")` |
-| Trace which rules contributed to a combination | `AccumulatorResult.provenance` |
+| Analyze and authorize native source material | `analyze_sources()` → scoped review → `validate_build_input()` |
+| Build an exact artifact | `AccumulatorEngine.build(..., validation=validated_build)` |
+| Resolve a contract-bound context | `engine.apply(..., contract_id=..., profile_id=..., dont_care=...)` |

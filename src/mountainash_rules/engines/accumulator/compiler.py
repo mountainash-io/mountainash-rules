@@ -41,19 +41,9 @@ if t.TYPE_CHECKING:
     from mountainash_rules.core.predicates import PredicateGraph
     from mountainash_rules.core.normalization import Fragment, Overlay
     from mountainash_rules.core.validation import AnalysisGeometry, CanonicalMaterial
-import mountainash.expressions as ma
-from mountainash.expressions import BaseExpressionAPI
 
-from mountainash_rules.core.constants import (
-    MatchStrategy,
-    unknown_sentinel_for,
-)
+from mountainash_rules.core.constants import MatchStrategy, unknown_sentinel_for
 from mountainash_rules.core.dimension import Dimension
-from mountainash_rules.core.set_wildcard import (
-    set_wildcard_predicate,
-    canonicalize_set_expr,
-    sentinel_list_expr,
-)
 
 
 def _reserve_canonical(
@@ -97,240 +87,6 @@ def _canonical_id(
         return _content_id_bytes(kind, canonical_bytes(payload))
     finally:
         budget.release("max_live_bytes", buffer_size)
-
-
-class AccumulatorCompiler:
-    """Compiles accumulator-specific expressions for dimension pairs.
-
-    Expressions operate on two rule rows: LHS (coalesced combination, co_ prefix)
-    and RHS (candidate rule, _rhs suffix from the cross-join).
-
-    Sentinel semantics: a rule-side don't-care bound is UNKNOWN_NUMERIC only
-    (sentinel min = -inf, sentinel max = +inf). NOT_SET_NUMERIC is a
-    context-side sentinel; the filter engine currently also tolerates it
-    rule-side (NUMERIC_SENTINELS contains both), but the accumulator does
-    not recognise it — rule tables fed to build() must use UNKNOWN_NUMERIC.
-    """
-
-    def compile_compatible(self, dim: Dimension) -> BaseExpressionAPI:
-        """Expression that is True when two rules can coexist on this dimension."""
-        match dim.match_strategy:
-            case MatchStrategy.EXACT:
-                return self._compatible_exact(dim)
-            case MatchStrategy.RANGE:
-                return self._compatible_range(dim)
-            case MatchStrategy.GREATER_THAN | MatchStrategy.LESS_THAN:
-                return self._compatible_threshold(dim)
-            case MatchStrategy.SET_MEMBERSHIP:
-                return self._compatible_set_membership(dim)
-            case MatchStrategy.SET_EXCLUSION:
-                return ma.lit(True)
-            case _:
-                raise ValueError(
-                    f"Strategy {dim.match_strategy.name} not supported by accumulator"
-                )
-
-    def compile_coalesce(self, dim: Dimension) -> list[BaseExpressionAPI]:
-        """Expression(s) producing the coalesced value from two compatible rules."""
-        match dim.match_strategy:
-            case MatchStrategy.EXACT:
-                return self._coalesce_exact(dim)
-            case MatchStrategy.RANGE:
-                return self._coalesce_range(dim)
-            case MatchStrategy.GREATER_THAN:
-                return self._coalesce_threshold(dim, ma.greatest)
-            case MatchStrategy.LESS_THAN:
-                return self._coalesce_threshold(dim, ma.least)
-            case MatchStrategy.SET_MEMBERSHIP:
-                return self._coalesce_set(dim, "intersection")
-            case MatchStrategy.SET_EXCLUSION:
-                return self._coalesce_set(dim, "union")
-            case _:
-                raise ValueError(
-                    f"Strategy {dim.match_strategy.name} not supported by accumulator"
-                )
-
-    def compile_coalesce_na_flag(self, dim: Dimension) -> BaseExpressionAPI:
-        """Expression for the coalesced NA flag (1 = combination leaves dim unconstrained)."""
-        if dim.match_strategy == MatchStrategy.RANGE:
-            co_min_s, co_max_s, rhs_min_s, rhs_max_s = self._range_sentinel_checks(dim)
-            all_sentinel = (
-                co_min_s.__and__(rhs_min_s).__and__(co_max_s).__and__(rhs_max_s)
-            )
-            return all_sentinel.cast(int).alias(f"co_{dim.dimension_name}_na")
-        if dim.match_strategy in (
-            MatchStrategy.SET_MEMBERSHIP,
-            MatchStrategy.SET_EXCLUSION,
-        ):
-            co_w, rhs_w = self._set_wild_checks(dim)
-            field = dim.resolved_rule_field
-            return co_w.__and__(rhs_w).cast(int).alias(f"co_{field}_na")
-        co_sentinel, rhs_sentinel = self._sentinel_checks(dim)
-        field = dim.resolved_rule_field
-        return co_sentinel.__and__(rhs_sentinel).cast(int).alias(f"co_{field}_na")
-
-    def _sentinel_checks(
-        self, dim: Dimension
-    ) -> tuple[BaseExpressionAPI, BaseExpressionAPI]:
-        """Return (co_is_sentinel, rhs_is_sentinel) expressions."""
-        field = dim.resolved_rule_field
-        sentinel = unknown_sentinel_for(dim.data_type)
-        co_is_sentinel = ma.col(f"co_{field}").eq(ma.lit(sentinel))
-        rhs_is_sentinel = ma.col(f"{field}_rhs").eq(ma.lit(sentinel))
-        return co_is_sentinel, rhs_is_sentinel
-
-    def _compatible_exact(self, dim: Dimension) -> BaseExpressionAPI:
-        co_sentinel, rhs_sentinel = self._sentinel_checks(dim)
-        field = dim.resolved_rule_field
-        values_match = ma.col(f"co_{field}").eq(ma.col(f"{field}_rhs"))
-        return co_sentinel.__or__(rhs_sentinel).__or__(values_match)
-
-    def _coalesce_exact(self, dim: Dimension) -> list[BaseExpressionAPI]:
-        co_sentinel, rhs_sentinel = self._sentinel_checks(dim)
-        field = dim.resolved_rule_field
-        co_hard = ma.when(co_sentinel).then(None).otherwise(ma.col(f"co_{field}"))
-        rhs_hard = ma.when(rhs_sentinel).then(None).otherwise(ma.col(f"{field}_rhs"))
-        return [
-            ma.coalesce(co_hard, rhs_hard, ma.col(f"co_{field}")).alias(f"co_{field}")
-        ]
-
-    def _range_sentinel_checks(
-        self,
-        dim: Dimension,
-    ) -> tuple[
-        BaseExpressionAPI, BaseExpressionAPI, BaseExpressionAPI, BaseExpressionAPI
-    ]:
-        sentinel = unknown_sentinel_for(dim.data_type)
-        co_min_s = ma.col(f"co_{dim.range_min_field}").eq(ma.lit(sentinel))
-        co_max_s = ma.col(f"co_{dim.range_max_field}").eq(ma.lit(sentinel))
-        rhs_min_s = ma.col(f"{dim.range_min_field}_rhs").eq(ma.lit(sentinel))
-        rhs_max_s = ma.col(f"{dim.range_max_field}_rhs").eq(ma.lit(sentinel))
-        return co_min_s, co_max_s, rhs_min_s, rhs_max_s
-
-    def _compatible_range(self, dim: Dimension) -> BaseExpressionAPI:
-        """True when the two effective intervals overlap.
-
-        A sentinel min is -inf, a sentinel max is +inf, each bound
-        independently. Touching endpoints overlap iff both the min and the
-        max side are inclusive (covers all four flag combinations).
-        """
-        co_min_s, co_max_s, rhs_min_s, rhs_max_s = self._range_sentinel_checks(dim)
-        co_min = ma.col(f"co_{dim.range_min_field}")
-        co_max = ma.col(f"co_{dim.range_max_field}")
-        rhs_min = ma.col(f"{dim.range_min_field}_rhs")
-        rhs_max = ma.col(f"{dim.range_max_field}_rhs")
-
-        touch_overlaps = dim.range_min_inclusive and dim.range_max_inclusive
-        if touch_overlaps:
-            low = co_min.le(rhs_max)
-            high = co_max.ge(rhs_min)
-        else:
-            low = co_min.lt(rhs_max)
-            high = co_max.gt(rhs_min)
-
-        low_ok = co_min_s.__or__(rhs_max_s).__or__(low)
-        high_ok = co_max_s.__or__(rhs_min_s).__or__(high)
-        return low_ok.__and__(high_ok)
-
-    def _coalesce_range(self, dim: Dimension) -> list[BaseExpressionAPI]:
-        co_min_s, co_max_s, rhs_min_s, rhs_max_s = self._range_sentinel_checks(dim)
-        sentinel = unknown_sentinel_for(dim.data_type)
-
-        new_min = (
-            ma.when(co_min_s.__and__(rhs_min_s))
-            .then(ma.lit(sentinel))
-            .when(co_min_s)
-            .then(ma.col(f"{dim.range_min_field}_rhs"))
-            .when(rhs_min_s)
-            .then(ma.col(f"co_{dim.range_min_field}"))
-            .otherwise(
-                ma.greatest(
-                    ma.col(f"co_{dim.range_min_field}"),
-                    ma.col(f"{dim.range_min_field}_rhs"),
-                )
-            )
-            .alias(f"co_{dim.range_min_field}")
-        )
-
-        new_max = (
-            ma.when(co_max_s.__and__(rhs_max_s))
-            .then(ma.lit(sentinel))
-            .when(co_max_s)
-            .then(ma.col(f"{dim.range_max_field}_rhs"))
-            .when(rhs_max_s)
-            .then(ma.col(f"co_{dim.range_max_field}"))
-            .otherwise(
-                ma.least(
-                    ma.col(f"co_{dim.range_max_field}"),
-                    ma.col(f"{dim.range_max_field}_rhs"),
-                )
-            )
-            .alias(f"co_{dim.range_max_field}")
-        )
-
-        return [new_min, new_max]
-
-    def _compatible_threshold(self, dim: Dimension) -> BaseExpressionAPI:
-        return ma.lit(True)
-
-    def _coalesce_threshold(
-        self, dim: Dimension, combine_fn
-    ) -> list[BaseExpressionAPI]:
-        co_sentinel, rhs_sentinel = self._sentinel_checks(dim)
-        field = dim.resolved_rule_field
-        sentinel = unknown_sentinel_for(dim.data_type)
-        new_val = (
-            ma.when(co_sentinel.__and__(rhs_sentinel))
-            .then(ma.lit(sentinel))
-            .when(co_sentinel)
-            .then(ma.col(f"{field}_rhs"))
-            .when(rhs_sentinel)
-            .then(ma.col(f"co_{field}"))
-            .otherwise(combine_fn(ma.col(f"co_{field}"), ma.col(f"{field}_rhs")))
-            .alias(f"co_{field}")
-        )
-        return [new_val]
-
-    def _set_wild_checks(
-        self, dim: Dimension
-    ) -> tuple[BaseExpressionAPI, BaseExpressionAPI]:
-        field = dim.resolved_rule_field
-        co_w = set_wildcard_predicate(dim, ma.col(f"co_{field}"))
-        rhs_w = set_wildcard_predicate(dim, ma.col(f"{field}_rhs"))
-        return co_w, rhs_w
-
-    def _compatible_set_membership(self, dim: Dimension) -> BaseExpressionAPI:
-        co_w, rhs_w = self._set_wild_checks(dim)
-        field = dim.resolved_rule_field
-        intersection_nonempty = (
-            ma.col(f"co_{field}")
-            .list.set_intersection(ma.col(f"{field}_rhs"))
-            .list.len()
-            .gt(ma.lit(0))
-        )
-        return co_w.__or__(rhs_w).__or__(intersection_nonempty)
-
-    def _coalesce_set(self, dim: Dimension, op: str) -> list[BaseExpressionAPI]:
-        co_w, rhs_w = self._set_wild_checks(dim)
-        field = dim.resolved_rule_field
-        co = ma.col(f"co_{field}")
-        rhs = ma.col(f"{field}_rhs")
-        combined = (
-            co.list.set_intersection(rhs)
-            if op == "intersection"
-            else co.list.set_union(rhs)
-        )
-        new_val = (
-            ma.when(co_w.__and__(rhs_w))
-            .then(sentinel_list_expr(dim))
-            .when(co_w)
-            .then(rhs)
-            .when(rhs_w)
-            .then(co)
-            .otherwise(canonicalize_set_expr(combined))
-            .alias(f"co_{field}")
-        )
-        return [new_val]
 
 
 @dataclass(frozen=True, slots=True)
@@ -377,10 +133,38 @@ class ExactAnalysis:
     partition_identity: t.Mapping[str, t.Any]
     domain: DomainDefinition
     domain_digest: str
-    overlay: Overlay
     cells: tuple[AnalyzedCell, ...]
     artifact_id: str
     source_bundle_id: str
+
+
+def _artifact_payload(prepared, partition, source_bundle_id, cells):
+    """Reference the authored domain; partition admission supplies its restriction."""
+    return {
+        "schema_version": 1,
+        "ruleset_id": prepared.ruleset_id,
+        "partition_identity": partition,
+        "metadata_id": prepared.metadata["id"],
+        "aggregates_id": prepared.aggregate_record["id"],
+        "compilation_domain_id": prepared.domain_digest,
+        "source_bundle_id": source_bundle_id,
+        "cells": [
+            {
+                "cell_id": cell.cell_id,
+                "outputs": {
+                    t.cast(str, aggregate.output_name): encode_scalar(
+                        cell.outputs[t.cast(str, aggregate.output_name)],
+                        t.cast(DataType, aggregate.data_type),
+                        timezone=aggregate.timezone,
+                        allow_reserved=True,
+                    )
+                    for aggregate in prepared.aggregates
+                },
+            }
+            for cell in cells
+        ],
+        "semantic_versions": prepared.semantic_versions.model_dump(mode="json"),
+    }
 
 
 def _dimension_record(
@@ -424,6 +208,37 @@ def _source_columns(dimension: Dimension) -> tuple[str, ...]:
             tuple[str, ...], (dimension.range_min_field, dimension.range_max_field)
         )
     return (dimension.resolved_rule_field,)
+
+
+def _routing_match(value: t.Any, field: t.Any) -> dict[str, t.Any]:
+    """Encode one authored context-key scalar with the source-admission rules."""
+    value = normalize_scalar(
+        value,
+        field.data_type,
+        timezone=field.timezone,
+        allow_reserved=True,
+        allow_null=field.data_type is DataType.BOOL,
+    )
+    marker = (
+        value.replace(tzinfo=None) if field.data_type is DataType.DATETIME else value
+    )
+    wildcard = (
+        value is None
+        if field.data_type is DataType.BOOL
+        else marker == unknown_sentinel_for(field.data_type)
+    )
+    if field.data_type is not DataType.BOOL and marker == not_set_sentinel_for(
+        field.data_type
+    ):
+        raise ValueError("NOT_SET is invalid source routing intent")
+    return (
+        {"kind": "wildcard"}
+        if wildcard
+        else {
+            "kind": "value",
+            "value": encode_scalar(value, field.data_type, timezone=field.timezone),
+        }
+    )
 
 
 def _origin_value(value: t.Any, dimension: Dimension, graph: PredicateGraph) -> t.Any:
@@ -617,38 +432,9 @@ def prepare_sources(
                 }
             )
             if dimension.role is DimensionRole.CONTEXT_KEY:
-                field = graph.fields[dimension.resolved_context_field]
-                value = normalize_scalar(
+                match = _routing_match(
                     row[dimension.resolved_rule_field],
-                    field.data_type,
-                    timezone=field.timezone,
-                    allow_reserved=True,
-                    allow_null=field.data_type is DataType.BOOL,
-                )
-                marker = (
-                    value.replace(tzinfo=None)
-                    if field.data_type is DataType.DATETIME
-                    else value
-                )
-                wildcard = (
-                    value is None
-                    if field.data_type is DataType.BOOL
-                    else marker == unknown_sentinel_for(field.data_type)
-                )
-                if (
-                    field.data_type is not DataType.BOOL
-                    and marker == not_set_sentinel_for(field.data_type)
-                ):
-                    raise ValueError("NOT_SET is invalid source routing intent")
-                match = (
-                    {"kind": "wildcard"}
-                    if wildcard
-                    else {
-                        "kind": "value",
-                        "value": encode_scalar(
-                            value, field.data_type, timezone=field.timezone
-                        ),
-                    }
+                    graph.fields[dimension.resolved_context_field],
                 )
                 keys.append(
                     {"dimension_name": dimension.dimension_name, "match": match}
@@ -749,6 +535,7 @@ def analyze_sources(
     key_values: t.Sequence[t.Mapping[str, t.Any]],
     order: t.Sequence[str] | None = None,
     fragments: t.Iterable[Fragment] | None = None,
+    overlay: Overlay | None = None,
 ) -> ExactAnalysis:
     """Return proved immutable analysis, never a serving lattice or approval."""
     from mountainash_rules.core.normalization import covered_overlay, finalize_regions
@@ -811,9 +598,17 @@ def analyze_sources(
         },
         phase="analysis.source-map",
     )
-    overlay = covered_overlay(
-        reasoner, domain_predicate, source_predicates, order=order
-    )
+    if overlay is None:
+        overlay = covered_overlay(
+            reasoner, domain_predicate, source_predicates, order=order
+        )
+    elif overlay.domain_id != domain_predicate or dict(overlay.sources) != {
+        source: graph.and_(domain_predicate, predicate)
+        for source, predicate in source_predicates.items()
+    }:
+        raise ValueError(
+            "Scoped discovery does not match current partition sources/domain"
+        )
     regions = finalize_regions(reasoner, overlay, fragments=fragments)
     _reserve_canonical(
         graph.budget,
@@ -924,31 +719,7 @@ def analyze_sources(
         },
         phase="analysis.bundle",
     )
-    artifact_payload = {
-        "schema_version": 1,
-        "ruleset_id": prepared.ruleset_id,
-        "partition_identity": partition,
-        "metadata_id": prepared.metadata["id"],
-        "aggregates_id": prepared.aggregate_record["id"],
-        "compilation_domain_id": domain_digest,
-        "source_bundle_id": bundle_id,
-        "cells": [
-            {
-                "cell_id": cell.cell_id,
-                "outputs": {
-                    t.cast(str, aggregate.output_name): encode_scalar(
-                        cell.outputs[t.cast(str, aggregate.output_name)],
-                        t.cast(DataType, aggregate.data_type),
-                        timezone=aggregate.timezone,
-                        allow_reserved=True,
-                    )
-                    for aggregate in prepared.aggregates
-                },
-            }
-            for cell in cells
-        ],
-        "semantic_versions": prepared.semantic_versions.model_dump(mode="json"),
-    }
+    artifact_payload = _artifact_payload(prepared, partition, bundle_id, cells)
     artifact_id = _canonical_id(
         graph.budget,
         "artifact",
@@ -962,7 +733,6 @@ def analyze_sources(
         partition,
         domain,
         domain_digest,
-        overlay,
         tuple(cells),
         artifact_id,
         bundle_id,

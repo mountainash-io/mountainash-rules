@@ -1,180 +1,183 @@
 ---
-title: "Chapter 7: Using the Accumulator Engine"
-description: "Build compatible rule combinations, aggregate their values, and apply a context to a reusable lattice."
+title: "Chapter 7: Using the Exact Accumulator Engine"
+description: "Analyze and authorize native sources, build immutable exact-cell artifacts, and resolve contract-bound contexts."
 ---
 
-# Chapter 7: Using the Accumulator Engine
+# Chapter 7: Using the Exact Accumulator Engine {#accumulatorengine}
 
-The Accumulator Engine answers a different question from the Expression Rules Engine. The expression engine returns the individual rules that match a context. The accumulator first builds rule combinations whose conditions can all hold at the same time, folds selected payload values across each combination, and then matches a context against those combined conditions.
+`AccumulatorEngine` is the native exact-cell workflow. It does not select or
+rank legacy rule combinations. Instead, an application analyzes its real source
+material, obtains any required scoped warning approvals, passes the build gate,
+and builds an immutable artifact. A later request resolves against that artifact
+under a named context contract and resolution profile.
 
-This chapter develops that public workflow. The matching vocabulary—dimensions, exact matching, wildcards and ternary outcomes—comes from [Chapter 3](../03-matching-concepts/index.md). The build search and its prime identities are deliberately deferred to [Chapter 10](../10-accumulator-engine-internals/index.md). Here, a lattice is a prepared table that can be applied repeatedly.
+This chapter documents the available E6–E8 interfaces only. It does not claim
+that E8 is complete or make a release or consumer-completeness claim.
 
-Our table has a broad operational baseline plus inspection and packing work for Australia and inspection work for New Zealand. `"<NA>"` is the string wildcard described in Chapter 3. The baseline therefore applies everywhere; it can coexist with more specific work. The numeric columns are payload to fold, not conditions.
+## Inputs and limits are application-owned {#inputs-and-limits-are-application-owned}
 
-<!-- concept:68 -->
-## AccumulatorEngine {#accumulatorengine}
+Every operation takes the application's `ExactLimits`; there is no package
+default or documentation ceiling. The same limits object (or another deliberate
+application choice) is required for analysis, warning-approval attachment,
+engine construction, save, load, and binding. Resource exhaustion raises a
+typed `ExactResourceError`; it never returns a partial successful artifact or
+outcome.
 
-`AccumulatorEngine` is constructed from `DimensionsMetadata` and an optional list of aggregates. Its two public phases have separate inputs and outputs:
+The application also owns these actual source-gate inputs:
 
-1. `build(rules)` reads the rules table once and returns a `Lattice` of retained compatible combinations.
-2. `apply(lattice, context)` compares one context with that prepared lattice and returns an `AccumulatorResult`.
+- native rows, each with a stable UUID in the declared `source_id_field`;
+- `DimensionsMetadata`, including the declared `ContextContract` records;
+- complete native `Aggregate` declarations;
+- `ruleset_id`, `source_id_field`, and `compilation_domain_ref`;
+- domain definitions; predicate and language envelopes; routing; and a
+  `ValidationPolicy`.
 
-Build when the rule library changes; apply for the contexts that need a decision. A context does not cause the engine to add another source rule to a lattice. It only selects combinations that the build phase already established.
+A native aggregate declares `column_name`, a qualified `output_name`,
+`data_type`, and `numeric_semantics="numeric-1"` as one complete declaration.
+A `DATETIME` declaration additionally names `timezone="naive"` or `"utc"`.
+Incomplete flat aggregate metadata is not promoted to exact semantics.
 
-The diagram separates the two kinds of data. Conditions become coalesced conditions in the lattice, while declared numeric payload becomes accumulated columns.
+## The source gate {#the-source-gate}
 
-```mermaid
-flowchart TB
-    rules["Rules table<br/>conditions + payload"] --> build["build()"]
-    metadata["Dimensions + aggregates"] --> build
-    build --> lattice["Lattice<br/>compatible combinations"]
-    lattice --> apply["apply()"]
-    context["Context facts"] --> apply
-    apply --> result["AccumulatorResult<br/>matching combinations"]
-```
-
-<!-- concept:87 -->
-## The Aggregate model {#the-aggregate-model}
-
-An `Aggregate` names one source column and an `AggregateOp`. It describes the fold; it does not calculate a value at construction. `Aggregate(column_name="minutes")` uses the default operation, `SUM`. Each declaration produces a `__agg_<column_name>` column in the lattice.
-
-The complete example declares four independent aggregates. `minutes` is added; `minimum_risk` uses the smallest value; `maximum_priority` uses the largest; and `factor` is multiplied. The two string dimensions are conditions and therefore do not appear in the aggregate list.
+The following outline starts with application declarations; it intentionally
+does not manufacture rows, UUIDs, policy, limits, approvals, trust, or a clean
+report.
 
 ```python
-import polars as pl
-from mountainash.relations import relation
 from mountainash_rules import (
-    AccumulatorEngine,
-    Aggregate,
-    AggregateOp,
-    DataType,
-    Dimension,
-    DimensionsMetadata,
+    analyze_sources,
+    attach_warning_approvals,
+    validate_build_input,
 )
 
-rules = pl.DataFrame({
-    "rule_name": ["base", "inspect_au", "pack_au", "inspect_nz"],
-    "region": ["<NA>", "AU", "AU", "NZ"],
-    "service": ["<NA>", "standard", "standard", "standard"],
-    "minutes": [1, 2, 3, 4],
-    "minimum_risk": [9, 5, 7, 4],
-    "maximum_priority": [1, 3, 2, 4],
-    "factor": [1.0, 1.1, 1.2, 0.9],
-})
-metadata = DimensionsMetadata(dimensions=[
-    Dimension(dimension_name="region", data_type=DataType.STR),
-    Dimension(dimension_name="service", data_type=DataType.STR),
-])
-engine = AccumulatorEngine(metadata, aggregates=[
-    Aggregate(column_name="minutes"),
-    Aggregate(column_name="minimum_risk", operation=AggregateOp.MIN),
-    Aggregate(column_name="maximum_priority", operation=AggregateOp.MAX),
-    Aggregate(column_name="factor", operation=AggregateOp.PRODUCT),
-])
+bundle = analyze_sources(rows, limits=limits, **source_inputs)
+source_report = bundle.validation["reports"][0]
 
-lattice = engine.build(rules)
-print("lattice", lattice.count, lattice.is_composed)
-print(relation(lattice.combinations).to_polars().select(
-    "co_region", "co_service", "__agg_minutes", "__agg_minimum_risk",
-    "__agg_maximum_priority", "__agg_factor", "__level",
-).sort("co_region", "__level").to_dicts())
+# These come from the application's review process.  Each WarningApproval names
+# the report and warning IDs, authority and actor, and a scope covering them.
+approvals = reviewed_warning_approvals
+reviewed_bundle = attach_warning_approvals(bundle, approvals, limits=limits)
 
-result = engine.apply(lattice, {"region": "AU", "service": "standard"})
-print("result", result.count)
-print(relation(result.survivors).to_polars().select(
-    "co_region", "co_service", "__agg_minutes", "__agg_minimum_risk",
-    "__agg_maximum_priority", "__agg_factor", "__specificity", "__rank",
-).to_dicts())
-print("accumulated", relation(result.accumulated("minutes")).to_polars().to_dicts())
+validated_build = validate_build_input(
+    rows,
+    bundle=reviewed_bundle,
+    analysis_input_id=source_report.analysis_input_id,
+    source_report_id=source_report.id,
+    approvals=approvals,
+    limits=limits,
+    **source_inputs,
+)
 ```
 
-```text
-lattice 3 True
-[{'co_region': '<NA>', 'co_service': '<NA>', '__agg_minutes': 1, '__agg_minimum_risk': 9, '__agg_maximum_priority': 1, '__agg_factor': 1.0, '__level': 0}, {'co_region': 'AU', 'co_service': 'standard', '__agg_minutes': 6, '__agg_minimum_risk': 5, '__agg_maximum_priority': 3, '__agg_factor': 1.32, '__level': 2}, {'co_region': 'NZ', 'co_service': 'standard', '__agg_minutes': 5, '__agg_minimum_risk': 4, '__agg_maximum_priority': 4, '__agg_factor': 0.9, '__level': 1}]
-result 2
-[{'co_region': 'AU', 'co_service': 'standard', '__agg_minutes': 6, '__agg_minimum_risk': 5, '__agg_maximum_priority': 3, '__agg_factor': 1.32, '__specificity': 2, '__rank': 1}, {'co_region': '<NA>', 'co_service': '<NA>', '__agg_minutes': 1, '__agg_minimum_risk': 9, '__agg_maximum_priority': 1, '__agg_factor': 1.0, '__specificity': 0, '__rank': 2}]
-accumulated [{'__agg_minutes': 6}, {'__agg_minutes': 1}]
+`analyze_sources()` produces a complete source report and its findings; it does
+not decide that a warning is acceptable. The application review process creates
+any `WarningApproval` records. `attach_warning_approvals()` validates and
+stores those explicit scoped decisions without granting permission by itself.
+`validate_build_input()` recomputes the current material identities, replays
+retained evidence, checks the selected report and approvals, and returns
+`ValidatedBuildInput` only when the actual source gate passes. A clean report
+uses an empty approval sequence. Errors, incomplete checks, changed material,
+or unapproved/mis-scoped warnings do not authorize a build.
+
+## Build immutable native cells {#build-immutable-native-cells}
+
+Pass the gate result as the required `validation=` argument. `AccumulatorEngine`
+requires complete native metadata and aggregates plus explicit limits:
+
+```python
+from mountainash_rules import AccumulatorEngine
+
+engine = AccumulatorEngine(
+    dimension_metadata=source_inputs["metadata"],
+    aggregates=source_inputs["aggregates"],
+    limits=limits,
+)
+lattice = engine.build(rows, validation=validated_build)
 ```
 
-Three combinations remain in the prepared lattice, and two apply to the Australian standard context. The context itself is not retained in the lattice. `__level` is zero-based: the singleton has level 0, the pair level 1 and the triple level 2. Chapter 8 develops this tracking information. `relation(...).to_polars()` is used here to display the table values.
+The resulting `Lattice` contains native cells, source UUID identities, and
+contributor relationships. Its `combinations` relation is useful for
+inspection, but it is not a legacy ranked-results interface. Inspect a native
+artifact with `artifact_kind` and its typed `partition_identity`; do not rely
+on the removed `is_composed` representation test.
 
-<!-- concept:77 -->
-## Lattice class {#lattice-class}
+Dimensions with `CONTEXT_KEY` role define the declared partitions. Build every
+partition with:
 
-`Lattice` is the value returned by `build()`. It carries the combinations relation, the original metadata, the aggregate declarations and, when applicable, its partition key. Its `count` property counts combination rows: three in this example, representing the broad condition and the two regional conditions.
+```python
+lattices = engine.build_all(rows, validation=validated_build)
+```
 
-Treat a built lattice as prepared decision data. It can serve many `apply()` calls using different contexts. The next chapter adds partitions, routing and snapshot persistence; this chapter stays with a single unpartitioned lattice.
+or build one declared partition with `partition_key=`. A selected key must name
+exactly every configured context-key dimension; a key that was not declared by
+source validation is rejected. The analysis/build path uses native cells,
+source UUIDs, contributor sets, and scoped words rather than prime products,
+levels, coalesced columns, or legacy ranking APIs.
 
-<!-- concept:78 -->
-## Lattice combinations {#lattice-combinations}
+## Resolve a bound context {#resolve-a-bound-context}
 
-Each row of `lattice.combinations` represents one compatible combination retained by the build. The three rows above mean:
+A build may carry evidence, but a request is authorized only through an active
+binding. Application code always names `contract_id` and `profile_id`; it may
+also supply `dont_care` only for fields that the selected profile explicitly
+allows.
 
-| Coalesced condition | Contributing work represented | Accumulated minutes |
-|---|---|---:|
-| Any region, any service | `base` alone | 1 |
-| AU, standard | `base` + `inspect_au` + `pack_au` | 6 |
-| NZ, standard | `base` + `inspect_nz` | 5 |
+```python
+result = engine.apply(
+    lattice,
+    context,
+    contract_id=contract_id,
+    profile_id=profile_id,
+    dont_care=dont_care,
+)
+```
 
-The broad wildcard singleton remains because its unrestricted coalesced condition differs from the Australian and New Zealand conditions. The Australian combination contains three compatible rules, while the New Zealand combination contains two. These rows are not a list of globally largest rule sets. They are the undominated combinations for their respective coalesced conditions: one broad condition and two more specific conditions can all be useful outcomes.
+`context` is a mapping or Pydantic model. Context admission checks the selected
+contract and profile, then resolution checks the provider domain and exact
+cells. Direct `apply()` raises `InvalidContextError` for invalid request
+material (the exception carries its normalized result) and
+`UnresolvedContextError` when a profile rejects insufficient context.
 
-A lattice also retains bookkeeping columns such as `__level`; Chapter 8 explains how to read them. Payload columns from a source row are not a reliable description of everything that contributed to a combined row. Use the coalesced and accumulated column families for the combined meaning.
+Use `engine.index(lattices)` for repeated context-key routing. It validates a
+nonempty coherent sequence of exact lattice views and then serves the same
+contract/profile/mask interface:
 
-<!-- concept:80 -->
-## Coalesced columns {#coalesced-columns}
+```python
+index = engine.index(lattices)
+result = index.apply(
+    context,
+    contract_id=contract_id,
+    profile_id=profile_id,
+    dont_care=dont_care,
+)
+```
 
-A `co_` column describes the condition after the component rules have been merged. The `co_region` and `co_service` columns in the output are the conditions that `apply()` actually evaluates.
+For batch work, `index.apply_batch()` requires the same contract/profile and
+accepts optional `context_id_field`, `dont_care_field`, and `chunk_size`.
+`batch.for_context(context_id)` raises `KeyError` for an unknown ID; it never
+creates a synthetic outcome.
 
-For an exact dimension, a concrete value takes precedence over a wildcard when the two are compatible. Thus the Australian row has `co_region="AU"` and `co_service="standard"`, even though `base` supplied wildcards for both. Two contradictory concrete exact values cannot form one combination. Other supported strategies have their own merged condition: compatible ranges are intersected, greater-than and less-than thresholds are tightened, membership lists are intersected, and exclusion lists are unioned.
+## Read an outcome, not a winner {#read-an-outcome-not-a-winner}
 
-This example uses string exact dimensions. Accumulator construction does not correctly implement Boolean-null wildcards for `EXACT`; use the filter engine for that Boolean matching contract, and observe the accumulator data-type boundary in [Chapter 10](../10-accumulator-engine-internals/index.md#accumulatorcompiler).
+`AccumulatorResult` contains one normalized `OutcomeRecord`. It replaces
+`best_combination`, ranked candidate frames, `accumulated()`, `provenance`, and
+`depths`.
 
-The original `region` and `service` columns remain source-row payload in a build result. They do not replace the `co_` columns. This distinction matters when inspecting a combination whose first retained source row had wildcards: `co_region` still tells the truth about the combined condition.
+| Accessor | Meaning |
+|---|---|
+| `status`, `reason` | Defined resolution state and reason |
+| `values` | Established outputs only for `status == "decision"` |
+| `binding_id`, `contract_id`, `profile_id` | Binding and request labels |
+| `cell_id`, `contributor_ids` | Definite identifiers, only when the decision established them |
+| `may_have_no_match` | Whether the supplied facts leave an uncovered possibility |
+| `observations`, `issues` | Admission observations and invalid-context diagnostics |
+| `candidate_cells`, `candidate_contributors` | Possible native cells and contributor edges, never promoted to a decision |
+| `lineage` | Definite requested-output lineage |
 
-<!-- concept:83 -->
-## AccumulatorResult class {#accumulatorresult-class}
+A candidate-mode profile returns `status == "candidates"` and exposes its
+possible cells and contributors. `candidate_lineage(cell_id)` inspects one
+candidate cell but does not convert it into definite lineage. `lineage` is
+available only for definite contributors and only for the profile's requested
+outputs.
 
-`apply()` returns an `AccumulatorResult`. It extends the ordinary rule-result interface, so `survivors`, `count`, `best_match`, `active_dimensions`, and ranking columns work as they do for expression evaluation. `best_combination` is a readability alias for `best_match`.
-
-For the Australian context, the detailed combination ranks first because both `region` and `service` are definite matches, giving specificity two. The baseline still survives: its two wildcards produce unknown comparisons, so its specificity is zero. The result therefore keeps a broad fallback and a more specific accumulated answer at the same time.
-
-`apply()` uses `COLLECT` matching and has no hit-policy argument. Use `best_combination` to read the highest-ranked combination, or `at_least(n)` to obtain a native frame filtered by specificity. Although `AccumulatorResult` inherits `select()`, the apply wrapper does not carry the expression result's `SelectionInfo`; calling `select()` on it raises `ValueError` for missing selection information. The complete-candidate reselection workflow in [Chapter 5](../05-expression-results-and-policies/index.md#reapplying-a-policy-with-ruleresultselect) applies to expression results carrying that provenance.
-
-<!-- concept:84 -->
-## Accumulated aggregates {#accumulated-aggregates}
-
-`result.accumulated("minutes")` projects the `__agg_minutes` column from the matching combinations. In the example it returns 6 for the detailed Australian combination and 1 for the baseline. The return value is a native DataFrame—Polars in this example—with one value per surviving combination, rather than a Python scalar.
-
-The aggregate values belong to a combination, not to the context. The six minutes mean one baseline minute plus two inspection minutes plus three packing minutes. The context only chose the row whose coalesced conditions are `AU` and `standard`.
-
-<!-- concept:127 -->
-## Aggregate min, max and product {#aggregate-min-max-and-product}
-
-`AggregateOp` has four implemented operations: `SUM`, `MIN`, `MAX`, and `PRODUCT`. They are commutative and associative in their mathematical domains, so their intended business meaning does not depend on source-row encounter order.
-
-| Operation | Example output for the AU combination | Required source kind |
-|---|---:|---|
-| `SUM` | `__agg_minutes = 6` | Numeric |
-| `MIN` | `__agg_minimum_risk = 5` | Orderable, including numeric or temporal |
-| `MAX` | `__agg_maximum_priority = 3` | Orderable, including numeric or temporal |
-| `PRODUCT` | `__agg_factor = 1.32` | Numeric |
-
-The `Aggregate` model validates the operation name, but it does not inspect a table column's type. An incompatible source column fails in the backend during `build()`. Aggregate-value overflow is likewise backend-defined; the package's checked integer limit protects combination identity, not a sum or product payload value. Floating-point folds should be compared with an appropriate numerical tolerance when that is relevant to an application.
-
-## Next steps {#next-steps}
-
-[Chapter 8](../08-lattices-results-and-routing/index.md#lattice-partition-key) explains partitions, result provenance, persistence and routing a context to the appropriate lattice. [Chapter 10](../10-accumulator-engine-internals/index.md) explains compatibility, coalescing and frontier retention without changing the public build/apply workflow used here.
-
-## Implementation references {#implementation-references}
-
-The example was executed against Rules revision `730a8583ee9d4fd6b52dc5350699eb66cc7487e9`.
-
-- [Accumulator engine][accumulator-engine-source] — public construction, build, apply and the coalesced apply metadata.
-- [Aggregate models][aggregate-source] — aggregate declarations and the four fold operations.
-- [Lattice model][lattice-source] — combinations and public lattice properties.
-- [Accumulator result][result-source] — `best_combination` and `accumulated()`.
-
-[accumulator-engine-source]: https://github.com/mountainash-io/mountainash-rules/blob/730a8583ee9d4fd6b52dc5350699eb66cc7487e9/src/mountainash_rules/engines/accumulator/engine.py
-[aggregate-source]: https://github.com/mountainash-io/mountainash-rules/blob/730a8583ee9d4fd6b52dc5350699eb66cc7487e9/src/mountainash_rules/engines/accumulator/aggregate.py
-[lattice-source]: https://github.com/mountainash-io/mountainash-rules/blob/730a8583ee9d4fd6b52dc5350699eb66cc7487e9/src/mountainash_rules/engines/accumulator/lattice.py
-[result-source]: https://github.com/mountainash-io/mountainash-rules/blob/730a8583ee9d4fd6b52dc5350699eb66cc7487e9/src/mountainash_rules/engines/accumulator/result.py
+Continue with [Chapter 8](../08-lattices-results-and-routing/index.md) for
+binding views, native snapshots, and inspection boundaries.

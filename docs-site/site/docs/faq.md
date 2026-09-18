@@ -6,13 +6,13 @@ Focused answers for rule authors, application developers and maintainers. The li
 
 ### What is mountainash-rules and what problems does it solve?
 
-Mountainash Rules represents business rules as table rows with explicit matching metadata. The Expression Rules Engine evaluates those rows against a context and applies a hit policy. The Accumulator Engine builds compatible combinations and their aggregate values for later application to contexts.
+Mountainash Rules represents business rules as table rows with explicit matching metadata. The Expression Rules Engine evaluates those rows against a context and applies a hit policy. The Exact Accumulator analyzes validated sources, compiles immutable cells, and resolves normalized contexts against contract-bound artifacts.
 
 Read [Vectorized Evaluation](chapters/01-two-rule-engines/index.md#comparing-rules-as-columns).
 
 ### What are the two engines and when should I use each one?
 
-Use `ExpressionRulesEngine` to match, rank and select individual rule rows. Use `AccumulatorEngine` when several compatible rules contribute together and you need their combined constraints, aggregates and provenance. The accumulator has a separate construction phase; it does not merely sum the filter engine's current survivors.
+Use `ExpressionRulesEngine` to match, rank and select individual rule rows. Use `AccumulatorEngine` when you need a source-validated exact artifact with cell-level outputs and contributor provenance. Its source analysis, build, and contract-bound resolution phases are separate; it does not consume filter-engine survivors.
 
 Read [AccumulatorEngine](chapters/07-accumulator-engine/index.md#accumulatorengine).
 
@@ -48,9 +48,9 @@ Read [DataFrame as Rule Store](chapters/01-two-rule-engines/index.md#put-the-rul
 
 ### How is the package organized?
 
-Shared models, context handling, comparison compilation and result selection live under `core/`. The filter and accumulator implementations live under `engines/`; the accumulator also has lattice, aggregate, result and prime-identity modules. Dependencies run from accumulator to filter to core. Application imports use the package root.
+Shared models, context handling, comparison compilation and result selection live under `core/`. The filter and exact-accumulator implementations live under `engines/`; the accumulator includes source analysis, predicates, layouts, persistence, results, and native state. Application imports use the package root.
 
-Read [Backend Purity Enforcement](chapters/11-extending-and-maintaining/index.md#backend-purity-enforcement).
+Read [Keep the public boundary small](chapters/11-extending-and-maintaining/index.md#keep-the-public-boundary-small).
 
 ## Ternary Logic and Sentinel Values
 
@@ -88,7 +88,7 @@ Read [Context Value Extraction](chapters/09-expression-engine-internals/index.md
 
 ### Which MatchStrategy members are available?
 
-There are thirteen members: `EXACT`, `EXACT_KEY`, `NOT_EQUAL`, `RANGE`, `GREATER_THAN`, `LESS_THAN`, `PREFIX`, `SUFFIX`, `CONTAINS`, `REGEX`, `CONTEXT_REGEX`, `SET_MEMBERSHIP` and `SET_EXCLUSION`. Their input types and wildcard rules differ. The accumulator supports only implemented compatibility/coalescing combinations; in particular, its `EXACT` construction path does not correctly support Boolean-null wildcards.
+There are thirteen members: `EXACT`, `EXACT_KEY`, `NOT_EQUAL`, `RANGE`, `GREATER_THAN`, `LESS_THAN`, `PREFIX`, `SUFFIX`, `CONTAINS`, `REGEX`, `CONTEXT_REGEX`, `SET_MEMBERSHIP` and `SET_EXCLUSION`. Their input types and wildcard rules differ. Filter support does not itself make a strategy part of exact accumulator compilation; that path requires a normalized predicate and proof-preserving lifecycle support.
 
 Read [MatchStrategy Enum](chapters/02-shared-rule-model/index.md#the-matchstrategy-enum).
 
@@ -112,13 +112,13 @@ Read [PREFIX Strategy](chapters/03-matching-concepts/index.md#prefix-strategy).
 
 ### How do SET_MEMBERSHIP and SET_EXCLUSION strategies work?
 
-The rule cell holds a list and the context supplies a scalar. `SET_MEMBERSHIP` accepts membership; `SET_EXCLUSION` accepts non-membership. A reserved one-element list containing the typed UNKNOWN sentinel represents an unconstrained rule. Boolean set dimensions are rejected. In accumulator construction, membership sets intersect and exclusion sets union, with normalization and validation protecting their representation.
+The rule cell holds a list and the context supplies a scalar. `SET_MEMBERSHIP` accepts membership; `SET_EXCLUSION` accepts non-membership. A reserved one-element list containing the typed UNKNOWN sentinel represents an unconstrained rule. Boolean set dimensions are rejected. Exact-accumulator support, where available, derives from validated normalized predicates rather than a mutable set-combination column.
 
 Read [SET_MEMBERSHIP Strategy](chapters/03-matching-concepts/index.md#set_membership-strategy).
 
 ### What is the DimensionRole enum and what are CONSTRAINT and CONTEXT_KEY?
 
-`CONSTRAINT` is the ordinary matching role. In accumulator metadata, `CONTEXT_KEY` identifies the fields used to separate construction into partitions; those keys are not coalesced as constraints. The filter engine does not automatically exclude a dimension merely because its role is `CONTEXT_KEY`: it still compiles and evaluates its configured strategy.
+`CONSTRAINT` is the ordinary matching role. In accumulator metadata, `CONTEXT_KEY` identifies fields used to select a declared source-validated partition; it is not a compiled cell predicate. The filter engine does not automatically exclude a dimension merely because its role is `CONTEXT_KEY`: it still compiles and evaluates its configured strategy.
 
 Read [DimensionRole Enum](chapters/02-shared-rule-model/index.md#the-dimensionrole-enum).
 
@@ -284,91 +284,67 @@ Ordering, policy assertions and returned cardinality are per context. `min_speci
 
 Read [Per-Context Ranking](chapters/06-batch-evaluation/index.md#rank-matches-within-each-request).
 
-## AccumulatorEngine and Lattice
+## Exact Accumulator and Lattice
 
 ### What problem does the AccumulatorEngine solve that the ExpressionRulesEngine cannot?
 
-The accumulator combines rule constraints and aggregates before a context is applied. It can represent several contributing rules as one compatible combination, with coalesced fields and provenance. Filtering individual rows alone does not construct that artifact or define how their constraints and values should combine.
+The accumulator turns source-validated rule rows into an immutable exact artifact. It resolves a normalized context under a declared contract and profile, producing a typed outcome, selected cell identity, outputs, and contributor UUIDs where they are definite. Filtering individual rules does not create that artifact or its evidence.
 
-Read [AccumulatorEngine](chapters/07-accumulator-engine/index.md#accumulatorengine).
+Read [Inside the Exact Accumulator](chapters/10-accumulator-engine-internals/index.md#the-bounded-lifecycle).
 
-### How does prime number encoding work in the AccumulatorEngine?
+### What is required before building a lattice?
 
-Each rule in a partition gets a distinct prime; a combination's identity is their product. Divisibility detects membership and subset relationships while the product remains within the guarded signed-int64 range. Attribution requires the original partition order or a separate prime-to-source mapping. Snapshots preserve the numeric products, not that mapping.
+First run `analyze_sources(...)` to obtain source diagnostics for the current material. Review actual warnings, attach only explicit scoped `WarningApproval` records, then call `validate_build_input(...)`. Its returned `ValidatedBuildInput` is the required `validation=` argument to `build()` and `build_all()`. A source report alone is not build permission.
 
-Read [Prime Number Encoding](chapters/10-accumulator-engine-internals/index.md#prime-number-encoding).
+Read [Source analysis is separate from compilation](chapters/10-accumulator-engine-internals/index.md#source-analysis-is-separate-from-compilation).
 
-### What are the phases of lattice building?
+### What does lattice construction produce?
 
-Construction filters a partition, assigns prime identities, creates singleton anchors and expands them with compatible rules in canonical order. It concatenates the generated levels and removes dominated combinations with equivalent coalesced fingerprints. Without constraint dimensions there is no fingerprint, so all generated combinations remain; that configuration also cannot be applied. Applying a valid lattice happens later and is not another construction pass.
+Construction normalizes admitted sources into predicates, discovers declared scopes, and compiles nonempty, disjoint exact cells. Each cell has `cell_id`, `predicate_id`, and `contributor_set_id`; contributor relations use source UUIDs. The inspection relation returned by `lattice.combinations` contains cells and declared outputs, not source-rule combinations, ranks, or arithmetic identities.
 
-Read [Level Expansion](chapters/10-accumulator-engine-internals/index.md#level-expansion).
+Read [Normalized predicates and disjoint cells](chapters/10-accumulator-engine-internals/index.md#normalized-predicates-and-disjoint-cells).
 
-### What is the frontier filter and why is it needed?
+### How are contributors represented?
 
-The frontier filter removes a combination only when a strict superset of its rules has the same coalesced fingerprint. Different constraints can match different contexts and must remain distinguishable. With no constraint dimensions, the fingerprint is empty and pruning is bypassed entirely. The normal frontier is not simply the globally largest rule set or a list of maximal cliques.
+`lattice.contributors` relates contributor-set IDs to source UUIDs. `lattice.lineage(cell_id)` exposes the declared outputs and contributors for one exact cell. Runtime candidate inspection remains separate from definite lineage: possible contributors do not become a final result merely because a cell was considered.
 
-Read [Frontier Filter](chapters/10-accumulator-engine-internals/index.md#frontier-filter).
+Read [Normalized predicates and disjoint cells](chapters/10-accumulator-engine-internals/index.md#normalized-predicates-and-disjoint-cells).
 
-### What are compatible and coalesce expressions?
+### Why does the accumulator use scoped 63-bit words?
 
-A compatibility expression admits pairs under a strategy's combination rules; a coalesce expression represents their combined constraint. Supported exact values must agree unless wildcarded, ranges and membership sets intersect, and exclusion sets union. Every accumulator strategy needs both operations and correct unconstrained-state flags. Boolean-null `EXACT` wildcards do not currently have that complete build implementation.
+The compiled layout represents source membership as dense 63-bit words within a scope-local source map. The words bound narrow native state and permit membership operations without treating source order as provenance. `ExactLimits` bounds scopes, source-scope edges, contributor edges, and word rows; an exhausted bound raises `ExactResourceError`.
 
-Read [Compatible Expression](chapters/10-accumulator-engine-internals/index.md#compatible-expression).
+Read [Scoped narrow state](chapters/10-accumulator-engine-internals/index.md#scoped-narrow-state).
 
-### What is the Lattice class and what does it contain?
+### How are aggregate outputs defined?
 
-`Lattice` holds the combinations frame, dimension metadata, aggregate definitions and an optional partition key. Inspect its `count`, `combinations`, `is_composed`, metadata and aggregate properties as appropriate. Treat the frame as immutable: apply-phase engines are cached against the lattice object's identity.
+An exact `Aggregate` names the source column, a namespaced output, declared data type, and `numeric_semantics="numeric-1"` together. The implemented operations are `sum`, `min`, `max`, and `product`; sum and product require numeric declarations. Folds are exact-native and bounded by `max_numeric_bits`, rather than being backend aggregate columns.
 
-Read [Lattice Class](chapters/07-accumulator-engine/index.md#lattice-class).
+Read [Numeric-1 output folds](chapters/10-accumulator-engine-internals/index.md#numeric-1-output-folds).
 
-### What are coalesced columns and NA flag columns?
+### How is an exact lattice applied?
 
-Coalesced columns store a combination's effective constraints. NA flags record whether those constraints remain wholly unconstrained. For ranges, inspect both bounds and the dimension's NA flag; one sentinel bound does not make the whole range unconstrained. These columns are construction outputs, not independent rule-authoring inputs to mutate after caching.
+`engine.apply(lattice, context, *, contract_id, profile_id, dont_care=None)` requires the named contract and profile identifiers. It checks the exact artifact against the engine, admits the context under the selected binding, and returns `AccumulatorResult`. Invalid and unresolved contexts retain typed outcomes and are re-raised by `raise_for_status()`; they are not default matches.
 
-Read [Coalesced Columns](chapters/07-accumulator-engine/index.md#coalesced-columns).
+Read [Contract-bound resolution](chapters/10-accumulator-engine-internals/index.md#contract-bound-resolution).
 
-### What is combination depth and why does it matter?
+### How do partitions route?
 
-`__level` is zero-based: a singleton has level 0, a pair level 1 and a triple level 2. Thus contributing-rule count is level plus one. The result's `depths` accessor returns these stored levels, not an independently calculated rule count. Do not confuse combination depth with specificity or with the number of rows in a result.
+Use `engine.index(lattices)` for reusable routing or `apply_auto(...)` for one call. Both operate on coherent exact lattices and require `contract_id` and `profile_id` to resolve. No matching route raises `KeyError`; an admissible best-specificity tie raises `AmbiguousPartitionError`.
 
-Read [Combination Depth](chapters/08-lattices-results-and-routing/index.md#combination-depth).
+Read [Contract-bound resolution](chapters/10-accumulator-engine-internals/index.md#contract-bound-resolution).
 
-### How do partition keys work in the AccumulatorEngine?
+### What do save, load, and with_binding require?
 
-Correct isolation requires every context-key dimension and a non-`None` stored value. `build()` checks only for a truthy dictionary and skips filters for absent or `None` entries, which can mix intended partitions. `build_all()` discovers complete tuples but shares that `None` limitation, so avoid Boolean wildcard partitions. Without configured context-key dimensions, a supplied key is stored but does not filter rules. Application still requires at least one constraint dimension.
+`lattice.save(directory, limits=limits)`, `Lattice.load(directory, limits=limits)`, and `lattice.with_binding(binding, evidence=evidence, limits=limits)` each require explicit `ExactLimits`. Load validates and restores typed native state and semantic evidence before returning an executable artifact. A flat or legacy lattice remains inspection-only and cannot be promoted to application by loading it.
 
-Read [Partition Key Filtering](chapters/08-lattices-results-and-routing/index.md#partition-key-filtering).
+Read [Persistence and native restoration](chapters/10-accumulator-engine-internals/index.md#persistence-and-native-restoration).
 
-### What are the prime-table and int64 combination limits?
+### What can AccumulatorResult inspect?
 
-The prime table supports 10,000 rule identities per partition. Independently, any admitted combination's prime product must fit signed int64. Larger assigned primes can overflow with fewer rules, so there is no generally safe fifteen-rule threshold. Increasing the table cap does not enlarge the product type. Distinguish the resulting `IndexError` from `LatticeWidthExceededError`.
+An accumulator result exposes its typed outcome, status, reason, binding/contract/profile IDs, decoded values, selected `cell_id`, definite contributor UUIDs, observations, and issues. Candidate cells and contributors are inspection data only. It does not expose filter-style survivor ranks or rule-result selection.
 
-Read [Prime Table Size Cap](chapters/10-accumulator-engine-internals/index.md#prime-table-size-cap).
-
-### How does the AccumulatorResult differ from RuleResult?
-
-`AccumulatorResult` describes matching combinations and adds native-frame projections for accumulated values, prime-product provenance and zero-based levels. It also has `best_combination`, an alias for `best_match`. Apply results do not carry `SelectionInfo`, so the inherited `select()` method raises `ValueError`; use the supported accessors and frame filtering instead.
-
-Read [AccumulatorResult Class](chapters/07-accumulator-engine/index.md#accumulatorresult-class).
-
-### What is the Aggregate model and how is it used?
-
-`Aggregate` names a source column and one fold operation: sum, minimum, maximum or product. Construction seeds each singleton from its source value and folds values when rules combine. The model does not perform aggregation by itself. Aggregate arithmetic has backend-defined overflow behavior; the prime-product guard does not protect business values.
-
-Read [Aggregate Model](chapters/07-accumulator-engine/index.md#the-aggregate-model).
-
-### How do Lattice.save() and Lattice.load() provide persistence?
-
-`save()` writes `lattice.parquet` and `manifest.yaml`; `load()` reads the frame and validates the stored dimension and aggregate models without rerunning construction. It does not establish that the frame agrees with the manifest. After loading, use an equivalently configured engine, such as `AccumulatorEngine(loaded.metadata, loaded.aggregates)`. Tracking columns and the partition key survive, but the prime-to-source mapping is not saved. Loading currently uses Polars rather than restoring the original backend.
-
-Read [Lattice Save Method](chapters/08-lattices-results-and-routing/index.md#lattice-save-method).
-
-### How does LatticeIndex route partitions, and how is it different from apply_auto()?
-
-`apply_auto()` constructs routing metadata for an occasional call without exhaustive ambiguity validation. A reusable `LatticeIndex` keeps an exact-key lookup and a wildcard-aware meta-engine; its default construction validates ambiguity exhaustively within the witness limit. Equal-best matches still raise `AmbiguousPartitionError` at runtime if validation was disabled.
-
-Read [LatticeIndex Router](chapters/08-lattices-results-and-routing/index.md#the-latticeindex-router).
+Read [Contract-bound resolution](chapters/10-accumulator-engine-internals/index.md#contract-bound-resolution).
 
 ## Practical Usage and Best Practices
 
@@ -398,33 +374,33 @@ Read [Engine-Level Explain](chapters/05-expression-results-and-policies/index.md
 
 ### What are common pitfalls when designing rule tables?
 
-Common mistakes include confusing rule and context field names, using reserved values as legitimate data, assuming a missing context always means unknown, treating every null as a wildcard, choosing unsupported accumulator strategies, and leaving `ANY` output fields ambiguous. Validate metadata, inspect a small representative table and exercise the actual strategy/backend combinations you depend on.
+Common mistakes include confusing rule and context field names, using reserved values as legitimate data, assuming a missing context always means unknown, treating every null as a wildcard, assuming filter strategies automatically compile to exact cells, and leaving `ANY` output fields ambiguous. Validate metadata, inspect a small representative table and exercise the actual strategy/backend combinations you depend on.
 
 Read [Dimension Validator](chapters/02-shared-rule-model/index.md#the-dimension-validator).
 
-### How do I handle rules that should not combine in the AccumulatorEngine?
+### How do I keep source rules semantically separate in the AccumulatorEngine?
 
-Express a genuine conflicting constraint or place rules in semantically separate partitions. If two rules are compatible according to all configured accumulator constraints, the engine has no hidden business reason to keep them apart. Do not abuse sentinel values, row order or aggregate values as an undocumented exclusion mechanism.
+Express the separation in the normalized predicate, declared domain, routing partition, or validation policy. The exact compiler has no undocumented exclusion based on sentinel values, source order, or aggregate payload. Source diagnostics and compiled-cell proofs must continue to reflect the declared meaning.
 
-Read [Compatible Expression](chapters/10-accumulator-engine-internals/index.md#compatible-expression).
+Read [Source gate before compilation](chapters/11-extending-and-maintaining/index.md#source-gate-before-compilation).
 
 ### How do I evaluate many contexts against the same rule table efficiently?
 
-Reuse the constructed filter engine and consider `evaluate_batch()` for frame-based contexts. Choose chunk size from the size of the intermediate relation and the output you retain, not a universal benchmark. For accumulator workflows, reuse a built or loaded lattice and its apply path instead of rebuilding combinations for every request.
+Reuse the constructed filter engine and consider `evaluate_batch()` for frame-based contexts. Choose chunk size from the size of the intermediate relation and the output you retain, not a universal benchmark. For exact-accumulator workflows, retain a built or strictly restored lattice and resolve contexts against its declared bindings rather than rebuilding it per request.
 
 Read [Evaluate Batch Method](chapters/06-batch-evaluation/index.md#evaluate-a-table-of-requests).
 
 ### Can I use both engines together in a single evaluation pipeline?
 
-Yes, when your application has distinct decisions that justify both. The accumulator already uses filter-engine behavior internally when applying coalesced constraints, so not every workflow needs an extra filter pass. If you compose public results yourself, define the handoff explicitly: a selected individual rule row and a matching combination represent different objects.
+Yes, when the application has distinct decisions that justify both. Keep the handoff explicit: a filter result is a selected rule-row view, while an accumulator result is a contract-bound exact outcome. The accumulator does not execute application through a reused filter-engine result path.
 
-Read [AccumulatorResult Class](chapters/07-accumulator-engine/index.md#accumulatorresult-class).
+Read [Contract-bound resolution](chapters/10-accumulator-engine-internals/index.md#contract-bound-resolution).
 
 ### What should I know about performance and scalability?
 
-Measure the workload you intend to run. Filter work depends on rules, dimensions, contexts, strategies and backend behavior. Accumulator construction depends strongly on compatibility and the combinations that survive expansion; partition count alone is not enough. The integer-product limits are correctness bounds, not performance promises, and aggregate overflow is a separate concern.
+Measure the workload you intend to run. Filter work depends on rules, dimensions, contexts, strategies and backend behavior. Exact-accumulator work depends on source size, predicate and domain complexity, scoped layout, proof work, output folds, and context resolution. Its explicit limits are hard resource boundaries, not performance promises.
 
-Read [Level Expansion](chapters/10-accumulator-engine-internals/index.md#level-expansion).
+Read [The bounded lifecycle](chapters/10-accumulator-engine-internals/index.md#the-bounded-lifecycle).
 
 ### How does mountainash-rules handle null values in rule table columns?
 
@@ -454,36 +430,36 @@ Read [Bool Ternary Comparison](chapters/03-matching-concepts/index.md#bool-terna
 
 ### What must change when I add a filter strategy?
 
-Add its enum value, configuration validation and compiler dispatch, then prove the ternary behavior on the backends you support. A strategy using several rule columns also needs those columns classified correctly for inferred ANY output fields. The extension recipe names these separate integration points so a comparison does not work while selection silently misinterprets its inputs.
+Add its enum value, configuration validation and compiler dispatch, then prove the ternary behavior on the backends you support. A strategy using several rule columns also needs those columns classified correctly for inferred ANY output fields. Preserve scalar and batch observable behavior; a filter-only change does not need an exact-accumulator path.
 
-Read [Adding a filter strategy](chapters/11-extending-and-maintaining/index.md#recipe-add-a-filter-match-strategy).
+Read [Shared filter-engine maintenance](chapters/11-extending-and-maintaining/index.md#shared-filter-engine-maintenance).
 
 ### Must every filter strategy also support the accumulator?
 
-No. A filter predicate can be complete without pairwise combination semantics. Accumulator support requires compatible, coalesce and unconstrained-state behavior that preserves the combined constraint, including order-independent meaning. Unsupported strategies should retain their explicit error rather than silently fall back to a different operation.
+No. A filter predicate can be complete without being part of exact accumulator compilation. Accumulator support requires a normalized source representation, predicate/domain meaning, source diagnostics, disjoint-cell proof, bounded layout, strict restoration, and contract-bound resolution. Unsupported strategies must fail explicitly rather than silently selecting a different interpretation.
 
-Read [Adding accumulator compatibility](chapters/11-extending-and-maintaining/index.md#recipe-make-a-strategy-accumulator-compatible).
+Read [The exact accumulator change map](chapters/11-extending-and-maintaining/index.md#the-exact-accumulator-change-map).
 
 ### What makes a valid aggregate extension?
 
-The current model is a binary fold over one source column, seeded from the first contributing rule. Check the operation, seed, valid value domain and order-independent meaning. A running average needs additional state and is not obtained by repeatedly averaging two values. Preserve the documented distinction between aggregate arithmetic and guarded combination identity.
+Define the exact input domain, complete native declaration, `numeric-1` fold, deterministic numeric behavior, output storage, lineage, resource reservations, snapshot restoration, and runtime decoding. A running average needs a data-model design with its own state; it is not a substitute for one of the current folds.
 
-Read [Adding an aggregate operation](chapters/11-extending-and-maintaining/index.md#recipe-add-an-aggregate-operation).
+Read [Numeric-1 aggregate maintenance](chapters/11-extending-and-maintaining/index.md#numeric-1-aggregate-maintenance).
 
 ### Where must a new hit policy be implemented?
 
 Update the enum and the relevant shared ordering, assertion and cardinality logic. Also update the batch path: it shares ordering but implements per-context assertions and truncation separately. Add companion metadata validation if needed and preserve the deterministic final rule-index tie-break. A scalar-only change does not complete the batch contract.
 
-Read [Adding a hit policy](chapters/11-extending-and-maintaining/index.md#recipe-add-a-hit-policy).
+Read [Shared filter-engine maintenance](chapters/11-extending-and-maintaining/index.md#shared-filter-engine-maintenance).
 
-### What does the backend-purity test actually prove?
+### What does the public/native boundary require?
 
-It checks source import lines for prohibited native backend packages unless an accepted same-line allowance is present. It does not prove behavioral portability, detect every indirect native call or enforce internal dependency direction. Review exception reasons and exercise supported backends; a passing import guard is only one part of that evidence.
+Applications import supported types and functions from `mountainash_rules`. Private predicate, layout, persistence, codec, and native-bridge modules can change as the exact lifecycle evolves. A private import or a passing narrow implementation check does not prove portability or an end-to-end artifact lifecycle.
 
-Read [Backend Purity Enforcement](chapters/11-extending-and-maintaining/index.md#backend-purity-enforcement).
+Read [Keep the public boundary small](chapters/11-extending-and-maintaining/index.md#keep-the-public-boundary-small).
 
-### Can older code read newly serialized enum values?
+### Can older code read newly serialized values?
 
-Not necessarily. New code may remain able to read old artifacts while old code rejects an enum value introduced later. Match strategies and hit policies appear in dimension metadata; aggregate operations also appear in lattice manifests. Renaming or removing an existing string can break saved libraries. Review compatibility in both directions, not just whether serialization succeeds today.
+Not necessarily. New serialized exact artifacts include canonical evidence, typed native relations, identifiers, declarations, and bindings; older code can reject a value or record it does not understand. Renaming or removing an established serialized value is a compatibility change. Review save/load/restore behavior in both directions rather than relying on serialization alone.
 
-Read [YAML Round-Trip](chapters/02-shared-rule-model/index.md#yaml-round-trip).
+Read [Strict native restoration](chapters/11-extending-and-maintaining/index.md#strict-native-restoration).

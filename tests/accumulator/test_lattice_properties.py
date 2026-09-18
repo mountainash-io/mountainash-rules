@@ -1,31 +1,31 @@
+"""Lattice inspection must not expose mutable declaration ownership."""
+
 import polars as pl
-from mountainash_rules.engines.accumulator.aggregate import Aggregate
-from mountainash_rules.core.constants import MatchStrategy
-from mountainash_rules.core.dimension import Dimension, DimensionsMetadata
-from mountainash_rules.engines.accumulator.lattice import Lattice
+
+from mountainash_rules import Aggregate, Dimension, DimensionsMetadata, Lattice
 
 
-def test_lattice_metadata_property():
+def test_inspection_metadata_mutation_does_not_change_lattice():
     metadata = DimensionsMetadata(
         dimensions=[
-            Dimension(dimension_name="country", match_strategy=MatchStrategy.EXACT, data_type=str),
+            Dimension(dimension_name="country", match_strategy="exact", data_type="str")
         ]
     )
     aggregates = [Aggregate(column_name="price", operation="sum")]
-    df = pl.DataFrame({"country": ["AU"], "price": [100]})
-    lattice = Lattice(dataframe=df, metadata=metadata, aggregates=aggregates, partition_key=None)
-
-    assert lattice.metadata is metadata
-    assert lattice.aggregates is aggregates
-
-
-def test_lattice_aggregates_default_empty():
-    metadata = DimensionsMetadata(
-        dimensions=[
-            Dimension(dimension_name="country", match_strategy=MatchStrategy.EXACT, data_type=str),
-        ]
+    lattice = Lattice(
+        dataframe=pl.DataFrame({"country": ["AU"], "price": [100]}),
+        metadata=metadata,
+        aggregates=aggregates,
+        partition_key=None,
     )
-    df = pl.DataFrame({"country": ["AU"]})
-    lattice = Lattice(dataframe=df, metadata=metadata, aggregates=[], partition_key=None)
 
-    assert lattice.aggregates == []
+    metadata.dimensions.clear()
+    aggregates.clear()
+    exposed = lattice.metadata
+    exposed.dimensions.clear()
+    lattice.aggregates.clear()
+
+    assert [dimension.dimension_name for dimension in lattice.metadata.dimensions] == [
+        "country"
+    ]
+    assert [aggregate.column_name for aggregate in lattice.aggregates] == ["price"]

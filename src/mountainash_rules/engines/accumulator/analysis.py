@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import sys
+from dataclasses import dataclass
 from types import MappingProxyType
 import typing as t
 
@@ -15,6 +16,7 @@ from mountainash_rules.core.codec import (
 from mountainash_rules.core.constants import DimensionRole, MatchStrategy
 from mountainash_rules.core.contracts import (
     ContextContract,
+    ContractBinding,
     DomainDefinition,
     ExactLimits,
     OperationBudget,
@@ -23,6 +25,7 @@ from mountainash_rules.core.contracts import (
     ValidationPolicy,
     WarningApproval,
 )
+
 from mountainash_rules.core.dimension import DimensionsMetadata
 from mountainash_rules.core.language import RegexOptions
 from mountainash_rules.core.predicates import PredicateGraph
@@ -35,8 +38,10 @@ from mountainash_rules.core.validation import (
     verify_source_point,
     verify_witness,
 )
-from mountainash_rules.engines.accumulator.aggregate import Aggregate
+from mountainash_rules.engines.accumulator.aggregate import Aggregate, exact_fold
+
 from mountainash_rules.engines.accumulator.compiler import (
+    PreparedSources,
     analysis_geometry,
     analyze_sources as _analyze_partition,
     prepare_analysis_input,
@@ -77,6 +82,367 @@ def _domain_registry(
     if len(registry) != len(domains) or compilation_domain_ref not in registry:
         raise ValueError("domains must uniquely contain compilation_domain_ref")
     return registry
+
+
+@dataclass(frozen=True, slots=True)
+class BuildPreparation:
+    """Admitted source evidence and globally normalized build material."""
+
+    validated: ValidatedBuildInput
+    prepared: PreparedSources
+    domains: t.Mapping[str, DomainDefinition]
+    material: t.Any
+    contracts: tuple[ContextContract, ...]
+    analysis_input: t.Any
+    source_report: t.Any
+    dimension_fields: t.Mapping[str, str]
+    guard_fields: tuple[str, ...]
+
+
+def _evidence_domains(bundle: ValidationBundle) -> dict[str, DomainDefinition]:
+    return {
+        entry["payload"]["domain_id"]: DomainDefinition.model_validate(entry["payload"])
+        for entry in bundle.predicates["domains"]
+    }
+
+
+def _evidence_regex_options(bundle: ValidationBundle) -> RegexOptions | None:
+    semantics = bundle.metadata["payload"]["regex_semantics"]
+    if semantics is None:
+        return None
+    options = RegexOptions(**dict(semantics["flags"]))
+    if options.to_dict() != dict(semantics):
+        raise ValueError("unsupported regex semantics in selected evidence")
+    return options
+
+
+def prepare_build(
+    rows: t.Iterable[t.Mapping[str, t.Any]],
+    *,
+    validation: ValidatedBuildInput,
+    metadata: DimensionsMetadata,
+    aggregates: t.Sequence[Aggregate],
+    budget: OperationBudget,
+) -> BuildPreparation:
+    """Admit and normalize a whole build once, under the caller's budget."""
+    from dataclasses import replace
+    from mountainash_rules.core.codec import _admit_validation_bundle
+    from mountainash_rules.core.validation import _selected_analysis
+
+    if not isinstance(validation, ValidatedBuildInput):
+        raise TypeError("validation must be ValidatedBuildInput")
+    if not isinstance(budget, OperationBudget):
+        raise TypeError("budget must be OperationBudget")
+    admitted_bundle = _admit_validation_bundle(validation.bundle, budget=budget)
+    admitted = ValidatedBuildInput.model_validate(
+        {
+            "schema_version": 1,
+            "analysis_input_id": validation.analysis_input_id,
+            "source_report_id": validation.source_report_id,
+            "approval_ids": validation.approval_ids,
+            "bundle": admitted_bundle,
+        },
+        context={"budget": budget},
+    )
+    selected = _selected_analysis(admitted_bundle, admitted.analysis_input_id)
+    reports = {report.id: report for report in admitted_bundle.validation["reports"]}
+    source_report = reports.get(admitted.source_report_id)
+    if source_report is None or source_report.analysis_input_id != selected.id:
+        raise ValueError("selected source report is unresolved or foreign")
+    validate_source_report_semantics(source_report)
+    domains = _evidence_domains(admitted_bundle)
+    if selected.compilation_domain_ref not in domains:
+        raise ValueError("selected compilation domain is unresolved")
+    snapshot = metadata
+    regex_options = _evidence_regex_options(admitted_bundle)
+    (
+        prepared,
+        registry,
+        contracts,
+        geometry_for,
+        partition_refs,
+        source_counts,
+        current,
+        material,
+        dimension_fields,
+        guard_fields,
+        ordered_fields,
+    ) = _prepare(
+        rows,
+        metadata=snapshot,
+        aggregates=aggregates,
+        ruleset_id=selected.ruleset_id,
+        source_id_field=selected.source_id_field,
+        compilation_domain_ref=selected.compilation_domain_ref,
+        domains=tuple(domains.values()),
+        predicates=tuple(admitted_bundle.predicates["predicates"]),
+        languages=tuple(admitted_bundle.predicates["languages"]),
+        routing=admitted_bundle.routing,
+        validation_policy=selected.validation_policy,
+        budget=budget,
+        source_label_field=None,
+        regex_options=regex_options,
+    )
+    labels = admitted_bundle.predicates["source_labels"]
+    if labels:
+        if any(
+            source_id not in {source.source_id for source in prepared.sources}
+            for source_id in labels
+        ):
+            raise ValueError("source evidence labels are unresolved")
+        prepared = replace(prepared, source_labels=MappingProxyType(dict(labels)))
+    if current.id != selected.id:
+        raise ValueError(
+            "current rows or engine declarations do not match selected analysis input"
+        )
+    _material_matches(selected, material)
+    validate_build_permission(admitted, material)
+    _replay_report(
+        admitted_bundle,
+        source_report,
+        geometry_for,
+        {contract.contract_id: contract for contract in contracts},
+        dimension_fields,
+        guard_fields,
+    )
+    return BuildPreparation(
+        admitted,
+        prepared,
+        MappingProxyType(dict(registry)),
+        material,
+        contracts,
+        selected,
+        source_report,
+        MappingProxyType(dict(dimension_fields)),
+        tuple(guard_fields),
+    )
+
+
+def _prove_compiled(
+    preparation: BuildPreparation, analysis: t.Any, budget: OperationBudget
+) -> t.Any:
+    from mountainash_rules.core.reasoner import Reasoner
+    from mountainash_rules.core.validation import prove_source_geometry
+
+    if analysis.prepared != preparation.prepared:
+        raise ValueError(
+            "compiled analysis was not derived from the admitted source preparation"
+        )
+    if budget is not analysis.prepared.graph.budget:
+        raise ValueError("compiled proofs must share the build operation budget")
+    geometry = analysis_geometry(analysis, provider_domains=preparation.domains)
+    proof = prove_source_geometry(geometry)
+    if proof.cell_excess or proof.cell_gaps:
+        raise ValueError(
+            "compiled geometry does not exactly match source applicability"
+        )
+    reasoner = Reasoner(geometry.graph)
+    for cell in geometry.cells:
+        if reasoner.is_empty(cell.predicate_id):
+            raise ValueError("compiled cell is empty")
+        if not reasoner.is_empty(
+            reasoner.difference(
+                cell.predicate_id, geometry.compilation_domain.predicate_id
+            )
+        ):
+            raise ValueError("compiled cell extends outside the compilation domain")
+
+        for source in geometry.sources:
+            overlap = reasoner.intersect(cell.predicate_id, source.predicate_id)
+            if source.source_id in cell.contributors:
+                if not reasoner.is_empty(
+                    reasoner.difference(cell.predicate_id, source.predicate_id)
+                ):
+                    raise ValueError("compiled cell excludes a declared contributor")
+            elif not reasoner.is_empty(overlap):
+                raise ValueError("compiled cell omits an applicable contributor")
+    for left, right in __import__("itertools").combinations(geometry.cells, 2):
+        if not reasoner.is_empty(
+            reasoner.intersect(left.predicate_id, right.predicate_id)
+        ):
+            raise ValueError("compiled cells are not disjoint")
+    sources = {source.source_id: source for source in analysis.sources}
+    for cell in analysis.cells:
+        for aggregate in preparation.prepared.aggregates:
+            expected = exact_fold(
+                aggregate,
+                (
+                    sources[source_id].contributions[aggregate.column_name]
+                    for source_id in cell.contributors
+                ),
+                budget=budget,
+            )
+            if cell.outputs.get(aggregate.output_name) != expected:
+                raise ValueError("compiled output fold is inconsistent")
+    _prove_profiles(preparation, analysis, geometry)
+    return geometry
+
+
+def _prove_profiles(preparation, analysis, geometry):
+    from mountainash_rules.core.validation import prove_profile
+
+    for contract in preparation.contracts:
+        for profile in contract.profiles:
+            if profile.promise == "candidate_only":
+                continue
+            fields = {
+                name: preparation.dimension_fields[name] for name in profile.dimensions
+            }
+            proof = prove_profile(
+                geometry,
+                contract,
+                profile.profile_id,
+                dimension_fields=fields,
+                guard_fields=preparation.guard_fields,
+            )
+            if not proof.complete:
+                raise ValueError(
+                    "compiled artifact violates a definite-outcome profile"
+                )
+            if profile.mode == "resolve" and proof.counterexamples:
+                reference = {
+                    "contract_id": contract.contract_id,
+                    "profile_id": profile.profile_id,
+                }
+                retained = any(
+                    finding.id in preparation.source_report.finding_ids
+                    and finding.code == "profile_counterexample"
+                    and reference in finding.scope.profile_refs
+                    and analysis.partition_identity in finding.scope.partition_refs
+                    for finding in preparation.validated.bundle.validation["findings"]
+                )
+                if not retained:
+                    raise ValueError(
+                        "new profile counterexample requires renewed source validation"
+                    )
+
+
+def produce_compiled_evidence(
+    preparation: BuildPreparation, analysis: t.Any, *, budget: OperationBudget
+) -> ValidationBundle:
+    """Publish complete clean compiled evidence after all exact checks succeed."""
+    from mountainash_rules.core.codec import (
+        _admit_validation_bundle,
+        _make_exact_envelope,
+    )
+    from mountainash_rules.core.validation import (
+        produce_clean_compiled_report,
+        validate_contract_binding,
+    )
+
+    if not isinstance(preparation, BuildPreparation) or not isinstance(
+        budget, OperationBudget
+    ):
+        raise TypeError(
+            "compiled evidence requires BuildPreparation and OperationBudget"
+        )
+    _prove_compiled(preparation, analysis, budget)
+    current, material = prepare_analysis_input(
+        preparation.prepared,
+        compilation_domain_ref=preparation.analysis_input.compilation_domain_ref,
+        domains=preparation.domains,
+        contracts=preparation.contracts,
+        validation_policy=preparation.analysis_input.validation_policy,
+        analysis=analysis,
+    )
+    if current.id != preparation.analysis_input.id:
+        raise ValueError("compiled analysis input is stale")
+    _material_matches(preparation.analysis_input, material)
+    report = produce_clean_compiled_report(
+        current, analysis.artifact_id, material.selected_scope, budget=budget
+    )
+    reports = tuple(
+        sorted(
+            (*preparation.validated.bundle.validation["reports"], report),
+            key=lambda item: item.id,
+        )
+    )
+    bindings = []
+    contracts = {
+        pair["contract_id"]: pair["contract_digest"] for pair in current.contracts
+    }
+    for contract in preparation.contracts:
+        size = _bounded_json_size(
+            contract, budget, phase="compiled.binding", counter="max_live_bytes"
+        )
+        budget.reserve(
+            "max_live_bytes",
+            4 * size,
+            phase="compiled.binding",
+            units="profile and binding construction bytes",
+        )
+        profiles = tuple(
+            {
+                "profile_id": profile.profile_id,
+                "profile_digest": _make_exact_envelope(
+                    "profile",
+                    {
+                        "schema_version": 1,
+                        "contract_id": contract.contract_id,
+                        "profile": profile.model_dump(mode="json", exclude_none=True),
+                    },
+                    budget=budget,
+                )["id"],
+            }
+            for profile in contract.profiles
+        )
+        if not profiles:
+            continue
+        payload = {
+            "schema_version": 1,
+            "artifact_id": analysis.artifact_id,
+            "analysis_input_id": current.id,
+            "contract_id": contract.contract_id,
+            "contract_digest": contracts[contract.contract_id],
+            "domain_ref": contract.domain_ref,
+            "domain_digest": material.domain_ids[contract.domain_ref],
+            "authorized_profiles": profiles,
+            "source_report_id": preparation.source_report.id,
+            "compiled_report_id": report.id,
+            "approval_ids": preparation.validated.approval_ids,
+            "semantic_versions": {
+                "content": current.semantic_versions.model_dump(mode="json"),
+                "binding": "binding-1",
+                "checker": "binding-checker-1",
+            },
+        }
+        envelope = _make_exact_envelope("binding", payload, budget=budget)
+        bindings.append(ContractBinding(id=envelope["id"], **envelope["payload"]))
+    payload = {
+        "schema_version": 1,
+        "metadata": preparation.validated.bundle.metadata,
+        "aggregates": preparation.validated.bundle.aggregates,
+        "routing": preparation.validated.bundle.routing,
+        "context_contracts": preparation.validated.bundle.context_contracts,
+        "predicates": preparation.validated.bundle.predicates,
+        "validation": {
+            **dict(preparation.validated.bundle.validation),
+            "reports": reports,
+            "bindings": tuple(sorted(bindings, key=lambda item: item.id)),
+        },
+    }
+    size = _bounded_json_size(
+        payload, budget, phase="compiled.bundle", counter="max_output_bytes"
+    )
+    budget.reserve(
+        "max_output_bytes",
+        size,
+        phase="compiled.bundle",
+        units="retained validation evidence",
+    )
+    budget.reserve(
+        "max_live_bytes",
+        4 * size,
+        phase="compiled.bundle",
+        units="expanded evidence model bytes",
+    )
+    bundle = _admit_validation_bundle(
+        ValidationBundle.model_validate(payload, context={"budget": budget}),
+        budget=budget,
+    )
+    for binding in bundle.validation["bindings"]:
+        validate_contract_binding(binding, bundle, material)
+    return bundle
 
 
 def _prepare(

@@ -2,23 +2,23 @@
 
 Definitions are alphabetical. Each entry links to the chapter that explains the term in context.
 
-## AccumulatorCompiler
+## Accumulator compiler
 
-The compiler that constructs pairwise compatibility, coalescing and unconstrained-state expressions for accumulator constraints. Its strategy and data-type coverage is narrower than the filter compiler's; Boolean-null `EXACT` wildcards are not correctly supported during construction.
+The private exact-accumulator pipeline that normalizes admitted source rows, compiles predicates, discovers scopes, produces disjoint cells, folds declared outputs, and retains the evidence needed for strict restoration. It is not a public pairwise-combination API.
 
-Read [AccumulatorCompiler](chapters/10-accumulator-engine-internals/index.md#accumulatorcompiler).
+Read [Inside the Exact Accumulator](chapters/10-accumulator-engine-internals/index.md).
 
 ## AccumulatorEngine
 
-The engine that builds compatible rule combinations and their aggregates into a lattice, then applies contexts to that artifact. Construction and application are separate operations with different costs and limits.
+The engine that compiles source-validated rows into immutable exact cells and resolves normalized contexts under contract/profile bindings. Construction, source analysis, persistence, and resolution are separate bounded operations.
 
-Read [AccumulatorEngine](chapters/07-accumulator-engine/index.md#accumulatorengine).
+Read [The bounded lifecycle](chapters/10-accumulator-engine-internals/index.md#the-bounded-lifecycle).
 
 ## AccumulatorResult
 
-The result of applying a context to a lattice. It extends the ordinary result interface with aggregate-column access, prime-product provenance and stored combination levels; its rows represent combinations rather than individual source rules.
+The typed result of resolving one normalized context against a contract-bound exact lattice. It exposes the outcome, selected cell ID, decoded outputs, contributor UUIDs when definite, observations, issues, and non-promoting candidate inspection.
 
-Read [AccumulatorResult Class](chapters/07-accumulator-engine/index.md#accumulatorresult-class).
+Read [Contract-bound resolution](chapters/10-accumulator-engine-internals/index.md#contract-bound-resolution).
 
 ## Active dimensions
 
@@ -34,21 +34,21 @@ Read [Convenience vs Advanced Path](chapters/04-expression-rules-engine/index.md
 
 ## Aggregate
 
-A configuration model naming a source column and the operation used to fold its values across a rule combination. It describes aggregation; lattice construction performs the actual fold.
+An immutable declaration of a source column, fold operation, and—when used for exact artifacts—namespaced output name, data type, `numeric-1` semantics, and any required timezone. It describes output meaning; compilation performs the fold.
 
-Read [Aggregate Model](chapters/07-accumulator-engine/index.md#the-aggregate-model).
+Read [Numeric-1 output folds](chapters/10-accumulator-engine-internals/index.md#numeric-1-output-folds).
 
 ## AggregateOp
 
-The enum selecting sum, minimum, maximum or product accumulation. The current operations use a single-column fold. Their business-value arithmetic is separate from the checked multiplication used for combination identity.
+The enum selecting exact-native `sum`, `min`, `max`, or `product` folds. Complete aggregate declarations also name the source column, namespaced output, data type, and `numeric-1` semantics.
 
-Read [Aggregate Min Max Product](chapters/07-accumulator-engine/index.md#aggregate-min-max-and-product).
+Read [Numeric-1 output folds](chapters/10-accumulator-engine-internals/index.md#numeric-1-output-folds).
 
 ## AmbiguousPartitionError
 
 The routing error raised when multiple partitions tie at the best matching specificity. It is a KeyError subclass. Construction-time index validation can expose ambiguous routing before a request reaches the runtime selection path.
 
-Read [AmbiguousPartitionError](chapters/08-lattices-results-and-routing/index.md#ambiguouspartitionerror).
+Read [Routed exact views](chapters/08-lattices-results-and-routing/index.md#routed-exact-views).
 
 ## ANY
 
@@ -56,11 +56,11 @@ The hit policy that requires survivors to agree on the selected business output 
 
 Read [Any Policy](chapters/05-expression-results-and-policies/index.md#any-survivors-that-must-agree).
 
-## Apply-phase caching
+## Artifact binding
 
-Reuse of a filter engine prepared for a particular lattice during repeated accumulator application. The cache depends on lattice identity, which is why callers must not mutate the lattice's exposed combinations frame.
+The immutable association between an exact artifact and complete portable evidence for a contract. `Lattice.with_binding(binding, evidence=..., limits=...)` validates that evidence and returns a new view; it does not modify the source lattice or grant unverified application permission.
 
-Read [Apply-Phase Caching](chapters/08-lattices-results-and-routing/index.md#apply-phase-caching).
+Read [Persistence and native restoration](chapters/10-accumulator-engine-internals/index.md#persistence-and-native-restoration).
 
 ## Backend
 
@@ -76,9 +76,9 @@ Read [Backend Conforming](chapters/06-batch-evaluation/index.md#use-compatible-t
 
 ## Backend purity
 
-The implementation discipline of using Mountainash abstractions rather than unreviewed native backend dependencies. The repository's import-line test enforces part of that discipline with documented exceptions; it does not prove complete behavioral portability.
+The implementation discipline of keeping applications on the package-root API and isolating codec, predicate, layout, persistence, and native-bridge details. It does not by itself prove portability or a complete artifact lifecycle.
 
-Read [Backend Purity Enforcement](chapters/11-extending-and-maintaining/index.md#backend-purity-enforcement).
+Read [Keep the public boundary small](chapters/11-extending-and-maintaining/index.md#keep-the-public-boundary-small).
 
 ## Batch context
 
@@ -100,15 +100,21 @@ Read [Best Match Accessor](chapters/04-expression-rules-engine/index.md#best_mat
 
 ## Boolean ternary comparison
 
-The filter compiler's equality-family comparison that uses null to represent an unrestricted Boolean rule or missing context. `EXACT` and `NOT_EQUAL` produce unknown when either operand is null. `EXACT_KEY` permits the rule wildcard but rejects a missing context against a concrete rule. Accumulator construction does not implement the same Boolean-null coalescing contract.
+The filter compiler's equality-family comparison that uses null to represent an unrestricted Boolean rule or missing context. `EXACT` and `NOT_EQUAL` produce unknown when either operand is null. `EXACT_KEY` permits the rule wildcard but rejects a missing context against a concrete rule.
 
 Read [Bool Ternary Comparison](chapters/03-matching-concepts/index.md#bool-ternary-comparison).
 
-## Canonical ordering
+## Canonical evidence
 
-The accumulator expansion rule that admits a candidate only after the last-added rule in increasing prime order. It prevents the same rule set being generated through every permutation; it does not eliminate the need for order-independent merge semantics.
+The canonical, typed records that bind source material, domains, predicates, reports, approvals, bindings, and artifact identity. The exact accumulator validates these records before building, binding, or restoring executable state.
 
-Read [Canonical Ordering Guard](chapters/10-accumulator-engine-internals/index.md#canonical-ordering-guard).
+Read [Source analysis is separate from compilation](chapters/10-accumulator-engine-internals/index.md#source-analysis-is-separate-from-compilation).
+
+## Cell identity
+
+The stable `cell_id` that names an exact compiled predicate region. It is distinct from `predicate_id`, which identifies the region's predicate, and `contributor_set_id`, which identifies its source-UUID membership.
+
+Read [Normalized predicates and disjoint cells](chapters/10-accumulator-engine-internals/index.md#normalized-predicates-and-disjoint-cells).
 
 ## Chunked evaluation
 
@@ -116,45 +122,36 @@ Batch evaluation that processes successive slices of prepared contexts before co
 
 Read [Chunked Batch Evaluation](chapters/06-batch-evaluation/index.md#work-in-smaller-chunks).
 
-## Coalesce expression
-
-An expression that merges two compatible constraints into their combined constraint. The operation depends on strategy: examples include choosing a concrete exact value, intersecting ranges and membership sets, or unioning exclusion sets.
-
-Read [Coalesce Expression](chapters/10-accumulator-engine-internals/index.md#coalesce-expression).
-
-## Coalesced column
-
-A lattice column containing the effective constraint of a rule combination rather than one source rule's original value. Coalesced fields and their NA flags form the fingerprint used to distinguish matching behavior during frontier filtering.
-
-Read [Coalesced Columns](chapters/07-accumulator-engine/index.md#coalesced-columns).
-
 ## COLLECT
 
 The hit policy that retains all survivors in descending specificity order, with original rule position as the final tie-break. A complete, untruncated COLLECT result is the intended starting point when several policies will be reapplied.
 
 Read [Collect Policy](chapters/05-expression-results-and-policies/index.md#collect-the-default-unfiltered-ranking).
 
-## Combination depth
+## Compiled cell
 
-The zero-based expansion level stored for a rule combination. A singleton has `__level=0`, a pair has level 1, and the contributing-rule count is level plus one. The result’s `depths` accessor returns these stored levels.
+One nonempty, disjoint predicate region in an exact lattice. A cell has `cell_id`, `predicate_id`, a contributor-set ID, and declared output values. It is not an ordered combination of source rows.
 
-Read [Combination Depth](chapters/08-lattices-results-and-routing/index.md#combination-depth).
+Read [Normalized predicates and disjoint cells](chapters/10-accumulator-engine-internals/index.md#normalized-predicates-and-disjoint-cells).
 
-## Combination identity
+## Compiled predicate
 
-The product of the distinct primes assigned to the rules in one combination. Within the partition's assignment, it identifies the rule set and supports divisibility checks, provided the product stays within its guarded integer range.
+The normalized predicate derived from an admitted source row or exact cell and interpreted in its declared domain. Predicate meaning is checked during source analysis, cell compilation, binding, and strict restoration.
 
-Read [Prime Number Encoding](chapters/10-accumulator-engine-internals/index.md#prime-number-encoding).
+Read [Normalized predicates and disjoint cells](chapters/10-accumulator-engine-internals/index.md#normalized-predicates-and-disjoint-cells).
 
-## Compatible expression
+## Contributor set
 
-The pairwise predicate deciding whether two accumulator constraints can be combined under the strategy's implemented semantics. Every constraint dimension must permit the extension before the engine coalesces values and accumulates their aggregates.
+The source-UUID membership relation associated with an exact cell. The compiled layout stores that membership through a scope-local source map and dense 63-bit words; lineage exposes contributor identity without relying on source order.
 
-Read [Compatible Expression](chapters/10-accumulator-engine-internals/index.md#compatible-expression).
+Read [Scoped narrow state](chapters/10-accumulator-engine-internals/index.md#scoped-narrow-state).
+
+
+
 
 ## CONSTRAINT
 
-The default dimension role for a matching condition. In accumulator construction it participates in compatibility and coalescing; in filter evaluation its compiled ternary outcome contributes to survival and specificity.
+The default dimension role for filter matching. In exact accumulator metadata, dimensions contribute to source normalization and predicate construction according to their declared strategy; exact cell construction is not a filter-engine matching pass.
 
 Read [CONSTRAINT Role](chapters/02-shared-rule-model/index.md#constraint-role).
 
@@ -284,11 +281,6 @@ The hit policy selecting the earliest surviving rule in the supplied input order
 
 Read [First And Priority Policy](chapters/05-expression-results-and-policies/index.md#first-and-priority-pick-a-single-winner).
 
-## Frontier filter
-
-The accumulator step removing a combination when a strict rule-set superset has the same coalesced fingerprint. Different fingerprints remain distinct. With no constraint dimensions there is no fingerprint, so the implementation retains all generated combinations instead of pruning.
-
-Read [Frontier Filter](chapters/10-accumulator-engine-internals/index.md#frontier-filter).
 
 ## GREATER_THAN
 
@@ -308,29 +300,19 @@ The ValueError subclass reporting a violated UNIQUE or ANY assertion, with the p
 
 Read [HitPolicyViolationError](chapters/05-expression-results-and-policies/index.md#hitpolicyviolationerror).
 
-## Integer-product overflow
-
-A combination identity exceeding the maximum signed-int64 value. The accumulator checks the exact prime multiplication before accepting it. This protection does not extend to business-value aggregates stored in separate columns.
-
-Read [Checked Multiply](chapters/10-accumulator-engine-internals/index.md#checked-multiply).
 
 ## Lattice
 
-Stored combination data with dimension metadata, aggregate definitions and an optional partition key. It can be persisted and applied by an equivalently configured engine when at least one constraint dimension exists. Callers must treat its exposed combinations frame as immutable.
+An immutable exact artifact with cells, contributors, source evidence, metadata, aggregate declarations, partition identity, and bindings. It can be saved, strictly restored, and resolved only when its exact state and required limits are present. Flat construction is inspection-only.
 
-Read [Lattice Class](chapters/07-accumulator-engine/index.md#lattice-class).
+Read [Persistence and native restoration](chapters/10-accumulator-engine-internals/index.md#persistence-and-native-restoration).
 
 ## LatticeIndex
 
-A reusable router over a collection of lattices. It combines an exact-key lookup with wildcard-aware partition evaluation and can validate ambiguity before use. It selects a lattice; it does not combine rules across partitions.
+A reusable router over coherent exact lattices. It checks lattice and binding coherence, takes an exact-key fast path when possible, and raises `KeyError` for a missing route or `AmbiguousPartitionError` for an admissible best-specificity tie.
 
-Read [LatticeIndex Router](chapters/08-lattices-results-and-routing/index.md#the-latticeindex-router).
+Read [Contract-bound resolution](chapters/10-accumulator-engine-internals/index.md#contract-bound-resolution).
 
-## LatticeWidthExceededError
-
-The build error indicating that an admitted combination's prime product cannot fit signed int64. Despite the name, its bound is the product of assigned primes, not a universally fixed number of rules or rows.
-
-Read [LatticeWidthExceededError](chapters/10-accumulator-engine-internals/index.md#latticewidthexceedederror).
 
 ## LESS_THAN
 
@@ -344,15 +326,15 @@ Encoding and reconstructing configuration values, such as dimension metadata in 
 
 Read [YAML Round-Trip](chapters/02-shared-rule-model/index.md#yaml-round-trip).
 
-## NA flag
+## Native restoration
 
-The lattice flag indicating whether a combined constraint remains wholly unconstrained. For a range, both bounds must be unconstrained; a single sentinel bound does not make the entire dimension NA.
+The bounded reconstruction of an executable exact artifact from persisted typed relations and canonical evidence. Restoration validates manifest records, source/cell/layout integrity, and applicable semantic evidence; it does not promote malformed or flat data to an executable lattice.
 
-Read [NA Flag Columns](chapters/08-lattices-results-and-routing/index.md#na-flag-columns).
+Read [Persistence and native restoration](chapters/10-accumulator-engine-internals/index.md#persistence-and-native-restoration).
 
 ## NOT_EQUAL
 
-The sentinel-aware inequality strategy, reversing the known equality outcome while retaining unknown handling. It is supported by the filter compiler but has no pairwise accumulator implementation at the documented source revision.
+The sentinel-aware inequality strategy, reversing the known equality outcome while retaining unknown handling. Its filter behavior does not establish an exact-accumulator predicate contract on its own.
 
 Read [NOT_EQUAL Strategy](chapters/03-matching-concepts/index.md#not_equal-strategy).
 
@@ -370,15 +352,15 @@ Read [Observability Columns](chapters/04-expression-rules-engine/index.md#observ
 
 ## Partition
 
-A group of rules sharing an accumulator context-key assignment and intended to be built independently. Correct isolation requires complete, non-`None` build keys; missing entries and Boolean-null wildcard keys can bypass filtering in the current implementation.
+A declared source-validated slice selected by the full tuple of `CONTEXT_KEY` dimensions. Each exact lattice represents one such identity; routing selects among coherent artifact views before contract-bound resolution.
 
-Read [Lattice Partition Key](chapters/08-lattices-results-and-routing/index.md#lattice-partition-key).
+Read [Source analysis is separate from compilation](chapters/10-accumulator-engine-internals/index.md#source-analysis-is-separate-from-compilation).
 
 ## Partition key
 
-The dictionary recorded on a lattice for its context-key assignment. Construction filters only configured keys whose supplied values are not `None`; a stored dictionary alone does not certify that rules were isolated correctly. Routing validates and matches keys separately from coalesced constraints.
+The context-key assignment recorded for one exact lattice partition. A single-partition build must name every configured context-key dimension and match a source-validated key; the key does not replace contract-bound resolution.
 
-Read [Lattice Partition Key](chapters/08-lattices-results-and-routing/index.md#lattice-partition-key).
+Read [Source analysis is separate from compilation](chapters/10-accumulator-engine-internals/index.md#source-analysis-is-separate-from-compilation).
 
 ## PREFIX
 
@@ -386,17 +368,6 @@ The case-sensitive string strategy that checks whether a context starts with the
 
 Read [PREFIX Strategy](chapters/03-matching-concepts/index.md#prefix-strategy).
 
-## Prime
-
-A distinct prime number assigned to a source rule within a partition. Multiplying assigned primes encodes a combination, and divisibility reveals membership. The number is an internal identity component, not the business rule's public name.
-
-Read [Prime Number Encoding](chapters/10-accumulator-engine-internals/index.md#prime-number-encoding).
-
-## Prime table
-
-The lookup containing the first 10,000 primes used for per-partition rule identities at this revision. Its size caps assigned rules, independently of the signed-int64 bound on products formed from those primes.
-
-Read [Prime Table Sieve](chapters/10-accumulator-engine-internals/index.md#prime-table-sieve).
 
 ## PRIORITY
 
@@ -406,9 +377,9 @@ Read [First And Priority Policy](chapters/05-expression-results-and-policies/ind
 
 ## Provenance
 
-The prime-product identities of matching combinations, exposed by `AccumulatorResult`. Decoding their business meaning requires the source partition's rule-to-prime assignment. The accessor returns no ready-made rule-name list, and lattice snapshots do not save that assignment.
+The source-UUID contributor information associated with an exact cell or a definite accumulator outcome. `lattice.contributors`, `lattice.lineage(cell_id)`, and result lineage retain that identity without requiring source order or a numeric encoding.
 
-Read [Provenance Accessor](chapters/08-lattices-results-and-routing/index.md#provenance-accessor).
+Read [Normalized predicates and disjoint cells](chapters/10-accumulator-engine-internals/index.md#normalized-predicates-and-disjoint-cells).
 
 ## RANGE
 
@@ -478,21 +449,21 @@ Read [Set Wildcard Sentinel](chapters/03-matching-concepts/index.md#set-wildcard
 
 ## SET_EXCLUSION
 
-The strategy accepting a scalar context value when it is absent from the rule's list. It shares set wildcard normalization with SET_MEMBERSHIP. Accumulator coalescing unions concrete exclusion lists.
+The strategy accepting a scalar context value when it is absent from the rule's list. It shares set wildcard normalization with `SET_MEMBERSHIP`; filter matching remains independent of exact-accumulator predicate compilation.
 
 Read [SET_EXCLUSION Strategy](chapters/03-matching-concepts/index.md#set_exclusion-strategy).
 
 ## SET_MEMBERSHIP
 
-The strategy accepting a scalar context value when it occurs in the rule's list. A canonical wildcard list represents an unconstrained rule. Accumulator compatibility and coalescing use the intersection of concrete membership sets.
+The strategy accepting a scalar context value when it occurs in the rule's list. A canonical wildcard list represents an unconstrained rule. Filter matching remains independent of exact-accumulator predicate compilation.
 
 Read [SET_MEMBERSHIP Strategy](chapters/03-matching-concepts/index.md#set_membership-strategy).
 
 ## Snapshot
 
-A persisted lattice directory containing a Parquet frame and YAML manifest. Loading validates the stored configuration models, not their consistency with every frame column or row, and reads with Polars. Application needs an equivalently configured engine; source-rule attribution needs a separately retained prime assignment.
+A persisted exact artifact whose typed native relations, canonical evidence, source records, cells, layouts, and bindings are restored under explicit limits. A successful executable load requires strict restoration; a flat or legacy lattice remains inspection-only.
 
-Read [Lattice Save Method](chapters/08-lattices-results-and-routing/index.md#lattice-save-method).
+Read [Persistence and native restoration](chapters/10-accumulator-engine-internals/index.md#persistence-and-native-restoration).
 
 ## Specificity
 
@@ -538,7 +509,7 @@ Read [Ternary Logic](chapters/03-matching-concepts/index.md#ternary-logic-match-
 
 ## Threshold
 
-A single ordered rule value used as a strict lower or upper condition on the context. The compiler maps GREATER_THAN and LESS_THAN to the corresponding ternary comparison; accumulator coalescing retains the stricter compatible threshold.
+A single ordered rule value used as a strict lower or upper condition on the context. The filter compiler maps `GREATER_THAN` and `LESS_THAN` to the corresponding ternary comparison.
 
 Read [GREATER_THAN Strategy](chapters/03-matching-concepts/index.md#greater_than-strategy).
 

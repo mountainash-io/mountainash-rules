@@ -8,100 +8,177 @@ Requires pytest-benchmark (not installed in CI test_github env).
 
 import random
 
-import polars as pl
+import mountainash_rules as rules
 import pytest
-from pydantic import create_model
 
-pytestmark = pytest.mark.benchmark
-
-from mountainash_rules.engines.accumulator.engine import AccumulatorEngine
-from mountainash_rules.engines.accumulator.aggregate import Aggregate
-from mountainash_rules.core.constants import UNKNOWN, UNKNOWN_NUMERIC, MatchStrategy
-from mountainash_rules.core.dimension import Dimension, DimensionsMetadata
+from tests.accumulator.exact_runtime_fixtures import declarations, gate, uuid
 
 
 # ---------------------------------------------------------------------------
 # Synthetic data generators
 # ---------------------------------------------------------------------------
 
+def _aggregate():
+    return rules.Aggregate(
+        column_name="margin",
+        output_name="pricing.margin",
+        data_type="float",
+        numeric_semantics="numeric-1",
+    )
+
+
+def _profile(dimensions):
+    return rules.ResolutionProfile(
+        profile_id="benchmark",
+        mode="candidates",
+        output_fields=("pricing.margin",),
+        provenance="none",
+        dimensions=tuple(sorted(d.dimension_name for d in dimensions)),
+        allow_dont_care=(),
+        promise="candidate_only",
+    )
+
+
+def _expected_overlap_decisions(rows, dimensions):
+    """Author the finite synthetic overlap decisions without reading findings."""
+    def wildcard(row, dimension):
+        sentinel = rules.unknown_sentinel_for(dimension.data_type)
+        if dimension.match_strategy == rules.MatchStrategy.RANGE:
+            return (
+                row[dimension.range_min_field] == sentinel
+                and row[dimension.range_max_field] == sentinel
+            )
+        return row[dimension.dimension_name] == sentinel
+
+    def overlap(left, right, dimension):
+        if wildcard(left, dimension) or wildcard(right, dimension):
+            return True
+        if dimension.match_strategy == rules.MatchStrategy.RANGE:
+            return (
+                left[dimension.range_min_field] <= right[dimension.range_max_field]
+                and right[dimension.range_min_field] <= left[dimension.range_max_field]
+            )
+        return left[dimension.dimension_name] == right[dimension.dimension_name]
+
+    def duplicate(left, right):
+        for dimension in dimensions:
+            if dimension.match_strategy == rules.MatchStrategy.RANGE:
+                fields = (dimension.range_min_field, dimension.range_max_field)
+            else:
+                fields = (dimension.dimension_name,)
+            if any(left[field] != right[field] for field in fields):
+                return False
+        return True
+
+    decisions = []
+    for left_index, left in enumerate(rows):
+        for right in rows[left_index + 1:]:
+            identities = tuple(sorted((left["id"], right["id"])))
+            if all(overlap(left, right, dimension) for dimension in dimensions):
+                decisions.append(("source_overlap", identities))
+                if duplicate(left, right):
+                    decisions.append(("duplicate_source", identities))
+    return decisions
+
+
 def _generate_accumulator_rules(
     rule_count: int,
     dim_count: int,
     unknown_density: float = 0.3,
     seed: int = 42,
-) -> tuple[pl.DataFrame, DimensionsMetadata]:
-    """Generate synthetic rules with EXACT and RANGE dimensions.
-
-    Args:
-        rule_count: Number of rules to generate.
-        dim_count: Number of constraint dimensions (half EXACT, half RANGE).
-        unknown_density: Fraction of rule cells that are wildcards.
-        seed: RNG seed for determinism.
-
-    Returns:
-        (rules_df, metadata)
-    """
+):
+    """Generate deterministic exact sources and their reviewed validation gate."""
     rng = random.Random(seed)
     n_exact = dim_count // 2 or 1
     n_range = dim_count - n_exact
+    data: dict[str, list] = {
+        "id": [uuid(index + 1) for index in range(rule_count)],
+        "rule_name": [f"rule_{index}" for index in range(rule_count)],
+    }
+    dimensions = []
 
-    data: dict[str, list] = {"rule_name": [f"rule_{i}" for i in range(rule_count)]}
-    dims: list[Dimension] = []
-
-    # EXACT dimensions
     values_pool = ["A", "B", "C", "D", "E"]
-    for d in range(n_exact):
-        name = f"exact_{d}"
-        col = []
+    for index in range(n_exact):
+        name = f"exact_{index}"
+        data[name] = [
+            rules.UNKNOWN if rng.random() < unknown_density else rng.choice(values_pool)
+            for _ in range(rule_count)
+        ]
+        dimensions.append(
+            rules.Dimension(
+                dimension_name=name,
+                match_strategy=rules.MatchStrategy.EXACT,
+            )
+        )
+
+    for index in range(n_range):
+        name = f"range_{index}"
+        minimums = []
+        maximums = []
         for _ in range(rule_count):
             if rng.random() < unknown_density:
-                col.append(UNKNOWN)
+                minimums.append(rules.UNKNOWN_NUMERIC)
+                maximums.append(rules.UNKNOWN_NUMERIC)
             else:
-                col.append(rng.choice(values_pool))
-        data[name] = col
-        dims.append(Dimension(dimension_name=name, match_strategy=MatchStrategy.EXACT))
+                bucket = rng.randrange(5)
+                minimum = bucket * 100
+                minimums.append(minimum)
+                maximums.append(minimum + 20)
+        data[f"{name}_min"] = minimums
+        data[f"{name}_max"] = maximums
+        dimensions.append(
+            rules.Dimension(
+                dimension_name=name,
+                match_strategy=rules.MatchStrategy.RANGE,
+                data_type="int",
+                range_min_field=f"{name}_min",
+                range_max_field=f"{name}_max",
+            )
+        )
 
-    # RANGE dimensions
-    for d in range(n_range):
-        name = f"range_{d}"
-        min_col = []
-        max_col = []
-        for _ in range(rule_count):
-            if rng.random() < unknown_density:
-                min_col.append(UNKNOWN_NUMERIC)
-                max_col.append(UNKNOWN_NUMERIC)
-            else:
-                lo = rng.randint(0, 80)
-                hi = lo + rng.randint(5, 20)
-                min_col.append(lo)
-                max_col.append(hi)
-        data[f"{name}_min"] = min_col
-        data[f"{name}_max"] = max_col
-        dims.append(Dimension(
-            dimension_name=name,
-            match_strategy=MatchStrategy.RANGE,
-            data_type=int,
-            range_min_field=f"{name}_min",
-            range_max_field=f"{name}_max",
-        ))
-
-    # Aggregate column
     data["margin"] = [rng.uniform(-1.0, 1.0) for _ in range(rule_count)]
+    profile = _profile(dimensions)
+    contract = rules.ContextContract(
+        schema_version=1,
+        contract_id="benchmark",
+        domain_ref="D",
+        fields=tuple(
+            rules.ContextField(
+                name=dimension.resolved_context_field,
+                data_type=dimension.data_type,
+                required=True,
+            )
+            for dimension in sorted(dimensions, key=lambda item: item.dimension_name)
+        ),
+        profiles=(profile,),
+    )
+    source_rows = [
+        {field: values[index] for field, values in data.items()}
+        for index in range(rule_count)
+    ]
+    kwargs = declarations(
+        tuple(dimensions),
+        (_aggregate(),),
+        contracts=(contract,),
+    )
+    validation = gate(
+        source_rows,
+        kwargs,
+        decisions=_expected_overlap_decisions(source_rows, dimensions),
+    )
+    return source_rows, kwargs, validation
 
-    metadata = DimensionsMetadata(dimensions=dims)
-    return pl.DataFrame(data), metadata
 
-
-def _generate_context(metadata: DimensionsMetadata, seed: int = 99):
-    """Generate a context that hits approximately half the dimensions."""
+def _generate_context(metadata: rules.DimensionsMetadata, seed: int = 99):
+    """Generate a complete named-profile request."""
     rng = random.Random(seed)
-    fields = {}
-    for dim in metadata.dimensions:
-        if dim.match_strategy == MatchStrategy.EXACT:
-            fields[dim.dimension_name] = (str, rng.choice(["A", "B", "C"]))
-        elif dim.match_strategy == MatchStrategy.RANGE:
-            fields[dim.dimension_name] = (int, rng.randint(30, 70))
-    return create_model("BenchContext", **fields)(**{k: v[1] for k, v in fields.items()})
+    context = {}
+    for dimension in metadata.dimensions:
+        if dimension.match_strategy == rules.MatchStrategy.EXACT:
+            context[dimension.resolved_context_field] = rng.choice(["A", "B", "C"])
+        elif dimension.match_strategy == rules.MatchStrategy.RANGE:
+            context[dimension.resolved_context_field] = rng.randint(30, 70)
+    return context
 
 
 # ---------------------------------------------------------------------------
@@ -117,15 +194,20 @@ class TestBuildScalingByRuleCount:
         return request.param
 
     def test_build_scaling(self, rule_count, benchmark):
-        rules, metadata = _generate_accumulator_rules(
+        source_rows, kwargs, validation = _generate_accumulator_rules(
             rule_count=rule_count, dim_count=4, unknown_density=0.3,
         )
-        engine = AccumulatorEngine(
-            dimension_metadata=metadata,
-            aggregates=[Aggregate(column_name="margin")],
+        engine = rules.AccumulatorEngine(
+            kwargs["metadata"],
+            kwargs["aggregates"],
+            limits=kwargs["limits"],
         )
         result = benchmark.pedantic(
-            engine.build, args=(rules,), rounds=3, warmup_rounds=1,
+            engine.build,
+            args=(source_rows,),
+            kwargs={"validation": validation},
+            rounds=3,
+            warmup_rounds=1,
         )
         assert result.count >= 1
 
@@ -139,15 +221,20 @@ class TestBuildScalingByDimCount:
         return request.param
 
     def test_build_dim_scaling(self, dim_count, benchmark):
-        rules, metadata = _generate_accumulator_rules(
+        source_rows, kwargs, validation = _generate_accumulator_rules(
             rule_count=10, dim_count=dim_count, unknown_density=0.3,
         )
-        engine = AccumulatorEngine(
-            dimension_metadata=metadata,
-            aggregates=[Aggregate(column_name="margin")],
+        engine = rules.AccumulatorEngine(
+            kwargs["metadata"],
+            kwargs["aggregates"],
+            limits=kwargs["limits"],
         )
         result = benchmark.pedantic(
-            engine.build, args=(rules,), rounds=3, warmup_rounds=1,
+            engine.build,
+            args=(source_rows,),
+            kwargs={"validation": validation},
+            rounds=3,
+            warmup_rounds=1,
         )
         assert result.count >= 1
 
@@ -161,15 +248,20 @@ class TestBuildScalingByUnknownDensity:
         return request.param
 
     def test_build_density_scaling(self, density, benchmark):
-        rules, metadata = _generate_accumulator_rules(
+        source_rows, kwargs, validation = _generate_accumulator_rules(
             rule_count=10, dim_count=4, unknown_density=density,
         )
-        engine = AccumulatorEngine(
-            dimension_metadata=metadata,
-            aggregates=[Aggregate(column_name="margin")],
+        engine = rules.AccumulatorEngine(
+            kwargs["metadata"],
+            kwargs["aggregates"],
+            limits=kwargs["limits"],
         )
         result = benchmark.pedantic(
-            engine.build, args=(rules,), rounds=3, warmup_rounds=1,
+            engine.build,
+            args=(source_rows,),
+            kwargs={"validation": validation},
+            rounds=3,
+            warmup_rounds=1,
         )
         assert result.count >= 1
 
@@ -187,20 +279,25 @@ class TestApplyScaling:
         return request.param
 
     def test_apply_scaling(self, rule_count, benchmark):
-        rules, metadata = _generate_accumulator_rules(
+        source_rows, kwargs, validation = _generate_accumulator_rules(
             rule_count=rule_count, dim_count=4, unknown_density=0.3,
         )
-        engine = AccumulatorEngine(
-            dimension_metadata=metadata,
-            aggregates=[Aggregate(column_name="margin")],
+        engine = rules.AccumulatorEngine(
+            kwargs["metadata"],
+            kwargs["aggregates"],
+            limits=kwargs["limits"],
         )
-        lattice = engine.build(rules)
-        context = _generate_context(metadata)
+        lattice = engine.build(source_rows, validation=validation)
+        context = _generate_context(kwargs["metadata"])
 
         result = benchmark.pedantic(
-            engine.apply, args=(lattice, context), rounds=5, warmup_rounds=1,
+            engine.apply,
+            args=(lattice, context),
+            kwargs={"contract_id": "benchmark", "profile_id": "benchmark"},
+            rounds=5,
+            warmup_rounds=1,
         )
-        assert result.count >= 0  # may be 0 if context doesn't match
+        assert result.status in {"candidates", "no_match"}
 
 
 # ---------------------------------------------------------------------------
@@ -216,19 +313,26 @@ class TestEndToEndScaling:
         return request.param
 
     def test_e2e(self, rule_count, benchmark):
-        rules, metadata = _generate_accumulator_rules(
+        source_rows, kwargs, validation = _generate_accumulator_rules(
             rule_count=rule_count, dim_count=4, unknown_density=0.3,
         )
-        engine = AccumulatorEngine(
-            dimension_metadata=metadata,
-            aggregates=[Aggregate(column_name="margin")],
+        engine = rules.AccumulatorEngine(
+            kwargs["metadata"],
+            kwargs["aggregates"],
+            limits=kwargs["limits"],
         )
-        context = _generate_context(metadata)
+        context = _generate_context(kwargs["metadata"])
 
         def build_and_apply():
-            lattice = engine.build(rules)
-            return engine.apply(lattice, context)
+            lattice = engine.build(source_rows, validation=validation)
+            return engine.apply(
+                lattice,
+                context,
+                contract_id="benchmark",
+                profile_id="benchmark",
+            )
 
         result = benchmark.pedantic(
             build_and_apply, rounds=3, warmup_rounds=1,
         )
+        assert result.status in {"candidates", "no_match"}
