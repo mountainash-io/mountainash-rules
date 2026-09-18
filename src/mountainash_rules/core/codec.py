@@ -6,8 +6,18 @@ import hashlib
 import json
 import math
 import re
-import uuid
+import sys
 import typing as t
+import uuid
+from decimal import Decimal, InvalidOperation
+from types import MappingProxyType
+
+if t.TYPE_CHECKING:
+    from mountainash_rules.core.contracts import (
+        ExactLimits,
+        OperationBudget,
+        ValidationBundle,
+    )
 
 from pydantic import BaseModel
 
@@ -38,6 +48,19 @@ _KINDS = frozenset(
         "vector",
     }
 )
+
+_EVIDENCE_RECORD_KINDS = frozenset(
+    {"analysis-input", "finding", "report", "approval", "binding"}
+)
+
+
+def _identity_payload(
+    kind: str, payload: t.Mapping[str, t.Any]
+) -> t.Mapping[str, t.Any]:
+    """Exclude permitted nonsemantic evidence annotations from record identities."""
+    if kind in _EVIDENCE_RECORD_KINDS:
+        return {key: value for key, value in payload.items() if key != "annotations"}
+    return payload
 
 
 def _fail(message: str) -> t.NoReturn:
@@ -97,7 +120,121 @@ def _scalar(
         raise ValueError("Invalid scalar-1 payload") from exc
 
 
-def _canonical(value: t.Any) -> str:
+def _canonical_annotation_decimal(value: Decimal) -> str:
+    """Return the prescribed finite annotation-number spelling."""
+    if not value.is_finite():
+        _fail("Annotation numbers must be finite")
+    sign, digits, exponent = value.as_tuple()
+    start = 0
+    end = len(digits)
+    while start < end and digits[start] == 0:
+        start += 1
+    if start == end:
+        return "0"
+    while end > start and digits[end - 1] == 0:
+        end -= 1
+        exponent += 1
+    coefficient = "".join(str(digits[index]) for index in range(start, end))
+    prefix = "-" if sign else ""
+    if exponent >= 0:
+        return prefix + coefficient + ("0" * exponent)
+    return f"{prefix}{coefficient}e{exponent}"
+
+
+def _annotation_decimal_length(value: Decimal) -> int:
+    """Measure canonical annotation output without expanding an integer."""
+    if not value.is_finite():
+        _fail("Annotation numbers must be finite")
+    sign, digits, exponent = value.as_tuple()
+    start = 0
+    end = len(digits)
+    while start < end and digits[start] == 0:
+        start += 1
+    if start == end:
+        return 1
+    while end > start and digits[end - 1] == 0:
+        end -= 1
+        exponent += 1
+    prefix = 1 if sign else 0
+    coefficient_length = end - start
+    if exponent >= 0:
+        return prefix + coefficient_length + exponent
+    return prefix + coefficient_length + 2 + len(str(-exponent))
+
+
+def _normalize_annotations(value: t.Any) -> dict[str, t.Any]:
+    """Admit finite JSON annotations without recursive descent."""
+    if not isinstance(value, t.Mapping):
+        _fail("annotations must be an object")
+
+    def scalar(item: t.Any) -> t.Any:
+        if item is None or type(item) is bool or type(item) is int:
+            return item
+        if isinstance(item, float):
+            if not math.isfinite(item):
+                _fail("Annotation numbers must be finite")
+            try:
+                return Decimal(repr(item))
+            except InvalidOperation as exc:
+                raise ValueError("Invalid annotation number") from exc
+        if isinstance(item, Decimal):
+            if not item.is_finite():
+                _fail("Annotation numbers must be finite")
+            return item
+        if isinstance(item, str):
+            _unicode(item)
+            return item
+        _fail(f"Unsupported annotation JSON type: {type(item).__name__}")
+
+    result: dict[str, t.Any] = {}
+    active = {id(value)}
+    stack: list[tuple[t.Iterator[t.Any], t.Any, int, bool]] = [
+        (iter(value.items()), result, id(value), True)
+    ]
+    while stack:
+        iterator, destination, identity, is_object = stack[-1]
+        try:
+            entry = next(iterator)
+        except StopIteration:
+            stack.pop()
+            active.remove(identity)
+            continue
+        if is_object:
+            key, child = entry
+            if not isinstance(key, str):
+                _fail("annotation object keys must be strings")
+            _unicode(key)
+        else:
+            key, child = None, entry
+        if isinstance(child, t.Mapping | list | tuple):
+            child_identity = id(child)
+            if child_identity in active:
+                _fail("cyclic annotation")
+            copied: dict[str, t.Any] | list[t.Any]
+            copied = {} if isinstance(child, t.Mapping) else []
+            if is_object:
+                destination[key] = copied
+            else:
+                destination.append(copied)
+            active.add(child_identity)
+            stack.append(
+                (
+                    iter(child.items())
+                    if isinstance(child, t.Mapping)
+                    else iter(child),
+                    copied,
+                    child_identity,
+                    isinstance(child, t.Mapping),
+                )
+            )
+        elif is_object:
+            destination[key] = scalar(child)
+        else:
+            destination.append(scalar(child))
+    return result
+
+
+def _canonical(value: t.Any, *, annotations: bool = False) -> str:
     if value is None:
         return "null"
     if value is True:
@@ -106,6 +243,10 @@ def _canonical(value: t.Any) -> str:
         return "false"
     if type(value) is int:
         return str(value)
+    if isinstance(value, Decimal):
+        if annotations:
+            return _canonical_annotation_decimal(value)
+        _fail("JSON numeric decimals are permitted only in annotations")
     if isinstance(value, float):
         _fail("JSON numeric floats are not canonical typed scalars")
     if isinstance(value, str):
@@ -123,14 +264,20 @@ def _canonical(value: t.Any) -> str:
                 escaped.append(char)
         escaped.append('"')
         return "".join(escaped)
-    if not isinstance(value, list | tuple | t.Mapping):
+    if not isinstance(value, BaseModel | list | tuple | t.Mapping):
         _fail(f"Unsupported canonical JSON type: {type(value).__name__}")
 
-    def mapping_items(mapping):
+    def mapping_items(mapping: t.Mapping[str, t.Any]) -> t.Iterator[tuple[str, t.Any]]:
         if any(not isinstance(key, str) for key in mapping):
             _fail("JSON object keys must be strings")
         for key in sorted(mapping):
             yield key, mapping[key]
+
+    def model_items(model: BaseModel) -> t.Iterator[tuple[str, t.Any]]:
+        values = model.__dict__
+        for key in sorted(type(model).model_fields):
+            if key in values and not (key == "annotations" and values[key] is None):
+                yield key, values[key]
 
     parts: list[str] = []
     active: set[int] = set()
@@ -149,24 +296,128 @@ def _canonical(value: t.Any) -> str:
             parts.append(",")
         stack[-1] = iterator, closing, identity, False
         if key is not None:
-            parts.extend((_canonical(key), ":"))
-        if isinstance(item, t.Mapping | list | tuple):
+            parts.extend((_canonical(key, annotations=annotations), ":"))
+        if isinstance(item, BaseModel | t.Mapping | list | tuple):
             identity = id(item)
             if identity in active:
                 _fail("cyclic JSON payload")
             active.add(identity)
-            if isinstance(item, t.Mapping):
+            if isinstance(item, BaseModel):
+                parts.append("{")
+                stack.append((model_items(item), "}", identity, True))
+            elif isinstance(item, t.Mapping):
                 parts.append("{")
                 stack.append((mapping_items(item), "}", identity, True))
             else:
                 parts.append("[")
                 stack.append((((None, child) for child in item), "]", identity, True))
         else:
-            parts.append(_canonical(item))
+            parts.append(_canonical(item, annotations=annotations))
     return "".join(parts)
 
 
+def _normalize_materialized_annotations(value: t.Any) -> None:
+    """Normalize a preflighted mutable annotation object in place."""
+    if not isinstance(value, dict):
+        _fail("annotations must be an object")
+
+    def scalar(item: t.Any) -> t.Any:
+        if item is None or type(item) is bool or type(item) is int:
+            return item
+        if isinstance(item, float):
+            if not math.isfinite(item):
+                _fail("Annotation numbers must be finite")
+            try:
+                return Decimal(repr(item))
+            except InvalidOperation as exc:
+                raise ValueError("Invalid annotation number") from exc
+        if isinstance(item, Decimal):
+            if not item.is_finite():
+                _fail("Annotation numbers must be finite")
+            return item
+        if isinstance(item, str):
+            _unicode(item)
+            return item
+        _fail(f"Unsupported annotation JSON type: {type(item).__name__}")
+
+    active = {id(value)}
+    stack: list[tuple[t.Iterator[t.Any], dict[str, t.Any] | list[t.Any], int, bool]] = [
+        (iter(value.items()), value, id(value), True)
+    ]
+    while stack:
+        iterator, destination, identity, is_object = stack[-1]
+        try:
+            entry = next(iterator)
+        except StopIteration:
+            stack.pop()
+            active.remove(identity)
+            continue
+        if is_object:
+            key, child = entry
+            if not isinstance(key, str):
+                _fail("annotation object keys must be strings")
+            _unicode(key)
+        else:
+            key, child = entry
+        if isinstance(child, dict | list):
+            child_identity = id(child)
+            if child_identity in active:
+                _fail("cyclic annotation")
+            active.add(child_identity)
+            stack.append(
+                (
+                    iter(child.items())
+                    if isinstance(child, dict)
+                    else iter(enumerate(child)),
+                    child,
+                    child_identity,
+                    isinstance(child, dict),
+                )
+            )
+        else:
+            destination[key] = scalar(child)
+
+
+def _freeze_materialized_json(value: t.Any) -> t.Any:
+    """Convert a private JSON copy to immutable mappings and tuples iteratively."""
+    if not isinstance(value, dict | list):
+        return value
+    holder: dict[str, t.Any] = {"value": value}
+    stack: list[tuple[dict[str, t.Any] | list[t.Any], t.Any, t.Any, bool]] = [
+        (holder, "value", value, False)
+    ]
+    while stack:
+        parent, key, source, complete = stack.pop()
+        if complete:
+            parent[key] = (
+                MappingProxyType(source) if isinstance(source, dict) else tuple(source)
+            )
+            continue
+        stack.append((parent, key, source, True))
+        entries = source.items() if isinstance(source, dict) else enumerate(source)
+        for child_key, child in entries:
+            if isinstance(child, dict | list):
+                stack.append((source, child_key, child, False))
+    return holder["value"]
+
+
 _JSON_TRAVERSAL_FRAME_BYTES = 512
+_JSON_PARSE_VALUE_BYTES = max(
+    sys.getsizeof(Decimal(0)),
+    sys.getsizeof(""),
+    sys.getsizeof([]),
+    sys.getsizeof({}),
+)
+
+
+def _json_parse_live_bytes(data_size: int) -> int:
+    """Bound parser output by raw bytes plus every possible JSON value slot.
+
+    Apart from one root value, a distinct JSON value needs at least two source
+    bytes.  The per-slot capacity is measured from the active Python runtime,
+    rather than relying on a guessed object-footprint constant.
+    """
+    return data_size + (1 + data_size // 2) * _JSON_PARSE_VALUE_BYTES
 
 
 def _bounded_json_size(
@@ -225,6 +476,25 @@ def _bounded_json_size(
                     total += 4 if item else 5
                 elif type(item) is int:
                     total += 1 if item == 0 else 2 + item.bit_length()
+                elif isinstance(item, Decimal):
+                    budget.reserve(
+                        "max_work",
+                        3 * len(item.as_tuple().digits),
+                        phase=phase,
+                        units="annotation decimal coefficient traversal steps",
+                    )
+                    total += _annotation_decimal_length(item)
+                elif isinstance(item, float):
+                    if not math.isfinite(item):
+                        _fail("Annotation numbers must be finite")
+                    normalized = Decimal(repr(item))
+                    budget.reserve(
+                        "max_work",
+                        3 * len(normalized.as_tuple().digits),
+                        phase=phase,
+                        units="native float shortest-roundtrip traversal steps",
+                    )
+                    total += _annotation_decimal_length(normalized)
                 elif isinstance(item, str):
                     total += string_size(item)
                 elif isinstance(item, BaseModel):
@@ -233,12 +503,16 @@ def _bounded_json_size(
                         _fail("cyclic JSON payload")
                     active.add(identity)
                     total += 2
-                    fields = type(item).model_fields
                     values = item.__dict__
                     push(
                         (
                             "mapping",
-                            ((key, values[key]) for key in fields if key in values),
+                            (
+                                (key, values[key])
+                                for key in type(item).model_fields
+                                if key in values
+                                and not (key == "annotations" and values[key] is None)
+                            ),
                             identity,
                             True,
                         )
@@ -290,11 +564,46 @@ def _bounded_json_size(
             budget.release(hold.counter, hold.amount)
 
 
+def _materialize_json(value: t.Any) -> t.Any:
+    """Copy preflighted JSON containers into strict wire list/dict shapes."""
+    if not isinstance(value, t.Mapping | list | tuple):
+        return value
+
+    def target(source: t.Any) -> dict[str, t.Any] | list[t.Any]:
+        return {} if isinstance(source, t.Mapping) else []
+
+    result = target(value)
+    stack: list[tuple[t.Any, dict[str, t.Any] | list[t.Any]]] = [(value, result)]
+    while stack:
+        source, destination = stack.pop()
+        entries = source.items() if isinstance(source, t.Mapping) else enumerate(source)
+        for key, child in entries:
+            if isinstance(child, t.Mapping | list | tuple):
+                copied = target(child)
+                if isinstance(destination, list):
+                    destination.append(copied)
+                else:
+                    destination[key] = copied
+                stack.append((child, copied))
+            elif isinstance(destination, list):
+                destination.append(child)
+            else:
+                destination[key] = child
+    return result
+
+
 def canonical_bytes(payload: t.Mapping[str, t.Any]) -> bytes:
     """Return canonical-json-1 UTF-8 bytes for a finite JSON payload."""
     if not isinstance(payload, t.Mapping):
         _fail("canonical payload must be an object")
     return _canonical(payload).encode("utf-8")
+
+
+def _transport_bytes(payload: t.Mapping[str, t.Any]) -> bytes:
+    """Encode validated evidence, including annotation-only exact decimals."""
+    if not isinstance(payload, t.Mapping):
+        _fail("transport payload must be an object")
+    return _canonical(payload, annotations=True).encode("utf-8")
 
 
 def _content_id_bytes(kind: str, data: bytes) -> str:
@@ -338,7 +647,7 @@ def decode_json(data: bytes) -> t.Any:
     def constant(value: str) -> t.NoReturn:
         _fail(f"Nonfinite JSON number: {value}")
 
-    decoder = json.JSONDecoder(parse_constant=constant)
+    decoder = json.JSONDecoder(parse_constant=constant, parse_float=Decimal)
     missing = object()
     root: t.Any = missing
     stack: list[dict[str, t.Any]] = []
@@ -865,75 +1174,77 @@ def _validate_record_payload(kind: str, payload: dict[str, t.Any]) -> None:
         _string(payload["contract_id"], "contract_id")
         ResolutionProfile.model_validate(payload["profile"])
         return
-    _object(
-        payload,
-        {
-            "analysis-input": {
-                "schema_version",
-                "ruleset_id",
-                "source_id_field",
-                "source_bundle_digest",
-                "compilation_domain_ref",
-                "domain_digests",
-                "metadata_digest",
-                "aggregate_digest",
-                "routing_digest",
-                "contracts",
-                "validation_policy",
-                "semantic_versions",
-            },
-            "finding": {
-                "schema_version",
-                "analysis_input_id",
-                "stage",
-                "check_id",
-                "code",
-                "severity",
-                "scope",
-                "source_ids",
-                "cell_ids",
-                "region_predicate_id",
-                "witnesses",
-                "witnesses_complete",
-            },
-            "report": {
-                "schema_version",
-                "analysis_input_id",
-                "stage",
-                "artifact_id",
-                "validator",
-                "scope",
-                "checks",
-                "finding_ids",
-            },
-            "approval": {
-                "schema_version",
-                "analysis_input_id",
-                "report_id",
-                "authority_ref",
-                "actor_ref",
-                "decision",
-                "scope",
-                "warning_ids",
-            },
-            "binding": {
-                "schema_version",
-                "artifact_id",
-                "analysis_input_id",
-                "contract_id",
-                "contract_digest",
-                "domain_ref",
-                "domain_digest",
-                "authorized_profiles",
-                "source_report_id",
-                "compiled_report_id",
-                "approval_ids",
-                "semantic_versions",
-            },
-        }[kind],
-        f"{kind} payload",
-    )
-    model.model_validate({"id": content_id(kind, payload), **payload})
+    fields = {
+        "analysis-input": {
+            "schema_version",
+            "ruleset_id",
+            "source_id_field",
+            "source_bundle_digest",
+            "compilation_domain_ref",
+            "domain_digests",
+            "metadata_digest",
+            "aggregate_digest",
+            "routing_digest",
+            "contracts",
+            "validation_policy",
+            "semantic_versions",
+        },
+        "finding": {
+            "schema_version",
+            "analysis_input_id",
+            "stage",
+            "check_id",
+            "code",
+            "severity",
+            "scope",
+            "source_ids",
+            "cell_ids",
+            "region_predicate_id",
+            "witnesses",
+            "witnesses_complete",
+        },
+        "report": {
+            "schema_version",
+            "analysis_input_id",
+            "stage",
+            "artifact_id",
+            "validator",
+            "scope",
+            "checks",
+            "finding_ids",
+        },
+        "approval": {
+            "schema_version",
+            "analysis_input_id",
+            "report_id",
+            "authority_ref",
+            "actor_ref",
+            "decision",
+            "scope",
+            "warning_ids",
+        },
+        "binding": {
+            "schema_version",
+            "artifact_id",
+            "analysis_input_id",
+            "contract_id",
+            "contract_digest",
+            "domain_ref",
+            "domain_digest",
+            "authorized_profiles",
+            "source_report_id",
+            "compiled_report_id",
+            "approval_ids",
+            "semantic_versions",
+        },
+    }[kind]
+    actual = set(payload)
+    if actual != fields and actual != fields | {"annotations"}:
+        _fail(f"Invalid {kind} payload fields")
+    semantic_payload = {
+        key: value for key, value in payload.items() if key != "annotations"
+    }
+    model.model_validate({"id": content_id(kind, semantic_payload), **payload})
 
 
 def _validate_physical_payload(kind: str, payload: dict[str, t.Any]) -> None:
@@ -1229,13 +1540,254 @@ def validate_envelope(
     """Validate one exact semantic envelope and its domain-separated digest."""
     if kind not in _KINDS:
         _fail(f"Unsupported ID kind: {kind}")
-    if not isinstance(envelope, dict):
+    if not isinstance(envelope, t.Mapping):
         _fail("envelope must be an object")
-    _object(envelope, {"id", "payload"}, "envelope")
-    identifier = validate_id(envelope["id"], kind)
-    payload = _validate_payload(
-        kind, envelope["payload"], budget=budget, identifier=identifier
+    reservation = None
+    if budget is not None:
+        size = _bounded_json_size(
+            envelope,
+            budget,
+            phase="envelope_validation",
+            counter="max_live_bytes",
+        )
+        reservation = budget.reserve(
+            "max_live_bytes",
+            size,
+            phase="envelope_validation",
+            units="mutable envelope validation copy capacity",
+        )
+    try:
+        candidate = _materialize_json(envelope)
+        if not isinstance(candidate, dict):
+            _fail("envelope must be an object")
+        _object(candidate, {"id", "payload"}, "envelope")
+        identifier = validate_id(candidate["id"], kind)
+        payload = _validate_payload(
+            kind, candidate["payload"], budget=budget, identifier=identifier
+        )
+        if kind in _EVIDENCE_RECORD_KINDS and "annotations" in candidate["payload"]:
+            _normalize_materialized_annotations(candidate["payload"]["annotations"])
+        if kind != "language" and (
+            content_id(kind, _identity_payload(kind, payload)) != identifier
+        ):
+            _fail("envelope digest does not match payload")
+        return candidate
+    finally:
+        if reservation is not None:
+            budget.release(reservation.counter, reservation.amount)
+
+
+def _make_exact_envelope(
+    kind: str, payload: t.Mapping[str, t.Any], *, budget: OperationBudget
+) -> dict[str, t.Any]:
+    """Construct one bounded, validated semantic envelope on a shared ledger."""
+    if not isinstance(payload, t.Mapping):
+        raise TypeError("payload must be a mapping")
+    if kind not in _KINDS:
+        _fail(f"Unsupported ID kind: {kind}")
+    size = _bounded_json_size(payload, budget, phase="make_exact_envelope")
+    budget.reserve(
+        "max_input_bytes",
+        size,
+        phase="make_exact_envelope",
+        units="semantic payload canonical bytes",
     )
-    if kind != "language" and content_id(kind, payload) != identifier:
-        _fail("envelope digest does not match payload")
-    return envelope
+    budget.reserve(
+        "max_live_bytes",
+        size,
+        phase="make_exact_envelope",
+        units="retained mutable payload copy capacity",
+    )
+    candidate = _materialize_json(payload)
+    if not isinstance(candidate, dict):
+        _fail("envelope payload must be an object")
+    if kind in _EVIDENCE_RECORD_KINDS and "annotations" in candidate:
+        _normalize_materialized_annotations(candidate["annotations"])
+    identifier = _content_id_bytes(
+        kind, canonical_bytes(_identity_payload(kind, candidate))
+    )
+    _validate_payload(kind, candidate, budget=budget, identifier=identifier)
+    identifier_size = _bounded_json_size(
+        identifier,
+        budget,
+        phase="make_exact_envelope",
+        counter="max_output_bytes",
+    )
+    payload_size = _bounded_json_size(
+        candidate,
+        budget,
+        phase="make_exact_envelope",
+        counter="max_output_bytes",
+    )
+    envelope_size = (
+        2
+        + (2 + 6 * len("id"))
+        + 1
+        + identifier_size
+        + 1
+        + (2 + 6 * len("payload"))
+        + 1
+        + payload_size
+    )
+    budget.reserve(
+        "max_output_bytes",
+        envelope_size,
+        phase="make_exact_envelope",
+        units="canonical envelope bytes",
+    )
+    budget.reserve(
+        "max_live_bytes",
+        sys.getsizeof({}) + sys.getsizeof(identifier),
+        phase="make_exact_envelope",
+        units="envelope mapping and typed ID bytes",
+    )
+    return {"id": identifier, "payload": candidate}
+
+
+def make_exact_envelope(
+    kind: str, payload: t.Mapping[str, t.Any], *, limits: ExactLimits
+) -> t.Mapping[str, t.Any]:
+    from mountainash_rules.core.contracts import ExactLimits, OperationBudget
+
+    if not isinstance(limits, ExactLimits):
+        raise TypeError("limits must be ExactLimits")
+    budget = OperationBudget(limits, "make_exact_envelope")
+    envelope = _make_exact_envelope(kind, payload, budget=budget)
+    payload_size = _bounded_json_size(
+        envelope["payload"],
+        budget,
+        phase="make_exact_envelope",
+        counter="max_live_bytes",
+    )
+    budget.reserve(
+        "max_live_bytes",
+        payload_size,
+        phase="make_exact_envelope",
+        units="immutable envelope sequence capacity",
+    )
+    return MappingProxyType(
+        {
+            "id": envelope["id"],
+            "payload": _freeze_materialized_json(envelope["payload"]),
+        }
+    )
+
+
+def _bundle_payload(
+    bundle: ValidationBundle | t.Mapping[str, t.Any],
+) -> t.Mapping[str, t.Any]:
+    """Expose a shallow wire view without copying immutable evidence records."""
+    from mountainash_rules.core.contracts import ValidationBundle
+
+    if isinstance(bundle, ValidationBundle):
+        return {
+            "schema_version": bundle.schema_version,
+            "metadata": bundle.metadata,
+            "aggregates": bundle.aggregates,
+            "routing": bundle.routing,
+            "context_contracts": bundle.context_contracts,
+            "predicates": bundle.predicates,
+            "validation": bundle.validation,
+        }
+    if isinstance(bundle, t.Mapping):
+        return bundle
+    raise TypeError("bundle must be a ValidationBundle or mapping")
+
+
+def _admit_validation_bundle(
+    bundle: ValidationBundle | t.Mapping[str, t.Any], *, budget: OperationBudget
+) -> ValidationBundle:
+    """Preflight and admit a complete bundle without a JSON round trip."""
+    from mountainash_rules.core.contracts import OperationBudget, ValidationBundle
+
+    if not isinstance(budget, OperationBudget):
+        raise TypeError("budget must be an OperationBudget")
+    if isinstance(bundle, ValidationBundle):
+        payload = _bundle_payload(bundle)
+        size = _bounded_json_size(payload, budget, phase="validation_bundle_admission")
+        budget.reserve(
+            "max_input_bytes",
+            size,
+            phase="validation_bundle_admission",
+            units="validation bundle canonical bytes",
+        )
+        return bundle
+    if not isinstance(bundle, t.Mapping):
+        raise TypeError("bundle must be a ValidationBundle or mapping")
+    size = _bounded_json_size(bundle, budget, phase="validation_bundle_admission")
+    budget.reserve(
+        "max_input_bytes",
+        size,
+        phase="validation_bundle_admission",
+        units="validation bundle canonical bytes",
+    )
+    hydration = budget.reserve(
+        "max_live_bytes",
+        size,
+        phase="validation_bundle_admission",
+        units="validation bundle immutable hydration capacity",
+    )
+    try:
+        return ValidationBundle.model_validate(bundle, context={"budget": budget})
+    finally:
+        budget.release(hydration.counter, hydration.amount)
+
+
+def encode_validation_bundle(bundle: ValidationBundle, *, limits: ExactLimits) -> bytes:
+    """Encode one fully admitted validation bundle as canonical UTF-8 JSON."""
+    from mountainash_rules.core.contracts import ExactLimits, OperationBudget
+
+    if not isinstance(limits, ExactLimits):
+        raise TypeError("limits must be ExactLimits")
+    budget = OperationBudget(limits, "encode_validation_bundle")
+    admitted = _admit_validation_bundle(bundle, budget=budget)
+    payload = _bundle_payload(admitted)
+    size = _bounded_json_size(
+        payload,
+        budget,
+        phase="validation_bundle_encoding",
+        counter="max_output_bytes",
+    )
+    budget.reserve(
+        "max_output_bytes",
+        size,
+        phase="validation_bundle_encoding",
+        units="canonical validation bundle bytes",
+    )
+    output = budget.reserve(
+        "max_live_bytes",
+        size,
+        phase="validation_bundle_encoding",
+        units="canonical validation bundle output buffer capacity",
+    )
+    try:
+        return _transport_bytes(payload)
+    finally:
+        budget.release(output.counter, output.amount)
+
+
+def decode_validation_bundle(data: bytes, *, limits: ExactLimits) -> ValidationBundle:
+    """Strictly decode, hydrate and admit one portable validation bundle."""
+    from mountainash_rules.core.contracts import ExactLimits, OperationBudget
+
+    if not isinstance(data, bytes):
+        raise TypeError("data must be bytes")
+    if not isinstance(limits, ExactLimits):
+        raise TypeError("limits must be ExactLimits")
+    budget = OperationBudget(limits, "decode_validation_bundle")
+    budget.reserve(
+        "max_input_bytes",
+        len(data),
+        phase="validation_bundle_decoding",
+        units="input JSON bytes",
+    )
+    parse = budget.reserve(
+        "max_live_bytes",
+        _json_parse_live_bytes(len(data)),
+        phase="validation_bundle_decoding",
+        units="JSON parser tree capacity",
+    )
+    try:
+        return _admit_validation_bundle(decode_json(data), budget=budget)
+    finally:
+        budget.release(parse.counter, parse.amount)

@@ -13,7 +13,12 @@ from types import MappingProxyType
 import typing as t
 import uuid
 
-from mountainash_rules.core.codec import canonical_bytes, content_id, validate_id
+from mountainash_rules.core.codec import (
+    _materialize_json,
+    canonical_bytes,
+    content_id,
+    validate_id,
+)
 from mountainash_rules.core.contracts import (
     AnalysisInput,
     ContextContract,
@@ -22,6 +27,7 @@ from mountainash_rules.core.contracts import (
     DiagnosticRule,
     DomainDefinition,
     Finding,
+    ReportCheck,
     ResolutionProfile,
     Scope,
     SemanticVersions,
@@ -30,6 +36,10 @@ from mountainash_rules.core.contracts import (
     ValidationReport,
     WarningApproval,
     Witness,
+    WitnessRequest,
+    _scope_covers,
+    _scope_covers_nonprofiles,
+    _scope_refs,
 )
 from mountainash_rules.core.predicates import PredicateGraph
 from mountainash_rules.core.reasoner import Reasoner
@@ -74,10 +84,14 @@ class StructuralSource:
 
     source_id: str
     predicate_id: str
+    origins: tuple[t.Mapping[str, t.Any], ...] = ()
 
     def __post_init__(self) -> None:
         _uuid(self.source_id, "source_id")
         validate_id(self.predicate_id, "predicate")
+        object.__setattr__(
+            self, "origins", tuple(_materialize_json(origin) for origin in self.origins)
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -1117,22 +1131,6 @@ def _records(
     return values
 
 
-def _scope_refs(values: t.Iterable[t.Mapping[str, t.Any]]) -> set[bytes]:
-    return {canonical_bytes(dict(value)) for value in values}
-
-
-def _scope_covers_nonprofiles(outer: Scope, inner: Scope) -> bool:
-    return _scope_refs(outer.partition_refs) >= _scope_refs(
-        inner.partition_refs
-    ) and set(outer.domain_refs) >= set(inner.domain_refs)
-
-
-def _scope_covers(outer: Scope, inner: Scope) -> bool:
-    return _scope_covers_nonprofiles(outer, inner) and _scope_refs(
-        outer.profile_refs
-    ) >= _scope_refs(inner.profile_refs)
-
-
 def _policy_scope(scope: Scope, selected_scope: Scope) -> Scope | None:
     """Return the policy portion relevant to a selected authorization scope."""
     scope_payload = scope.model_dump(mode="json")
@@ -1255,6 +1253,8 @@ def _report_is_authorizable(
     required_scope: Scope,
     stage: str,
 ) -> tuple[Finding, ...]:
+    if stage == "source":
+        validate_source_report_semantics(report)
     if report.stage != stage:
         raise ValueError("report has the wrong validation stage")
     if not _scope_covers(report.scope, required_scope):
@@ -1285,7 +1285,7 @@ def _report_is_authorizable(
             if (scope := _policy_scope(requirement.scope, required_scope)) is not None
         ]
         vacuous_coverage = check.check_id == "coverage" and not any(
-            _check_covers_requirement(check.scope, scope) for scope in coverage_scopes
+            _policy_covers_scope(scope, check.scope) for scope in coverage_scopes
         )
         if check.status == "not_required":
             if not vacuous_coverage or not check.complete:
@@ -1367,6 +1367,32 @@ def _selected_analysis(bundle: ValidationBundle, analysis_id: str) -> AnalysisIn
         raise ValueError("selected analysis input is unresolved") from exc
 
 
+def _analysis_contracts(
+    bundle: ValidationBundle, analysis: AnalysisInput
+) -> tuple[ContextContract, ...]:
+    """Resolve the immutable contracts named by an analysis input."""
+    envelopes = {
+        envelope.get("id"): envelope
+        for envelope in bundle.context_contracts
+        if isinstance(envelope, t.Mapping)
+    }
+    contracts: list[ContextContract] = []
+    for reference in analysis.contracts:
+        contract_id = reference.get("contract_id")
+        digest = reference.get("contract_digest")
+        envelope = envelopes.get(digest)
+        if not isinstance(contract_id, str) or not isinstance(envelope, t.Mapping):
+            raise ValueError("analysis contract evidence is unresolved")
+        payload = envelope.get("payload")
+        if not isinstance(payload, t.Mapping) or "contract" not in payload:
+            raise ValueError("analysis contract envelope is malformed")
+        contract = ContextContract.model_validate(payload["contract"])
+        if contract.contract_id != contract_id:
+            raise ValueError("analysis contract identity is stale")
+        contracts.append(contract)
+    return tuple(contracts)
+
+
 def _source_permission(
     bundle: ValidationBundle,
     analysis: AnalysisInput,
@@ -1411,6 +1437,12 @@ def validate_build_permission(
         raise ValueError("canonical material must carry the selected analysis scope")
     analysis = _selected_analysis(value.bundle, value.analysis_input_id)
     _material_matches(analysis, material)
+    validate_source_policy(
+        analysis,
+        _analysis_contracts(value.bundle, analysis),
+        partition_refs=material.selected_scope.partition_refs,
+        source_counts=(0,) * len(material.selected_scope.partition_refs),
+    )
     return _source_permission(
         value.bundle,
         analysis,
@@ -1463,6 +1495,12 @@ def validate_contract_binding(
         raise ValueError("binding artifact does not match canonical material")
     analysis = _selected_analysis(bundle, binding.analysis_input_id)
     _material_matches(analysis, material)
+    validate_source_policy(
+        analysis,
+        _analysis_contracts(bundle, analysis),
+        partition_refs=material.selected_scope.partition_refs,
+        source_counts=(0,) * len(material.selected_scope.partition_refs),
+    )
     if binding.semantic_versions.content != analysis.semantic_versions:
         raise ValueError("binding content semantic versions are stale")
     if binding.domain_digest != material.domain_ids.get(binding.domain_ref):
@@ -1522,3 +1560,873 @@ def validate_contract_binding(
         stage="compiled",
     )
     return BindingPermission(binding.id, source.source_report_id, compiled.id)
+
+
+_SOURCE_CODES = {
+    "source_predicates": frozenset({"unreachable_source"}),
+    "source_overlaps": frozenset(
+        {"source_overlap", "duplicate_source", "singleton_boundary_overlap"}
+    ),
+    "routing": frozenset({"routing_gap", "routing_ambiguity"}),
+    "coverage": frozenset({"coverage_gap"}),
+    "profiles": frozenset({"profile_counterexample"}),
+}
+
+
+def validate_source_report_semantics(report: ValidationReport) -> None:
+    """Admit only the completed source-analysis-1 report interpretation."""
+    if not isinstance(report, ValidationReport):
+        raise TypeError("report must be a ValidationReport")
+    if report.stage != "source":
+        raise ValueError("report must be a source report")
+    if report.validator.get("semantic_version") != "source-analysis-1":
+        raise ValueError("report is not source-analysis-1 evidence")
+    if (
+        not isinstance(report.validator.get("validator_id"), str)
+        or not report.validator["validator_id"]
+    ):
+        raise ValueError("report validator label is invalid")
+    if {check.check_id for check in report.checks} != _SOURCE_CHECKS:
+        raise ValueError("source-analysis-1 report has an unsupported check catalogue")
+    if any(
+        check.status not in {"passed", "findings", "not_required"} or not check.complete
+        for check in report.checks
+    ):
+        raise ValueError("source-analysis-1 report contains incomplete check evidence")
+
+
+def _scope(
+    partitions: t.Iterable[t.Mapping[str, t.Any]],
+    domains: t.Iterable[str],
+    profiles: t.Iterable[t.Mapping[str, str]] = (),
+) -> Scope:
+    partition_values = tuple(
+        sorted((_materialize_json(item) for item in partitions), key=canonical_bytes)
+    )
+    profile_values = tuple(
+        sorted((_materialize_json(item) for item in profiles), key=canonical_bytes)
+    )
+    return Scope(
+        partition_refs=partition_values,
+        domain_refs=tuple(sorted(set(domains))),
+        profile_refs=profile_values,
+    )
+
+
+def _rule_for(policy: t.Any, check_id: str, code: str, scope: Scope) -> DiagnosticRule:
+    matches = [
+        rule
+        for rule in policy.diagnostic_rules
+        if rule.stage == "source"
+        and rule.check_id == check_id
+        and rule.code == code
+        and _policy_covers_scope(rule.scope, scope)
+    ]
+    if len(matches) != 1:
+        raise ValueError("source diagnostic activation has no unique policy rule")
+    return matches[0]
+
+
+def _validate_source_rule(rule: DiagnosticRule) -> None:
+    codes = _SOURCE_CODES.get(rule.check_id)
+    if codes is None or rule.code not in codes:
+        raise ValueError("source policy declares an unsupported diagnostic code")
+    expected = {
+        "unreachable_source": {"none"},
+        "source_overlap": {"none", "point"},
+        "duplicate_source": {"none", "point"},
+        "singleton_boundary_overlap": {"none", "point"},
+        "routing_gap": {"none"},
+        "routing_ambiguity": {"none"},
+        "coverage_gap": {"none", "point"},
+        "profile_counterexample": {"none", "pair"},
+    }[rule.code]
+    if rule.witness_kind not in expected:
+        raise ValueError("source diagnostic has an incompatible witness kind")
+    if rule.code in {"routing_gap", "routing_ambiguity"} and rule.severity != "error":
+        raise ValueError("routing diagnostics must be errors")
+    if rule.code == "singleton_boundary_overlap" and rule.severity not in {
+        "warning",
+        "error",
+    }:
+        raise ValueError("boundary diagnostics must be at least warnings")
+
+
+def validate_source_policy(
+    analysis: AnalysisInput,
+    contracts: t.Sequence[ContextContract],
+    *,
+    partition_refs: t.Iterable[t.Mapping[str, t.Any]],
+    source_counts: t.Sequence[int],
+    ordered_fields: t.Iterable[str] = (),
+) -> None:
+    """Admit every activated source-policy obligation before proof geometry.
+
+    ``source_counts`` is the prepared routing-registry-aligned source census.
+    It activates source predicates and overlap obligations without requesting
+    partition geometry; routing, profile, and coverage obligations are
+    preflighted for every selected contract and scope.
+    """
+    if not isinstance(analysis, AnalysisInput):
+        raise TypeError("analysis must be an AnalysisInput")
+    if not isinstance(source_counts, t.Sequence) or isinstance(
+        source_counts, str | bytes
+    ):
+        raise TypeError("source_counts must be an aligned integer sequence")
+    partitions = tuple(_materialize_json(item) for item in partition_refs)
+    counts = tuple(source_counts)
+    if not partitions:
+        raise ValueError("source policy requires the full routing registry")
+    if len(partitions) != len(counts) or any(
+        type(count) is not int or count < 0 for count in counts
+    ):
+        raise ValueError(
+            "source_counts must align with partitions as non-negative ints"
+        )
+    contract_records = tuple(contracts)
+    if any(not isinstance(contract, ContextContract) for contract in contract_records):
+        raise TypeError("contracts must contain ContextContract records")
+    if len({contract.contract_id for contract in contract_records}) != len(
+        contract_records
+    ):
+        raise ValueError("contracts must have unique contract IDs")
+    if any(
+        contract.domain_ref not in analysis.domain_digests
+        for contract in contract_records
+    ):
+        raise ValueError("contract names an unavailable source-policy domain")
+    profile_refs = tuple(
+        {"contract_id": contract.contract_id, "profile_id": profile.profile_id}
+        for contract in sorted(contract_records, key=lambda item: item.contract_id)
+        for profile in contract.profiles
+    )
+    full_scope = _scope(partitions, analysis.domain_digests, profile_refs)
+    policy = analysis.validation_policy
+
+    def validate_scope(scope: Scope) -> None:
+        if not _scope_covers(full_scope, scope):
+            raise ValueError("source policy scope exceeds the current registry")
+
+    for rule in policy.diagnostic_rules:
+        if rule.stage == "source":
+            _validate_source_rule(rule)
+            validate_scope(rule.scope)
+    for check in policy.required_checks:
+        if check.stage == "source":
+            if check.check_id not in _SOURCE_CHECKS:
+                raise ValueError("source policy requires an unsupported check")
+            validate_scope(check.scope)
+            if (
+                contract_records
+                and check.check_id in {"routing", "profiles"}
+                and not check.scope.profile_refs
+            ):
+                raise ValueError(
+                    "contract routing/profile checks require explicit profile scope"
+                )
+
+    coverage_severities: dict[tuple[bytes, str], str] = {}
+    for requirement in policy.coverage_requirements:
+        validate_scope(requirement.scope)
+        if requirement.domain_ref not in analysis.domain_digests:
+            raise ValueError("coverage requirement names an unavailable domain")
+        effective_scope = _scope(
+            requirement.scope.partition_refs,
+            (requirement.domain_ref,),
+            requirement.scope.profile_refs,
+        )
+        key = (
+            canonical_bytes(effective_scope.model_dump(mode="json")),
+            requirement.region_predicate_id,
+        )
+        previous = coverage_severities.setdefault(key, requirement.severity)
+        if previous != requirement.severity:
+            raise ValueError("equivalent coverage requirements disagree on severity")
+
+    ordered = frozenset(ordered_fields)
+    for partition, count in zip(partitions, counts, strict=True):
+        partition_scope = _scope((partition,), (analysis.compilation_domain_ref,))
+        if count:
+            _rule_for(
+                policy, "source_predicates", "unreachable_source", partition_scope
+            )
+        if count > 1:
+            _rule_for(policy, "source_overlaps", "source_overlap", partition_scope)
+            _rule_for(policy, "source_overlaps", "duplicate_source", partition_scope)
+            if ordered:
+                _rule_for(
+                    policy,
+                    "source_overlaps",
+                    "singleton_boundary_overlap",
+                    partition_scope,
+                )
+        for requirement in policy.coverage_requirements:
+            target_scope = _scope(
+                (partition,),
+                (requirement.domain_ref,),
+                requirement.scope.profile_refs,
+            )
+            if _scope_covers(requirement.scope, target_scope):
+                rule = _rule_for(policy, "coverage", "coverage_gap", target_scope)
+                if rule.severity != requirement.severity:
+                    raise ValueError(
+                        "coverage diagnostic severity disagrees with requirement"
+                    )
+
+    for contract in contract_records:
+        routing_scope = _scope(
+            partitions,
+            (contract.domain_ref,),
+            (
+                {
+                    "contract_id": contract.contract_id,
+                    "profile_id": profile.profile_id,
+                }
+                for profile in contract.profiles
+            ),
+        )
+        _rule_for(policy, "routing", "routing_gap", routing_scope)
+        _rule_for(policy, "routing", "routing_ambiguity", routing_scope)
+        for partition in partitions:
+            for profile in contract.profiles:
+                if profile.promise == "candidate_only":
+                    continue
+                profile_scope = _scope(
+                    (partition,),
+                    (contract.domain_ref,),
+                    (
+                        {
+                            "contract_id": contract.contract_id,
+                            "profile_id": profile.profile_id,
+                        },
+                    ),
+                )
+                rule = _rule_for(
+                    policy, "profiles", "profile_counterexample", profile_scope
+                )
+                if profile.promise == "definite_outcome" and rule.severity != "error":
+                    raise ValueError("definite-outcome counterexamples must be errors")
+
+
+def _source_point(
+    geometry: AnalysisGeometry, domain: DomainDefinition, predicate_id: str
+) -> Witness:
+    """Encode one exact source-region example without inventing a contract."""
+    witness = Reasoner(geometry.graph).witness(
+        geometry.graph.and_(domain.predicate_id, predicate_id)
+    )
+    if witness is None:
+        raise ValueError("cannot encode a point for an empty source finding region")
+    context = {
+        name: encode_scalar(
+            witness[name], field.data_type, timezone=field.timezone, context=True
+        )
+        for name, field in geometry.graph.fields.items()
+    }
+    return Witness(kind="point", contexts=(context,), profile_ref=None, request=None)
+
+
+def verify_source_point(
+    geometry: AnalysisGeometry, finding: Finding, witness: Witness
+) -> None:
+    """Replay a contract-free source point against its named full domain."""
+    if finding.region_predicate_id is None or witness.kind != "point":
+        raise ValueError("source point replay requires a point finding and witness")
+    if len(finding.scope.domain_refs) != 1:
+        raise ValueError("source point findings require one explicit domain")
+    domain = geometry.provider_domains.get(finding.scope.domain_refs[0])
+    if domain is None:
+        raise ValueError("source point domain is unavailable from geometry")
+    if len(witness.contexts) != 1:
+        raise ValueError("source point witness must have one context")
+    context = witness.contexts[0]
+    if set(context) != set(domain.fields[i].name for i in range(len(domain.fields))):
+        raise ValueError("source point must supply every domain field")
+    for field in domain.fields:
+        _validate_contract_scalar(field, context[field.name])
+    complete = _fact_predicate(geometry.graph, context)
+    reasoner = Reasoner(geometry.graph)
+    if reasoner.is_empty(reasoner.intersect(domain.predicate_id, complete)):
+        raise ValueError("source point lies outside its named domain")
+    if reasoner.is_empty(reasoner.intersect(finding.region_predicate_id, complete)):
+        raise ValueError("source point lies outside its finding region")
+    source_predicates = {
+        source.source_id: source.predicate_id for source in geometry.sources
+    }
+    if finding.code in {
+        "source_overlap",
+        "duplicate_source",
+        "singleton_boundary_overlap",
+    }:
+        if len(finding.source_ids) != 2 or any(
+            identifier not in source_predicates for identifier in finding.source_ids
+        ):
+            raise ValueError("overlap point must name its two current sources")
+        if any(
+            reasoner.is_empty(reasoner.intersect(source_predicates[source], complete))
+            for source in finding.source_ids
+        ):
+            raise ValueError("overlap point does not satisfy every named source")
+    elif finding.code == "coverage_gap" and any(
+        not reasoner.is_empty(reasoner.intersect(source.predicate_id, complete))
+        for source in geometry.sources
+    ):
+        raise ValueError("coverage point is covered by a source")
+
+    if reasoner.is_empty(
+        reasoner.intersect(geometry.compilation_domain.predicate_id, complete)
+    ):
+        raise ValueError("source point lies outside its named partition")
+
+
+def _profile_witness(
+    geometry: AnalysisGeometry,
+    contract: ContextContract,
+    profile: ResolutionProfile,
+    counterexample: ProfileCounterexample,
+) -> Witness:
+    fields = {field.name: field for field in contract.fields}
+    first, second = counterexample.contexts
+    provided = {
+        name: encode_scalar(
+            first[name],
+            fields[name].data_type,
+            timezone=fields[name].timezone,
+            context=True,
+        )
+        for name in counterexample.state.presence
+    }
+    unavailable = tuple(sorted(set(fields) - set(provided)))
+    contexts = tuple(
+        {
+            name: encode_scalar(
+                context[name],
+                field.data_type,
+                timezone=field.timezone,
+                context=True,
+            )
+            for name, field in fields.items()
+        }
+        for context in (first, second)
+    )
+    return Witness(
+        kind="pair",
+        contexts=contexts,
+        profile_ref={
+            "contract_id": contract.contract_id,
+            "profile_id": profile.profile_id,
+        },
+        request=WitnessRequest(
+            provided_values=provided,
+            unavailable_fields=unavailable,
+            dont_care=counterexample.state.dont_care,
+        ),
+    )
+
+
+def _finding(
+    analysis: AnalysisInput,
+    rule: DiagnosticRule,
+    *,
+    scope: Scope,
+    source_ids: t.Iterable[str] = (),
+    region_predicate_id: str | None = None,
+    witnesses: t.Iterable[Witness] = (),
+) -> Finding:
+    retained = tuple(witnesses)
+    if len(retained) > rule.max_witnesses:
+        retained = retained[: rule.max_witnesses]
+    payload = {
+        "schema_version": 1,
+        "analysis_input_id": analysis.id,
+        "stage": "source",
+        "check_id": rule.check_id,
+        "code": rule.code,
+        "severity": rule.severity,
+        "scope": scope.model_dump(mode="json"),
+        "source_ids": sorted(source_ids),
+        "cell_ids": [],
+        "region_predicate_id": region_predicate_id,
+        "witnesses": [item.model_dump(mode="json") for item in retained],
+        "witnesses_complete": False,
+    }
+    return Finding(id=content_id("finding", payload), **payload)
+
+
+def _authored_boundary_overlap(
+    geometry: AnalysisGeometry, source_ids: tuple[str, ...], region: str
+) -> bool:
+    """Recognize only inclusive authored interval contacts, never clipping artifacts."""
+    if len(source_ids) != 2:
+        return False
+    sources = {source.source_id: source for source in geometry.sources}
+    left, right = (sources.get(identifier) for identifier in source_ids)
+    if left is None or right is None:
+        return False
+    left_origins = {origin.get("dimension_name"): origin for origin in left.origins}
+    right_origins = {origin.get("dimension_name"): origin for origin in right.origins}
+    reasoner = Reasoner(geometry.graph)
+    point = reasoner.witness(region)
+    if point is None:
+        return False
+    for name in sorted(set(left_origins) & set(right_origins)):
+        left_node = geometry.graph.nodes.get(left_origins[name].get("predicate_id"))
+        right_node = geometry.graph.nodes.get(right_origins[name].get("predicate_id"))
+        if (
+            not isinstance(left_node, t.Mapping)
+            or not isinstance(right_node, t.Mapping)
+            or left_node.get("op") != right_node.get("op") != "interval"
+            or left_node.get("field") != right_node.get("field")
+            or left_node.get("field") not in geometry.graph.fields
+        ):
+            continue
+        field = t.cast(str, left_node["field"])
+        contacts = (
+            (
+                left_node.get("upper"),
+                right_node.get("lower"),
+                left_node.get("upper_closed"),
+                right_node.get("lower_closed"),
+            ),
+            (
+                right_node.get("upper"),
+                left_node.get("lower"),
+                right_node.get("upper_closed"),
+                left_node.get("lower_closed"),
+            ),
+        )
+        for upper, lower, upper_closed, lower_closed in contacts:
+            if (
+                isinstance(upper, t.Mapping)
+                and isinstance(lower, t.Mapping)
+                and dict(upper) == dict(lower)
+                and upper_closed is True
+                and lower_closed is True
+                and reasoner.is_empty(
+                    geometry.graph.and_(
+                        region,
+                        geometry.graph.not_(geometry.graph.eq(field, point[field])),
+                    )
+                )
+            ):
+                return True
+    return False
+
+
+def _union_regions(graph: PredicateGraph, regions: t.Iterable[str]) -> str | None:
+    items = tuple(sorted(set(regions)))
+    if not items:
+        return None
+    return graph.or_(*items)
+
+
+def produce_source_report(
+    analysis: AnalysisInput,
+    geometry_for: t.Callable[[t.Mapping[str, t.Any]], AnalysisGeometry],
+    contracts: t.Sequence[ContextContract],
+    *,
+    dimension_fields: t.Mapping[str, str],
+    partition_refs: t.Iterable[t.Mapping[str, t.Any]],
+    source_counts: t.Sequence[int],
+    guard_fields: t.Iterable[str] = (),
+    ordered_fields: t.Iterable[str] = (),
+) -> tuple[tuple[Finding, ...], ValidationReport]:
+    """Convert complete kernel proofs into the one canonical source report.
+
+    The engine supplies one partition at a time.  The producer retains only
+    immutable proof records, so temporary cells and native geometry can be
+    released before the next partition is prepared.
+    """
+    if not isinstance(analysis, AnalysisInput):
+        raise TypeError("analysis must be an AnalysisInput")
+    if not callable(geometry_for):
+        raise TypeError("geometry_for must be callable")
+    partition_values = tuple(partition_refs)
+    contracts = tuple(contracts)
+    validate_source_policy(
+        analysis,
+        contracts,
+        partition_refs=partition_values,
+        source_counts=source_counts,
+        ordered_fields=ordered_fields,
+    )
+
+    def _geometry(partition: t.Mapping[str, t.Any]) -> AnalysisGeometry:
+        value = geometry_for(partition)
+        if not isinstance(value, AnalysisGeometry):
+            raise TypeError("geometry_for must return AnalysisGeometry")
+        if canonical_bytes(value.partition_identity) != canonical_bytes(partition):
+            raise ValueError("geometry_for returned a mismatched partition")
+        return value
+
+    policy = analysis.validation_policy
+    partitions = tuple(
+        sorted((dict(item) for item in partition_values), key=canonical_bytes)
+    )
+    contract_pairs = tuple(
+        {"contract_id": contract.contract_id, "profile_id": profile.profile_id}
+        for contract in sorted(contracts, key=lambda item: item.contract_id)
+        for profile in contract.profiles
+    )
+    full_scope = _scope(partitions, analysis.domain_digests, contract_pairs)
+    findings: list[Finding] = []
+    by_check: dict[str, list[Finding]] = {name: [] for name in _SOURCE_CHECKS}
+    interned_findings: dict[str, Finding] = {}
+    ordered = frozenset(ordered_fields)
+    coverage_evidence: dict[
+        tuple[bytes, str, str], tuple[str | None, Witness | None]
+    ] = {}
+
+    def add(
+        check_id: str,
+        code: str,
+        scope: Scope,
+        geometry: AnalysisGeometry,
+        *,
+        source_ids: t.Iterable[str] = (),
+        region: str | None = None,
+        witness: Witness | None = None,
+    ) -> Finding:
+        rule = _rule_for(policy, check_id, code, scope)
+        examples = () if witness is None or rule.witness_kind == "none" else (witness,)
+        item = _finding(
+            analysis,
+            rule,
+            scope=scope,
+            source_ids=source_ids,
+            region_predicate_id=region,
+            witnesses=examples,
+        )
+        existing = interned_findings.get(item.id)
+        if existing is not None:
+            return existing
+        geometry.graph.budget.reserve(
+            "max_output_bytes",
+            1024 + 512 * len(examples),
+            phase="source-report.finding",
+            units="finding output bytes",
+        )
+        geometry.graph.budget.reserve(
+            "max_live_bytes",
+            1024 + 512 * len(examples),
+            phase="source-report.finding",
+            units="retained finding bytes",
+        )
+        if witness is not None and examples and witness.profile_ref is None:
+            verify_source_point(geometry, item, witness)
+        interned_findings[item.id] = item
+        findings.append(item)
+        by_check[check_id].append(item)
+        return item
+
+    for partition_index, partition in enumerate(partitions):
+        geometry = _geometry(partition)
+        partition_scope = _scope(
+            (geometry.partition_identity,), (analysis.compilation_domain_ref,)
+        )
+        if geometry.sources:
+            _rule_for(
+                policy, "source_predicates", "unreachable_source", partition_scope
+            )
+        if len(geometry.sources) > 1:
+            _rule_for(policy, "source_overlaps", "source_overlap", partition_scope)
+            _rule_for(policy, "source_overlaps", "duplicate_source", partition_scope)
+            if ordered:
+                _rule_for(
+                    policy,
+                    "source_overlaps",
+                    "singleton_boundary_overlap",
+                    partition_scope,
+                )
+        for requirement in policy.coverage_requirements:
+            requirement_scope = _scope(
+                (geometry.partition_identity,),
+                (requirement.domain_ref,),
+                requirement.scope.profile_refs,
+            )
+            if _scope_covers(requirement.scope, requirement_scope):
+                rule = _rule_for(policy, "coverage", "coverage_gap", requirement_scope)
+                if rule.severity != requirement.severity:
+                    raise ValueError(
+                        "coverage diagnostic severity disagrees with requirement"
+                    )
+        proof = prove_source_geometry(geometry)
+        if proof.cell_excess or proof.cell_gaps:
+            raise ValueError("canonical source/cell geometry invariant failed")
+        for source_id in proof.unreachable_source_ids:
+            add(
+                "source_predicates",
+                "unreachable_source",
+                partition_scope,
+                geometry,
+                source_ids=(source_id,),
+            )
+        duplicate_regions = {
+            (item.source_ids, item.predicate_id) for item in proof.duplicates
+        }
+        for region in proof.overlaps:
+            code = "source_overlap"
+            # An exact fixed ordered coordinate remains boundary evidence when
+            # extruded through other dimensions.  Origins are retained separately
+            # by the adapter; this conservative classification never drops overlap.
+            if _authored_boundary_overlap(
+                geometry, region.source_ids, region.predicate_id
+            ):
+                code = "singleton_boundary_overlap"
+            domain = geometry.provider_domains[analysis.compilation_domain_ref]
+            witness = _source_point(geometry, domain, region.predicate_id)
+            add(
+                "source_overlaps",
+                code,
+                partition_scope,
+                geometry,
+                source_ids=region.source_ids,
+                region=region.predicate_id,
+                witness=witness,
+            )
+        for ids, predicate_id in duplicate_regions:
+            domain = geometry.provider_domains[analysis.compilation_domain_ref]
+            add(
+                "source_overlaps",
+                "duplicate_source",
+                partition_scope,
+                geometry,
+                source_ids=ids,
+                region=predicate_id,
+                witness=_source_point(geometry, domain, predicate_id),
+            )
+
+        source_union = geometry.graph.or_(
+            *(
+                geometry.graph.and_(
+                    geometry.compilation_domain.predicate_id, source.predicate_id
+                )
+                for source in geometry.sources
+            )
+        )
+        reasoner = Reasoner(geometry.graph)
+        for requirement in policy.coverage_requirements:
+            if not _scope_covers_nonprofiles(
+                requirement.scope,
+                _scope((geometry.partition_identity,), (requirement.domain_ref,)),
+            ):
+                continue
+            key = (
+                canonical_bytes(geometry.partition_identity),
+                requirement.domain_ref,
+                requirement.region_predicate_id,
+            )
+            evidence = coverage_evidence.get(key)
+            if evidence is None:
+                domain = geometry.provider_domains.get(requirement.domain_ref)
+                if domain is None:
+                    raise ValueError("coverage requirement names an unavailable domain")
+                global_required = geometry.graph.and_(
+                    domain.predicate_id, requirement.region_predicate_id
+                )
+                if not reasoner.is_empty(
+                    reasoner.difference(
+                        global_required, geometry.global_compilation_domain.predicate_id
+                    )
+                ):
+                    raise ValueError(
+                        "coverage requirement region exceeds global compilation domain"
+                    )
+                required = geometry.graph.and_(
+                    domain.predicate_id,
+                    requirement.region_predicate_id,
+                    geometry.compilation_domain.predicate_id,
+                )
+                gap = reasoner.difference(required, source_union)
+                if reasoner.is_empty(gap):
+                    evidence = (None, None)
+                else:
+                    evidence = (gap, _source_point(geometry, domain, gap))
+                coverage_evidence[key] = evidence
+            gap, witness = evidence
+            if gap is None or witness is None:
+                continue
+            scope = _scope(
+                (geometry.partition_identity,),
+                (requirement.domain_ref,),
+                requirement.scope.profile_refs,
+            )
+            add(
+                "coverage",
+                "coverage_gap",
+                scope,
+                geometry,
+                region=gap,
+                witness=witness,
+            )
+        if partition_index == 0:
+            for contract in contracts:
+                routing_scope = _scope(
+                    partitions,
+                    (contract.domain_ref,),
+                    (
+                        {
+                            "contract_id": contract.contract_id,
+                            "profile_id": profile.profile_id,
+                        }
+                        for profile in contract.profiles
+                    ),
+                )
+                _rule_for(policy, "routing", "routing_gap", routing_scope)
+                _rule_for(policy, "routing", "routing_ambiguity", routing_scope)
+                routing = prove_routing(geometry, contract, guard_fields=guard_fields)
+                for code, evidence in (
+                    ("routing_gap", routing.no_route),
+                    ("routing_ambiguity", routing.ambiguous),
+                ):
+                    region = _union_regions(
+                        geometry.graph, (item.predicate_id for item in evidence)
+                    )
+                    if region is not None:
+                        add("routing", code, routing_scope, geometry, region=region)
+        for contract in contracts:
+            for profile in contract.profiles:
+                if profile.promise == "candidate_only":
+                    continue
+                profile_scope = _scope(
+                    (geometry.partition_identity,),
+                    (contract.domain_ref,),
+                    (
+                        {
+                            "contract_id": contract.contract_id,
+                            "profile_id": profile.profile_id,
+                        },
+                    ),
+                )
+                profile_rule = _rule_for(
+                    policy, "profiles", "profile_counterexample", profile_scope
+                )
+                if (
+                    profile.promise == "definite_outcome"
+                    and profile_rule.severity != "error"
+                ):
+                    raise ValueError("definite-outcome counterexamples must be errors")
+                profile_dimension_fields = {
+                    name: field
+                    for name, field in dimension_fields.items()
+                    if name in profile.dimensions
+                }
+                profile_proof = prove_profile(
+                    geometry,
+                    contract,
+                    profile.profile_id,
+                    dimension_fields=profile_dimension_fields,
+                    guard_fields=guard_fields,
+                )
+                if not profile_proof.counterexamples:
+                    continue
+                witness = _profile_witness(
+                    geometry, contract, profile, profile_proof.counterexamples[0]
+                )
+                verify_witness(
+                    geometry,
+                    contract,
+                    witness,
+                    dimension_fields=profile_dimension_fields,
+                    guard_fields=guard_fields,
+                )
+                add(
+                    "profiles",
+                    "profile_counterexample",
+                    profile_scope,
+                    geometry,
+                    witness=witness,
+                )
+
+    checks: list[ReportCheck] = []
+    for check_id in sorted(_SOURCE_CHECKS):
+        report_findings = tuple(sorted((item.id for item in by_check[check_id])))
+        status = (
+            "findings"
+            if report_findings
+            else (
+                "not_required"
+                if check_id == "coverage" and not policy.coverage_requirements
+                else "passed"
+            )
+        )
+        checks.append(
+            ReportCheck(
+                check_id=check_id,
+                scope=full_scope,
+                status=status,
+                complete=True,
+                finding_ids=report_findings,
+            )
+        )
+    # Global coverage and explicit-profile coverage remain independent evidence:
+    # a profile-bearing check cannot authorize the global obligation (and vice
+    # versa), even when their partition/domain members happen to coincide.
+    for requirement in policy.coverage_requirements:
+        scope = requirement.scope
+        if any(
+            check.check_id == "coverage" and check.scope == scope for check in checks
+        ):
+            continue
+        scoped = tuple(
+            sorted(
+                item.id
+                for item in by_check["coverage"]
+                if _scope_covers(scope, item.scope)
+            )
+        )
+        checks.append(
+            ReportCheck(
+                check_id="coverage",
+                scope=scope,
+                status="findings" if scoped else "passed",
+                complete=True,
+                finding_ids=scoped,
+            )
+        )
+    for requirement in policy.required_checks:
+        if requirement.stage != "source" or any(
+            check.check_id == requirement.check_id
+            and _check_covers_requirement(check.scope, requirement.scope)
+            for check in checks
+        ):
+            continue
+        scoped = tuple(
+            sorted(
+                item.id
+                for item in by_check[requirement.check_id]
+                if _scope_covers(requirement.scope, item.scope)
+            )
+        )
+        checks.append(
+            ReportCheck(
+                check_id=requirement.check_id,
+                scope=requirement.scope,
+                status="findings" if scoped else "passed",
+                complete=True,
+                finding_ids=scoped,
+            )
+        )
+    checks.sort(
+        key=lambda item: (
+            item.check_id,
+            canonical_bytes(item.scope.model_dump(mode="json")),
+        )
+    )
+    finding_ids = tuple(sorted(item.id for item in findings))
+    payload = {
+        "schema_version": 1,
+        "analysis_input_id": analysis.id,
+        "stage": "source",
+        "artifact_id": None,
+        "validator": {
+            "validator_id": "mountainash-rules",
+            "semantic_version": "source-analysis-1",
+        },
+        "scope": full_scope.model_dump(mode="json"),
+        "checks": [item.model_dump(mode="json") for item in checks],
+        "finding_ids": list(finding_ids),
+    }
+    report = ValidationReport(id=content_id("report", payload), **payload)
+    validate_source_report_semantics(report)
+    return tuple(sorted(findings, key=lambda item: item.id)), report

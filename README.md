@@ -256,11 +256,33 @@ canonical connected-cell normalization (`normalization-2`), and reproducible
 labels and amounts do not determine cell identity. Amount changes do change
 outputs and artifact identity.
 
-Neutral source/profile proofs and immutable permission-record checks use that same
-geometry. Explicit operation budgets bound input, work, native/theory storage,
-normalization state, and output; exhaustion raises a typed error, not a partial
-or approvable result. These kernels do not supply a public provider facade,
-author approvals, publish a lattice, or change legacy build/apply/save/load.
+The root-public source-evidence API uses that same kernel:
+
+- `analyze_sources(rows, ...)` produces one complete canonical source report
+  under an explicit `ValidationPolicy`. Rows carry native scalar values and
+  explicit UUIDs; `metadata.context_contracts` owns all context/profile declarations.
+- `make_exact_envelope(kind, payload, *, limits)` constructs strict canonical,
+  deeply immutable declaration and approval envelopes without private imports.
+- `encode_validation_bundle` / `decode_validation_bundle` preserve immutable
+  reports, findings and exact nonsemantic annotations across processes.
+- `attach_warning_approvals` stores caller-authored scoped decisions independently
+  of current rows or a build. Loading or attaching evidence grants no permission.
+- `validate_build_input` recomputes current input identities, replays retained
+  examples and checks the explicitly selected report and approvals. Changed
+  sources/domains/profiles/policy, unapproved warnings, errors and incomplete
+  checks cannot authorize a build.
+
+Every operation requires explicit `ExactLimits`. One operation budget covers
+all partitions, profiles and transport work; exhaustion raises a typed error,
+never a partial successful report. Applications own producer/actor trust and
+storage. No analysis call invents business policy or approves its own warnings.
+The executable conformance inputs and review handoff are in
+`tests/accumulator/source_analysis_fixtures.py` and `test_source_analysis.py`;
+`tests/fixtures/exact_source_*.json` retains production-generated clean,
+reviewed-warning and error evidence for subsequent integration.
+
+This source-evidence facade does not publish a serving lattice or change legacy
+build/apply/save/load. Exact runtime and snapshot cutover remain separate work.
 
 Boolean set strategies can be declared for exact analysis. The existing ternary
 filter and legacy accumulator still reject Boolean set dimensions explicitly.

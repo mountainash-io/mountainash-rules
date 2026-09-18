@@ -16,6 +16,7 @@ import weakref
 
 from mountainash_rules import _native
 from mountainash_rules.core.codec import (
+    _materialize_json,
     canonical_bytes,
     content_id,
     decode_json,
@@ -1143,6 +1144,7 @@ class PredicateGraph:
         ) -> Iterable[Mapping[str, t.Any]]:
             for envelope in envelopes:
                 reserve_live(256)
+                immutable_containers = False
                 stack = [(iter((envelope,)), None)]
                 active: set[int] = set()
                 while stack:
@@ -1158,6 +1160,9 @@ class PredicateGraph:
                         "max_work", 1, phase="predicate_decode", units="input values"
                     )
                     if isinstance(value, (Mapping, list, tuple)):
+                        immutable_containers |= isinstance(value, tuple) or (
+                            isinstance(value, Mapping) and not isinstance(value, dict)
+                        )
                         identity = id(value)
                         if identity in active:
                             raise ValueError("cyclic JSON input")
@@ -1197,7 +1202,9 @@ class PredicateGraph:
                         raise ValueError(
                             "predicate graph input must contain JSON values"
                         )
-                yield envelope
+                # The preflight above reserves the received tree before any copy.
+                # Mutable JSON already has the decoder's native container shape.
+                yield _materialize_json(envelope) if immutable_containers else envelope
 
         try:
             reserve_live(4096 + 128 * (len(self._nodes) + len(self._languages)))

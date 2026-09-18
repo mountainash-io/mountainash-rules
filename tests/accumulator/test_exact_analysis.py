@@ -400,3 +400,126 @@ def test_analysis_material_rejects_provider_domain_outside_global_compilation():
             contracts=(),
             validation_policy=policy,
         )
+
+
+def test_source_report_logical_findings_ignore_internal_normalization_history():
+    """F03: real producer diagnostics must survive duplicate/reordered cell fragments."""
+    import json
+    from mountainash_rules import (
+        CoverageRequirement,
+        DiagnosticRule,
+        Scope,
+        ValidationPolicy,
+    )
+    from mountainash_rules.core.normalization import covered_overlay
+    from mountainash_rules.core.reasoner import Reasoner
+    from mountainash_rules.core.validation import produce_source_report
+    from mountainash_rules.engines.accumulator.compiler import (
+        analyze_sources,
+        analysis_geometry,
+        prepare_analysis_input,
+    )
+
+    rows = [
+        {**_ROWS[0], "lo": 0, "hi": 5},
+        {**_ROWS[1], "lo": 0, "hi": 5},
+        {**_ROWS[2], "lo": 30, "hi": 40},
+    ]
+    signatures = []
+    for reverse, duplicate_fragments in ((False, False), (True, False), (True, True)):
+        prepared = _prepare(rows)
+        scope = Scope(
+            partition_refs=[{"routing_id": prepared.routing["id"], "key_values": []}],
+            domain_refs=["pricing"],
+            profile_refs=[],
+        )
+        diagnostics = [
+            DiagnosticRule(
+                stage="source",
+                check_id=check,
+                code=code,
+                scope=scope,
+                severity="warning",
+                witness_kind="none",
+                max_witnesses=0,
+            )
+            for check, code in (
+                ("source_predicates", "unreachable_source"),
+                ("source_overlaps", "source_overlap"),
+                ("source_overlaps", "duplicate_source"),
+                ("source_overlaps", "singleton_boundary_overlap"),
+                ("coverage", "coverage_gap"),
+            )
+        ]
+        diagnostics.sort(
+            key=lambda d: json.dumps(
+                d.model_dump(mode="json"),
+                sort_keys=True,
+                separators=(",", ":"),
+            )
+        )
+        policy = ValidationPolicy(
+            schema_version=1,
+            policy_id="history",
+            required_checks=[],
+            coverage_requirements=[
+                CoverageRequirement(
+                    requirement_id="whole",
+                    domain_ref="pricing",
+                    region_predicate_id=prepared.domain.predicate_id,
+                    scope=scope,
+                    severity="warning",
+                ),
+                CoverageRequirement(
+                    requirement_id="whole-equivalent",
+                    domain_ref="pricing",
+                    region_predicate_id=prepared.domain.predicate_id,
+                    scope=scope,
+                    severity="warning",
+                ),
+            ],
+            diagnostic_rules=diagnostics,
+        )
+        sources = {s.source_id: s.predicate_id for s in prepared.sources}
+        order = sorted(sources, reverse=reverse)
+        overlay = covered_overlay(
+            Reasoner(prepared.graph),
+            prepared.domain.predicate_id,
+            sources,
+            order=order,
+        )
+        fragments = overlay.fragments * (2 if duplicate_fragments else 1)
+        analyzed = analyze_sources(
+            prepared, key_values=[], order=order, fragments=fragments
+        )
+        geometry = analysis_geometry(
+            analyzed, provider_domains={"pricing": prepared.domain}
+        )
+        analysis, _ = prepare_analysis_input(
+            prepared,
+            compilation_domain_ref="pricing",
+            domains={"pricing": prepared.domain},
+            contracts=(),
+            validation_policy=policy,
+        )
+        findings, report = produce_source_report(
+            analysis,
+            lambda partition: geometry,
+            (),
+            partition_refs=scope.partition_refs,
+            source_counts=(len(prepared.sources),),
+            dimension_fields={"x": "x"},
+            ordered_fields=("x",),
+        )
+        assert all(check.complete for check in report.checks)
+        assert sum(item.code == "coverage_gap" for item in findings) == 1
+        signatures.append(
+            sorted((f.code, f.source_ids, f.region_predicate_id) for f in findings)
+        )
+    assert signatures[0] == signatures[1] == signatures[2]
+    assert {code for code, _, _ in signatures[0]} == {
+        "unreachable_source",
+        "source_overlap",
+        "duplicate_source",
+        "coverage_gap",
+    }

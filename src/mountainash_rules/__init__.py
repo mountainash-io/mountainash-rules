@@ -26,11 +26,18 @@ from mountainash_rules.core.constants import (
     sentinels_for,
     unknown_sentinel_for,
 )
+from mountainash_rules.core.codec import (
+    decode_validation_bundle,
+    encode_validation_bundle,
+    make_exact_envelope,
+)
 from mountainash_rules.core.contracts import (
     AnalysisInput,
     ContextContract,
     ContextField,
     ContractBinding,
+    CoverageRequirement,
+    DiagnosticRule,
     DomainDefinition,
     DomainField,
     ExactCapabilityError,
@@ -40,10 +47,13 @@ from mountainash_rules.core.contracts import (
     InvalidContextError,
     Issue,
     OutcomeRecord,
+    RequiredCheck,
     ResolutionProfile,
+    Scope,
     UnresolvedContextError,
     ValidatedBuildInput,
     ValidationBundle,
+    ValidationPolicy,
     ValidationReport,
     WarningApproval,
 )
@@ -52,6 +62,11 @@ from mountainash_rules.core.hit_policy import HitPolicyViolationError, Selection
 from mountainash_rules.core.language import LanguageLimits, RegexOptions, StringLanguage
 from mountainash_rules.core.result import ExplainResult, RuleResult
 from mountainash_rules.engines.accumulator.aggregate import Aggregate, AggregateOp
+from mountainash_rules.engines.accumulator.analysis import (
+    analyze_sources,
+    attach_warning_approvals,
+    validate_build_input,
+)
 from mountainash_rules.engines.accumulator.engine import AccumulatorEngine
 from mountainash_rules.engines.accumulator.lattice import (
     AmbiguousPartitionError,
@@ -62,10 +77,18 @@ from mountainash_rules.engines.accumulator.result import AccumulatorResult
 from mountainash_rules.engines.filter.engine import ExpressionRulesEngine
 
 __all__ = (
+    "analyze_sources",
+    "attach_warning_approvals",
+    "decode_validation_bundle",
+    "encode_validation_bundle",
+    "make_exact_envelope",
+    "validate_build_input",
     "AnalysisInput",
     "ContextContract",
     "ContextField",
     "ContractBinding",
+    "CoverageRequirement",
+    "DiagnosticRule",
     "DomainDefinition",
     "DomainField",
     "ExactCapabilityError",
@@ -75,10 +98,13 @@ __all__ = (
     "InvalidContextError",
     "Issue",
     "OutcomeRecord",
+    "RequiredCheck",
     "ResolutionProfile",
+    "Scope",
     "UnresolvedContextError",
     "ValidatedBuildInput",
     "ValidationBundle",
+    "ValidationPolicy",
     "ValidationReport",
     "WarningApproval",
     "NOT_SET",
