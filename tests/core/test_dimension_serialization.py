@@ -2,6 +2,7 @@
 
 import warnings
 
+import polars as pl
 import pytest
 
 from mountainash_rules.core.constants import DimensionRole, MatchStrategy
@@ -145,10 +146,16 @@ class TestYamlRoundTrip:
         assert DimensionsMetadata.from_yaml_file(p) == md
 
 
-import polars as pl
+import mountainash_rules as rules
 
 from mountainash_rules.core.constants import UNKNOWN_DATE
 from mountainash_rules.engines.filter.engine import ExpressionRulesEngine
+from tests.accumulator.exact_runtime_fixtures import (
+    build as build_exact,
+    declarations,
+    memberships,
+    uuid,
+)
 
 
 def _effective_dated_metadata():
@@ -199,19 +206,40 @@ class TestTemporalRange:
         result = engine.evaluate({})
         assert result.count == 3  # NOT_SET_DATE -> all UNKNOWN wildcards
 
-    def test_accumulator_combines_overlapping_date_ranges(self):
-        from mountainash.relations import relation
-        from mountainash_rules.engines.accumulator.engine import AccumulatorEngine
-        engine = AccumulatorEngine(dimension_metadata=_effective_dated_metadata())
-        rules = pl.DataFrame({
-            "rule_name": ["A", "B"],
-            "eff_from": [datetime.date(2026, 1, 1), datetime.date(2026, 6, 1)],
-            "eff_to": [datetime.date(2026, 12, 31), UNKNOWN_DATE],
-        })
-        lattice = engine.build(rules)
-        rows = relation(lattice.combinations).to_dict()
-        assert 6 in set(rows["__prime_product"])
-
+    def test_accumulator_retains_joint_temporal_source_membership(self):
+        source_rows = [
+            {
+                "id": uuid(1),
+                "rule_name": "A",
+                "eff_from": datetime.date(2026, 1, 1),
+                "eff_to": datetime.date(2026, 12, 31),
+                "amount": 1,
+            },
+            {
+                "id": uuid(2),
+                "rule_name": "B",
+                "eff_from": datetime.date(2026, 6, 1),
+                "eff_to": UNKNOWN_DATE,
+                "amount": 2,
+            },
+        ]
+        kwargs = declarations(
+            _effective_dated_metadata().dimensions,
+            [
+                rules.Aggregate(
+                    column_name="amount",
+                    output_name="pricing.total",
+                    data_type="int",
+                    numeric_semantics="numeric-1",
+                )
+            ],
+        )
+        _, lattice = build_exact(
+            source_rows,
+            kwargs,
+            decisions=[("source_overlap", (uuid(1), uuid(2)))],
+        )
+        assert frozenset((uuid(1), uuid(2))) in memberships(lattice).values()
 
 class TestTemporalBackendRegression:
     def test_duckdb_backend_stores_and_compares_sentinel_dates(self):

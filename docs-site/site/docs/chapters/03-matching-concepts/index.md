@@ -584,7 +584,7 @@ A NOT_SET list is not a set wildcard. For example, `["<NOT_SET>"]` remains a con
 <!-- concept:99 -->
 ### Set normalization {#set-value-normalization}
 
-Set normalization sorts and deduplicates concrete lists. `['NZ', 'AU', 'NZ']` and `['AU', 'NZ']` therefore represent the same condition. The filter uses normalized values for matching; the accumulator also uses them when coalescing and comparing combined constraints. Normalization does not make duplicate rule rows into a single rule.
+Set normalization sorts and deduplicates concrete lists. `['NZ', 'AU', 'NZ']` and `['AU', 'NZ']` therefore represent the same condition. The filter uses normalized values for matching; the exact accumulator lowers them to predicates and preserves each source UUID. Normalization does not make duplicate rule rows into a single rule.
 
 The two equivalent region lists below both match New Zealand. A separate malformed list demonstrates the reserved-sentinel check:
 
@@ -650,24 +650,13 @@ An empty exclusion list and a wildcard both permit a concrete context to survive
 
 ## Matching support and accumulator compatibility
 
-A strategy's matching operation compares a context with a rule. The accumulator needs an additional operation: deciding whether two rule conditions can hold together and merging them into a combined condition. These are separate capabilities.
+Expression matching compares one rule with a context. The exact accumulator instead normalizes authored rules into predicates over an explicit domain, then proves disjoint covered cells and each cell's source membership. It does not reuse the filter's survivor ranking or merge fields into a coalesced row.
 
-The current [accumulator compiler][accumulator-compiler-source] supports the following strategies for **constraint dimensions**:
+Scalar equalities and inequalities, interval boundaries, string languages and set conditions have their declared exact predicate meaning. Context-key dimensions supply typed partition routing. `CONTEXT_REGEX` constrains the global compilation domain; regular-expression analysis requires explicit retained regex semantics. Source analysis and the validation gate establish whether the actual declarations can be compiled under the caller's limits.
 
-| Strategy | Combined condition |
-|---|---|
-| `EXACT` | A compatible concrete value, retaining wildcard semantics |
-| `RANGE` | The intersection of compatible intervals |
-| `GREATER_THAN` | The tighter, greater lower threshold |
-| `LESS_THAN` | The tighter, smaller upper threshold |
-| `SET_MEMBERSHIP` | The intersection of allowed sets |
-| `SET_EXCLUSION` | The union of excluded sets |
+For example, two set-membership rules allowing `["AU", "NZ"]` and `["NZ", "SG"]` both contribute at `"NZ"`; their residual regions retain only the applicable source. Exclusion predicates mean the complement of the declared excluded set within the domain. Exact cells capture these regions rather than selecting a most-specific compatible combination.
 
-`EXACT_KEY`, `NOT_EQUAL`, `PREFIX`, `SUFFIX`, `CONTAINS`, `REGEX` and `CONTEXT_REGEX` are not supported as accumulator constraint strategies. Constructing an accumulator with one of these constraint dimensions raises `ValueError`. Context-key dimensions are separated for partitioning and routing; the constraint table does not describe their role.
-
-For set membership, rules allowing `["AU", "NZ"]` and `["NZ", "SG"]` can combine with the shared allowed set `["NZ"]`. Disjoint concrete allowed sets cannot combine. For set exclusion, the same lists combine as `["AU", "NZ", "SG"]`, because a context must avoid both sets of excluded values. Wildcards preserve the other rule's concrete constraint. The built lattice may also retain smaller combinations; coalescing one pair does not describe the complete build result.
-
-Backend support is another boundary. All examples in this chapter use Polars. Per-row `REGEX` is Polars-native, and column-valued string or list predicates have limitations on other backends. Accumulator build materializes its input to Polars. The [backend support notes][backend-source] describe these restrictions; test the strategies and engine operations used by the application rather than assuming that accepting a table type establishes complete support.
+Backend support remains operation-specific. The examples in this chapter exercise the standalone filter with Polars; its per-row `REGEX` fallback is not the accumulator's language-analysis path. Exact source transfer, host predicate reasoning, native state materialization and request transport have separate bounded capability requirements. See [exact accumulator internals](../10-accumulator-engine-internals/index.md).
 
 ## Summary
 
@@ -690,7 +679,7 @@ The examples use Polars and Rules source revision `730a8583ee9d4fd6b52dc5350699e
 - [Comparison compilation for all thirteen strategies][compiler-source].
 - [Filter scoring, survival and explanation][filter-source].
 - [Set wildcard representation, normalization and validation][set-source].
-- [Accumulator compatibility and coalescing][accumulator-compiler-source].
+- [Exact accumulator predicate compilation](../10-accumulator-engine-internals/index.md).
 - [Package backend support notes][backend-source].
 
 The manual's [licence and attribution](../../license.md) apply to this chapter.
@@ -701,5 +690,4 @@ The manual's [licence and attribution](../../license.md) apply to this chapter.
 [compiler-source]: https://github.com/mountainash-io/mountainash-rules/blob/730a8583ee9d4fd6b52dc5350699eb66cc7487e9/src/mountainash_rules/core/compiler.py
 [filter-source]: https://github.com/mountainash-io/mountainash-rules/blob/730a8583ee9d4fd6b52dc5350699eb66cc7487e9/src/mountainash_rules/engines/filter/engine.py
 [set-source]: https://github.com/mountainash-io/mountainash-rules/blob/730a8583ee9d4fd6b52dc5350699eb66cc7487e9/src/mountainash_rules/core/set_wildcard.py
-[accumulator-compiler-source]: https://github.com/mountainash-io/mountainash-rules/blob/730a8583ee9d4fd6b52dc5350699eb66cc7487e9/src/mountainash_rules/engines/accumulator/compiler.py
 [backend-source]: https://github.com/mountainash-io/mountainash-rules/blob/730a8583ee9d4fd6b52dc5350699eb66cc7487e9/README.md#backend-support

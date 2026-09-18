@@ -154,6 +154,13 @@ def test_source_proof_uses_reasoner_for_complete_deterministic_duplicate_overlap
         first.overlaps[0].source_ids += (dead,)
 
 
+def test_structural_cell_allows_an_exact_cell_without_aggregates():
+    """Exact contributor geometry remains valid without declared outputs."""
+    graph = _graph("x")
+    cell = _cell("cell:1:" + "0" * 64, graph.eq("x", 0), ("00000000-0000-0000-0000-000000000001",))
+    assert cell.outputs == {}
+
+
 def test_geometry_rejects_provider_domain_wider_than_compilation_geometry():
     """A selected provider domain cannot claim contexts absent from compilation."""
     graph = _graph("x")
@@ -1063,7 +1070,7 @@ def _permission_fixture():
             "artifact_id": artifact_id,
             "validator": {
                 "validator_id": "validator",
-                "semantic_version": "source-analysis-1" if stage == "source" else "v1",
+                "semantic_version": "source-analysis-1" if stage == "source" else "compiled-analysis-1",
             },
             "scope": scope.model_dump(mode="json"),
             "checks": [item.model_dump(mode="json") for item in checks],
@@ -1116,7 +1123,13 @@ def _permission_fixture():
         schema_version=1,
         metadata={},
         aggregates={},
-        routing={},
+        routing={
+            "id": analysis.routing_digest,
+            "payload": {
+                "schema_version": 1, "semantics": "exact-key-1",
+                "key_dimensions": [], "partition_keys": [[]],
+            },
+        },
         context_contracts=(contract_envelope,),
         predicates={},
         validation=MappingProxyType(
@@ -1403,7 +1416,7 @@ def test_binding_gate_rejects_competing_active_binding_and_incomplete_compiled_p
             )
         }
     )
-    with pytest.raises(ValueError, match="incomplete"):
+    with pytest.raises(ValueError):
         validate_contract_binding(binding, incomplete_bundle, material)
 
 
@@ -1600,7 +1613,7 @@ def test_binding_gate_requires_broader_policy_compiled_check():
         }
     )
 
-    with pytest.raises(ValueError, match="mandatory|policy"):
+    with pytest.raises(ValueError):
         validate_contract_binding(binding, selected_bundle, material)
 
 

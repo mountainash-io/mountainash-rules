@@ -1,551 +1,348 @@
-"""Edge case and isolation tests for AccumulatorEngine."""
+"""Observable exact-cell edge cases for the accumulator runtime."""
 
-import polars as pl
 import pytest
-from pydantic import ValidationError
-from mountainash.relations import relation
 
-from mountainash_rules.engines.accumulator.engine import AccumulatorEngine
-from mountainash_rules.engines.accumulator.aggregate import Aggregate
-from mountainash_rules.core.constants import UNKNOWN, UNKNOWN_NUMERIC, MatchStrategy, DimensionRole
-from mountainash_rules.core.dimension import Dimension, DimensionsMetadata
+import mountainash_rules as rules
+from tests.accumulator.exact_runtime_fixtures import (
+    build,
+    declarations,
+    memberships,
+    uuid,
+)
 
 
-def _rows(df) -> dict:
-    return relation(df).to_dict()
+def _aggregate(column, output, *, operation="sum", data_type="int"):
+    return rules.Aggregate(
+        column_name=column,
+        output_name=output,
+        operation=operation,
+        data_type=data_type,
+        numeric_semantics="numeric-1",
+    )
+
+
+def _candidate_contract(dimensions, outputs, *, contract_id="client"):
+    return rules.ContextContract(
+        schema_version=1,
+        contract_id=contract_id,
+        domain_ref="D",
+        fields=[
+            rules.ContextField(
+                name=dimension.resolved_context_field,
+                data_type=dimension.data_type,
+                required=False,
+            )
+            for dimension in sorted(dimensions, key=lambda item: item.dimension_name)
+        ],
+        profiles=[
+            rules.ResolutionProfile(
+                profile_id="inspect",
+                mode="candidates",
+                output_fields=sorted(outputs),
+                provenance="none",
+                dimensions=sorted(
+                    dimension.dimension_name
+                    for dimension in dimensions
+                    if dimension.role == rules.DimensionRole.CONSTRAINT
+                    and dimension.match_strategy != rules.MatchStrategy.CONTEXT_REGEX
+                ),
+                allow_dont_care=[],
+                promise="candidate_only",
+            )
+        ],
+    )
+
+
+def _build(
+    rows,
+    dimensions,
+    aggregates=(),
+    *,
+    decisions=(),
+    partition_keys=((),),
+    partition_key=None,
+):
+    outputs = [aggregate.output_name for aggregate in aggregates]
+    contract = _candidate_contract(dimensions, outputs)
+    kwargs = declarations(
+        dimensions,
+        aggregates,
+        contracts=[contract],
+        partition_keys=partition_keys,
+    )
+    return build(rows, kwargs, decisions=decisions, partition_key=partition_key)
+
+
+def _candidate_facts(result, output):
+    values = {row["cell_id"]: row[output] for row in result.candidate_cells.to_dicts()}
+    contributors = {}
+    for row in result.candidate_contributors.to_dicts():
+        contributors.setdefault(row["cell_id"], set()).add(row["source_id"])
+    return sorted(
+        (values[cell_id], tuple(sorted(source_ids)))
+        for cell_id, source_ids in contributors.items()
+    )
+
+
+def _apply(engine, lattice, context):
+    return engine.apply(
+        lattice,
+        context,
+        contract_id="client",
+        profile_id="inspect",
+    )
 
 
 class TestEmptyRules:
-    def test_build_with_empty_dataframe(self):
-        rules = pl.DataFrame({
-            "rule_name": [],
-            "channel": [],
-            "margin": [],
-        }).cast({"rule_name": pl.Utf8, "channel": pl.Utf8, "margin": pl.Float64})
-        metadata = DimensionsMetadata(dimensions=[
-            Dimension(dimension_name="channel", match_strategy=MatchStrategy.EXACT),
-        ])
-        engine = AccumulatorEngine(
-            dimension_metadata=metadata,
-            aggregates=[Aggregate(column_name="margin")],
-        )
-        lattice = engine.build(rules)
+    def test_empty_build_keeps_declared_typed_output_column(self):
+        dimensions = [rules.Dimension(dimension_name="channel")]
+        aggregate = _aggregate("margin", "pricing.margin")
+        _, lattice = _build([], dimensions, [aggregate])
+
         assert lattice.count == 0
+        assert lattice.combinations.columns == [
+            "cell_id",
+            "predicate_id",
+            "contributor_set_id",
+            "pricing.margin",
+        ]
 
 
 class TestMultipleAggregates:
-    def test_two_aggregates_accumulated_correctly(self):
-        """Two all-wildcard rules combine into one combination; both agg columns sum."""
-        rules = pl.DataFrame({
-            "rule_name": ["r1", "r2"],
-            "channel": [UNKNOWN, UNKNOWN],
-            "margin": [1.0, 2.0],
-            "fee": [10.0, 20.0],
-        })
-        metadata = DimensionsMetadata(dimensions=[
-            Dimension(dimension_name="channel", match_strategy=MatchStrategy.EXACT),
-        ])
-        engine = AccumulatorEngine(
-            dimension_metadata=metadata,
-            aggregates=[
-                Aggregate(column_name="margin"),
-                Aggregate(column_name="fee"),
+    def test_matching_sources_fold_each_declared_output_once(self):
+        dimensions = [rules.Dimension(dimension_name="channel")]
+        aggregates = [
+            _aggregate("margin", "pricing.margin"),
+            _aggregate("fee", "pricing.fee"),
+        ]
+        rows = [
+            {"id": uuid(1), "channel": "A", "margin": 1, "fee": 10},
+            {"id": uuid(2), "channel": "A", "margin": 2, "fee": 20},
+            {"id": uuid(3), "channel": "B", "margin": 3, "fee": 30},
+        ]
+        engine, lattice = _build(
+            rows,
+            dimensions,
+            aggregates,
+            decisions=[
+                ("duplicate_source", (uuid(1), uuid(2))),
+                ("source_overlap", (uuid(1), uuid(2))),
             ],
         )
-        lattice = engine.build(rules)
-        # All wildcard = full combination dominates, only 1 outermost
-        assert lattice.count == 1
-        rows = _rows(lattice.combinations)
-        assert rows["__agg_margin"][0] == pytest.approx(3.0)
-        assert rows["__agg_fee"][0] == pytest.approx(30.0)
 
-    def test_three_rules_two_aggregates(self):
-        """r1 and r2 share channel=A and combine; r3 has channel=B and is standalone."""
-        rules = pl.DataFrame({
-            "rule_name": ["r1", "r2", "r3"],
-            "channel": ["A", "A", "B"],
-            "margin": [1.0, 2.0, 3.0],
-            "fee": [10.0, 20.0, 30.0],
-        })
-        metadata = DimensionsMetadata(dimensions=[
-            Dimension(dimension_name="channel", match_strategy=MatchStrategy.EXACT),
-        ])
-        engine = AccumulatorEngine(
-            dimension_metadata=metadata,
-            aggregates=[
-                Aggregate(column_name="margin"),
-                Aggregate(column_name="fee"),
-            ],
+        margin = _apply(engine, lattice, {"channel": "A"})
+        fee = _apply(engine, lattice, {"channel": "A"})
+
+        assert _candidate_facts(margin, "pricing.margin") == [
+            (3, (uuid(1), uuid(2))),
+        ]
+        assert _candidate_facts(fee, "pricing.fee") == [
+            (30, (uuid(1), uuid(2))),
+        ]
+
+    @pytest.mark.parametrize(
+        ("operation", "expected"),
+        [("sum", 14), ("min", 4), ("max", 10), ("product", 40)],
+    )
+    def test_each_fold_operation_uses_exact_source_membership(
+        self, operation, expected
+    ):
+        dimensions = [rules.Dimension(dimension_name="channel")]
+        aggregate = _aggregate(
+            "amount",
+            f"pricing.{operation}",
+            operation=operation,
         )
-        lattice = engine.build(rules)
-        rows = _rows(lattice.combinations)
-        # r1+r2 combine (both channel=A), r3 standalone (channel=B)
-        # r1 prime=2, r2 prime=3, r3 prime=5
-        pp_to_margin = dict(zip(rows["__prime_product"], rows["__agg_margin"]))
-        pp_to_fee = dict(zip(rows["__prime_product"], rows["__agg_fee"]))
-        # pair r1+r2: prime 2*3=6, margin 3.0, fee 30.0
-        assert pp_to_margin[6] == pytest.approx(3.0)
-        assert pp_to_fee[6] == pytest.approx(30.0)
-        # r3 singleton: prime=5, margin 3.0, fee 30.0
-        assert pp_to_margin[5] == pytest.approx(3.0)
-        assert pp_to_fee[5] == pytest.approx(30.0)
+        rows = [
+            {"id": uuid(1), "channel": "A", "amount": 10},
+            {"id": uuid(2), "channel": rules.UNKNOWN, "amount": 4},
+        ]
+        engine, lattice = _build(
+            rows,
+            dimensions,
+            [aggregate],
+            decisions=[("source_overlap", (uuid(1), uuid(2)))],
+        )
+
+        result = _apply(engine, lattice, {"channel": "A"})
+
+        assert _candidate_facts(result, f"pricing.{operation}") == [
+            (expected, (uuid(1), uuid(2))),
+        ]
 
 
 class TestUnsupportedAggregateOperation:
-    def test_unsupported_operation_raises_on_build(self):
-        """An unsupported aggregate operation should raise ValidationError at construction."""
-        rules = pl.DataFrame({
-            "rule_name": ["r1", "r2"],
-            "channel": [UNKNOWN, UNKNOWN],
-            "margin": [1.0, 2.0],
-        })
-        metadata = DimensionsMetadata(dimensions=[
-            Dimension(dimension_name="channel", match_strategy=MatchStrategy.EXACT),
-        ])
-        with pytest.raises(ValidationError):
-            AccumulatorEngine(
-                dimension_metadata=metadata,
-                aggregates=[Aggregate(column_name="margin", operation="median")],
+    def test_unsupported_operation_is_rejected_before_source_admission(self):
+        with pytest.raises(ValueError):
+            rules.Aggregate(
+                column_name="margin",
+                output_name="pricing.median",
+                operation="median",
+                data_type="int",
+                numeric_semantics="numeric-1",
             )
 
 
-class TestFrontierFilterIsolation:
-    """Test the frontier filter with hand-crafted dominance scenarios."""
-
-    def test_all_same_fingerprint_deepest_wins(self):
-        """All rules have same constraint value — deepest combo dominates all singletons/pairs."""
-        rules = pl.DataFrame({
-            "rule_name": ["r1", "r2", "r3"],
-            "channel": ["A", "A", "A"],
-            "margin": [1.0, 2.0, 3.0],
-        })
-        metadata = DimensionsMetadata(dimensions=[
-            Dimension(dimension_name="channel", match_strategy=MatchStrategy.EXACT),
-        ])
-        engine = AccumulatorEngine(
-            dimension_metadata=metadata,
-            aggregates=[Aggregate(column_name="margin")],
+class TestSourceApplicability:
+    def test_identical_sources_have_one_applicable_folded_cell(self):
+        dimensions = [rules.Dimension(dimension_name="channel")]
+        aggregate = _aggregate("margin", "pricing.margin")
+        rows = [
+            {"id": uuid(1), "channel": "A", "margin": 1},
+            {"id": uuid(2), "channel": "A", "margin": 2},
+            {"id": uuid(3), "channel": "A", "margin": 3},
+        ]
+        engine, lattice = _build(
+            rows,
+            dimensions,
+            [aggregate],
+            decisions=[
+                (code, (uuid(left), uuid(right)))
+                for code in ("duplicate_source", "source_overlap")
+                for left, right in ((1, 2), (1, 3), (2, 3))
+            ],
         )
-        lattice = engine.build(rules)
-        # All have fingerprint (A). The triple dominates all pairs and singletons.
-        assert lattice.count == 1
-        rows = _rows(lattice.combinations)
-        assert rows["__prime_product"][0] == 2 * 3 * 5
-        assert rows["__agg_margin"][0] == pytest.approx(6.0)
 
-    def test_dominated_singletons_removed(self):
-        """Wildcard singletons dominated by the wildcard pair are removed."""
-        rules = pl.DataFrame({
-            "rule_name": ["r1", "r2"],
-            "channel": [UNKNOWN, UNKNOWN],
-            "margin": [1.0, 2.0],
-        })
-        metadata = DimensionsMetadata(dimensions=[
-            Dimension(dimension_name="channel", match_strategy=MatchStrategy.EXACT),
-        ])
-        engine = AccumulatorEngine(
-            dimension_metadata=metadata,
-            aggregates=[Aggregate(column_name="margin")],
+        result = _apply(engine, lattice, {"channel": "A"})
+
+        assert _candidate_facts(result, "pricing.margin") == [
+            (6, (uuid(1), uuid(2), uuid(3))),
+        ]
+
+    def test_incompatible_sources_remain_separate_at_their_literal_contexts(self):
+        dimensions = [rules.Dimension(dimension_name="channel")]
+        aggregate = _aggregate("margin", "pricing.margin")
+        rows = [
+            {"id": uuid(1), "channel": "A", "margin": 1},
+            {"id": uuid(2), "channel": "B", "margin": 2},
+        ]
+        engine, lattice = _build(rows, dimensions, [aggregate])
+
+        assert _candidate_facts(
+            _apply(engine, lattice, {"channel": "A"}), "pricing.margin"
+        ) == [(1, (uuid(1),))]
+        assert _candidate_facts(
+            _apply(engine, lattice, {"channel": "B"}), "pricing.margin"
+        ) == [(2, (uuid(2),))]
+
+    def test_wildcard_and_concrete_source_apply_to_their_real_regions(self):
+        dimensions = [rules.Dimension(dimension_name="channel")]
+        aggregate = _aggregate("margin", "pricing.margin")
+        rows = [
+            {"id": uuid(1), "channel": "A", "margin": 1},
+            {"id": uuid(2), "channel": rules.UNKNOWN, "margin": 2},
+        ]
+        engine, lattice = _build(
+            rows,
+            dimensions,
+            [aggregate],
+            decisions=[("source_overlap", (uuid(1), uuid(2)))],
         )
-        lattice = engine.build(rules)
-        rows = _rows(lattice.combinations)
-        primes = set(rows["__prime_product"])
-        # Singletons 2 and 3 are dominated by the pair 6
-        assert 6 in primes
-        assert 2 not in primes
-        assert 3 not in primes
 
-    def test_different_fingerprints_both_survive(self):
-        """Two rules with different (non-wildcard) values cannot combine; both singletons survive."""
-        rules = pl.DataFrame({
-            "rule_name": ["r1", "r2"],
-            "channel": ["A", "B"],
-            "margin": [1.0, 2.0],
-        })
-        metadata = DimensionsMetadata(dimensions=[
-            Dimension(dimension_name="channel", match_strategy=MatchStrategy.EXACT),
-        ])
-        engine = AccumulatorEngine(
-            dimension_metadata=metadata,
-            aggregates=[Aggregate(column_name="margin")],
-        )
-        lattice = engine.build(rules)
-        # r1 and r2 are incompatible — no pair forms, both singletons survive as outermost
-        assert lattice.count == 2
-        rows = _rows(lattice.combinations)
-        primes = set(rows["__prime_product"])
-        assert 2 in primes
-        assert 3 in primes
-
-    def test_mixed_wildcard_and_concrete(self):
-        """A concrete rule and a wildcard form a pair; dominance depends on fingerprint namespace.
-
-        The frontier filter groups by co_ columns. The wildcard singleton has
-        co_channel=<NA> (wildcard namespace) while the pair coalesces to co_channel=A
-        (concrete namespace). Because they live in different fingerprint namespaces,
-        the pair does NOT dominate the wildcard singleton — both survive.
-        Only the concrete singleton (co_channel=A, pp=2) is dominated by the pair
-        (co_channel=A, pp=6), because 6 % 2 == 0 and they share the same fingerprint.
-        """
-        rules = pl.DataFrame({
-            "rule_name": ["concrete", "wildcard"],
-            "channel": ["A", UNKNOWN],
-            "margin": [1.0, 2.0],
-        })
-        metadata = DimensionsMetadata(dimensions=[
-            Dimension(dimension_name="channel", match_strategy=MatchStrategy.EXACT),
-        ])
-        engine = AccumulatorEngine(
-            dimension_metadata=metadata,
-            aggregates=[Aggregate(column_name="margin")],
-        )
-        lattice = engine.build(rules)
-        rows = _rows(lattice.combinations)
-        primes = set(rows["__prime_product"])
-        # concrete=2, wildcard=3, pair=6
-        assert 6 in primes   # pair survives (co_channel=A namespace)
-        assert 2 not in primes  # concrete singleton dominated by pair (same A namespace)
-        assert 3 in primes   # wildcard singleton in its own <NA> namespace — NOT dominated
+        assert _candidate_facts(
+            _apply(engine, lattice, {"channel": "A"}), "pricing.margin"
+        ) == [(3, (uuid(1), uuid(2)))]
+        assert _candidate_facts(
+            _apply(engine, lattice, {"channel": "B"}), "pricing.margin"
+        ) == [(2, (uuid(2),))]
 
 
 class TestNoConstraintDimensions:
-    """All dims are CONTEXT_KEY — degenerate but valid.
-
-    When there are no constraint dimensions, _frontier_filter returns all
-    combinations unfiltered (no fingerprint columns to group on). All levels
-    survive: singletons AND the pair.
-    """
-
-    def test_build_with_only_context_keys(self):
-        rules = pl.DataFrame({
-            "product_id": [1, 1],
-            "rule_name": ["r1", "r2"],
-            "margin": [1.0, 2.0],
-        })
-        metadata = DimensionsMetadata(dimensions=[
-            Dimension(
+    def test_partition_only_artifact_has_the_declared_combined_source_output(self):
+        dimensions = [
+            rules.Dimension(
                 dimension_name="product_id",
-                match_strategy=MatchStrategy.EXACT,
-                data_type=int,
-                role=DimensionRole.CONTEXT_KEY,
-            ),
-        ])
-        engine = AccumulatorEngine(
-            dimension_metadata=metadata,
-            aggregates=[Aggregate(column_name="margin")],
+                data_type="int",
+                match_strategy="exact_key",
+                role=rules.DimensionRole.CONTEXT_KEY,
+            )
+        ]
+        aggregate = _aggregate("margin", "pricing.margin")
+        rows = [
+            {"id": uuid(1), "product_id": 1, "margin": 1},
+            {"id": uuid(2), "product_id": 1, "margin": 2},
+        ]
+        engine, lattice = _build(
+            rows,
+            dimensions,
+            [aggregate],
+            partition_keys=((1,), (None,)),
+            partition_key={"product_id": 1},
+            decisions=[
+                ("duplicate_source", (uuid(1), uuid(2))),
+                ("singleton_boundary_overlap", (uuid(1), uuid(2))),
+            ],
         )
-        lattice = engine.build(rules, partition_key={"product_id": 1})
-        # With no constraint dimensions, the frontier filter has no fingerprint
-        # columns to group on, so it returns all combinations: 2 singletons + 1 pair = 3
-        assert lattice.count == 3
 
-    def test_pair_present_in_no_constraint_build(self):
-        """Confirm the pair combination exists when no constraint dims are present."""
-        rules = pl.DataFrame({
-            "product_id": [1, 1],
-            "rule_name": ["r1", "r2"],
-            "margin": [1.0, 2.0],
-        })
-        metadata = DimensionsMetadata(dimensions=[
-            Dimension(
-                dimension_name="product_id",
-                match_strategy=MatchStrategy.EXACT,
-                data_type=int,
-                role=DimensionRole.CONTEXT_KEY,
-            ),
-        ])
-        engine = AccumulatorEngine(
-            dimension_metadata=metadata,
-            aggregates=[Aggregate(column_name="margin")],
+        result = _apply(engine, lattice, {"product_id": 1})
+
+        assert _candidate_facts(result, "pricing.margin") == [
+            (3, (uuid(1), uuid(2))),
+        ]
+        assert set(memberships(lattice).values()) == {frozenset((uuid(1), uuid(2)))}
+
+
+class TestOrderedConstraintApplicability:
+    def test_overlapping_ranges_fold_only_where_both_literal_sources_apply(self):
+        dimensions = [
+            rules.Dimension(
+                dimension_name="lvr",
+                data_type="int",
+                match_strategy="range",
+                range_min_field="lvr_min",
+                range_max_field="lvr_max",
+            )
+        ]
+        aggregate = _aggregate("margin", "pricing.margin")
+        rows = [
+            {"id": uuid(1), "lvr_min": 50, "lvr_max": 100, "margin": 1},
+            {"id": uuid(2), "lvr_min": 70, "lvr_max": 90, "margin": 2},
+        ]
+        engine, lattice = _build(
+            rows,
+            dimensions,
+            [aggregate],
+            decisions=[("source_overlap", (uuid(1), uuid(2)))],
         )
-        lattice = engine.build(rules, partition_key={"product_id": 1})
-        rows = _rows(lattice.combinations)
-        pp_to_margin = dict(zip(rows["__prime_product"], rows["__agg_margin"]))
-        # The pair (pp=6) should have accumulated margin 3.0
-        assert pp_to_margin[6] == pytest.approx(3.0)
 
+        assert _candidate_facts(
+            _apply(engine, lattice, {"lvr": 60}), "pricing.margin"
+        ) == [(1, (uuid(1),))]
+        assert _candidate_facts(
+            _apply(engine, lattice, {"lvr": 75}), "pricing.margin"
+        ) == [(3, (uuid(1), uuid(2)))]
 
-class TestRangeCoalesceIntegration:
-    """Test RANGE coalesce through the full build pipeline."""
-
-    def test_range_intersection_in_build(self):
-        """Two overlapping ranges coalesce to their intersection."""
-        rules = pl.DataFrame({
-            "rule_name": ["wide", "narrow"],
-            "lvr_min": [50, 70],
-            "lvr_max": [100, 90],
-            "margin": [1.0, 2.0],
-        })
-        metadata = DimensionsMetadata(dimensions=[
-            Dimension(
-                dimension_name="lvr", match_strategy=MatchStrategy.RANGE,
-                data_type=int, range_min_field="lvr_min", range_max_field="lvr_max",
-            ),
-        ])
-        engine = AccumulatorEngine(
-            dimension_metadata=metadata,
-            aggregates=[Aggregate(column_name="margin")],
+    @pytest.mark.parametrize(
+        ("strategy", "field", "values", "context"),
+        [
+            ("greater_than", "score", [10, 20], {"score": 30}),
+            ("less_than", "cap", [100, 50], {"cap": 40}),
+        ],
+    )
+    def test_ordered_thresholds_fold_the_sources_applicable_to_context(
+        self, strategy, field, values, context
+    ):
+        dimensions = [
+            rules.Dimension(
+                dimension_name=field,
+                data_type="int",
+                match_strategy=strategy,
+            )
+        ]
+        aggregate = _aggregate("margin", "pricing.margin")
+        rows = [
+            {"id": uuid(1), field: values[0], "margin": 1},
+            {"id": uuid(2), field: values[1], "margin": 2},
+        ]
+        engine, lattice = _build(
+            rows,
+            dimensions,
+            [aggregate],
+            decisions=[("source_overlap", (uuid(1), uuid(2)))],
         )
-        lattice = engine.build(rules)
-        rows = _rows(lattice.combinations)
-        # The pair {wide, narrow} should have coalesced range [70, 90]
-        pp_to_min = dict(zip(rows["__prime_product"], rows["co_lvr_min"]))
-        pp_to_max = dict(zip(rows["__prime_product"], rows["co_lvr_max"]))
-        pair_pp = 2 * 3  # primes for 2 rules
-        assert pp_to_min[pair_pp] == 70
-        assert pp_to_max[pair_pp] == 90
 
-    def test_non_overlapping_ranges_incompatible(self):
-        """Non-overlapping ranges do not combine — both singletons survive."""
-        rules = pl.DataFrame({
-            "rule_name": ["low", "high"],
-            "lvr_min": [50, 80],
-            "lvr_max": [70, 100],
-            "margin": [1.0, 2.0],
-        })
-        metadata = DimensionsMetadata(dimensions=[
-            Dimension(
-                dimension_name="lvr", match_strategy=MatchStrategy.RANGE,
-                data_type=int, range_min_field="lvr_min", range_max_field="lvr_max",
-            ),
-        ])
-        engine = AccumulatorEngine(
-            dimension_metadata=metadata,
-            aggregates=[Aggregate(column_name="margin")],
-        )
-        lattice = engine.build(rules)
-        # Ranges [50,70] and [80,100] do not overlap — no pair, both singletons survive
-        assert lattice.count == 2
+        result = _apply(engine, lattice, context)
 
-    def test_sentinel_range_coalesces_with_hard_range(self):
-        """A wildcard range paired with a hard range yields the hard range values."""
-        rules = pl.DataFrame({
-            "rule_name": ["constrained", "wildcard"],
-            "lvr_min": [60, UNKNOWN_NUMERIC],
-            "lvr_max": [80, UNKNOWN_NUMERIC],
-            "margin": [1.0, 2.0],
-        })
-        metadata = DimensionsMetadata(dimensions=[
-            Dimension(
-                dimension_name="lvr", match_strategy=MatchStrategy.RANGE,
-                data_type=int, range_min_field="lvr_min", range_max_field="lvr_max",
-            ),
-        ])
-        engine = AccumulatorEngine(
-            dimension_metadata=metadata,
-            aggregates=[Aggregate(column_name="margin")],
-        )
-        lattice = engine.build(rules)
-        rows = _rows(lattice.combinations)
-        # The pair should coalesce to [60, 80] (hard wins over sentinel)
-        pp_to_min = dict(zip(rows["__prime_product"], rows["co_lvr_min"]))
-        pp_to_max = dict(zip(rows["__prime_product"], rows["co_lvr_max"]))
-        pair_pp = 2 * 3
-        assert pp_to_min[pair_pp] == 60
-        assert pp_to_max[pair_pp] == 80
-
-
-class TestGreaterThanLessThanIntegration:
-    def test_greater_than_tightens_in_build(self):
-        """Two GREATER_THAN rules coalesce to the tighter (greater) threshold."""
-        rules = pl.DataFrame({
-            "rule_name": ["loose", "tight"],
-            "score": [10, 20],
-            "margin": [1.0, 2.0],
-        })
-        metadata = DimensionsMetadata(dimensions=[
-            Dimension(
-                dimension_name="score", match_strategy=MatchStrategy.GREATER_THAN,
-                data_type=int,
-            ),
-        ])
-        engine = AccumulatorEngine(
-            dimension_metadata=metadata,
-            aggregates=[Aggregate(column_name="margin")],
-        )
-        lattice = engine.build(rules)
-        rows = _rows(lattice.combinations)
-        pp_to_score = dict(zip(rows["__prime_product"], rows["co_score"]))
-        pair_pp = 2 * 3
-        assert pp_to_score[pair_pp] == 20  # greatest(10, 20) = tighter bound
-
-    def test_less_than_tightens_in_build(self):
-        """Two LESS_THAN rules coalesce to the tighter (lesser) threshold."""
-        rules = pl.DataFrame({
-            "rule_name": ["loose", "tight"],
-            "cap": [100, 50],
-            "margin": [1.0, 2.0],
-        })
-        metadata = DimensionsMetadata(dimensions=[
-            Dimension(
-                dimension_name="cap", match_strategy=MatchStrategy.LESS_THAN,
-                data_type=int,
-            ),
-        ])
-        engine = AccumulatorEngine(
-            dimension_metadata=metadata,
-            aggregates=[Aggregate(column_name="margin")],
-        )
-        lattice = engine.build(rules)
-        rows = _rows(lattice.combinations)
-        pp_to_cap = dict(zip(rows["__prime_product"], rows["co_cap"]))
-        pair_pp = 2 * 3
-        assert pp_to_cap[pair_pp] == 50  # least(100, 50) = tighter bound
-
-    def test_greater_than_always_compatible(self):
-        """Any two GREATER_THAN rules are always compatible (no incompatibility possible).
-
-        Frontier filter groups by co_score (the coalesced threshold). Each unique
-        coalesced value forms its own fingerprint namespace, so combinations with
-        different co_score values are NOT in the same namespace and cannot dominate
-        each other. With scores [5, 10, 100]:
-          - r1 (co=5), r1+r2 (co=10), r1+r2+r3 (co=100) each have different namespaces
-          - r2+r3 (co=100) and r1+r3 (co=100) are dominated by the triple (also co=100)
-          - r1+r2 (co=10) is NOT dominated by the triple (co=100 ≠ co=10)
-          - r1 (co=5) is NOT dominated by r1+r2 (co=10 ≠ co=5)
-        Result: 3 survivors — r1 (pp=2, co=5), r1+r2 (pp=6, co=10), triple (pp=30, co=100)
-        """
-        rules = pl.DataFrame({
-            "rule_name": ["r1", "r2", "r3"],
-            "score": [5, 10, 100],
-            "margin": [1.0, 2.0, 3.0],
-        })
-        metadata = DimensionsMetadata(dimensions=[
-            Dimension(
-                dimension_name="score", match_strategy=MatchStrategy.GREATER_THAN,
-                data_type=int,
-            ),
-        ])
-        engine = AccumulatorEngine(
-            dimension_metadata=metadata,
-            aggregates=[Aggregate(column_name="margin")],
-        )
-        lattice = engine.build(rules)
-        rows = _rows(lattice.combinations)
-        pp_to_score = dict(zip(rows["__prime_product"], rows["co_score"]))
-        # The triple survives (co=100 namespace, tightest)
-        assert 2 * 3 * 5 in pp_to_score
-        assert pp_to_score[2 * 3 * 5] == 100
-        # The pair r1+r2 survives in its own namespace (co=10)
-        assert 2 * 3 in pp_to_score
-        assert pp_to_score[2 * 3] == 10
-        # r1 singleton survives in its own namespace (co=5)
-        assert 2 in pp_to_score
-        assert pp_to_score[2] == 5
-        # 3 survivors total
-        assert lattice.count == 3
-
-    def test_less_than_sentinel_coalesces_with_hard_value(self):
-        """A wildcard LESS_THAN paired with a hard value yields the hard value."""
-        rules = pl.DataFrame({
-            "rule_name": ["constrained", "wildcard"],
-            "cap": [75, UNKNOWN_NUMERIC],
-            "margin": [1.0, 2.0],
-        })
-        metadata = DimensionsMetadata(dimensions=[
-            Dimension(
-                dimension_name="cap", match_strategy=MatchStrategy.LESS_THAN,
-                data_type=int,
-            ),
-        ])
-        engine = AccumulatorEngine(
-            dimension_metadata=metadata,
-            aggregates=[Aggregate(column_name="margin")],
-        )
-        lattice = engine.build(rules)
-        rows = _rows(lattice.combinations)
-        pp_to_cap = dict(zip(rows["__prime_product"], rows["co_cap"]))
-        pair_pp = 2 * 3
-        assert pp_to_cap[pair_pp] == 75
-
-
-class TestBuildStepIsolation:
-    """Verify anchor level and first expansion step produce correct structures."""
-
-    def test_anchor_level_produces_singleton_combinations(self):
-        """Level-0 anchor must have one row per rule, each a singleton."""
-        rules = pl.DataFrame({
-            "rule_name": ["r1", "r2", "r3"],
-            "channel": ["A", "B", UNKNOWN],
-            "margin": [1.0, 2.0, 3.0],
-        })
-        metadata = DimensionsMetadata(dimensions=[
-            Dimension(dimension_name="channel", match_strategy=MatchStrategy.EXACT),
-        ])
-        engine = AccumulatorEngine(
-            dimension_metadata=metadata,
-            aggregates=[Aggregate(column_name="margin")],
-        )
-        # Build and inspect the lattice to indirectly verify anchor via level col
-        lattice = engine.build(rules)
-        rows = _rows(lattice.combinations)
-        # Filter to level-0 entries (singletons that survive frontier)
-        pp_level = list(zip(rows["__prime_product"], rows["__level"]))
-        level_0 = [pp for pp, lvl in pp_level if lvl == 0]
-        # All singletons that survive are at level 0
-        for pp in level_0:
-            assert pp in {2, 3, 5}
-
-    def test_anchor_level_values_correct(self):
-        """Anchor level __prime equals __prime_product (singleton identity)."""
-        rules = pl.DataFrame({
-            "rule_name": ["r1", "r2"],
-            "channel": ["A", "A"],
-            "margin": [1.0, 2.0],
-        })
-        metadata = DimensionsMetadata(dimensions=[
-            Dimension(dimension_name="channel", match_strategy=MatchStrategy.EXACT),
-        ])
-        engine = AccumulatorEngine(
-            dimension_metadata=metadata,
-            aggregates=[Aggregate(column_name="margin")],
-        )
-        lattice = engine.build(rules)
-        rows = _rows(lattice.combinations)
-        # The surviving combination (the pair) is at level 1; verify aggregate is correct
-        pp_to_level = dict(zip(rows["__prime_product"], rows["__level"]))
-        pp_to_margin = dict(zip(rows["__prime_product"], rows["__agg_margin"]))
-        assert pp_to_level[6] == 1
-        assert pp_to_margin[6] == pytest.approx(3.0)
-
-    def test_expansion_step_produces_pairs(self):
-        """Two compatible rules should produce one pair at level 1."""
-        rules = pl.DataFrame({
-            "rule_name": ["r1", "r2"],
-            "channel": [UNKNOWN, UNKNOWN],
-            "margin": [10.0, 20.0],
-        })
-        metadata = DimensionsMetadata(dimensions=[
-            Dimension(dimension_name="channel", match_strategy=MatchStrategy.EXACT),
-        ])
-        engine = AccumulatorEngine(
-            dimension_metadata=metadata,
-            aggregates=[Aggregate(column_name="margin")],
-        )
-        lattice = engine.build(rules)
-        rows = _rows(lattice.combinations)
-        pp_to_level = dict(zip(rows["__prime_product"], rows["__level"]))
-        # Pair pp=6 at level 1
-        assert 6 in pp_to_level
-        assert pp_to_level[6] == 1
-
-    def test_triple_is_level_2(self):
-        """Three mutually compatible rules produce a triple at level 2."""
-        rules = pl.DataFrame({
-            "rule_name": ["r1", "r2", "r3"],
-            "channel": [UNKNOWN, UNKNOWN, UNKNOWN],
-            "margin": [1.0, 2.0, 3.0],
-        })
-        metadata = DimensionsMetadata(dimensions=[
-            Dimension(dimension_name="channel", match_strategy=MatchStrategy.EXACT),
-        ])
-        engine = AccumulatorEngine(
-            dimension_metadata=metadata,
-            aggregates=[Aggregate(column_name="margin")],
-        )
-        lattice = engine.build(rules)
-        rows = _rows(lattice.combinations)
-        # The surviving triple (pp=30) should be at level 2
-        assert lattice.count == 1
-        assert rows["__level"][0] == 2
-        assert rows["__prime_product"][0] == 2 * 3 * 5
+        assert _candidate_facts(result, "pricing.margin") == [
+            (3, (uuid(1), uuid(2))),
+        ]

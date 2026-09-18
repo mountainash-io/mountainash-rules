@@ -255,6 +255,20 @@ def test_outcome_records_require_exact_state_specific_wire_values():
             OutcomeRecord.model_validate({**base, **changed})
 
 
+def test_pre_routing_invalid_outcome_retains_requested_labels_without_binding():
+    outcome = OutcomeRecord(
+        status="invalid_context", reason="missing_required", binding_id=None,
+        contract_id="pricing", profile_id="lookup", values=None, cell_id=None,
+        contributor_ids=None, may_have_no_match=None, observations=None,
+        issues=({"field": "region", "dimension": "region", "code": "missing_required",
+                 "message": "A concrete partition key is required"},),
+    )
+    assert outcome.binding_id is None
+    assert outcome.issues[0].field == "region"
+    with pytest.raises(ValueError):
+        OutcomeRecord.model_validate({**outcome.model_dump(), "contract_id": None})
+
+
 def test_scope_and_policy_reject_noncanonical_semantic_sets():
     """Partition keys and policy arrays cannot create alternate semantic hashes."""
     valid_scope = _scope()

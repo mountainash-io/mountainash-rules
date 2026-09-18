@@ -164,6 +164,7 @@ filter_engine = ExpressionRulesEngine(
 )
 accumulator_engine = AccumulatorEngine(
     dimension_metadata=metadata, boolean_coercion=BooleanCoercion.NONE,
+    limits=limits,  # application-owned ExactLimits
 )
 ```
 
@@ -206,7 +207,6 @@ Boolean batch admission validates the complete submitted input before policy eva
 
 `matched_context_ids` and `counts_per_context` describe retained rows after limits. `unmatched_context_ids(original_contexts)` returns submitted IDs absent from those rows in sorted order; custom IDs require the original non-null, unique source column. Generated IDs require the original input order and row count. `for_context()` cannot distinguish an unmatched submitted ID from one never submitted. Pass the original, unmodified contexts to unmatched access; a missing genuine caller-ID field remains an error, not a positional fallback.
 
-For nonempty keyed `LatticeIndex.apply_batch()` input, assembled results have unspecified completeness. Their `for_context()` views reject `select()`, including matched, unmatched and never-submitted IDs and batches retaining zero rows. Re-evaluate through the engine instead. This restriction does not change direct filter evaluation or no-key index delegation.
 
 ### Input boundaries — correctness update
 
@@ -218,74 +218,122 @@ On `evaluate`, `evaluate_batch`, and `explain`, `dimensions=None` means all conf
 
 ## Accumulator Engine
 
-Where the filter engine picks the best *single* rule, `AccumulatorEngine` precomputes every **maximal consistent combination** of rules — coalescing dimension values and accumulating numerics (sum/min/max/product) — into a `Lattice`, then applies contexts against it:
+`AccumulatorEngine` builds immutable **exact-cell** artifacts. It is separate
+from the filter engine: a build is authorized from analyzed source material,
+and an application resolves a contract-bound context against native cells. This
+guide covers the available E6–E8 interfaces only; it does not assert that E8
+is complete or make a release or consumer-completeness claim.
+
+The application owns every declaration and limit. It supplies native source
+rows with stable UUIDs, `DimensionsMetadata`, complete native `Aggregate`
+declarations, domains, predicate/language envelopes, routing,
+contracts/profiles, a validation policy, and an `ExactLimits` instance. Native
+aggregates require `output_name`, `data_type`, and
+`numeric_semantics="numeric-1"` together; the output name is qualified (for
+example, `pricing.total`). There is no package default for `ExactLimits`.
+
+The source gate is deliberately a real workflow, not a constructor shortcut:
+
+1. Call `analyze_sources(rows, ...)` with the application's complete
+   declarations and explicit `limits`.
+2. Send its findings to the application's review process. If warnings are
+   accepted, that process creates `WarningApproval` records naming the selected
+   report, finding IDs, authority and actor, and a scope covering the findings.
+   `attach_warning_approvals(bundle, approvals, limits=limits)` validates and
+   stores those records; it never approves a warning itself.
+3. Call `validate_build_input(rows, bundle=..., analysis_input_id=...,
+   source_report_id=..., approvals=..., ...)` with the same current source
+   material and declarations. It recomputes identities, replays retained
+   evidence, and rejects errors, incomplete checks, or warnings without
+   matching scoped approval.
+4. Pass the resulting `ValidatedBuildInput` as `validation=` to `build()` or
+   `build_all()`.
+
+For a clean report, the approval sequence is empty. Do not fabricate approvals,
+reports, limits, source UUIDs, domains, policy, trust, or a successful outcome.
 
 ```python
-from mountainash_rules import AccumulatorEngine, Aggregate, BooleanCoercion
+from mountainash_rules import AccumulatorEngine, ValidatedBuildInput
 
-engine = AccumulatorEngine(
-    dimension_metadata=metadata,
-    aggregates=[Aggregate(column_name="margin")],
-    boolean_coercion=BooleanCoercion.NONE,
-)
-lattice = engine.build(rules)          # build once
-result = engine.apply(lattice, context)  # apply many times
+def build_current_partition(
+    engine: AccumulatorEngine,
+    source_rows,
+    validation: ValidatedBuildInput,
+    partition_key: dict[str, object] | None = None,
+):
+    return engine.build(
+        source_rows,
+        validation=validation,
+        partition_key=partition_key,
+    )
 ```
 
-Dimensions marked `DimensionRole.CONTEXT_KEY` partition the rule space into separate lattices; `engine.index(lattices)` routes single or batched contexts to the right one. Combination provenance is tracked with prime products, and impossible widths fail fast with a sized `LatticeWidthExceededError`.
+`AccumulatorEngine` itself requires `DimensionsMetadata`, complete native
+aggregate declarations, and explicit application-owned limits:
 
-Apply-phase filters require at least one constraint dimension. A context-key-only accumulator may build a lattice, but applying it raises an explicit dimension `ValueError`; unconditional application is not supported. No-key index routing remains supported when constraint dimensions exist.
+```python
+engine = AccumulatorEngine(
+    dimension_metadata=metadata,
+    aggregates=aggregates,
+    limits=limits,
+)
+lattice = engine.build(rows, validation=validated_build)
+```
 
-### Exact-accumulator declarations
+When context-key dimensions are declared, `build_all(rows,
+validation=validated_build)` produces the declared partitions, and
+`build(..., partition_key=...)` requires exactly every declared key. Reuse
+`engine.index(lattices)` for routed calls. Each application call names the
+authorized contract and profile:
 
-`DomainDefinition`, `ContextContract`, `ContextField`, `ResolutionProfile`, and the
-explicit `ExactLimits`/typed-error records are available from the package root.
-`DimensionsMetadata.context_contracts` preserves immutable contract declarations
-through YAML; it does not change the legacy `apply` contract above.
+```python
+result = engine.apply(
+    lattice,
+    context,
+    contract_id=contract_id,
+    profile_id=profile_id,
+    dont_care=dont_care,
+)
+```
 
-An exact aggregate declaration supplies `output_name` (a qualified name such as
-`charge.sum`), `data_type`, and `numeric_semantics="numeric-1"` together. DATETIME
-also requires `timezone="naive"` or `"utc"`. Partial native declarations are
-rejected. Name/operation-only declarations retain the existing flat manifest
-shape; they do not acquire exact semantics through inferred defaults. These
-declarations do not yet select a native build, binding, or persistence path.
+The labels and masks must be admitted by an actual binding/profile.
+`dont_care` is an explicit request mask and is permitted only where that
+profile declares it.
 
-The private analysis kernel supports typed exact predicates, correlated reasoning,
-canonical connected-cell normalization (`normalization-2`), and reproducible
-`numeric-1` folds. Caller-supplied source UUIDs preserve distinct contributions;
-labels and amounts do not determine cell identity. Amount changes do change
-outputs and artifact identity.
+An `AccumulatorResult` is an outcome, not an ordered legacy result frame.
+Inspect `status`, `reason`, `binding_id`, `contract_id`, `profile_id`,
+`values`, `cell_id`, `contributor_ids`, `may_have_no_match`, `observations`,
+and `issues`. A `decision` has established values; an unresolved or no-match
+outcome does not. Candidate-mode profiles expose `candidate_cells` and
+`candidate_contributors` without promoting them to a decision. `lineage`
+describes definite requested-output contributors only; use
+`candidate_lineage(cell_id)` for a candidate cell.
 
-The root-public source-evidence API uses that same kernel:
+`Lattice.save(directory, limits=limits)` and
+`Lattice.load(directory, limits=limits)` are bounded native snapshot
+operations. A native snapshot contains exactly 11 files: `manifest.yaml`,
+eight Parquet relations (`lattice`, `sources`, `contributors`, `scopes`,
+`scope_keys`, `source_maps`, `vectors`, and `words`), plus
+`predicates.json` and `validation.json`. A loaded lattice is served through a
+compatible `AccumulatorEngine`: its dimensions and aggregate declarations must
+agree with the compiled artifact, while the caller still supplies explicit
+operation limits.
 
-- `analyze_sources(rows, ...)` produces one complete canonical source report
-  under an explicit `ValidationPolicy`. Rows carry native scalar values and
-  explicit UUIDs; `metadata.context_contracts` owns all context/profile declarations.
-- `make_exact_envelope(kind, payload, *, limits)` constructs strict canonical,
-  deeply immutable declaration and approval envelopes without private imports.
-- `encode_validation_bundle` / `decode_validation_bundle` preserve immutable
-  reports, findings and exact nonsemantic annotations across processes.
-- `attach_warning_approvals` stores caller-authored scoped decisions independently
-  of current rows or a build. Loading or attaching evidence grants no permission.
-- `validate_build_input` recomputes current input identities, replays retained
-  examples and checks the explicitly selected report and approvals. Changed
-  sources/domains/profiles/policy, unapproved warnings, errors and incomplete
-  checks cannot authorize a build.
+`lattice.with_binding(binding, evidence=evidence, limits=limits)` validates
+complete portable binding evidence and returns an immutable view. It neither
+modifies the original lattice nor grants permission merely because evidence was
+loaded. Use `artifact_kind` and typed `partition_identity` to inspect a native
+artifact rather than legacy `is_composed`. Flat legacy/imported lattices remain
+inspection-only; they are not valid inputs to exact build, bind, route, or
+apply operations.
 
-Every operation requires explicit `ExactLimits`. One operation budget covers
-all partitions, profiles and transport work; exhaustion raises a typed error,
-never a partial successful report. Applications own producer/actor trust and
-storage. No analysis call invents business policy or approves its own warnings.
-The executable conformance inputs and review handoff are in
-`tests/accumulator/source_analysis_fixtures.py` and `test_source_analysis.py`;
-`tests/fixtures/exact_source_*.json` retains production-generated clean,
-reviewed-warning and error evidence for subsequent integration.
+### Phase5 migration handoff
 
-This source-evidence facade does not publish a serving lattice or change legacy
-build/apply/save/load. Exact runtime and snapshot cutover remain separate work.
-
-Boolean set strategies can be declared for exact analysis. The existing ternary
-filter and legacy accumulator still reject Boolean set dimensions explicitly.
+The remaining external migration is owned outside this documentation change:
+Babel's base `LatticeView`, CSV/DMN exporters and importers, and manifest
+dispatch; plus the service registry, model, route, configuration, and fixtures.
+Those owners must migrate their own bound-artifact handling. They are not
+modified here, and E8 is not claimed complete.
 
 ## Serialisable Metadata
 
@@ -385,6 +433,16 @@ pre-existing content gap for this migration, not a working simulation library.
 | `hatch run ruff:fix` | Lint + auto-fix |
 | `hatch run mypy:check` | Type check |
 | `hatch run radon:radon-cc` | Cyclomatic complexity |
+
+Routine local tests and PR CI select **Polars and Ibis-DuckDB**. Other
+backend-parametrized cases are deselected before fixture setup; tests without
+backend parameters still run. This is a reduced feedback matrix, not full
+portability acceptance.
+
+- Full seven-backend release check: `hatch run test:test-target-quick --backends=all`.
+- Specific backends: `hatch run test:test-target-quick --backends=polars,pandas`.
+- Direct pytest accepts the same `--backends` option; omitting it selects the
+  routine pair. Existing benchmark/marker selection remains independent.
 
 ## Architecture
 

@@ -73,7 +73,7 @@ from mountainash_rules.engines.accumulator.lattice import (
     Lattice,
     LatticeIndex,
 )
-from mountainash_rules.engines.accumulator.result import AccumulatorResult
+from mountainash_rules.engines.accumulator.result import AccumulatorResult, AccumulatorBatchResult
 from mountainash_rules.engines.filter.engine import ExpressionRulesEngine
 
 __all__ = (
@@ -116,6 +116,7 @@ __all__ = (
     "UNKNOWN_DATETIME",
     "UNKNOWN_NUMERIC",
     "AccumulatorEngine",
+    "AccumulatorBatchResult",
     "AccumulatorResult",
     "Aggregate",
     "AggregateOp",

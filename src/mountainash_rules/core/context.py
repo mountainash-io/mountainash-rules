@@ -278,12 +278,17 @@ def classify_exact_context(
         raw = context
     else:
         raise ValueError("Context must be a mapping or Pydantic model")
-    if isinstance(dont_care, (str, bytes)) or not isinstance(dont_care, t.Sequence):
-        raise ValueError("dont_care must be a sequence of dimension names")
-    if any(type(name) is not str for name in dont_care) or len(set(dont_care)) != len(dont_care):
-        raise ValueError("dont_care requires unique dimension names")
     issues = []
-    masks = set(dont_care)
+    if isinstance(dont_care, (str, bytes)) or not isinstance(dont_care, t.Sequence):
+        issues.append(Issue(field="dont_care", dimension=None, code="invalid_type",
+                            message="dont_care must be a sequence of dimension names"))
+        masks = set()
+    elif any(type(name) is not str for name in dont_care) or len(set(dont_care)) != len(dont_care):
+        issues.append(Issue(field="dont_care", dimension=None, code="invalid_type",
+                            message="dont_care requires unique dimension names"))
+        masks = set()
+    else:
+        masks = set(dont_care)
     provided = {}
     states = {}
     aliases: dict[str, list[Dimension]] = {}

@@ -409,13 +409,13 @@ class OutcomeRecord(_ExactModel):
             raise ValueError("Unsupported outcome status")
         if self.reason not in allowed_reasons[self.status]:
             raise ValueError("Outcome reason is incompatible with status")
-        if (
-            self.binding_id is None
-            or self.contract_id is None
-            or self.profile_id is None
-        ):
-            raise ValueError("outcomes require binding_id, contract_id, and profile_id")
-        _typed_id(self.binding_id, "binding", "binding_id")
+        if self.contract_id is None or self.profile_id is None:
+            raise ValueError("outcomes require contract_id and profile_id")
+        if self.binding_id is None:
+            if self.status != "invalid_context":
+                raise ValueError("analyzed outcomes require binding_id")
+        else:
+            _typed_id(self.binding_id, "binding", "binding_id")
         _label(self.contract_id, "contract_id")
         _label(self.profile_id, "profile_id")
         if self.cell_id is not None:

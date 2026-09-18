@@ -27,6 +27,7 @@ from mountainash_rules.core.contracts import (
     DiagnosticRule,
     DomainDefinition,
     Finding,
+    OperationBudget,
     ReportCheck,
     ResolutionProfile,
     Scope,
@@ -113,8 +114,8 @@ class StructuralCell:
             raise ValueError(
                 "cell contributors must be a non-empty sorted unique UUID tuple"
             )
-        if not isinstance(self.outputs, t.Mapping) or not self.outputs:
-            raise ValueError("cell outputs must be a non-empty mapping")
+        if not isinstance(self.outputs, t.Mapping):
+            raise ValueError("cell outputs must be a mapping")
         if any(not isinstance(name, str) or not name for name in self.outputs):
             raise ValueError("cell output names must be non-empty strings")
         object.__setattr__(self, "contributors", contributors)
@@ -757,7 +758,7 @@ class _DualGraph:
         key = (side, identifier)
         if key in self.cache:
             return self.cache[key]
-        node = dict(self.source.nodes[identifier])
+        node = _materialize_json(self.source.nodes[identifier])
         op = node["op"]
         if op in {"and", "or"}:
             node["args"] = [self.predicate(side, child) for child in node["args"]]
@@ -1255,6 +1256,8 @@ def _report_is_authorizable(
 ) -> tuple[Finding, ...]:
     if stage == "source":
         validate_source_report_semantics(report)
+    elif stage == "compiled":
+        validate_compiled_report_semantics(report, analysis)
     if report.stage != stage:
         raise ValueError("report has the wrong validation stage")
     if not _scope_covers(report.scope, required_scope):
@@ -1495,11 +1498,15 @@ def validate_contract_binding(
         raise ValueError("binding artifact does not match canonical material")
     analysis = _selected_analysis(bundle, binding.analysis_input_id)
     _material_matches(analysis, material)
+    partitions = tuple(
+        {"routing_id": bundle.routing["id"], "key_values": keys}
+        for keys in bundle.routing["payload"]["partition_keys"]
+    )
     validate_source_policy(
         analysis,
         _analysis_contracts(bundle, analysis),
-        partition_refs=material.selected_scope.partition_refs,
-        source_counts=(0,) * len(material.selected_scope.partition_refs),
+        partition_refs=partitions,
+        source_counts=(0,) * len(partitions),
     )
     if binding.semantic_versions.content != analysis.semantic_versions:
         raise ValueError("binding content semantic versions are stale")
@@ -1593,6 +1600,70 @@ def validate_source_report_semantics(report: ValidationReport) -> None:
         for check in report.checks
     ):
         raise ValueError("source-analysis-1 report contains incomplete check evidence")
+
+
+_COMPILED_PRODUCER_VERSION = "compiled-analysis-1"
+
+
+def _compiled_policy_checks(analysis: AnalysisInput, selected_scope: Scope) -> tuple[tuple[str, Scope], ...]:
+    """Resolve the closed compiled-check obligations for one artifact scope."""
+    requirements: list[tuple[str, Scope]] = [(identifier, selected_scope) for identifier in sorted(_COMPILED_CHECKS)]
+    if any(rule.stage == "compiled" for rule in analysis.validation_policy.diagnostic_rules):
+        raise ValueError("compiled diagnostic findings are unsupported by this producer")
+    for requirement in analysis.validation_policy.required_checks:
+        if requirement.stage != "compiled":
+            continue
+        if requirement.check_id not in _COMPILED_CHECKS:
+            raise ValueError("compiled policy requires an unsupported check")
+        policy_scope = _policy_scope(requirement.scope, selected_scope)
+        if policy_scope is not None:
+            requirements.append((requirement.check_id, _authorization_scope(policy_scope, selected_scope)))
+    unique = {(check_id, canonical_bytes(scope.model_dump(mode="json"))): (check_id, scope) for check_id, scope in requirements}
+    return tuple(unique[key] for key in sorted(unique, key=lambda item: (item[0], item[1])))
+
+
+def validate_compiled_report_semantics(report: ValidationReport, analysis: AnalysisInput) -> None:
+    """Admit only this producer's complete, clean compiled evidence."""
+    if not isinstance(report, ValidationReport) or not isinstance(analysis, AnalysisInput):
+        raise TypeError("compiled report semantics require report and analysis input")
+    if report.stage != "compiled":
+        raise ValueError("report must be compiled evidence")
+    if report.validator.get("semantic_version") != _COMPILED_PRODUCER_VERSION:
+        raise ValueError("report is not supported compiled-analysis-1 evidence")
+    if report.finding_ids or any(check.finding_ids for check in report.checks):
+        raise ValueError("compiled-analysis-1 evidence must be clean")
+    if any(check.status != "passed" or not check.complete for check in report.checks):
+        raise ValueError("compiled-analysis-1 evidence must be complete and clean")
+    requirements = _compiled_policy_checks(analysis, report.scope)
+    actual = {(check.check_id, canonical_bytes(check.scope.model_dump(mode="json"))) for check in report.checks}
+    expected = {(identifier, canonical_bytes(scope.model_dump(mode="json"))) for identifier, scope in requirements}
+    if actual != expected:
+        raise ValueError("compiled-analysis-1 report has an unsupported check catalogue")
+
+
+def produce_clean_compiled_report(
+    analysis: AnalysisInput, artifact_id: str, scope: Scope, *, budget: OperationBudget
+) -> ValidationReport:
+    """Record proved checks, charging construction and publication before allocation."""
+    from mountainash_rules.core.codec import _bounded_json_size, _make_exact_envelope
+
+    if not isinstance(analysis, AnalysisInput) or not isinstance(scope, Scope):
+        raise TypeError("compiled report requires AnalysisInput and Scope")
+    validate_id(artifact_id, "artifact")
+    scope_size = _bounded_json_size(scope, budget, phase="compiled.report", counter="max_live_bytes")
+    policy_size = _bounded_json_size(analysis.validation_policy, budget, phase="compiled.report", counter="max_live_bytes")
+    count = len(_COMPILED_CHECKS) + len(analysis.validation_policy.coverage_requirements)
+    workspace = 4 * (4096 + count * (1024 + scope_size) + policy_size)
+    budget.reserve("max_live_bytes", workspace, phase="compiled.report", units="report construction bytes")
+    try:
+        checks = tuple(ReportCheck(check_id=check_id, scope=check_scope, status="passed", complete=True, finding_ids=()) for check_id, check_scope in _compiled_policy_checks(analysis, scope))
+        payload = {"schema_version": 1, "analysis_input_id": analysis.id, "stage": "compiled", "artifact_id": artifact_id, "validator": {"validator_id": "mountainash-rules", "semantic_version": _COMPILED_PRODUCER_VERSION}, "scope": scope.model_dump(mode="json"), "checks": [check.model_dump(mode="json") for check in checks], "finding_ids": []}
+        envelope = _make_exact_envelope("report", payload, budget=budget)
+        report = ValidationReport(id=envelope["id"], **envelope["payload"])
+        validate_compiled_report_semantics(report, analysis)
+        return report
+    finally:
+        budget.release("max_live_bytes", workspace)
 
 
 def _scope(
