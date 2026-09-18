@@ -77,7 +77,7 @@ def _self_id(record: _ExactModel, kind: str) -> None:
     """Bind an evidence record's typed ID to its own semantic payload."""
     from mountainash_rules.core.codec import content_id
 
-    payload = record.model_dump(mode="json", exclude={"id"})
+    payload = record.model_dump(mode="python", exclude={"id", "annotations"})
     if content_id(kind, payload) != record.id:
         raise ValueError(f"{type(record).__name__} ID does not match its payload")
 
@@ -99,6 +99,44 @@ def _thaw(value: t.Any) -> t.Any:
     if isinstance(value, tuple):
         return tuple(_thaw(item) for item in value)
     return value
+
+
+def _frozen_annotations(value: t.Any) -> t.Mapping[str, t.Any]:
+    """Validate and iteratively freeze optional nonsemantic evidence diagnostics."""
+    if value is None:
+        raise ValueError("annotations must be an object when supplied")
+    from mountainash_rules.core.codec import _normalize_annotations
+
+    normalized = _normalize_annotations(value)
+    holder: dict[str, t.Any] = {}
+    stack: list[tuple[str, t.Any, t.Any, t.Any]] = [
+        ("visit", normalized, holder, "value")
+    ]
+
+    def assign(parent: t.Any, key: t.Any, item: t.Any) -> None:
+        parent[key] = item
+
+    while stack:
+        action, source, parent, key = stack.pop()
+        if action == "close_mapping":
+            assign(parent, key, MappingProxyType(source))
+            continue
+        if action == "close_sequence":
+            assign(parent, key, tuple(source))
+            continue
+        if isinstance(source, dict):
+            copied: dict[str, t.Any] = {}
+            stack.append(("close_mapping", copied, parent, key))
+            for child_key, child in source.items():
+                stack.append(("visit", child, copied, child_key))
+        elif isinstance(source, list):
+            copied = [None] * len(source)
+            stack.append(("close_sequence", copied, parent, key))
+            for index in range(len(source)):
+                stack.append(("visit", source[index], copied, index))
+        else:
+            assign(parent, key, source)
+    return holder["value"]
 
 
 class _ExactModel(BaseModel):
@@ -648,9 +686,13 @@ class Scope(_ExactModel):
         if not isinstance(value, list | tuple):
             raise ValueError("partition_refs must be an array")
         for reference in value:
-            if not isinstance(reference, dict):
+            if not isinstance(reference, t.Mapping):
                 raise ValueError("partition references must be objects")
-            _partition(reference)
+            materialized = _thaw(reference)
+            if not isinstance(materialized, dict):
+                raise ValueError("partition references must be objects")
+            materialized["key_values"] = list(materialized["key_values"])
+            _partition(materialized)
         return value
 
     @field_validator("profile_refs", mode="before")
@@ -659,7 +701,7 @@ class Scope(_ExactModel):
         if not isinstance(value, list | tuple):
             raise ValueError("profile_refs must be an array")
         for reference in value:
-            if not isinstance(reference, dict) or set(reference) != {
+            if not isinstance(reference, t.Mapping) or set(reference) != {
                 "contract_id",
                 "profile_id",
             }:
@@ -686,6 +728,27 @@ class Scope(_ExactModel):
         _canonical_unique(self.partition_refs, "partition_refs")
         _canonical_unique(self.profile_refs, "profile_refs")
         return self
+
+
+def _scope_refs(values: t.Iterable[t.Mapping[str, t.Any]]) -> set[bytes]:
+    """Return canonical identities for one scope reference category."""
+    from mountainash_rules.core.codec import canonical_bytes
+
+    return {canonical_bytes(dict(value)) for value in values}
+
+
+def _scope_covers_nonprofiles(outer: Scope, inner: Scope) -> bool:
+    """Return exact partition/domain containment without profile semantics."""
+    return _scope_refs(outer.partition_refs) >= _scope_refs(
+        inner.partition_refs
+    ) and set(outer.domain_refs) >= set(inner.domain_refs)
+
+
+def _scope_covers(outer: Scope, inner: Scope) -> bool:
+    """Return exact canonical containment for all scope reference categories."""
+    return _scope_covers_nonprofiles(outer, inner) and _scope_refs(
+        outer.profile_refs
+    ) >= _scope_refs(inner.profile_refs)
 
 
 class RequiredCheck(_ExactModel):
@@ -775,6 +838,15 @@ class AnalysisInput(_ExactModel):
     id: str
     ruleset_id: str
     source_id_field: str
+    annotations: t.Mapping[str, t.Any] | None = None
+
+    @field_validator("annotations", mode="after")
+    @classmethod
+    def _annotations(
+        cls, value: t.Mapping[str, t.Any] | None
+    ) -> t.Mapping[str, t.Any] | None:
+        return _frozen_annotations(value)
+
     source_bundle_digest: str
     compilation_domain_ref: str
     domain_digests: t.Mapping[str, str]
@@ -877,6 +949,15 @@ class ValidationReport(_ExactModel):
     schema_version: int
     id: str
     analysis_input_id: str
+    annotations: t.Mapping[str, t.Any] | None = None
+
+    @field_validator("annotations", mode="after")
+    @classmethod
+    def _annotations(
+        cls, value: t.Mapping[str, t.Any] | None
+    ) -> t.Mapping[str, t.Any] | None:
+        return _frozen_annotations(value)
+
     stage: str
     artifact_id: str | None
     validator: t.Mapping[str, str]
@@ -935,6 +1016,15 @@ class WarningApproval(_ExactModel):
     schema_version: int
     id: str
     analysis_input_id: str
+    annotations: t.Mapping[str, t.Any] | None = None
+
+    @field_validator("annotations", mode="after")
+    @classmethod
+    def _annotations(
+        cls, value: t.Mapping[str, t.Any] | None
+    ) -> t.Mapping[str, t.Any] | None:
+        return _frozen_annotations(value)
+
     report_id: str
     authority_ref: str
     actor_ref: str
@@ -961,6 +1051,61 @@ class WarningApproval(_ExactModel):
         _unique_sorted(self.warning_ids, "warning IDs")
         _self_id(self, "approval")
         return self
+
+
+def _validate_approval_links(
+    approvals: t.Iterable[WarningApproval],
+    report_by_id: t.Mapping[str, ValidationReport],
+    finding_by_id: t.Mapping[str, Finding],
+) -> None:
+    """Validate reusable approval/report/finding links and scope coverage."""
+    for approval in approvals:
+        report = report_by_id.get(approval.report_id)
+        if report is None or report.stage != "source":
+            raise ValueError("WarningApproval must target a source report")
+        if report.analysis_input_id != approval.analysis_input_id:
+            raise ValueError("WarningApproval report/input mismatch")
+        for finding_id in approval.warning_ids:
+            finding = finding_by_id.get(finding_id)
+            if (
+                finding is None
+                or finding_id not in report.finding_ids
+                or finding.severity != "warning"
+            ):
+                raise ValueError(
+                    "WarningApproval must reference report warning findings"
+                )
+            if not _scope_covers(approval.scope, finding.scope):
+                raise ValueError("WarningApproval scope does not cover finding")
+
+
+def _validate_scope_material(
+    scope: Scope,
+    analysis: AnalysisInput,
+    routing_partition_keys: t.AbstractSet[bytes],
+    profiles_by_contract: t.Mapping[str, t.AbstractSet[str]],
+    name: str,
+) -> None:
+    """Resolve one evidence scope against its owning analysis material."""
+    from mountainash_rules.core.codec import canonical_bytes
+
+    if any(
+        partition["routing_id"] != analysis.routing_digest
+        or canonical_bytes({"key_values": _thaw(partition["key_values"])})
+        not in routing_partition_keys
+        for partition in scope.partition_refs
+    ):
+        raise ValueError(f"{name} refers to an unresolved routing partition")
+    if not set(scope.domain_refs) <= set(analysis.domain_digests):
+        raise ValueError(f"{name} refers to an unresolved analysis domain")
+    analysis_contracts = {pair["contract_id"] for pair in analysis.contracts}
+    if any(
+        profile["contract_id"] not in analysis_contracts
+        or profile["profile_id"]
+        not in profiles_by_contract.get(profile["contract_id"], frozenset())
+        for profile in scope.profile_refs
+    ):
+        raise ValueError(f"{name} refers to an unresolved analysis profile")
 
 
 class WitnessRequest(_ExactModel):
@@ -1043,6 +1188,15 @@ class Finding(_ExactModel):
     id: str
     analysis_input_id: str
     stage: str
+    annotations: t.Mapping[str, t.Any] | None = None
+
+    @field_validator("annotations", mode="after")
+    @classmethod
+    def _annotations(
+        cls, value: t.Mapping[str, t.Any] | None
+    ) -> t.Mapping[str, t.Any] | None:
+        return _frozen_annotations(value)
+
     check_id: str
     code: str
     severity: str
@@ -1105,7 +1259,7 @@ class ValidationBundle(_ExactModel):
     def _bundle(self, info: t.Any) -> ValidationBundle:
         if self.schema_version != 1:
             raise ValueError("schema_version must be 1")
-        from mountainash_rules.core.codec import validate_envelope
+        from mountainash_rules.core.codec import canonical_bytes, validate_envelope
 
         context = info.context if isinstance(info.context, dict) else {}
         budget = context.get("budget")
@@ -1147,7 +1301,7 @@ class ValidationBundle(_ExactModel):
         }
         for name, kind in envelope_kinds.items():
             entries = self.predicates[name]
-            if not isinstance(entries, list):
+            if not isinstance(entries, list | tuple):
                 raise ValueError(f"{name} must be an envelope array")
             identifiers = tuple(
                 validate_envelope(entry, kind, budget=budget)["id"] for entry in entries
@@ -1156,16 +1310,20 @@ class ValidationBundle(_ExactModel):
 
         source_origins = self.predicates["source_origins"]
         source_labels = self.predicates["source_labels"]
-        if not isinstance(source_origins, list) or not isinstance(source_labels, dict):
+        if not isinstance(source_origins, list | tuple) or not isinstance(
+            source_labels, t.Mapping
+        ):
             raise ValueError("Invalid source origins or labels container")
         origin_keys: list[tuple[str, str]] = []
-        from mountainash_rules.core.codec import _source_id, canonical_bytes
+        normalized_origins: list[dict[str, t.Any]] = []
+        from mountainash_rules.core.codec import _materialize_json, _source_id
         from mountainash_rules.core.scalar import decode_scalar
 
         for source_id, label in source_labels.items():
             _source_id(source_id)
             _label(label, "source label")
-        for origin in source_origins:
+        for raw_origin in source_origins:
+            origin = _materialize_json(raw_origin)
             fields = {"source_id", "dimension_name", "predicate_id", "authored_values"}
             if (
                 not isinstance(origin, dict)
@@ -1179,10 +1337,10 @@ class ValidationBundle(_ExactModel):
             _typed_id(origin["predicate_id"], "predicate", "origin predicate_id")
             if not isinstance(origin["authored_values"], dict):
                 raise ValueError("origin authored_values must be an object")
+            normalized = dict(origin)
             if "annotations" in origin:
-                if not isinstance(origin["annotations"], dict):
-                    raise ValueError("origin annotations must be an object")
-                canonical_bytes(origin["annotations"])
+                normalized["annotations"] = _frozen_annotations(origin["annotations"])
+            normalized_origins.append(normalized)
             for column, encoded in origin["authored_values"].items():
                 _label(column, "origin source column")
                 values = encoded if isinstance(encoded, list) else [encoded]
@@ -1229,10 +1387,14 @@ class ValidationBundle(_ExactModel):
             ("binding", bindings),
         ):
             _unique_sorted(tuple(entry.id for entry in entries), f"{name} IDs")
-        analysis_ids = {entry.id for entry in analysis_inputs}
         finding_by_id = {entry.id: entry for entry in findings}
         report_by_id = {entry.id: entry for entry in reports}
 
+        domain_labels = tuple(
+            entry["payload"]["domain_id"] for entry in self.predicates["domains"]
+        )
+        if len(domain_labels) != len(set(domain_labels)):
+            raise ValueError("Duplicate logical domain IDs")
         domain_ids = {
             entry["payload"]["domain_id"]: entry["id"]
             for entry in self.predicates["domains"]
@@ -1241,6 +1403,32 @@ class ValidationBundle(_ExactModel):
             model.contract_id: (envelope["id"], model)
             for envelope, model in zip(contracts, contract_models)
         }
+        predicate_ids = {entry["id"] for entry in self.predicates["predicates"]}
+        language_ids = {entry["id"] for entry in self.predicates["languages"]}
+        for envelope in self.predicates["predicates"]:
+            node = envelope["payload"]["node"]
+            references = (
+                node["args"]
+                if node["op"] in {"and", "or"}
+                else [node["arg"]]
+                if node["op"] == "not"
+                else []
+            )
+            if any(identifier not in predicate_ids for identifier in references):
+                raise ValueError("Predicate refers to unresolved internal predicate")
+            if node["op"] == "language" and node["language_id"] not in language_ids:
+                raise ValueError("Predicate refers to unresolved internal language")
+        for envelope in self.predicates["domains"]:
+            if envelope["payload"]["predicate_id"] not in predicate_ids:
+                raise ValueError("Domain refers to unresolved internal predicate")
+        for origin in normalized_origins:
+            if origin["predicate_id"] not in predicate_ids:
+                raise ValueError(
+                    "Source origin refers to unresolved internal predicate"
+                )
+        for contract in contract_models:
+            if contract.domain_ref not in domain_ids:
+                raise ValueError("ContextContract refers to unresolved internal domain")
         for analysis in analysis_inputs:
             if (
                 analysis.metadata_digest != self.metadata["id"]
@@ -1257,9 +1445,90 @@ class ValidationBundle(_ExactModel):
                 contract = contract_ids.get(pair["contract_id"])
                 if contract is None or contract[0] != pair["contract_digest"]:
                     raise ValueError("AnalysisInput contract digest mismatch")
+        source_bundle_sources = {
+            envelope["id"]: frozenset(
+                source["source_id"] for source in envelope["payload"]["sources"]
+            )
+            for envelope in self.predicates["source_bundles"]
+        }
+        available_source_ids = frozenset().union(*source_bundle_sources.values())
+        if any(source_id not in available_source_ids for source_id in source_labels):
+            raise ValueError("Source label refers to unavailable source")
+        if any(
+            origin["source_id"] not in available_source_ids
+            for origin in normalized_origins
+        ):
+            raise ValueError("Source origin refers to unavailable source")
+        routing_partition_keys = {
+            canonical_bytes({"key_values": key_values})
+            for key_values in self.routing["payload"]["partition_keys"]
+        }
+        inputs_by_id = {entry.id: entry for entry in analysis_inputs}
+        profiles_by_contract = {
+            contract_id: frozenset(profile.profile_id for profile in contract.profiles)
+            for contract_id, (_, contract) in contract_ids.items()
+        }
+
+        def validate_scope(scope: Scope, analysis: AnalysisInput, name: str) -> None:
+            analysis_contract_ids = {pair["contract_id"] for pair in analysis.contracts}
+            _validate_scope_material(
+                scope,
+                analysis,
+                routing_partition_keys,
+                {
+                    contract_id: profiles_by_contract[contract_id]
+                    for contract_id in analysis_contract_ids
+                },
+                name,
+            )
+
+        for analysis in analysis_inputs:
+            sources = source_bundle_sources.get(analysis.source_bundle_digest)
+            if sources is None:
+                raise ValueError("AnalysisInput refers to an unresolved source bundle")
+            if (
+                self.predicates["source_bundles"][
+                    next(
+                        index
+                        for index, envelope in enumerate(
+                            self.predicates["source_bundles"]
+                        )
+                        if envelope["id"] == analysis.source_bundle_digest
+                    )
+                ]["payload"]["ruleset_id"]
+                != analysis.ruleset_id
+            ):
+                raise ValueError("AnalysisInput source bundle ruleset mismatch")
+            for check in analysis.validation_policy.required_checks:
+                validate_scope(check.scope, analysis, "RequiredCheck scope")
+            for requirement in analysis.validation_policy.coverage_requirements:
+                validate_scope(requirement.scope, analysis, "CoverageRequirement scope")
+                if requirement.region_predicate_id not in predicate_ids:
+                    raise ValueError(
+                        "CoverageRequirement refers to unresolved internal predicate"
+                    )
+            for rule in analysis.validation_policy.diagnostic_rules:
+                validate_scope(rule.scope, analysis, "DiagnosticRule scope")
         for finding in findings:
-            if finding.analysis_input_id not in analysis_ids:
+            analysis = inputs_by_id.get(finding.analysis_input_id)
+            if analysis is None:
                 raise ValueError("Finding refers to unresolved AnalysisInput")
+            validate_scope(finding.scope, analysis, "Finding scope")
+            if (
+                not set(finding.source_ids)
+                <= source_bundle_sources[analysis.source_bundle_digest]
+            ):
+                raise ValueError("Finding refers to unavailable analysis source")
+            if (
+                finding.region_predicate_id is not None
+                and finding.region_predicate_id not in predicate_ids
+            ):
+                raise ValueError("Finding refers to unresolved internal predicate")
+            for witness in finding.witnesses:
+                if witness.profile_ref is not None and not _scope_refs(
+                    (witness.profile_ref,)
+                ) <= _scope_refs(finding.scope.profile_refs):
+                    raise ValueError("Witness profile is outside finding scope")
         mandatory_checks = {
             "source": {
                 "source_schema",
@@ -1279,16 +1548,21 @@ class ValidationBundle(_ExactModel):
                 "profile_consistency",
             },
         }
-        inputs_by_id = {entry.id: entry for entry in analysis_inputs}
         for report in reports:
-            if report.analysis_input_id not in analysis_ids:
+            analysis = inputs_by_id.get(report.analysis_input_id)
+            if analysis is None:
                 raise ValueError("Report refers to unresolved AnalysisInput")
+            validate_scope(report.scope, analysis, "ValidationReport scope")
+            for check in report.checks:
+                validate_scope(check.scope, analysis, "ReportCheck scope")
+                if not _scope_covers(report.scope, check.scope):
+                    raise ValueError(
+                        "ValidationReport scope does not cover ReportCheck"
+                    )
             check_ids = {check.check_id for check in report.checks}
             required_ids = mandatory_checks[report.stage] | {
                 check.check_id
-                for check in inputs_by_id[
-                    report.analysis_input_id
-                ].validation_policy.required_checks
+                for check in analysis.validation_policy.required_checks
                 if check.stage == report.stage
             }
             if not required_ids.issubset(check_ids):
@@ -1302,22 +1576,24 @@ class ValidationBundle(_ExactModel):
                     raise ValueError("Report has unresolved or foreign finding")
                 if finding.stage != report.stage:
                     raise ValueError("Report/finding stage mismatch")
-        for approval in approvals:
-            report = report_by_id.get(approval.report_id)
-            if report is None or report.stage != "source":
-                raise ValueError("WarningApproval must target a source report")
-            if report.analysis_input_id != approval.analysis_input_id:
-                raise ValueError("WarningApproval report/input mismatch")
-            for finding_id in approval.warning_ids:
-                finding = finding_by_id.get(finding_id)
-                if (
-                    finding is None
-                    or finding_id not in report.finding_ids
-                    or finding.severity != "warning"
+                linked_checks = tuple(
+                    check for check in report.checks if finding.id in check.finding_ids
+                )
+                if not linked_checks or any(
+                    check.check_id != finding.check_id for check in linked_checks
                 ):
-                    raise ValueError(
-                        "WarningApproval must reference report warning findings"
-                    )
+                    raise ValueError("Report check/finding IDs do not match")
+                if any(
+                    not _scope_covers(check.scope, finding.scope)
+                    for check in linked_checks
+                ):
+                    raise ValueError("Report check scope does not cover finding")
+        for approval in approvals:
+            analysis = inputs_by_id.get(approval.analysis_input_id)
+            if analysis is None:
+                raise ValueError("WarningApproval refers to unresolved AnalysisInput")
+            validate_scope(approval.scope, analysis, "WarningApproval scope")
+        _validate_approval_links(approvals, report_by_id, finding_by_id)
         binding_pairs: set[tuple[str, str]] = set()
         approval_by_id = {entry.id: entry for entry in approvals}
         for binding in bindings:
@@ -1342,8 +1618,22 @@ class ValidationBundle(_ExactModel):
             if binding.semantic_versions.content != analysis.semantic_versions:
                 raise ValueError("ContractBinding semantic versions mismatch")
             contract = contract_ids.get(binding.contract_id)
-            if contract is None or contract[0] != binding.contract_digest:
-                raise ValueError("ContractBinding contract digest mismatch")
+            analysis_contracts = {
+                pair["contract_id"]: pair["contract_digest"]
+                for pair in analysis.contracts
+            }
+            if (
+                contract is None
+                or analysis_contracts.get(binding.contract_id)
+                != binding.contract_digest
+            ):
+                raise ValueError(
+                    "ContractBinding contract is not owned by AnalysisInput"
+                )
+            if analysis.domain_digests.get(binding.domain_ref) != binding.domain_digest:
+                raise ValueError("ContractBinding domain is not owned by AnalysisInput")
+            if contract[1].domain_ref != binding.domain_ref:
+                raise ValueError("ContractBinding contract/domain mismatch")
             if domain_ids.get(binding.domain_ref) != binding.domain_digest:
                 raise ValueError("ContractBinding domain digest mismatch")
             profile_payloads = {
@@ -1374,7 +1664,11 @@ class ValidationBundle(_ExactModel):
         object.__setattr__(
             self, "context_contracts", tuple(_freeze(dict(item)) for item in contracts)
         )
-        object.__setattr__(self, "predicates", _freeze(dict(self.predicates)))
+        object.__setattr__(
+            self,
+            "predicates",
+            _freeze({**dict(self.predicates), "source_origins": normalized_origins}),
+        )
         object.__setattr__(
             self,
             "validation",
@@ -1432,6 +1726,15 @@ class ContractBinding(_ExactModel):
     id: str
     artifact_id: str
     analysis_input_id: str
+    annotations: t.Mapping[str, t.Any] | None = None
+
+    @field_validator("annotations", mode="after")
+    @classmethod
+    def _annotations(
+        cls, value: t.Mapping[str, t.Any] | None
+    ) -> t.Mapping[str, t.Any] | None:
+        return _frozen_annotations(value)
+
     contract_id: str
     contract_digest: str
     domain_ref: str

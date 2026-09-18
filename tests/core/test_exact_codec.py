@@ -1,5 +1,8 @@
 """Tests for canonical exact-accumulator codec and strict evidence containers."""
 
+from decimal import Decimal
+
+import mountainash_rules as rules
 import mountainash_rules.core.codec as codec
 import pytest
 
@@ -633,3 +636,501 @@ def test_canonical_arrays_do_not_depend_on_python_recursion_depth():
     assert canonical_bytes(decode_json(encoded)) == encoded
     with pytest.raises(ValueError, match="Malformed"):
         decode_json(b"[" * 1100 + b"0," + b"]" * 1100)
+
+
+def _transport_bundle(
+    *,
+    origins: list[dict[str, object]] | None = None,
+    source_bundles: list[dict[str, object]] | None = None,
+) -> dict[str, object]:
+    metadata = {
+        "schema_version": 1,
+        "dimensions": [],
+        "regex_semantics": None,
+        "normalization_semantics": "normalization-2",
+    }
+    aggregates = {"schema_version": 1, "declarations": []}
+    routing = {
+        "schema_version": 1,
+        "semantics": "exact-key-1",
+        "key_dimensions": [],
+        "partition_keys": [[]],
+    }
+    predicate = {"schema_version": 1, "node": {"op": "true"}}
+    origin_source_ids = sorted(
+        {origin["source_id"] for origin in origins or [] if "source_id" in origin}
+    )
+    fixture_source_bundle = _envelope(
+        "source-bundle",
+        {
+            "schema_version": 1,
+            "ruleset_id": "fixture",
+            "sources": [
+                {"source_id": source_id, "content_id": _id("source-content")}
+                for source_id in origin_source_ids
+            ],
+        },
+    )
+    return {
+        "schema_version": 1,
+        "metadata": _envelope("metadata", metadata),
+        "aggregates": _envelope("aggregates", aggregates),
+        "routing": _envelope("routing", routing),
+        "context_contracts": [],
+        "predicates": {
+            "schema_version": 1,
+            "predicates": [_envelope("predicate", predicate)],
+            "languages": [],
+            "domains": [],
+            "source_bundles": (
+                source_bundles
+                if source_bundles is not None
+                else [fixture_source_bundle]
+                if origin_source_ids
+                else []
+            ),
+            "source_origins": origins or [],
+            "source_labels": {},
+        },
+        "validation": {
+            "schema_version": 1,
+            "analysis_inputs": [],
+            "findings": [],
+            "reports": [],
+            "approvals": [],
+            "bindings": [],
+        },
+    }
+
+
+def test_public_envelope_construction_validates_complete_payload_under_limits():
+    """The public adapter must neither trust a caller ID nor bypass a closed schema."""
+    payload = {
+        "schema_version": 1,
+        "source_ids": ["87b551cf-b3b2-55d6-bdd2-f682dce7f709"],
+    }
+
+    assert hasattr(codec, "make_exact_envelope")
+    envelope = codec.make_exact_envelope(
+        "contributor-set",
+        payload,
+        limits=ExactLimits.model_validate(EXACT_LIMITS),
+    )
+
+    assert envelope["id"] == content_id("contributor-set", payload)
+    assert envelope["payload"]["source_ids"] == tuple(payload["source_ids"])
+    with pytest.raises(ValueError, match="Unknown"):
+        codec.make_exact_envelope(
+            "contributor-set",
+            {**payload, "unrecognized": True},
+            limits=ExactLimits.model_validate(EXACT_LIMITS),
+        )
+
+
+def test_public_envelope_normalizes_native_float_annotations_before_identity():
+    """Finite floats are annotation-only Decimal spellings before envelope hashing."""
+    payload = {
+        "schema_version": 1,
+        "analysis_input_id": _id("analysis-input"),
+        "report_id": _id("report"),
+        "authority_ref": "owner",
+        "actor_ref": "operator",
+        "decision": "approve_warnings",
+        "scope": _scope(),
+        "warning_ids": [_id("finding")],
+        "annotations": {"score": 0.5},
+    }
+
+    envelope = codec.make_exact_envelope(
+        "approval",
+        payload,
+        limits=ExactLimits.model_validate(EXACT_LIMITS),
+    )
+
+    assert envelope["id"] == content_id(
+        "approval",
+        {key: value for key, value in payload.items() if key != "annotations"},
+    )
+    assert envelope["payload"]["annotations"]["score"] == Decimal("0.5")
+
+
+def test_public_envelope_reserves_output_before_result_allocation():
+    """Envelope construction accounts for the returned immutable wire value."""
+    payload = {
+        "schema_version": 1,
+        "source_ids": ["87b551cf-b3b2-55d6-bdd2-f682dce7f709"],
+    }
+
+    with pytest.raises(ExactResourceError) as error:
+        codec.make_exact_envelope(
+            "contributor-set",
+            payload,
+            limits=ExactLimits.model_validate({**EXACT_LIMITS, "max_output_bytes": 0}),
+        )
+
+    assert error.value.counter == "max_output_bytes"
+
+
+def test_public_envelope_return_is_deeply_immutable():
+    """Callers cannot mutate the authenticated envelope or nested payload."""
+    envelope = codec.make_exact_envelope(
+        "contributor-set",
+        {
+            "schema_version": 1,
+            "source_ids": ["87b551cf-b3b2-55d6-bdd2-f682dce7f709"],
+        },
+        limits=ExactLimits.model_validate(EXACT_LIMITS),
+    )
+
+    with pytest.raises(TypeError):
+        envelope["id"] = "contributor-set:1:" + "0" * 64
+    with pytest.raises(TypeError):
+        envelope["payload"]["source_ids"] += ("ab189c70-349d-593e-9b9a-2e0ca1cc3aa5",)
+
+
+def test_bundle_decode_reserves_parse_state_before_json_allocation(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """A live-state rejection occurs before the decoder can build its tree."""
+
+    def fail_if_decoded(_: bytes) -> object:
+        raise AssertionError("JSON tree allocated before live-state reservation")
+
+    monkeypatch.setattr(codec, "decode_json", fail_if_decoded)
+
+    with pytest.raises(ExactResourceError) as error:
+        codec.decode_validation_bundle(
+            b"{}",
+            limits=ExactLimits.model_validate({**EXACT_LIMITS, "max_live_bytes": 0}),
+        )
+
+    assert error.value.counter == "max_live_bytes"
+
+
+def test_validation_bundle_transport_preserves_exact_annotation_decimals():
+    """Annotation numbers retain decimal precision without becoming semantic scalars."""
+    predicate_id = content_id(
+        "predicate", {"schema_version": 1, "node": {"op": "true"}}
+    )
+    bundle = ValidationBundle.model_validate(
+        _transport_bundle(
+            origins=[
+                {
+                    "source_id": "87b551cf-b3b2-55d6-bdd2-f682dce7f709",
+                    "dimension_name": "region",
+                    "predicate_id": predicate_id,
+                    "authored_values": {},
+                    "annotations": {
+                        "half": Decimal("0.50"),
+                        "equivalent_half": Decimal("5e-1"),
+                        "fraction": Decimal("1.25"),
+                        "integral": Decimal("10.0"),
+                        "negative_zero": Decimal("-0.0"),
+                        "precise": Decimal("123456789012345678901234567890.123456789"),
+                        "numeric_looking_string": "0.50",
+                    },
+                }
+            ]
+        )
+    )
+
+    assert hasattr(codec, "encode_validation_bundle")
+    assert hasattr(codec, "decode_validation_bundle")
+    encoded = codec.encode_validation_bundle(
+        bundle, limits=ExactLimits.model_validate(EXACT_LIMITS)
+    )
+    decoded = codec.decode_validation_bundle(
+        encoded, limits=ExactLimits.model_validate(EXACT_LIMITS)
+    )
+    annotations = decoded.predicates["source_origins"][0]["annotations"]
+
+    assert b'"half":5e-1' in encoded
+    assert b'"equivalent_half":5e-1' in encoded
+    assert b'"fraction":125e-2' in encoded
+    assert b'"integral":10' in encoded
+    assert b'"negative_zero":0' in encoded
+    assert annotations["precise"] == Decimal("123456789012345678901234567890.123456789")
+    assert annotations["numeric_looking_string"] == "0.50"
+    assert (
+        codec.encode_validation_bundle(
+            decoded, limits=ExactLimits.model_validate(EXACT_LIMITS)
+        )
+        == encoded
+    )
+
+
+def test_validation_bundle_transport_handles_deep_annotations_iteratively():
+    """Nested diagnostics must not depend on Python's recursion limit."""
+    predicate_id = content_id(
+        "predicate", {"schema_version": 1, "node": {"op": "true"}}
+    )
+    annotations: dict[str, object] = {}
+    current = annotations
+    for _ in range(1_100):
+        child: dict[str, object] = {}
+        current["child"] = child
+        current = child
+    current["value"] = Decimal("0.50")
+    bundle = ValidationBundle.model_validate(
+        _transport_bundle(
+            origins=[
+                {
+                    "source_id": "87b551cf-b3b2-55d6-bdd2-f682dce7f709",
+                    "dimension_name": "region",
+                    "predicate_id": predicate_id,
+                    "authored_values": {},
+                    "annotations": annotations,
+                }
+            ]
+        )
+    )
+
+    encoded = codec.encode_validation_bundle(
+        bundle,
+        limits=ExactLimits.model_validate(
+            {**EXACT_LIMITS, "max_live_bytes": 1_000_000}
+        ),
+    )
+
+    assert b'"value":5e-1' in encoded
+
+
+def test_validation_bundle_transport_bounds_integral_annotation_expansion():
+    """A tiny decimal token cannot allocate an unbounded integral wire value."""
+    predicate_id = content_id(
+        "predicate", {"schema_version": 1, "node": {"op": "true"}}
+    )
+    bundle = ValidationBundle.model_validate(
+        _transport_bundle(
+            origins=[
+                {
+                    "source_id": "87b551cf-b3b2-55d6-bdd2-f682dce7f709",
+                    "dimension_name": "region",
+                    "predicate_id": predicate_id,
+                    "authored_values": {},
+                    "annotations": {"too_large": Decimal("1e100000")},
+                }
+            ]
+        )
+    )
+
+    assert hasattr(codec, "encode_validation_bundle")
+    with pytest.raises(ExactResourceError):
+        codec.encode_validation_bundle(
+            bundle,
+            limits=ExactLimits.model_validate(
+                {**EXACT_LIMITS, "max_output_bytes": 100}
+            ),
+        )
+
+
+def test_validation_bundle_transport_rejects_missing_internal_and_defers_external_rows():
+    """Graph definitions are bundle-internal, while source-content IDs are external."""
+    predicate_id = content_id(
+        "predicate", {"schema_version": 1, "node": {"op": "true"}}
+    )
+    missing_predicate = _transport_bundle(
+        origins=[
+            {
+                "source_id": "87b551cf-b3b2-55d6-bdd2-f682dce7f709",
+                "dimension_name": "region",
+                "predicate_id": predicate_id,
+                "authored_values": {},
+            }
+        ]
+    )
+    missing_predicate["predicates"]["predicates"] = []
+    assert hasattr(codec, "decode_validation_bundle")
+    with pytest.raises(ValueError, match="predicate"):
+        codec.decode_validation_bundle(
+            canonical_bytes(missing_predicate),
+            limits=ExactLimits.model_validate(EXACT_LIMITS),
+        )
+
+    source_bundle = {
+        "schema_version": 1,
+        "ruleset_id": "pricing",
+        "sources": [
+            {
+                "source_id": "87b551cf-b3b2-55d6-bdd2-f682dce7f709",
+                "content_id": _id("source-content"),
+            }
+        ],
+    }
+    external_rows = _transport_bundle(
+        source_bundles=[_envelope("source-bundle", source_bundle)]
+    )
+    decoded = codec.decode_validation_bundle(
+        canonical_bytes(external_rows), limits=ExactLimits.model_validate(EXACT_LIMITS)
+    )
+
+    assert decoded.predicates["source_bundles"][0]["payload"]["sources"][0][
+        "content_id"
+    ] == _id("source-content")
+
+
+def _real_attachment_fixture() -> tuple[ValidationBundle, object]:
+    """Produce an actual retained source bundle and a caller-authored decision."""
+    from tests.accumulator.source_analysis_fixtures import approve, case, row
+
+    kwargs, _ = case(coverage=True)
+    bundle = rules.analyze_sources([row(1, 0, 10)], **kwargs)
+    warning = next(
+        finding
+        for finding in bundle.validation["findings"]
+        if finding.severity == "warning"
+    )
+    return bundle, approve(bundle, [warning.id])
+
+
+def _attachment_admission_usage(bundle: ValidationBundle) -> tuple[int, int]:
+    """Measure exactly the shared bundle-admission preflight under generous limits."""
+    budget = _budget()
+    size = codec._bounded_json_size(
+        codec._bundle_payload(bundle), budget, phase="attachment_test_admission"
+    )
+    return size, budget._usage["max_work"]
+
+
+def test_attachment_charges_large_supplied_approval_before_materialization(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """An approval annotation cannot evade input admission through a model dump."""
+    bundle, decision = _real_attachment_fixture()
+    payload = decision.model_dump(mode="python")
+    approval = rules.WarningApproval.model_validate(
+        {**payload, "annotations": {"review_note": "x" * 10_000}}
+    )
+    bundle_size, _ = _attachment_admission_usage(bundle)
+
+    def fail_if_materialized(*_: object, **__: object) -> object:
+        raise AssertionError("approval materialized before input admission")
+
+    monkeypatch.setattr(rules.WarningApproval, "model_dump", fail_if_materialized)
+    with pytest.raises(ExactResourceError) as error:
+        rules.attach_warning_approvals(
+            bundle,
+            [approval],
+            limits=ExactLimits.model_validate(
+                {**EXACT_LIMITS, "max_input_bytes": bundle_size}
+            ),
+        )
+
+    assert error.value.counter == "max_input_bytes"
+
+
+def test_attachment_charges_approval_preflight_work_before_materialization(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """The approval traversal must consume the operation's shared work ledger."""
+    bundle, approval = _real_attachment_fixture()
+    _, admission_work = _attachment_admission_usage(bundle)
+
+    def fail_if_materialized(*_: object, **__: object) -> object:
+        raise AssertionError("approval materialized before work admission")
+
+    monkeypatch.setattr(rules.WarningApproval, "model_dump", fail_if_materialized)
+    with pytest.raises(ExactResourceError) as error:
+        rules.attach_warning_approvals(
+            bundle,
+            [approval],
+            limits=ExactLimits.model_validate(
+                {**EXACT_LIMITS, "max_work": admission_work}
+            ),
+        )
+
+    assert error.value.counter == "max_work"
+
+
+def test_attachment_reserves_changed_output_before_bundle_construction(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """A changed immutable bundle must not be constructed when output is forbidden."""
+    bundle, approval = _real_attachment_fixture()
+
+    def fail_if_constructed(*_: object, **__: object) -> object:
+        raise AssertionError("changed bundle constructed before output admission")
+
+    monkeypatch.setattr(ValidationBundle, "model_construct", fail_if_constructed)
+    with pytest.raises(ExactResourceError) as error:
+        rules.attach_warning_approvals(
+            bundle,
+            [approval],
+            limits=ExactLimits.model_validate({**EXACT_LIMITS, "max_output_bytes": 0}),
+        )
+
+    assert error.value.counter == "max_output_bytes"
+
+
+def test_attachment_keeps_large_body_shared_and_returns_portable_result():
+    """Attachment retains immutable producer bodies and has canonical wire output."""
+    bundle, approval = _real_attachment_fixture()
+    transport_limits = ExactLimits.model_validate(
+        {
+            **EXACT_LIMITS,
+            "max_input_bytes": 1_000_000,
+            "max_output_bytes": 1_000_000,
+            "max_live_bytes": 1_000_000,
+        }
+    )
+    attached = rules.attach_warning_approvals(
+        bundle, [approval], limits=transport_limits
+    )
+
+    assert attached.metadata is bundle.metadata
+    assert attached.aggregates is bundle.aggregates
+    assert attached.routing is bundle.routing
+    assert attached.context_contracts is bundle.context_contracts
+    assert attached.predicates is bundle.predicates
+    assert (
+        codec.decode_validation_bundle(
+            codec.encode_validation_bundle(attached, limits=transport_limits),
+            limits=transport_limits,
+        )
+        == attached
+    )
+
+
+def test_attachment_rejects_large_retained_graph_before_rebuilding_indexes():
+    """A retained producer graph cannot hide index allocation from the live ledger."""
+    from tests.accumulator.source_analysis_fixtures import approve, case, limits, row
+
+    kwargs, _ = case(witnesses=0)
+    bundle = rules.analyze_sources(
+        [row(number, 0, 20) for number in range(1, 21)], **kwargs
+    )
+    warning = next(
+        finding
+        for finding in bundle.validation["findings"]
+        if finding.severity == "warning"
+    )
+    approval = approve(bundle, [warning.id])
+
+    with pytest.raises(ExactResourceError) as error:
+        rules.attach_warning_approvals(
+            bundle, [approval], limits=limits(max_live_bytes=32_000)
+        )
+
+    assert error.value.counter == "max_live_bytes"
+    attached = rules.attach_warning_approvals(
+        bundle, [approval], limits=limits(max_live_bytes=10_000_000)
+    )
+    assert attached.metadata is bundle.metadata
+    assert attached.predicates is bundle.predicates
+
+
+def test_attachment_retains_result_capacity_on_shared_operation_budget():
+    from mountainash_rules.engines.accumulator.analysis import _attach
+
+    bundle, decision = _real_attachment_fixture()
+    budget = _budget()
+    attached = _attach(bundle, [decision], budget)
+    assert attached.validation["approvals"] == (decision,)
+    with pytest.raises(ExactResourceError) as error:
+        budget.reserve(
+            "max_live_bytes",
+            budget.limits.max_live_bytes,
+            phase="following_permission_work",
+            units="bytes",
+        )
+    assert error.value.counter == "max_live_bytes"

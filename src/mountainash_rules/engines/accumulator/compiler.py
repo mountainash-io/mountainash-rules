@@ -1171,7 +1171,7 @@ def analysis_geometry(
         routing=analysis.prepared.routing["payload"],
         partition_identity=analysis.partition_identity,
         sources=tuple(
-            StructuralSource(source.source_id, source.predicate_id)
+            StructuralSource(source.source_id, source.predicate_id, source.origins)
             for source in analysis.sources
         ),
         cells=tuple(

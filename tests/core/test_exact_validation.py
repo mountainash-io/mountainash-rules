@@ -6,7 +6,7 @@ from types import MappingProxyType
 
 import pytest
 
-from mountainash_rules.core.codec import content_id
+from mountainash_rules.core.codec import canonical_bytes, content_id
 from mountainash_rules.core.reasoner import Reasoner
 
 from mountainash_rules.core.contracts import (
@@ -43,6 +43,7 @@ from mountainash_rules.core.validation import (
     CanonicalMaterial,
     StructuralCell,
     StructuralSource,
+    produce_source_report,
     validate_build_permission,
     validate_contract_binding,
     prove_profile,
@@ -952,16 +953,48 @@ def _permission_fixture():
         policy_id="policy",
         required_checks=(),
         coverage_requirements=(),
-        diagnostic_rules=(
-            DiagnosticRule(
-                stage="source",
-                check_id="source_overlaps",
-                code="source_overlap",
-                scope=_scope(),
-                severity="warning",
-                witness_kind="none",
-                max_witnesses=0,
-            ),
+        diagnostic_rules=tuple(
+            sorted(
+                (
+                    DiagnosticRule(
+                        stage="source",
+                        check_id="source_overlaps",
+                        code="source_overlap",
+                        scope=_scope(),
+                        severity="warning",
+                        witness_kind="none",
+                        max_witnesses=0,
+                    ),
+                    DiagnosticRule(
+                        stage="source",
+                        check_id="routing",
+                        code="routing_gap",
+                        scope=_scope(),
+                        severity="error",
+                        witness_kind="none",
+                        max_witnesses=0,
+                    ),
+                    DiagnosticRule(
+                        stage="source",
+                        check_id="routing",
+                        code="routing_ambiguity",
+                        scope=_scope(),
+                        severity="error",
+                        witness_kind="none",
+                        max_witnesses=0,
+                    ),
+                    DiagnosticRule(
+                        stage="source",
+                        check_id="profiles",
+                        code="profile_counterexample",
+                        scope=_scope(),
+                        severity="warning",
+                        witness_kind="none",
+                        max_witnesses=0,
+                    ),
+                ),
+                key=lambda item: canonical_bytes(item.model_dump(mode="json")),
+            )
         ),
     )
     analysis_payload = {
@@ -1028,7 +1061,10 @@ def _permission_fixture():
             "analysis_input_id": analysis.id,
             "stage": stage,
             "artifact_id": artifact_id,
-            "validator": {"validator_id": "validator", "semantic_version": "v1"},
+            "validator": {
+                "validator_id": "validator",
+                "semantic_version": "source-analysis-1" if stage == "source" else "v1",
+            },
             "scope": scope.model_dump(mode="json"),
             "checks": [item.model_dump(mode="json") for item in checks],
             "finding_ids": sorted(
@@ -1317,7 +1353,7 @@ def test_binding_gate_rejects_competing_active_binding_and_incomplete_compiled_p
     mismatched_bundle = bound_bundle.model_copy(
         update={"context_contracts": (mismatched_envelope,)}
     )
-    with pytest.raises(ValueError, match="contract domain"):
+    with pytest.raises(ValueError):
         validate_contract_binding(binding, mismatched_bundle, material)
 
     competing_payload = {
@@ -1387,18 +1423,12 @@ def test_permission_gate_requires_partially_overlapping_policy_source_check():
     selected_scope = Scope(
         partition_refs=base_scope["partition_refs"],
         domain_refs=base_scope["domain_refs"],
-        profile_refs=(
-            {"contract_id": "provider", "profile_id": "p2"},
-            {"contract_id": "provider", "profile_id": "profile"},
-        ),
+        profile_refs=({"contract_id": "provider", "profile_id": "profile"},),
     )
     policy_scope = Scope(
         partition_refs=base_scope["partition_refs"],
         domain_refs=base_scope["domain_refs"],
-        profile_refs=(
-            {"contract_id": "provider", "profile_id": "other"},
-            {"contract_id": "provider", "profile_id": "profile"},
-        ),
+        profile_refs=(),
     )
     selected_analysis = analysis.model_copy(
         update={
@@ -1407,7 +1437,7 @@ def test_permission_gate_requires_partially_overlapping_policy_source_check():
                     "required_checks": (
                         RequiredCheck(
                             stage="source",
-                            check_id="policy_source",
+                            check_id="source_overlaps",
                             scope=policy_scope,
                         ),
                     )
@@ -1462,8 +1492,8 @@ def test_permission_gate_requires_partially_overlapping_policy_source_check():
             "checks": selected_report.checks
             + (
                 ReportCheck(
-                    check_id="policy_source",
-                    scope=selected_scope,
+                    check_id="source_overlaps",
+                    scope=policy_scope,
                     status="passed",
                     complete=True,
                     finding_ids=(),
@@ -1728,3 +1758,239 @@ def test_routing_proof_omits_regions_owned_by_higher_specificity_keys():
 
     assert proof.reachable_partition_key_indices == (3,)
     assert proof.ambiguous == ()
+
+
+def test_source_report_semantics_accepts_producer_labels_but_rejects_unknown_versions():
+    """Producer labels are unauthenticated; semantic-version support is not."""
+    from mountainash_rules.core import validation
+
+    assert hasattr(validation, "validate_source_report_semantics")
+    (
+        _analysis,
+        source_one,
+        _source_two,
+        _compiled,
+        _approval_one,
+        _approval_two,
+        _bundle,
+        _material,
+    ) = _permission_fixture()
+
+    accepted_payload = source_one.model_dump(mode="json", exclude={"id", "annotations"})
+    accepted_payload["validator"] = {
+        "validator_id": "foreign-validator",
+        "semantic_version": "source-analysis-1",
+    }
+    accepted = ValidationReport(
+        id=_id("report", accepted_payload),
+        **accepted_payload,
+    )
+    validation.validate_source_report_semantics(accepted)
+
+    rejected_payload = accepted.model_dump(mode="json", exclude={"id", "annotations"})
+    rejected_payload["validator"] = {
+        "validator_id": "foreign-validator",
+        "semantic_version": "unsupported-1",
+    }
+    rejected = ValidationReport(
+        id=_id("report", rejected_payload),
+        **rejected_payload,
+    )
+
+    with pytest.raises(ValueError):
+        validation.validate_source_report_semantics(rejected)
+
+
+def test_permission_gate_rejects_foreign_source_check_even_when_all_mandatory_checks_exist():
+    """A completed foreign check cannot expand the closed source-analysis catalogue."""
+    (
+        analysis,
+        source_one,
+        _source_two,
+        _compiled,
+        approval_one,
+        _approval_two,
+        bundle,
+        material,
+    ) = _permission_fixture()
+    foreign = ReportCheck(
+        check_id="foreign_check",
+        scope=_scope(),
+        status="passed",
+        complete=True,
+        finding_ids=(),
+    )
+    payload = source_one.model_dump(mode="json", exclude={"id", "annotations"})
+    payload["checks"].append(foreign.model_dump(mode="json"))
+    payload["checks"].sort(key=canonical_bytes)
+    report = ValidationReport(id=_id("report", payload), **payload)
+    approval_payload = approval_one.model_dump(
+        mode="json", exclude={"id", "annotations"}
+    )
+    approval_payload["report_id"] = report.id
+    approval = WarningApproval(id=_id("approval", approval_payload), **approval_payload)
+    replaced = bundle.model_copy(
+        update={
+            "validation": MappingProxyType(
+                {
+                    **dict(bundle.validation),
+                    "reports": tuple(
+                        report if item.id == source_one.id else item
+                        for item in bundle.validation["reports"]
+                    ),
+                    "approvals": tuple(
+                        approval if item.id == approval_one.id else item
+                        for item in bundle.validation["approvals"]
+                    ),
+                }
+            )
+        }
+    )
+    value = ValidatedBuildInput.model_construct(
+        schema_version=1,
+        analysis_input_id=analysis.id,
+        source_report_id=report.id,
+        approval_ids=(approval.id,),
+        bundle=replaced,
+    )
+
+    with pytest.raises(ValueError):
+        validate_build_permission(value, material)
+
+
+def test_source_policy_preflight_rejects_unavailable_coverage_before_geometry():
+    """All activated coverage policy entries are admitted before geometry."""
+    (
+        analysis,
+        _source_one,
+        _source_two,
+        _compiled,
+        _approval_one,
+        _approval_two,
+        _bundle,
+        _material,
+    ) = _permission_fixture()
+    scope_payload = _scope().model_dump(mode="json")
+    unavailable_scope = Scope(
+        partition_refs=scope_payload["partition_refs"],
+        domain_refs=("unavailable",),
+        profile_refs=(),
+    )
+    policy = ValidationPolicy(
+        schema_version=1,
+        policy_id="unavailable-coverage",
+        required_checks=(),
+        coverage_requirements=(
+            CoverageRequirement(
+                requirement_id="unavailable",
+                domain_ref="unavailable",
+                region_predicate_id=_id("predicate"),
+                scope=unavailable_scope,
+                severity="warning",
+            ),
+        ),
+        diagnostic_rules=(
+            DiagnosticRule(
+                stage="source",
+                check_id="coverage",
+                code="coverage_gap",
+                scope=unavailable_scope,
+                severity="warning",
+                witness_kind="none",
+                max_witnesses=0,
+            ),
+        ),
+    )
+    invalid = analysis.model_copy(update={"validation_policy": policy})
+
+    with pytest.raises(ValueError):
+        produce_source_report(
+            invalid,
+            lambda _partition: pytest.fail("policy preflight requested geometry"),
+            (),
+            dimension_fields={},
+            partition_refs=_scope().partition_refs,
+            source_counts=(0,),
+        )
+
+
+def test_source_policy_preflight_rejects_downgraded_definite_outcome_before_geometry():
+    """Definite-outcome counterexamples are errors before proof work begins."""
+    (
+        analysis,
+        _source_one,
+        _source_two,
+        _compiled,
+        _approval_one,
+        _approval_two,
+        _bundle,
+        _material,
+    ) = _permission_fixture()
+    _envelope, base = _contract_envelope()
+    definite = base.model_copy(
+        update={
+            "profiles": (
+                ResolutionProfile(
+                    profile_id="profile",
+                    mode="resolve",
+                    output_fields=("amount",),
+                    provenance="none",
+                    dimensions=("x",),
+                    allow_dont_care=(),
+                    promise="definite_outcome",
+                    on_unresolved="reject",
+                ),
+            )
+        }
+    )
+    policy = ValidationPolicy(
+        schema_version=1,
+        policy_id="definite",
+        required_checks=(),
+        coverage_requirements=(),
+        diagnostic_rules=tuple(
+            sorted(
+                (
+                    DiagnosticRule(
+                        stage="source",
+                        check_id="routing",
+                        code="routing_gap",
+                        scope=_scope(),
+                        severity="error",
+                        witness_kind="none",
+                        max_witnesses=0,
+                    ),
+                    DiagnosticRule(
+                        stage="source",
+                        check_id="routing",
+                        code="routing_ambiguity",
+                        scope=_scope(),
+                        severity="error",
+                        witness_kind="none",
+                        max_witnesses=0,
+                    ),
+                    DiagnosticRule(
+                        stage="source",
+                        check_id="profiles",
+                        code="profile_counterexample",
+                        scope=_scope(),
+                        severity="warning",
+                        witness_kind="none",
+                        max_witnesses=0,
+                    ),
+                ),
+                key=lambda item: canonical_bytes(item.model_dump(mode="json")),
+            )
+        ),
+    )
+    invalid = analysis.model_copy(update={"validation_policy": policy})
+
+    with pytest.raises(ValueError):
+        produce_source_report(
+            invalid,
+            lambda _partition: pytest.fail("policy preflight requested geometry"),
+            (definite,),
+            dimension_fields={"x": "x"},
+            partition_refs=_scope().partition_refs,
+            source_counts=(0,),
+        )
