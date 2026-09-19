@@ -179,6 +179,60 @@ class TestAccumulatorResult:
         ]
         assert result.candidate_lineage(candidate).to_dicts()[0]["source_id"] == uuid(1)
 
+    def test_exception_results_match_single_index_and_batch_analysis(self):
+        """Every supported apply path must carry its real normalized analysis."""
+        engine, lattice = _resolve_artifact(on_unresolved="reject")
+        index = engine.index([lattice])
+
+        with pytest.raises(InvalidContextError) as direct_invalid:
+            engine.apply(
+                lattice, {"x": "not-an-int"}, contract_id="client", profile_id="quote"
+            )
+        with pytest.raises(InvalidContextError) as indexed_invalid:
+            index.apply(
+                {"x": "not-an-int"}, contract_id="client", profile_id="quote"
+            )
+        with pytest.raises(UnresolvedContextError) as direct_rejected:
+            engine.apply(lattice, {}, contract_id="client", profile_id="quote")
+        with pytest.raises(UnresolvedContextError) as indexed_rejected:
+            index.apply({}, contract_id="client", profile_id="quote")
+
+        batch = index.apply_batch(
+            [
+                {"request_id": "invalid", "x": "not-an-int"},
+                {"request_id": "rejected"},
+            ],
+            contract_id="client",
+            profile_id="quote",
+            context_id_field="request_id",
+        )
+        with pytest.raises(InvalidContextError) as batch_invalid:
+            batch.for_context("invalid")
+        with pytest.raises(UnresolvedContextError) as batch_rejected:
+            batch.for_context("rejected")
+
+        for actual in (
+            indexed_invalid.value.result,
+            batch_invalid.value.result,
+        ):
+            assert actual.outcome == direct_invalid.value.result.outcome
+            assert actual.binding_id == direct_invalid.value.result.binding_id
+            assert actual.candidate_cells is None
+            assert actual.candidate_contributors is None
+
+        for actual in (
+            indexed_rejected.value.result,
+            batch_rejected.value.result,
+        ):
+            assert actual.outcome == direct_rejected.value.result.outcome
+            assert actual.binding_id == direct_rejected.value.result.binding_id
+            assert actual.candidate_cells.to_dicts() == (
+                direct_rejected.value.result.candidate_cells.to_dicts()
+            )
+            assert actual.candidate_contributors.to_dicts() == (
+                direct_rejected.value.result.candidate_contributors.to_dicts()
+            )
+
 
 class TestAccumulatorBatchResult:
     def test_records_outcomes_and_context_lookup_preserve_input_identity_and_order(

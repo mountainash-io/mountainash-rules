@@ -42,6 +42,17 @@ def test_canonical_bytes_and_content_id_match_uuid_native_vector():
     )
 
 
+def test_root_scalar_codecs_preserve_defaults_and_canonical_output():
+    """Consumer imports must expose the existing strict scalar-1 functions."""
+    encoded = rules.encode_scalar(7, "int")
+
+    assert encoded == {"type": "int", "value": "7"}
+    assert rules.decode_scalar(encoded) == 7
+    assert rules.canonical_bytes({"b": 2, "a": 1}) == b'{"a":1,"b":2}'
+    with pytest.raises(ValueError):
+        rules.encode_scalar(rules.UNKNOWN_NUMERIC, "int")
+
+
 def test_json_decoder_rejects_duplicate_keys_and_nonfinite_numbers():
     """Permitting ambiguous or non-JSON values would make hashes non-reproducible."""
     with pytest.raises(ValueError, match="Duplicate"):

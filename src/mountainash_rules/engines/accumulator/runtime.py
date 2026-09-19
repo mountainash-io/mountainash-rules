@@ -472,6 +472,7 @@ class EvaluationSession:
                         first.outputs[name],
                         outputs[name].data_type,
                         timezone=outputs[name].timezone,
+                        allow_reserved=True,
                     )
                     for name in profile.output_fields
                 }

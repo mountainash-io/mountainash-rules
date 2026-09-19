@@ -770,6 +770,9 @@ class TestBooleanAndR8Routing:
             with pytest.raises(rules.InvalidContextError) as error:
                 batch.for_context(context_id)
             assert error.value.outcome is batch.records[context_id] == expected
+            if context_id == "pre":
+                assert error.value.result.candidate_cells is None
+                assert error.value.result.candidate_contributors is None
 
 
 # ---------------------------------------------------------------------------
@@ -1236,6 +1239,52 @@ class TestNativeSnapshotRouting:
         )
         assert result.status == "candidates"
         assert result.candidate_cells.count_rows() == 0
+
+    def test_default_partition_restores_unknown_key_source_for_indexed_apply(
+        self, tmp_path
+    ):
+        """A source wildcard is authored UNKNOWN, not an unavailable context value."""
+        dimensions = [
+            rules.Dimension(
+                dimension_name="tenant",
+                data_type="str",
+                match_strategy="exact_key",
+                role=rules.DimensionRole.CONTEXT_KEY,
+            ),
+            rules.Dimension(dimension_name="region", match_strategy="exact"),
+        ]
+        contract = _candidate_contract(dimensions)
+        rows = [
+            {
+                "id": uuid(13),
+                "tenant": rules.UNKNOWN,
+                "region": "AU",
+                "margin": 13.0,
+            }
+        ]
+        kwargs = declarations(
+            dimensions,
+            [ROUTING_TOTAL],
+            contracts=[contract],
+            partition_keys=((None,),),
+        )
+        validation = gate(rows, kwargs)
+        engine = rules.AccumulatorEngine(
+            kwargs["metadata"], kwargs["aggregates"], limits=kwargs["limits"]
+        )
+        (default,) = engine.build_all(rows, validation=validation)
+
+        restored = _load_native(
+            _save_native(default, tmp_path / "default-source", kwargs["limits"]),
+            kwargs["limits"],
+        )
+        result = engine.index([restored]).apply(
+            {"tenant": "other", "region": "AU"},
+            contract_id="client",
+            profile_id="inspect",
+        )
+
+        assert _candidate_facts(result) == [(13.0, (uuid(13),))]
 
     def test_after_load_boolean_admission_and_mixed_batch_keep_sibling_parity(
         self, tmp_path

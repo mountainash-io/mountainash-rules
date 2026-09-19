@@ -27,12 +27,14 @@ from mountainash_rules.core.constants import (
     unknown_sentinel_for,
 )
 from mountainash_rules.core.codec import (
+    canonical_bytes,
     decode_validation_bundle,
     encode_validation_bundle,
     make_exact_envelope,
 )
 from mountainash_rules.core.contracts import (
     AnalysisInput,
+    CarriedResult,
     ContextContract,
     ContextField,
     ContractBinding,
@@ -61,6 +63,7 @@ from mountainash_rules.core.dimension import Dimension, DimensionsMetadata
 from mountainash_rules.core.hit_policy import HitPolicyViolationError, SelectionInfo
 from mountainash_rules.core.language import LanguageLimits, RegexOptions, StringLanguage
 from mountainash_rules.core.result import ExplainResult, RuleResult
+from mountainash_rules.core.scalar import decode_scalar, encode_scalar
 from mountainash_rules.engines.accumulator.aggregate import Aggregate, AggregateOp
 from mountainash_rules.engines.accumulator.analysis import (
     analyze_sources,
@@ -79,11 +82,15 @@ from mountainash_rules.engines.filter.engine import ExpressionRulesEngine
 __all__ = (
     "analyze_sources",
     "attach_warning_approvals",
+    "canonical_bytes",
+    "decode_scalar",
     "decode_validation_bundle",
+    "encode_scalar",
     "encode_validation_bundle",
     "make_exact_envelope",
     "validate_build_input",
     "AnalysisInput",
+    "CarriedResult",
     "ContextContract",
     "ContextField",
     "ContractBinding",

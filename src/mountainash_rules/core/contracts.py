@@ -384,7 +384,7 @@ class OutcomeRecord(_ExactModel):
         if info.field_name == "values":
             for output_name, scalar in copied.items():
                 _label(output_name, "outcome output name")
-                decode_scalar(scalar)
+                decode_scalar(scalar, allow_reserved=True)
         else:
             canonical_bytes(copied)
         return _freeze(copied)
@@ -450,8 +450,34 @@ class OutcomeRecord(_ExactModel):
         return self
 
 
+class CarriedResult(t.Protocol):
+    """Structural inspection surface retained by request-scoped exceptions."""
+
+    @property
+    def outcome(self) -> OutcomeRecord:
+        """Return the normalized outcome record."""
+
+    @property
+    def values(self) -> t.Mapping[str, t.Any] | None:
+        """Return decoded decision values when established."""
+
+    @property
+    def output_fields(self) -> tuple[str, ...]:
+        """Return requested logical output names in profile order."""
+
+    @property
+    def candidate_cells(self) -> t.Any | None:
+        """Return possible exact cells when analysis ran."""
+
+    @property
+    def candidate_contributors(self) -> t.Any | None:
+        """Return possible contributor edges when analysis ran."""
+
+
 class InvalidContextError(ValueError):
     """A single request failed declared-type/admission validation."""
+
+    result: CarriedResult | None
 
     def __init__(self, outcome: OutcomeRecord) -> None:
         if (
@@ -460,16 +486,20 @@ class InvalidContextError(ValueError):
         ):
             raise ValueError("InvalidContextError requires an invalid_context outcome")
         self.outcome = outcome
+        self.result = None
         super().__init__(f"Invalid context: {outcome.reason}")
 
 
 class UnresolvedContextError(ValueError):
     """A resolve profile rejected insufficient but otherwise valid context."""
 
+    result: CarriedResult | None
+
     def __init__(self, outcome: OutcomeRecord) -> None:
         if not isinstance(outcome, OutcomeRecord) or outcome.status != "rejected":
             raise ValueError("UnresolvedContextError requires a rejected outcome")
         self.outcome = outcome
+        self.result = None
         super().__init__(f"Unresolved context: {outcome.reason}")
 
 

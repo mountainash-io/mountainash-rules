@@ -67,6 +67,43 @@ def test_bound_build_exposes_semantic_cells_and_requested_decision():
     assert result.candidate_lineage(result.cell_id).to_dicts() == expected_lineage
     assert lattice.lineage(result.cell_id).to_dicts() == expected_lineage
 
+def test_marker_valued_output_survives_decision_and_native_round_trip(tmp_path):
+    """Output marker admission must not turn the same context marker concrete."""
+    rows = [row(1, 0, 20, rules.UNKNOWN_NUMERIC)]
+    kwargs, validated = build_input(
+        rows,
+        contracts=[contract(promise="definite_outcome", required=True, masked=False)],
+    )
+    engine = rules.AccumulatorEngine(
+        kwargs["metadata"], kwargs["aggregates"], limits=limits()
+    )
+    lattice = engine.build(rows, validation=validated)
+
+    result = engine.apply(lattice, {"x": 5}, contract_id="client", profile_id="quote")
+
+    assert result.status == "decision"
+    assert result.outcome.values == {
+        "pricing.total": {"type": "int", "value": "-999999999"}
+    }
+    assert result.values == {"pricing.total": rules.UNKNOWN_NUMERIC}
+
+    saved = lattice.save(tmp_path / "marker", limits=limits())
+    restored = rules.Lattice.load(saved, limits=limits())
+    restored_result = engine.apply(
+        restored, {"x": 5}, contract_id="client", profile_id="quote"
+    )
+    assert restored_result.outcome.values == result.outcome.values
+    assert restored_result.values == result.values
+
+    with pytest.raises(rules.InvalidContextError) as failure:
+        engine.apply(
+            restored,
+            {"x": rules.UNKNOWN_NUMERIC},
+            contract_id="client",
+            profile_id="quote",
+        )
+    assert failure.value.outcome.reason == "forbidden_projection"
+
 
 def test_build_rechecks_actual_source_content():
     rows = [row(1)]
