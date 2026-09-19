@@ -16,10 +16,12 @@ from mountainash_rules.core.contracts import (
     ExactLimits,
     ExactResourceError,
     Finding,
+    InvalidContextError,
     OperationBudget,
     OutcomeRecord,
     ReportCheck,
     Scope,
+    UnresolvedContextError,
     ValidationPolicy,
     ValidationReport,
     ValidationBundle,
@@ -267,6 +269,50 @@ def test_pre_routing_invalid_outcome_retains_requested_labels_without_binding():
     assert outcome.issues[0].field == "region"
     with pytest.raises(ValueError):
         OutcomeRecord.model_validate({**outcome.model_dump(), "contract_id": None})
+
+
+def test_bare_context_exceptions_expose_a_null_carried_result():
+    """Bare normalized outcomes must not fabricate candidate analysis."""
+    invalid = OutcomeRecord(
+        status="invalid_context",
+        reason="missing_required",
+        binding_id=None,
+        contract_id="pricing",
+        profile_id="lookup",
+        values=None,
+        cell_id=None,
+        contributor_ids=None,
+        may_have_no_match=None,
+        observations=None,
+        issues=(
+            {
+                "field": "region",
+                "dimension": "region",
+                "code": "missing_required",
+                "message": "A concrete partition key is required",
+            },
+        ),
+    )
+    rejected = OutcomeRecord(
+        status="rejected",
+        reason="insufficient_context",
+        binding_id=_id("binding"),
+        contract_id="pricing",
+        profile_id="lookup",
+        values=None,
+        cell_id=None,
+        contributor_ids=None,
+        may_have_no_match=True,
+        observations=None,
+        issues=(),
+    )
+
+    for exception, outcome in (
+        (InvalidContextError(invalid), invalid),
+        (UnresolvedContextError(rejected), rejected),
+    ):
+        assert exception.outcome is outcome
+        assert exception.result is None
 
 
 def test_scope_and_policy_reject_noncanonical_semantic_sets():

@@ -527,9 +527,11 @@ def _restore_sources(
             if set(values) != set(_source_columns(dim)):
                 raise ValueError("Source origin consumes different source columns")
             authored = {
-                name: [decode_scalar(dict(item)) for item in value]
+                name: [
+                    decode_scalar(dict(item), allow_reserved=True) for item in value
+                ]
                 if isinstance(value, (list, tuple))
-                else decode_scalar(dict(value))
+                else decode_scalar(dict(value), allow_reserved=True)
                 for name, value in values.items()
             }
             lowered = graph.lower_dimension(dim, authored, regex_options=regex_options)

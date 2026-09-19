@@ -141,7 +141,10 @@ class AccumulatorResult:
             else tuple(encoded)
         )
         return MappingProxyType(
-            {field: decode_scalar(dict(encoded[field])) for field in ordered}
+            {
+                field: decode_scalar(dict(encoded[field]), allow_reserved=True)
+                for field in ordered
+            }
         )
 
     @property

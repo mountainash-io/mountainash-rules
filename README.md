@@ -232,6 +232,22 @@ aggregates require `output_name`, `data_type`, and
 `numeric_semantics="numeric-1"` together; the output name is qualified (for
 example, `pricing.total`). There is no package default for `ExactLimits`.
 
+### Exact scalar codecs
+
+Consumers import `encode_scalar`, `decode_scalar`, and `canonical_bytes` from
+the package root. `encode_scalar(value, data_type, *, timezone=None,
+context=False, allow_null=False, allow_reserved=False)` and
+`decode_scalar(payload, *, allow_null=False, allow_reserved=False)` admit one
+strict scalar-1 value; their defaults continue to reject nulls and reserved
+dimension markers. `canonical_bytes(payload)` returns canonical-json-1 bytes
+for an already admitted finite JSON mapping. It is not an untrusted-body parser
+or a budgeted materializer: callers reserve request/response capacity before
+constructing the value they pass to it.
+
+Decision output values may equal reserved dimension markers when their declared
+aggregate type admits them. This output rule does not change context admission:
+supplied markers remain unavailable rather than concrete business inputs.
+
 The source gate is deliberately a real workflow, not a constructor shortcut:
 
 1. Call `analyze_sources(rows, ...)` with the application's complete
@@ -308,6 +324,13 @@ outcome does not. Candidate-mode profiles expose `candidate_cells` and
 `candidate_contributors` without promoting them to a decision. `lineage`
 describes definite requested-output contributors only; use
 `candidate_lineage(cell_id)` for a candidate cell.
+
+`InvalidContextError` and `UnresolvedContextError` retain `.outcome` and a
+typed `.result`. Errors raised by direct, indexed, and indexed-batch
+`for_context()` apply paths carry the originating `AccumulatorResult`, including
+candidate relations when analysis ran. Constructing either exception directly
+from a valid `OutcomeRecord` leaves `.result` as `None`; it does not fabricate
+candidate analysis.
 
 `Lattice.save(directory, limits=limits)` and
 `Lattice.load(directory, limits=limits)` are bounded native snapshot
