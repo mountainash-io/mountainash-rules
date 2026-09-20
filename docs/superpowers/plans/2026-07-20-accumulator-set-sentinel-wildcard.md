@@ -1,6 +1,8 @@
 # Accumulator Set-Wildcard In-Band Sentinel — Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **Plan disposition — 2026-09-20: RETIRED LEGACY IMPLEMENTATION PRESCRIPTION.** The old frontier/build recipe below is historical, not a plan for the new accumulator. This notice does not certify task-by-task delivery or retire unaffected standalone-filter behavior; current accepted semantic contracts govern reuse.
+>
+> **Current route:** the [active accumulator design meta-plan](../../../../mountainash-central/04.planning/mountainash-rules/superpowers/plans/2026-09-20-accumulator-design-meta-plan.md). Do not re-execute these steps as replacement work. Retiring this document does not claim that shared sentinel helpers or existing runtime code have been removed.
 
 **Goal:** Represent a set-dimension wildcard as the in-band list `[unknown_sentinel_for(dtype)]` (never null) across the filter engine and the accumulator build, so `_frontier_filter` dedupes correctly and `apply` returns correct survivors/aggregates.
 

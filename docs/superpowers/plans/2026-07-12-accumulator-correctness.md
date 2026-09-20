@@ -1,6 +1,8 @@
 # Accumulator Correctness Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **Plan disposition — 2026-09-20: COMPLETED LEGACY CORRECTION — HISTORICAL PLAN.** The [delivery record](../../../../mountainash-central/04.planning/mountainash-rules/a.backlog/accumulator-correctness-gaps.md) records completion on 2026-07-12 (`685c323..ef615ad`). Preserve its correctness obligations and evidence; the prime/frontier execution recipe is not the replacement architecture.
+>
+> **Current route:** the [active accumulator design meta-plan](../../../../mountainash-central/04.planning/mountainash-rules/superpowers/plans/2026-09-20-accumulator-design-meta-plan.md). Do not re-execute the historical steps below. Retiring this plan does not claim runtime removal or withdraw accepted range/overflow behavior.
 
 **Goal:** Fix the accumulator's three verified correctness defects — unchecked prime-product overflow, half-open-range incompatibility, ignored inclusivity flags — plus the min-only NA flags, per `docs/superpowers/specs/2026-07-12-accumulator-correctness-design.md`.
 
