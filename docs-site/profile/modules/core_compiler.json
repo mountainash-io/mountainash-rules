@@ -33,7 +33,7 @@
     "mountainash_rules.__init__"
   ],
   "extension_points": [
-    "Adding a MatchStrategy implements a new _compile_<strategy> method here (CLAUDE.md recipe)."
+    "Adding a MatchStrategy implements a new _compile_<strategy> method here (AGENTS.md recipe)."
   ],
   "lifecycle_notes": [
     "EXACT_KEY strategy added (_compile_exact_key: rule-side-wildcard-only exact match for partition routing).",
@@ -46,7 +46,7 @@
     "tests/core/test_compiler.py"
   ],
   "risks": [
-    "_compile_regex_per_row carries a '# allow:' backend-purity exemption (Polars-native fallback pending upstream regex_contains column-pattern support in mountainash) \u2014 documented in CLAUDE.md."
+    "_compile_regex_per_row carries a '# allow:' backend-purity exemption (Polars-native fallback pending upstream regex_contains column-pattern support in mountainash) \u2014 documented in AGENTS.md."
   ],
   "open_questions": [],
   "evidence": [

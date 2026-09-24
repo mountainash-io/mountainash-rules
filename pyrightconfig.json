@@ -9,7 +9,6 @@
     "**/build",
     "**/dist",
     "**/node_modules",
-    "docs/superpowers",
     "tests/deprecated",
   ],
   "extraPaths": ["src"],

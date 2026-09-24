@@ -93,12 +93,13 @@ sources, selectively, where they remain accurate against the selected current so
   usable for the `users` track.
 - `docs/user-quickstart.md` — longer worked walkthroughs for both engines (Parts 1 and 2), including
   partitioned-lattice usage; strong candidate for `users`-track worked examples.
-- `CLAUDE.md` — "Architecture", "Filter engine pipeline", "Accumulator engine", "Backend purity (ENFORCED)"
+- `AGENTS.md` — "Architecture", "Filter engine pipeline", "Accumulator engine", "Backend purity (ENFORCED)"
   sections are the most concise existing statement of `maintainers`/`backend-architecture` material.
-- `docs/superpowers/specs/*.md` (9 design docs) and matching `docs/superpowers/plans/*.md` — design
-  rationale for hit policies, batch evaluation, accumulator correctness, lattice persistence, ternary
-  partition routing, and set-sentinel wildcards. Useful as maintainer/contributor-depth source material and
-  already cited as `recommended_docs`/`evidence` on the relevant profile concepts.
+- `mountainash-central/04.planning/mountainash-rules/superpowers/specs/*.md` (9 design docs) and matching
+  `.../superpowers/plans/*.md` — design rationale for hit policies, batch evaluation, accumulator
+  correctness, lattice persistence, ternary partition routing, and set-sentinel wildcards. Useful as
+  maintainer/contributor-depth source material and already cited as `recommended_docs`/`evidence` on the
+  relevant profile concepts.
 - `CONTRIBUTING.md` — branching/PR/review process; relevant only if a contributor-facing appendix or
   section is confirmed.
 - Existing chapter prose (`docs-site/site/docs/chapters/*/index.md`) — candidate reuse material.

@@ -42,7 +42,7 @@
     "Renamed/relocated from top-level accumulator_engine.py to engines/accumulator/engine.py.",
     "Apply-phase caching added: memoised filter engines and LatticeIndex per lattice (WeakKeyDictionary).",
     "Ternary + specificity partition routing via an embedded meta-engine added for CONTEXT_KEY dimensions (feature/ternary-partition-routing, PR #48/#49) \u2014 NOT_SET fill for missing/null partition-key fields, EXACT_KEY match strategy powers the routing.",
-    "Each build level is materialised via relation(...).collect() \u2014 CLAUDE.md warns against lazy re-chaining (exponential plan blow-up)."
+    "Each build level is materialised via relation(...).collect() \u2014 AGENTS.md warns against lazy re-chaining (exponential plan blow-up)."
   ],
   "documentation_hooks": [],
   "examples": [],

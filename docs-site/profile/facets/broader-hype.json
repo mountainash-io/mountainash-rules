@@ -61,7 +61,7 @@
       ],
       "recommended_docs": [
         "README.md#accumulator-engine",
-        "docs/superpowers/specs/2026-07-16-lattice-snapshot-save-load-design.md"
+        "mountainash-central/04.planning/mountainash-rules/superpowers/specs/2026-07-16-lattice-snapshot-save-load-design.md"
       ],
       "evidence": [
         {
@@ -71,7 +71,7 @@
         },
         {
           "kind": "doc",
-          "path": "CLAUDE.md",
+          "path": "AGENTS.md",
           "detail": "'Lattice.save(dir) / Lattice.load(dir) \u2014 snapshot persistence'"
         }
       ]

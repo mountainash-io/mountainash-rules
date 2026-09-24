@@ -54,7 +54,7 @@
   "evidence": [
     {
       "kind": "doc",
-      "path": "CLAUDE.md",
+      "path": "AGENTS.md",
       "detail": "'Hit policies (hit_policy.py, constants.HitPolicy)' section"
     }
   ],
