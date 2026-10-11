@@ -275,8 +275,8 @@ def test_metadata_rejects_strategy_data_type_pairs_rejected_by_dimension():
             validate_envelope(_envelope("metadata", payload), "metadata")
 
 
-def test_aggregate_transport_allows_reserved_scalars_but_predicates_reject_them():
-    """Aggregate carriers preserve reserved spellings without widening predicate facts."""
+def test_aggregate_transport_allows_reserved_scalars():
+    """Contribution/output transport does not reinterpret marker-valued amounts."""
     reserved = {"type": "int", "value": "-999999999"}
     source_content = {
         "schema_version": 1,
@@ -315,13 +315,6 @@ def test_aggregate_transport_allows_reserved_scalars_but_predicates_reject_them(
         validate_envelope(_envelope("artifact", artifact), "artifact")["payload"]
         == artifact
     )
-
-    predicate = {
-        "schema_version": 1,
-        "node": {"op": "eq", "field": "amount", "value": reserved},
-    }
-    with pytest.raises(ValueError, match="Invalid scalar"):
-        validate_envelope(_envelope("predicate", predicate), "predicate")
 
 
 def test_frozen_predicate_payload_has_the_same_canonical_identity():

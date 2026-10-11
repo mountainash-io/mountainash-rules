@@ -56,7 +56,7 @@ def typed_metadata() -> DimensionsMetadata:
             range_min_field="amount_min",
             range_max_field="amount_max",
         ),
-        Dimension(dimension_name="score", match_strategy=MatchStrategy.GREATER_THAN, data_type=float),
+        Dimension(dimension_name="score", match_strategy=MatchStrategy.EXACT, data_type=float),
     ])
 
 

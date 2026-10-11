@@ -331,16 +331,44 @@ Dimension(
 Dimension(
     dimension_name="score",
     match_strategy=MatchStrategy.GREATER_THAN,
-    data_type=float,
+    data_type=int,
 )
 
 # LESS_THAN: context value < rule threshold
 Dimension(
     dimension_name="risk",
     match_strategy=MatchStrategy.LESS_THAN,
-    data_type=float,
+    data_type=int,
 )
 ```
+
+#### Replacement authoring metadata
+
+Fractional ordered declarations use `data_type="decimal"`, a Mountainash
+`DecimalDtype(precision, scale)` and explicit `rounding="half_to_even"` or
+`"half_away_from_zero"`. Ordered precision is 1–16 digits; scale is 0–precision.
+FLOAT RANGE/GREATER_THAN/LESS_THAN declarations are no longer accepted.
+Integer and temporal declarations remain supported.
+
+Metadata JSON/YAML preserves `numeric_dtype` as the Mountainash numeric descriptor
+(`kind`, `precision`, `scale`). A dimension's `wildcard_values` retains original
+scalar types: no declarations (`[]`) differs from an explicit null marker
+(`[None]`), and decimal markers are not rounded during serialization. Optional
+rule mappings are `rule_wildcard_field`, `range_min_unbounded_field` and
+`range_max_unbounded_field`.
+
+Replacement metadata also carries `uuid_field`, `partition_field`,
+`outcome_scope_field`/`outcome_scopes`, default-scope `aggregates`, source `domain`,
+`context_domains`, predicate-1 `domain_nodes`, retained `context_contracts` and
+optional `policy`. Declared scope names and resolved output names are dot-free
+for the `<scope>.<output>` wide view. The new aggregate model remains internal
+until the coordinated public cutover; existing public `Aggregate` is still the
+old accumulator model.
+
+This checkpoint provides declaration validation and transport, not decimal/state
+execution in the filter or replacement engine. Do not use the new metadata fields
+as evidence that those runtime paths have been qualified.
+
 
 ### String strategies
 

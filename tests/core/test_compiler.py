@@ -80,16 +80,16 @@ class TestRangeCompilation:
         dim = Dimension(
             dimension_name="amount",
             match_strategy=MatchStrategy.RANGE,
-            data_type=float,
+            data_type=int,
             range_min_field="amount_min",
             range_max_field="amount_max",
         )
         expr = compiler.compile_dimension(dim)
 
         df = pl.DataFrame({
-            "amount_min": [0.0, 100.0, 200.0],
-            "amount_max": [99.0, 199.0, 299.0],
-            f"{CTX_PREFIX}amount": [50.0, 50.0, 50.0],
+            "amount_min": [0, 100, 200],
+            "amount_max": [99, 199, 299],
+            f"{CTX_PREFIX}amount": [50, 50, 50],
         })
         result = df.with_columns(expr.name.alias("__t_amount").compile(df, booleanizer=None))
         values = result["__t_amount"].to_list()

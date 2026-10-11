@@ -19,7 +19,39 @@ if t.TYPE_CHECKING:
         ValidationBundle,
     )
 
-from pydantic import BaseModel
+from mountainash import DecimalDtype
+from mountainash.typespec import FieldSpec, TypeSpec, UniversalType
+from pydantic import BaseModel, BeforeValidator, PlainSerializer
+
+
+def encode_numeric_dtype(value: DecimalDtype) -> dict[str, t.Any]:
+    """Use Mountainash's portable numeric descriptor at metadata boundaries."""
+    descriptor = TypeSpec(
+        fields=[FieldSpec(name="value", type=UniversalType.NUMBER, dtype=value)]
+    ).to_frictionless()
+    return descriptor["fields"][0]["x-mountainash"]["dtype"]
+
+
+def decode_numeric_dtype(value: t.Any) -> DecimalDtype:
+    """Decode the same descriptor without inferring a dtype from data."""
+    if isinstance(value, DecimalDtype):
+        return value
+    descriptor = {
+        "fields": [{
+            "name": "value", "type": "number", "x-mountainash": {"dtype": value},
+        }]
+    }
+    dtype = TypeSpec.from_frictionless(descriptor).fields[0].dtype
+    if dtype is None:
+        raise ValueError("numeric_dtype requires a decimal descriptor")
+    return dtype
+
+
+NumericDtype = t.Annotated[
+    DecimalDtype,
+    BeforeValidator(decode_numeric_dtype),
+    PlainSerializer(encode_numeric_dtype, when_used="json"),
+]
 
 _COUNTER_MAX = (1 << 63) - 1
 _ID_RE = re.compile(r"^(?P<kind>[a-z][a-z-]*):1:(?P<digest>[0-9a-f]{64})$")
@@ -829,13 +861,13 @@ def _predicate_node(node: t.Any) -> None:
         _typed_id(node["arg"], "predicate", "predicate arg")
     elif op == "eq":
         _string(node["field"], "field")
-        _scalar(node["value"])
+        _scalar(node["value"], allow_reserved=True)
     elif op == "in":
         _string(node["field"], "field")
         if not isinstance(node["values"], list) or len(node["values"]) < 2:
             _fail("predicate in values must contain at least two values")
         for item in node["values"]:
-            _scalar(item)
+            _scalar(item, allow_reserved=True)
         encoded = tuple(canonical_bytes({"value": item}) for item in node["values"])
         if encoded != tuple(sorted(encoded)):
             _fail("predicate in values must be canonical-sorted")
@@ -852,9 +884,9 @@ def _predicate_node(node: t.Any) -> None:
         if node["upper"] is None and node["upper_closed"]:
             _fail("unbounded interval upper must be open")
         if node["lower"] is not None:
-            _scalar(node["lower"])
+            _scalar(node["lower"], allow_reserved=True)
         if node["upper"] is not None:
-            _scalar(node["upper"])
+            _scalar(node["upper"], allow_reserved=True)
     elif op == "language":
         _string(node["field"], "field")
         _typed_id(node["language_id"], "language", "language_id")
@@ -1396,27 +1428,12 @@ def _validate_payload(
             _fail("domain fields must be an array")
         names: list[str] = []
         for field in payload["fields"]:
-            permitted = {"name", "data_type", "timezone"}
-            if not isinstance(field, dict) or set(field) not in (
-                {"name", "data_type"},
-                permitted,
-            ):
+            from mountainash_rules.core.contracts import DomainField
+
+            if not isinstance(field, dict):
                 _fail("Invalid domain field")
-            names.append(_string(field["name"], "domain field name"))
-            if field["data_type"] not in {
-                "str",
-                "int",
-                "float",
-                "bool",
-                "date",
-                "datetime",
-            }:
-                _fail("Unsupported domain field type")
-            if field["data_type"] == "datetime":
-                if field.get("timezone") not in {"naive", "utc"}:
-                    _fail("datetime domain field requires timezone")
-            elif "timezone" in field:
-                _fail("only datetime domain fields may include timezone")
+            declared = DomainField.model_validate(field)
+            names.append(declared.name)
         if names != sorted(names) or len(names) != len(set(names)):
             _fail("domain fields must be sorted and unique")
     elif kind == "metadata":
