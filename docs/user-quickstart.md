@@ -25,13 +25,11 @@ Resolve the configured `mountainash` dependency at delivered merge `b9c0ab4ab638
 
 Rules live in a DataFrame. Each row is a rule; each column is either a rule name, a dimension column, or metadata. The engine evaluates a **context** (a dict or Pydantic model) against every rule in one vectorised pass and returns surviving rules ranked by **specificity** — how many dimensions the rule constrains explicitly.
 
-Wildcards are sentinel values that let a rule skip a dimension entirely:
-
-| Data type | Wildcard sentinel |
-|-----------|------------------|
-| `str` | `"<NA>"` |
-| `int` / `float` | `-999999999` |
-
+Wildcards are explicitly declared per dimension with `wildcard_values`, or mapped
+from Boolean rule-state columns. There are no implicit sentinel values:
+`"<NA>"`, `"<NOT_SET>"`, `-999999999` and `-999999998` are concrete values unless
+that dimension declares them as markers. Marker comparison preserves the original
+type and occurs before numeric conversion.
 A wildcard dimension scores 0 (unknown) in ternary logic. The rule still survives, but ranks lower than a rule that explicitly matched that dimension.
 
 ---
@@ -50,7 +48,7 @@ rules = pl.DataFrame({
 })
 ```
 
-`"<NA>"` and `-999999999` are the wildcard sentinels. A rule with a wildcard on a dimension matches any context value for that dimension.
+This example declares `"<NA>"` and `-999999999` as markers below. Without those declarations, they remain ordinary rule values.
 
 ---
 
@@ -64,16 +62,19 @@ metadata = DimensionsMetadata(dimensions=[
         dimension_name="region",
         match_strategy=MatchStrategy.EXACT,
         data_type=str,
+        wildcard_values=["<NA>"],
     ),
     Dimension(
         dimension_name="tier",
         match_strategy=MatchStrategy.EXACT,
         data_type=str,
+        wildcard_values=["<NA>"],
     ),
     Dimension(
         dimension_name="spend",
         match_strategy=MatchStrategy.RANGE,
         data_type=int,
+        wildcard_values=[-999999999],
         range_min_field="spend_min",
         range_max_field="spend_max",
     ),
@@ -265,7 +266,7 @@ result = engine.evaluate(context, include_observability=False)
 
 ### Context with missing fields
 
-For metadata-backed evaluation, an absent field or `None` binds to the datatype's NOT_SET sentinel; Boolean absence uses null instead of a string marker. Single, batch and chunked evaluation use the same matching semantics. Explicit UNKNOWN and NOT_SET markers remain distinct stored values.
+Metadata-backed evaluation keeps availability separate from the typed comparison value. An absent field, null or configured context marker is unavailable; it is not replaced by a NOT_SET sentinel. Original omission and supplied-null provenance remain distinct. Single, batch and chunked evaluation share these semantics. In a relation, a present column is supplied for every row, including its null cells.
 
 Boolean dimensions default to `BooleanCoercion.NONE` (`0`), admitting only semantic `True`/`False` plus absence. The standalone filter supports these additional input domains:
 
@@ -298,11 +299,11 @@ Classification never chains through another domain: numeric `2` is true with `NU
 
 Semantic scalars include Python `bool` and NumPy `bool_`. Numeric flags admit Python/NumPy integers and floats, not Decimal, complex, bytes, or custom truthiness objects. Recognized backend nulls remain absent; concrete NaN/infinity is invalid. Rules sees values after Pydantic `model_dump` or dataframe ingestion and cannot recover types already changed by the caller.
 
-Ordinary comparisons and string predicates treat unavailable context as ternary 0: the rule may survive, but that dimension earns no specificity. In particular, PREFIX, SUFFIX, CONTAINS and per-row REGEX never match the spelling of a missing-value marker.
+Ordinary comparisons and string predicates treat unavailable context as ternary 0: the rule may survive, but that dimension earns no specificity. A former sentinel spelling is concrete when it is not declared as a marker, so it can match an ordinary string predicate.
 
 Strict strategies differ: `CONTEXT_REGEX` rejects unavailable context with -1, even when its pattern would match `<NOT_SET>` or empty text. A concrete empty string is tested against the pattern normally. `EXACT_KEY` accepts only authored rule-side wildcards when context is unavailable; concrete partition keys do not match missing input. Unknown in another dimension never rescues a known non-match.
 
-The expressions-only constructor has no datatype metadata and retains string NOT_SET binding; custom expressions own its interpretation.
+The expressions-only constructor has no datatype metadata. It binds missing inputs as null under the existing `__ctx_<name>` column names; custom expressions own their interpretation.
 
 ```python
 # Context missing 'tier' — this ordinary EXACT dimension cannot eliminate rules
@@ -357,6 +358,37 @@ scalar types: no declarations (`[]`) differs from an explicit null marker
 rule mappings are `rule_wildcard_field`, `range_min_unbounded_field` and
 `range_max_unbounded_field`.
 
+Mapped Boolean flags are authoritative: `True` makes the associated payload
+unused, including an otherwise invalid payload. Flags must be nonnull Booleans;
+`False` combined with a declared marker is inconsistent authoring. RANGE endpoints
+have independent unbounded flags. With no flags, declared markers determine state.
+
+The filter converts admitted Decimal values once before comparing them. Native
+integers, finite Decimal values representable with at most 38 source digits, and
+plain ASCII decimal text are accepted; floating-point values, exponent notation,
+whitespace and overflow are rejected.
+
+```python
+from decimal import Decimal
+from mountainash import DecimalDtype
+
+decimal_rules = pl.DataFrame({
+    "rule": ["singleton", "upper"],
+    "lo": ["0.004", "0.010"],
+    "hi": ["0.004", "0.020"],
+})
+decimal_metadata = DimensionsMetadata(dimensions=[Dimension(
+    dimension_name="amount", context_field="quoted",
+    match_strategy="range", data_type="decimal",
+    numeric_dtype=DecimalDtype(10, 3), rounding="half_to_even",
+    range_min_field="lo", range_max_field="hi",
+)])
+decimal_engine = ExpressionRulesEngine(decimal_rules, decimal_metadata)
+decimal_engine.evaluate({"quoted": Decimal("0.00449")})  # singleton
+decimal_engine.evaluate({"quoted": Decimal("0.00451")})  # no survivor
+decimal_engine.evaluate({"quoted": Decimal("0.01950")})  # upper
+```
+
 Replacement metadata also carries `uuid_field`, `partition_field`,
 `outcome_scope_field`/`outcome_scopes`, default-scope `aggregates`, source `domain`,
 `context_domains`, predicate-1 `domain_nodes`, retained `context_contracts` and
@@ -365,9 +397,10 @@ for the `<scope>.<output>` wide view. The new aggregate model remains internal
 until the coordinated public cutover; existing public `Aggregate` is still the
 old accumulator model.
 
-This checkpoint provides declaration validation and transport, not decimal/state
-execution in the filter or replacement engine. Do not use the new metadata fields
-as evidence that those runtime paths have been qualified.
+The shared filter Decimal/state paths have executable Polars and Ibis-DuckDB
+coverage. The replacement accumulator remains internal and is not yet a completed
+runtime. Per-row REGEX on the filter currently has an upstream projection-schema
+blocker tracked as `mountainash-io/mountainash#364`; no local bypass is installed.
 
 
 ### String strategies
@@ -446,7 +479,11 @@ Dimension(
 )
 ```
 
-> **Backend note:** SET_MEMBERSHIP and SET_EXCLUSION use mountainash's backend-agnostic `list.t_contains()` API, preserving typed unknown-context sentinels. Use Polars or Ibis-DuckDB for engine evaluation. Pandas/Narwhals reject column-valued needles, SQLite has no list column type, and Ibis-Polars cannot execute engine row indexing. See [backend support](../README.md#backend-support).
+An empty list is concrete: membership matches nothing and exclusion excludes
+nothing. A singleton declared marker represents a wildcard; a mixed marker/value
+list is invalid unless a mapped wildcard flag makes the payload unused.
+
+> **Backend note:** SET_MEMBERSHIP and SET_EXCLUSION use mountainash's native list membership expressions with separate availability state. Use Polars or Ibis-DuckDB for engine evaluation. Pandas/Narwhals reject column-valued needles, SQLite has no list column type, and Ibis-Polars cannot execute engine row indexing. See [backend support](../README.md#backend-support).
 
 ---
 

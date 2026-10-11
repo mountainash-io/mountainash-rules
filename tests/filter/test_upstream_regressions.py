@@ -21,6 +21,7 @@ from mountainash_rules.core.constants import (
     MatchStrategy,
 )
 from mountainash_rules.core.dimension import Dimension, DimensionsMetadata
+from tests.conftest import bind_compiler_inputs
 
 
 class TestNarwhalsDuplicateLiteralInWithColumns:
@@ -35,39 +36,45 @@ class TestNarwhalsDuplicateLiteralInWithColumns:
     def test_batched_compiled_ternary_expressions_on_narwhals_pandas(self):
         """Compiled EXACT + RANGE dim expressions batched in one with_columns."""
         compiler = DimensionCompiler()
-        metadata = DimensionsMetadata(dimensions=[
-            Dimension(
-                dimension_name="region",
-                match_strategy=MatchStrategy.EXACT,
-                data_type=str,
-            ),
-            Dimension(
-                dimension_name="amount",
-                match_strategy=MatchStrategy.RANGE,
-                data_type=int,
-                range_min_field="amount_min",
-                range_max_field="amount_max",
-            ),
-        ])
+        metadata = DimensionsMetadata(
+            dimensions=[
+                Dimension(
+                    dimension_name="region",
+                    match_strategy=MatchStrategy.EXACT,
+                    data_type=str,
+                    wildcard_values=[None, "<NA>", "<NOT_SET>"],
+                ),
+                Dimension(
+                    dimension_name="amount",
+                    match_strategy=MatchStrategy.RANGE,
+                    data_type=int,
+                    wildcard_values=[None, -999999999, -999999998],
+                    range_min_field="amount_min",
+                    range_max_field="amount_max",
+                ),
+            ]
+        )
         expressions = compiler.compile_dimensions(metadata)
 
-        df = pd.DataFrame({
-            "rule_name": ["specific", "general"],
-            "region": ["AU", UNKNOWN],
-            "amount_min": [0, UNKNOWN_NUMERIC],
-            "amount_max": [100, UNKNOWN_NUMERIC],
-        })
+        df = pd.DataFrame(
+            {
+                "rule_name": ["specific", "general"],
+                "region": ["AU", UNKNOWN],
+                "amount_min": [0, UNKNOWN_NUMERIC],
+                "amount_max": [100, UNKNOWN_NUMERIC],
+            }
+        )
 
         rel = relation(df)
         rel = rel.with_columns(
             ma.lit("AU").alias(f"{CTX_PREFIX}region"),
             ma.lit(50).alias(f"{CTX_PREFIX}amount"),
         )
+        rel = bind_compiler_inputs(rel, metadata.dimensions)
 
         # This is the pattern the engine works around: batched dim columns
         dim_columns = [
-            expressions[d].name.alias(f"__t_{d}")
-            for d in ["region", "amount"]
+            expressions[d].name.alias(f"__t_{d}") for d in ["region", "amount"]
         ]
         rel = rel.with_columns(*dim_columns)
 

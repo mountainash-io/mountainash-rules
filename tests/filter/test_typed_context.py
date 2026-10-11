@@ -25,7 +25,7 @@ from mountainash_rules import (
     UNKNOWN,
 )
 from mountainash_rules.core.constants import not_set_sentinel_for, unknown_sentinel_for
-from tests.conftest import build_backend_df
+from tests.conftest import build_backend_df, bind_compiler_inputs
 
 
 def _scores(frame):
@@ -60,6 +60,7 @@ def test_boolean_truth_table_across_entry_points(backend_name, strategy):
                     rule_field="flag",
                     context_field="active",
                     data_type=DataType.BOOL,
+                    wildcard_values=[None],
                     match_strategy=strategy,
                 ),
             ]
@@ -128,6 +129,7 @@ def test_boolean_invalid_concrete_rejected_across_entry_points(
                     rule_field="flag",
                     context_field="active",
                     data_type=DataType.BOOL,
+                    wildcard_values=[None],
                     match_strategy=strategy,
                 ),
             ]
@@ -202,7 +204,9 @@ def test_ordinary_string_sentinels_never_earn_specificity(
         DimensionsMetadata(
             dimensions=[
                 Dimension(
-                    dimension_name="value", match_strategy=MatchStrategy(strategy)
+                    dimension_name="value",
+                    match_strategy=MatchStrategy(strategy),
+                    wildcard_values=[None, "<NA>", "<NOT_SET>"],
                 ),
             ]
         ),
@@ -245,7 +249,9 @@ def test_ordinary_string_sentinels_never_earn_specificity(
             DimensionsMetadata(
                 dimensions=[
                     Dimension(
-                        dimension_name="value", match_strategy=MatchStrategy.REGEX
+                        dimension_name="value",
+                        match_strategy=MatchStrategy.REGEX,
+                        wildcard_values=[None, "<NA>", "<NOT_SET>"],
                     ),
                 ]
             ),
@@ -266,6 +272,7 @@ def test_context_regex_requires_concrete_input(backend_name, pattern):
                     dimension_name="value",
                     match_strategy=MatchStrategy.CONTEXT_REGEX,
                     regex_pattern=pattern,
+                    wildcard_values=[None, UNKNOWN, NOT_SET],
                 ),
             ]
         ),
@@ -312,9 +319,12 @@ def test_exact_key_missing_marker_equality_is_not_a_match(dtype, concrete):
     if dtype is DataType.FLOAT:
         unknown, unset = float(unknown), float(unset)
     dim = Dimension(
-        dimension_name="value", data_type=dtype, match_strategy=MatchStrategy.EXACT_KEY
+        dimension_name="value",
+        data_type=dtype,
+        match_strategy=MatchStrategy.EXACT_KEY,
+        wildcard_values=[unknown, unset],
     )
-    # A direct compiler caller must not get a hard match from equal NOT_SET markers.
+    # Both declared spellings are rule wildcards; neither supplies a concrete key.
     frame = pl.DataFrame(
         {
             "value": [concrete, unknown, unset, concrete],
@@ -322,11 +332,11 @@ def test_exact_key_missing_marker_equality_is_not_a_match(dtype, concrete):
         }
     )
     scored = (
-        relation(frame)
+        bind_compiler_inputs(frame, [dim])
         .with_columns(DimensionCompiler().compile_dimension(dim).alias("t"))
         .to_polars()
     )
-    assert scored["t"].to_list() == [-1, 0, -1, 1]
+    assert scored["t"].to_list() == [-1, 0, 0, 1]
 
 
 def test_shared_aliases_and_unknown_do_not_rescue_mismatch():
@@ -345,17 +355,20 @@ def test_shared_aliases_and_unknown_do_not_rescue_mismatch():
                     rule_field="flag",
                     context_field="active",
                     data_type=DataType.BOOL,
+                    wildcard_values=[None],
                 ),
                 Dimension(
                     dimension_name="right",
                     rule_field="flag",
                     context_field="active",
                     data_type=DataType.BOOL,
+                    wildcard_values=[None],
                 ),
                 Dimension(
                     dimension_name="text",
                     rule_field="pattern",
                     match_strategy=MatchStrategy.PREFIX,
+                    wildcard_values=[UNKNOWN, NOT_SET],
                 ),
             ]
         ),
@@ -378,13 +391,11 @@ def test_shared_aliases_and_unknown_do_not_rescue_mismatch():
     )
 
 
-def test_expressions_only_retains_string_not_set_binding():
+def test_expressions_only_binds_unavailable_context_as_null():
     engine = ExpressionRulesEngine(
         pl.DataFrame({"rule_name": ["custom"]}),
         dimension_expressions={
-            "value": ma.when(ma.col("__ctx_value").eq(ma.lit(NOT_SET)))
-            .then(1)
-            .otherwise(-1),
+            "value": ma.when(ma.col("__ctx_value").is_null()).then(1).otherwise(-1),
         },
     )
     assert _scores(engine.evaluate({}).survivors) == [("custom", 1, 1)]
@@ -419,6 +430,7 @@ def _boolean_engine(policy=BooleanCoercion.NONE, *, rules=None, metadata=None):
                         rule_field="flag",
                         context_field="active",
                         data_type=DataType.BOOL,
+                        wildcard_values=[None],
                     )
                 ]
             )
@@ -686,6 +698,7 @@ def test_boolean_alias_normalization_preserves_a_shared_nonboolean_binding():
                 rule_field="bool_flag",
                 context_field="active",
                 data_type=DataType.BOOL,
+                wildcard_values=[None],
             ),
             Dimension(
                 dimension_name="as_number",
@@ -715,8 +728,11 @@ def test_unselected_boolean_dimension_does_not_validate_its_source_field():
                 rule_field="flag",
                 context_field="active",
                 data_type=DataType.BOOL,
+                wildcard_values=[None],
             ),
-            Dimension(dimension_name="region"),
+            Dimension(
+                dimension_name="region", wildcard_values=[None, "<NA>", "<NOT_SET>"]
+            ),
         ]
     )
     result = _boolean_engine(

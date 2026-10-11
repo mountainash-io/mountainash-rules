@@ -13,6 +13,7 @@ from pydantic import BaseModel
 import mountainash.expressions as ma
 from mountainash import (
     CaseFailureBehaviour,
+    MountainashDtype,
     ValueKind,
     boolean_value,
     text_value,
@@ -20,15 +21,20 @@ from mountainash import (
 )
 from mountainash.expressions import BaseExpressionAPI
 
-from mountainash_rules.core.constants import (
-    NOT_SET,
-    BooleanCoercion,
-    DataType,
-    not_set_sentinel_for,
+from mountainash_rules.core.constants import BooleanCoercion, DataType
+from mountainash_rules.core.numeric import (
+    decimal_operand,
+    exact_literal,
+    literal_dtype,
+    reject_invalid,
 )
 
 if t.TYPE_CHECKING:
-    from mountainash_rules.core.contracts import ContextContract, Issue, ResolutionProfile
+    from mountainash_rules.core.contracts import (
+        ContextContract,
+        Issue,
+        ResolutionProfile,
+    )
     from mountainash_rules.core.dimension import Dimension, DimensionsMetadata
 
 
@@ -86,59 +92,6 @@ def _normalize_boolean(
     )
 
 
-def _boolean_columns(
-    rel: t.Any,
-    fields: t.Iterable[str],
-    policy: BooleanCoercion = BooleanCoercion.NONE,
-) -> dict[str, BaseExpressionAPI]:
-    """Validate original fields in one aggregate and return nullable bindings."""
-    candidates = {}
-    available = set(rel.columns)
-    numeric_source = _numeric_boolean_source(policy)
-    for field in dict.fromkeys(fields):
-        if field not in available:
-            continue
-        original = ma.col(field)
-        enabled = [original.boolean_value(source="boolean")]
-        if numeric_source is not None:
-            enabled.append(original.boolean_value(source=numeric_source))
-        if policy & BooleanCoercion.BOOLEAN_TEXT:
-            enabled.append(
-                original.text_value()
-                .str.strip_chars(_BOOLEAN_TRIM)
-                .parse_boolean(
-                    true_values=_BOOLEAN_TRUE,
-                    false_values=_BOOLEAN_FALSE,
-                    field_name=field,
-                    failure_behavior=CaseFailureBehaviour.NULL,
-                )
-            )
-        candidates[field] = enabled[0] if len(enabled) == 1 else ma.coalesce(*enabled)
-    if candidates:
-        invalid = (
-            rel.group_by()
-            .agg(
-                *[
-                    (
-                        ma.col(field).value_kind().ne(ValueKind.ABSENT.value)
-                        & candidate.is_null()
-                    )
-                    .any()
-                    .fill_null(False)
-                    .alias(field)
-                    for field, candidate in candidates.items()
-                ]
-            )
-            .to_dict()
-        )
-        for field, values in invalid.items():
-            if values[0]:
-                raise ValueError(
-                    f"Invalid Boolean input for context field {field!r} under {policy!r}"
-                )
-    return candidates
-
-
 def _validate_context_ids(rel: t.Any, context_id_field: str) -> None:
     """Reject missing, null or duplicate caller IDs before conversion/chunking.
 
@@ -174,28 +127,6 @@ def _validate_context_ids(rel: t.Any, context_id_field: str) -> None:
         )
 
 
-def _absent_context_value(data_type: DataType | None) -> t.Any:
-    """Choose the declared type's missing value; bool has no in-band sentinel."""
-    if data_type is DataType.BOOL:
-        return None
-    return not_set_sentinel_for(data_type) if data_type is not None else NOT_SET
-
-
-def _nullable_bool(expr: BaseExpressionAPI) -> BaseExpressionAPI:
-    """Preserve absence when a backend's Boolean cast maps null to False."""
-    return ma.when(expr.is_null()).then(None).otherwise(expr.cast(bool))
-
-
-def _context_literal(value: t.Any, data_type: DataType | None) -> BaseExpressionAPI:
-    """Bind Boolean absence with a type even when no concrete values exist."""
-    literal = ma.lit(value)
-    return (
-        _nullable_bool(literal)
-        if value is None and data_type is DataType.BOOL
-        else literal
-    )
-
-
 def extract_context_values(
     context: BaseModel | dict,
     dimension_names: list[str],
@@ -203,42 +134,162 @@ def extract_context_values(
     *,
     boolean_coercion: BooleanCoercion = BooleanCoercion.NONE,
 ) -> dict[str, t.Any]:
-    """Extract context values for the given dimension names.
-
-    Args:
-        context: A Pydantic model or dict containing context values.
-        dimension_names: The dimension names to extract values for.
-        metadata: Optional dimension metadata. When provided, values are read
-            from each dimension's resolved_context_field and missing values
-            use its typed NOT_SET sentinel (Boolean null for bool). Without
-            metadata, values are read by dimension name and use string NOT_SET.
-
-    Returns:
-        Dict mapping dimension name to its value or sentinel.
-    """
+    """Project supplied original values by dimension; omission stays omitted."""
+    _validate_boolean_coercion(boolean_coercion)
     if isinstance(context, BaseModel):
-        raw = context.model_dump()
+        raw = context.model_dump(exclude_unset=True)
     elif isinstance(context, dict):
         raw = context
     else:
         raise TypeError(
             f"Context must be a BaseModel or dict, got {type(context).__name__}"
         )
-
-    result: dict[str, t.Any] = {}
+    result = {}
     for name in dimension_names:
         dim = metadata.get_dimension(name) if metadata is not None else None
         field = dim.resolved_context_field if dim is not None else name
-        value = raw.get(field)
-        if dim is not None and dim.data_type is DataType.BOOL:
-            result[name] = _normalize_boolean(value, field, boolean_coercion)
-        elif value is None:
-            result[name] = _absent_context_value(
-                dim.data_type if dim is not None else None
-            )
-        else:
-            result[name] = value
+        if field in raw:
+            result[name] = raw[field]
     return result
+
+
+def context_binding_expressions(
+    dim: Dimension,
+    raw: BaseExpressionAPI,
+    source_dtype: t.Any,
+    supplied: BaseExpressionAPI,
+    boolean_coercion: BooleanCoercion = BooleanCoercion.NONE,
+) -> tuple[list[BaseExpressionAPI], BaseExpressionAPI]:
+    """Build reusable native payload/presence/provenance and invalid admission."""
+    from mountainash_rules.core.compiler import typed_marker_predicate
+
+    marker = supplied & typed_marker_predicate(raw, source_dtype, dim.wildcard_values)
+    absent = (
+        raw.is_null()
+        if source_dtype in (MountainashDtype.DATE, MountainashDtype.TIMESTAMP)
+        else raw.value_kind().eq(ValueKind.ABSENT.value)
+    )
+    present = supplied & ~marker & ~absent
+    invalid = ma.lit(False)
+    if dim.data_type is DataType.DECIMAL:
+        operand = decimal_operand(
+            raw, source_dtype, dim.numeric_dtype, dim.rounding, inactive=~present
+        )
+        payload, invalid = operand.value, operand.invalid
+    elif dim.data_type is DataType.BOOL:
+        candidates = [raw.boolean_value(source="boolean")]
+        numeric_source = _numeric_boolean_source(boolean_coercion)
+        if numeric_source is not None:
+            candidates.append(raw.boolean_value(source=numeric_source))
+        if boolean_coercion & BooleanCoercion.BOOLEAN_TEXT:
+            candidates.append(
+                raw.text_value()
+                .str.strip_chars(_BOOLEAN_TRIM)
+                .parse_boolean(
+                    true_values=_BOOLEAN_TRUE,
+                    false_values=_BOOLEAN_FALSE,
+                    field_name=dim.resolved_context_field,
+                    failure_behavior=CaseFailureBehaviour.NULL,
+                )
+            )
+        payload = candidates[0] if len(candidates) == 1 else ma.coalesce(*candidates)
+        invalid = present & payload.is_null()
+    else:
+        # Only the inactive branch gets a typed null. Original business values
+        # are not inspected after this binding to infer availability.
+        payload = (
+            ma.when(~present)
+            .then(ma.lit(None))
+            .otherwise(raw)
+            .cast(dim.data_type.python_type)
+        )
+    origin = (
+        ma.when(~supplied)
+        .then("omitted")
+        .when(marker)
+        .then("dont_care")
+        .when(raw.is_null())
+        .then("null")
+        .when(absent)
+        .then("native_missing")
+        .when(invalid)
+        .then("invalid")
+        .otherwise("concrete")
+    )
+    name = dim.dimension_name
+    return [
+        payload.alias(f"__ctx_value_{name}"),
+        (present & ~invalid).alias(f"__ctx_present_{name}"),
+        supplied.alias(f"__ctx_supplied_{name}"),
+        origin.alias(f"__ctx_origin_{name}"),
+    ], invalid
+
+
+def _boolean_literal_source(
+    value: t.Any, field: str, policy: BooleanCoercion
+) -> tuple[BaseExpressionAPI, t.Any]:
+    """Preserve upstream scalar admission, including values wider than native INT."""
+    kind = value_kind(value)
+    if kind is ValueKind.BOOLEAN:
+        value = boolean_value(value, source="boolean")
+    elif kind is ValueKind.INTEGER:
+        value = int(value)
+        if not -(1 << 63) <= value < (1 << 64):
+            # Outside metadata's supported INT transport there can be no typed
+            # marker collision. Admit original truthiness before native binding.
+            return ma.lit(_normalize_boolean(value, field, policy)), None
+    elif kind is ValueKind.FLOAT:
+        value = float(value)
+    elif kind is ValueKind.TEXT:
+        value = text_value(value)
+    elif kind is ValueKind.ABSENT:
+        value = None
+    elif literal_dtype(value) in (None, MountainashDtype.LIST):
+        raise ValueError(f"Invalid Boolean input for context field {field!r}")
+    return exact_literal(value), literal_dtype(value)
+
+
+def bind_context_columns(
+    rel: t.Any,
+    dimensions: t.Sequence[Dimension],
+    *,
+    values: dict[str, t.Any] | None = None,
+    boolean_coercion: BooleanCoercion = BooleanCoercion.NONE,
+) -> t.Any:
+    """Filter admission convenience around reusable context binding expressions."""
+    columns = []
+    invalid = {}
+    for dim in dimensions:
+        if values is None:
+            field = dim.resolved_context_field
+            supplied = field in rel.columns
+            raw = ma.col(field) if supplied else ma.lit(None)
+            dtype = rel.schema.get(field)
+        else:
+            supplied = dim.dimension_name in values
+            value = values.get(dim.dimension_name)
+            if dim.data_type is DataType.BOOL:
+                raw, dtype = _boolean_literal_source(
+                    value, dim.resolved_context_field, boolean_coercion
+                )
+            else:
+                raw, dtype = exact_literal(value), literal_dtype(value)
+        bindings, failure = context_binding_expressions(
+            dim,
+            raw,
+            dtype,
+            ma.lit(supplied),
+            boolean_coercion,
+        )
+        columns.extend(bindings)
+        invalid[dim.resolved_context_field + ":" + dim.dimension_name] = failure
+    admission = (
+        rel
+        if values is None
+        else rel.group_by().agg(ma.count_records().alias("__context_anchor"))
+    )
+    reject_invalid(admission, invalid)
+    return rel.with_columns(*columns)
 
 
 @dataclass(frozen=True, slots=True)
@@ -268,6 +319,7 @@ def classify_exact_context(
         DimensionRole,
         MatchStrategy,
         unknown_sentinel_for,
+        not_set_sentinel_for,
     )
     from mountainash_rules.core.contracts import Issue
     from mountainash_rules.core.scalar import normalize_scalar
@@ -280,12 +332,26 @@ def classify_exact_context(
         raise ValueError("Context must be a mapping or Pydantic model")
     issues = []
     if isinstance(dont_care, (str, bytes)) or not isinstance(dont_care, t.Sequence):
-        issues.append(Issue(field="dont_care", dimension=None, code="invalid_type",
-                            message="dont_care must be a sequence of dimension names"))
+        issues.append(
+            Issue(
+                field="dont_care",
+                dimension=None,
+                code="invalid_type",
+                message="dont_care must be a sequence of dimension names",
+            )
+        )
         masks = set()
-    elif any(type(name) is not str for name in dont_care) or len(set(dont_care)) != len(dont_care):
-        issues.append(Issue(field="dont_care", dimension=None, code="invalid_type",
-                            message="dont_care requires unique dimension names"))
+    elif any(type(name) is not str for name in dont_care) or len(set(dont_care)) != len(
+        dont_care
+    ):
+        issues.append(
+            Issue(
+                field="dont_care",
+                dimension=None,
+                code="invalid_type",
+                message="dont_care requires unique dimension names",
+            )
+        )
         masks = set()
     else:
         masks = set(dont_care)
@@ -298,11 +364,18 @@ def classify_exact_context(
     selected = set(profile.dimensions)
 
     def issue(field, dimension, code, message):
-        issues.append(Issue(field=field, dimension=dimension, code=code, message=message))
+        issues.append(
+            Issue(field=field, dimension=dimension, code=code, message=message)
+        )
 
     for name in sorted(masks - allowed):
         dim = next((d for d in metadata.dimensions if d.dimension_name == name), None)
-        issue(dim.resolved_context_field if dim else None, name, "forbidden_projection", "Mask is not permitted by the profile")
+        issue(
+            dim.resolved_context_field if dim else None,
+            name,
+            "forbidden_projection",
+            "Mask is not permitted by the profile",
+        )
     for field in contract.fields:
         name = field.name
         if name not in raw:
@@ -315,30 +388,66 @@ def classify_exact_context(
             states[name] = "native_missing"
         else:
             try:
-                value = normalize_scalar(raw[name], field.data_type, timezone=field.timezone, context=True, allow_reserved=True)
+                value = normalize_scalar(
+                    raw[name],
+                    field.data_type,
+                    timezone=field.timezone,
+                    context=True,
+                    allow_reserved=True,
+                )
             except ValueError as exc:
                 states[name] = "invalid"
                 issue(name, None, "invalid_type", str(exc))
                 continue
-            marker_value = value.replace(tzinfo=None) if field.data_type is DataType.DATETIME else value
-            if field.data_type is not DataType.BOOL and marker_value == not_set_sentinel_for(field.data_type):
+            marker_value = (
+                value.replace(tzinfo=None)
+                if field.data_type is DataType.DATETIME
+                else value
+            )
+            if (
+                field.data_type is not DataType.BOOL
+                and marker_value == not_set_sentinel_for(field.data_type)
+            ):
                 states[name] = "not_set"
-            elif field.data_type is not DataType.BOOL and marker_value == unknown_sentinel_for(field.data_type):
+            elif (
+                field.data_type is not DataType.BOOL
+                and marker_value == unknown_sentinel_for(field.data_type)
+            ):
                 states[name] = "dont_care"
                 for dim in aliases.get(name, ()):
                     masks.add(dim.dimension_name)
                     if dim.dimension_name not in allowed:
-                        issue(name, dim.dimension_name, "forbidden_projection", "UNKNOWN masks every alias and requires permission")
+                        issue(
+                            name,
+                            dim.dimension_name,
+                            "forbidden_projection",
+                            "UNKNOWN masks every alias and requires permission",
+                        )
             else:
                 states[name] = "concrete"
                 provided[name] = value
         if field.required and states[name] != "concrete":
-            issue(name, None, "missing_required", "Required field needs a concrete supplied value")
+            issue(
+                name,
+                None,
+                "missing_required",
+                "Required field needs a concrete supplied value",
+            )
     effective = {}
     for name, value in provided.items():
         for dim in aliases.get(name, ()):
-            mandatory = dim.role is DimensionRole.CONTEXT_KEY or dim.match_strategy is MatchStrategy.CONTEXT_REGEX
-            if mandatory or (dim.dimension_name in selected and dim.dimension_name not in masks):
+            mandatory = (
+                dim.role is DimensionRole.CONTEXT_KEY
+                or dim.match_strategy is MatchStrategy.CONTEXT_REGEX
+            )
+            if mandatory or (
+                dim.dimension_name in selected and dim.dimension_name not in masks
+            ):
                 effective[name] = value
                 break
-    return ClassifiedContext(MappingProxyType(provided), MappingProxyType(effective), MappingProxyType(states), tuple(issues))
+    return ClassifiedContext(
+        MappingProxyType(provided),
+        MappingProxyType(effective),
+        MappingProxyType(states),
+        tuple(issues),
+    )

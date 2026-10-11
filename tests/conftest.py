@@ -199,6 +199,24 @@ def build_backend_df(backend: str, data: dict, table_name: str = "t") -> Any:
     raise ValueError(f"Unknown backend: {backend}")
 
 
+def bind_compiler_inputs(frame: Any, dimensions: list[Dimension]) -> Any:
+    """Bind direct compiler fixtures through the production state contract."""
+    from mountainash.relations import Relation, relation
+    from mountainash_rules.core.compiler import normalize_rule_relation
+    from mountainash_rules.core.context import bind_context_columns
+
+    rel = normalize_rule_relation(
+        frame if isinstance(frame, Relation) else relation(frame), dimensions
+    )
+    return bind_context_columns(
+        rel,
+        [
+            dim.model_copy(update={"context_field": "__ctx_" + dim.dimension_name})
+            for dim in dimensions
+        ],
+    )
+
+
 # ---------------------------------------------------------------------------
 # Backend param fixtures
 # ---------------------------------------------------------------------------
@@ -259,6 +277,7 @@ def basic_metadata() -> DimensionsMetadata:
                 dimension_name="region",
                 match_strategy=MatchStrategy.EXACT,
                 data_type=str,
+                wildcard_values=[UNKNOWN],
             ),
             Dimension(
                 dimension_name="amount",
@@ -266,6 +285,7 @@ def basic_metadata() -> DimensionsMetadata:
                 data_type=int,
                 range_min_field="amount_min",
                 range_max_field="amount_max",
+                wildcard_values=[UNKNOWN_NUMERIC],
             ),
             Dimension(
                 dimension_name="code",

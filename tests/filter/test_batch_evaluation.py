@@ -18,15 +18,17 @@ from tests.conftest import ALL_BACKENDS, build_backend_df
 from tests.accumulator.exact_runtime_fixtures import declarations, gate, uuid
 
 
-
 def _metadata():
     return DimensionsMetadata(
         dimensions=[
-            Dimension(dimension_name="region"),
+            Dimension(
+                dimension_name="region", wildcard_values=[None, "<NA>", "<NOT_SET>"]
+            ),
             Dimension(
                 dimension_name="amount",
                 match_strategy=MatchStrategy.RANGE,
                 data_type=int,
+                wildcard_values=[None, -999999999, -999999998],
                 range_min_field="amt_min",
                 range_max_field="amt_max",
             ),
@@ -34,6 +36,7 @@ def _metadata():
                 dimension_name="code",
                 match_strategy=MatchStrategy.PREFIX,
                 context_field="product_code",
+                wildcard_values=[None, "<NA>", "<NOT_SET>"],
             ),
         ]
     )
@@ -206,7 +209,9 @@ class TestExactIndexedResolution:
     def _setup(self):
         dimensions = (
             Dimension(dimension_name="segment", role=DimensionRole.CONTEXT_KEY),
-            Dimension(dimension_name="region"),
+            Dimension(
+                dimension_name="region", wildcard_values=[None, "<NA>", "<NOT_SET>"]
+            ),
         )
         aggregate = rules.Aggregate(
             column_name="amount",
@@ -338,11 +343,14 @@ class TestBatchBackendSweep:
     def _md(self):
         return DimensionsMetadata(
             dimensions=[
-                Dimension(dimension_name="region"),
+                Dimension(
+                    dimension_name="region", wildcard_values=[None, "<NA>", "<NOT_SET>"]
+                ),
                 Dimension(
                     dimension_name="amount",
                     match_strategy=MatchStrategy.RANGE,
                     data_type=int,
+                    wildcard_values=[None, -999999999, -999999998],
                     range_min_field="amt_min",
                     range_max_field="amt_max",
                 ),
