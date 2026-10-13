@@ -199,11 +199,18 @@ consumer, already imports from the package root only.
 - **Type check**: `hatch run mypy:check`
 - **Build**: `hatch build`
 
+The owner retired the old-engine test gates during the clean replacement.
+`tests/conftest.py` excludes `tests/accumulator/` and
+`tests/benchmarks/test_accumulator_benchmarks.py` from collection. Do not re-enable
+them to preserve legacy compatibility. Replacement `tests/accumulate/`, shared
+core/filter tests and filter benchmarks remain active. Old fixtures remain
+importable for shared tests until source removal.
+
 Known upstream issues are registered as xfails in `tests/conftest.py` (`_UPSTREAM_XFAILS`): ibis-polars `with_row_index` (mountainash#78); string-match strategies broken on pandas/narwhals backends (mountainash#89).
 
 ## Dependencies
 
-Core: `mountainash` (expressions/relations — the only DataFrame API the engine core may use), `polars`, `pandas`, `ibis-framework`, `pydantic`, `pyyaml`. Sibling checkouts of `mountainash`, `mountainash-data`, `mountainash-settings` are required for dev (see `hatch.toml`). Building from source (`hatch build`, editable installs) also requires a **Rust toolchain** (`cargo`) — `hatch_build.py` compiles the `mountainash_rules._native` PyO3 extension per interpreter/platform; there is no pure-Python fallback.
+Core: `mountainash` (expressions/relations — the only DataFrame API the engine core may use), `polars`, `pandas`, `ibis-framework`, `pydantic`, `pyyaml`. Sibling checkouts of `mountainash`, `mountainash-data`, `mountainash-settings`, and `mountainash-auth-client` are required for dev and CI (see `hatch.toml` and `.github/config/mountainash_dependencies.yml`). Building from source (`hatch build`, editable installs) also requires a **Rust toolchain** (`cargo`) — `hatch_build.py` compiles the `mountainash_rules._native` PyO3 extension per interpreter/platform; there is no pure-Python fallback.
 
 ## Branch Strategy & Releases
 
