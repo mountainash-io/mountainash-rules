@@ -121,10 +121,14 @@ def scalar_operand(
         # Null here is physical storage only; explicit state controls semantics.
         return ma.lit(None).cast(dim.data_type.python_type), ~inactive
     invalid = ~inactive & raw.is_null()
-    payload = ma.when(inactive).then(None).otherwise(raw)
-    if dim.data_type is DataType.FLOAT and source_dtype in _INTEGER_DTYPES:
-        payload = payload.cast(float)
-    return payload, invalid
+    if dim.data_type is DataType.INT and source_dtype is MountainashDtype.U64:
+        invalid = invalid | (~inactive & raw.gt((1 << 63) - 1))
+    elif dim.data_type is DataType.FLOAT and source_dtype in _FLOAT_DTYPES:
+        invalid = invalid | (~inactive & ~raw.is_finite())
+    payload = ma.when(inactive | invalid).then(None).otherwise(raw)
+    if dim.data_type in (DataType.INT, DataType.FLOAT):
+        payload = payload.cast(dim.data_type.python_type)
+    return payload, invalid.fill_null(False)
 
 
 def rule_binding_expressions(
@@ -138,6 +142,7 @@ def rule_binding_expressions(
     for dim in dimensions:
         if dim.match_strategy is MatchStrategy.CONTEXT_REGEX:
             continue
+        operands: list[tuple[str | None, str | None, str | None]]
         if dim.match_strategy is MatchStrategy.RANGE:
             operands = [
                 ("min", dim.range_min_field, dim.range_min_unbounded_field),
@@ -265,11 +270,7 @@ class DimensionCompiler:
             case MatchStrategy.CONTAINS:
                 matched = context.str.contains(rule)
             case MatchStrategy.REGEX:
-                import polars as pl  # allow: native fallback pending mountainash column-pattern regex_contains
-
-                matched = ma.native(
-                    pl.col(context_name).str.contains(pl.col(value_name))
-                )
+                matched = context.str.regex_contains(rule)
             case MatchStrategy.SET_MEMBERSHIP:
                 matched = rule.list.contains(context)
             case MatchStrategy.SET_EXCLUSION:

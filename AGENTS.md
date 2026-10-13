@@ -119,7 +119,7 @@ ambiguity checks) are unaffected by the exact-accumulator rewrite; see
 
 ### Backend purity (ENFORCED)
 
-No module under `src/mountainash_rules/` may import polars/ibis/narwhals directly — only `mountainash.relations` / `mountainash.expressions`. `tests/test_backend_purity.py` enforces this across the whole package (every non-dunder module is parametrised, no exemptions). A genuinely unavoidable native escape must be tagged `# allow: <reason>` on the import line — currently five, in two files: the per-row REGEX fallback in `core/compiler.py` (pending upstream column-pattern `regex_contains`), and four in `engines/accumulator/snapshot_io.py` — two `pyarrow`/`pyarrow.parquet` imports (snapshot parquet metadata/schema codec seam) and two `polars` imports (snapshot parquet relation bridge, pending backend-agnostic file IO). This is separate from the Rust `mountainash_rules._native` PyO3 extension backing `core/language.py`'s `StringLanguage` — that is a sanctioned native component for exact regex/DFA matching, not a DataFrame-backend escape, and isn't `# allow:`-tagged.
+No module under `src/mountainash_rules/` may import polars/ibis/narwhals directly — only `mountainash.relations` / `mountainash.expressions`. `tests/test_backend_purity.py` enforces this across the whole package (every non-dunder module is parametrised, no exemptions). A genuinely unavoidable native escape must be tagged `# allow: <reason>` on the import line. The retained `engines/accumulator/snapshot_io.py` has four: two `pyarrow`/`pyarrow.parquet` imports (snapshot parquet metadata/schema codec seam) and two `polars` imports (snapshot parquet relation bridge, pending backend-agnostic file IO). Per-row REGEX now uses public expression-valued `str.regex_contains`; its former native escape is removed. This is separate from the Rust `mountainash_rules._native` PyO3 extension backing `core/language.py`'s `StringLanguage` — that is a sanctioned native component for exact regex/DFA matching, not a DataFrame-backend escape, and isn't `# allow:`-tagged.
 
 ## Match Strategies
 
@@ -132,7 +132,7 @@ No module under `src/mountainash_rules/` may import polars/ibis/narwhals directl
 | `range` | two columns (`range_min_field`/`range_max_field`) | numeric/temporal; `range_min_inclusive`/`range_max_inclusive` flags |
 | `greater_than` / `less_than` | threshold | numeric/temporal |
 | `prefix` / `suffix` / `contains` | string | |
-| `regex` | per-row pattern column | Polars-native fallback (`# allow:` tagged) |
+| `regex` | per-row pattern column | Public expression-valued `str.regex_contains`; qualified on Polars/Ibis-DuckDB |
 | `context_regex` | literal `regex_pattern` on the Dimension | global context validator |
 | `set_membership` / `set_exclusion` | list column | Filter via `t_is_in`/`t_is_not_in` (polars/ibis; narwhals list ops under `mountainash#89`). Accumulator-coalesceable (membership → list intersection, exclusion → list union). Wildcard = in-band `[unknown_sentinel_for(dtype)]` (never null; bool unsupported); see `null-is-not-a-portable-sentinel` principle. |
 

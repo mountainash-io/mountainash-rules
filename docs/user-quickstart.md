@@ -349,7 +349,11 @@ Fractional ordered declarations use `data_type="decimal"`, a Mountainash
 `DecimalDtype(precision, scale)` and explicit `rounding="half_to_even"` or
 `"half_away_from_zero"`. Ordered precision is 1–16 digits; scale is 0–precision.
 FLOAT RANGE/GREATER_THAN/LESS_THAN declarations are no longer accepted.
-Integer and temporal declarations remain supported.
+The replacement also rejects FLOAT intervals and ordered field comparisons
+(`lt`, `le`, `gt`, `ge`) in both source domains and provider domains, including
+inside inactive Boolean branches. FLOAT categorical exact/set matching and
+domain `eq`/`ne` comparisons remain supported. Integer and temporal ordering
+remain supported.
 
 Metadata JSON/YAML preserves `numeric_dtype` as the Mountainash numeric descriptor
 (`kind`, `precision`, `scale`). A dimension's `wildcard_values` retains original
@@ -397,10 +401,69 @@ for the `<scope>.<output>` wide view. The new aggregate model remains internal
 until the coordinated public cutover; existing public `Aggregate` is still the
 old accumulator model.
 
+For DECIMAL SUM/MIN/MAX, final `output_numeric_dtype`/`output_rounding` conversion
+is optional. Omitting it retains the native aggregate dtype and value; supplying
+it converts the final result once. PRODUCT requires an explicit final output
+dtype and rounding policy.
+
 The shared filter Decimal/state paths have executable Polars and Ibis-DuckDB
-coverage. The replacement accumulator remains internal and is not yet a completed
-runtime. Per-row REGEX on the filter currently has an upstream projection-schema
-blocker tracked as `mountainash-io/mountainash#364`; no local bypass is installed.
+coverage. The replacement accumulator remains internal; its public package-root
+cutover is separate. Per-row REGEX on the filter uses public expression-valued
+`str.regex_contains`, qualified on Polars and Ibis-DuckDB against Mountainash
+commit `4a4991253fb629a2b9ede26f6f1cef12755109ef` (including the #364 repair).
+There is no Rules-native backend escape.
+
+Internal replacement snapshots support ordinary unchecked publication and
+save/load of stored geometry, contributions and outputs. Saving requires a new
+directory; it does not replace an existing version. Native table attachment
+captures independent relations rather than rebuilding or refolding sources.
+Validation remains a separate, explicitly invoked operation. Attachment accepts
+optional existing evidence; omitted report contents remain unavailable historical
+references, not passing reports or a reason to reject ordinary attachment.
+Geometry tables use resolved physical context fields, including aliases; retained
+source-state tables use logical dimension names. Both full-source and
+contribution-only updates return a new artifact and leave the parent unchanged.
+
+Source checks report a missing configured identity column once, even on an empty
+source. Checks requiring that identity return `not_run`, not `passed`; independent
+checks still run. Findings do not invent subject identities. A missing configured
+scope also prevents scoped contribution checks. Strict publication requires
+complete reports and therefore rejects `not_run`; unchecked publication and
+save/load preserve the factual report.
+
+Internal direct and stored resolution share original-value admission, explicit
+profile selection and observation masks. Stored resolution reads retained outputs
+rather than refolding sources. Requested cell identities retain the original
+source-domain region, not its intersection with a provider query: two disconnected
+components can agree on outputs and contributors while cell identity is uncertain.
+The correlated-domain connected-component case recorded in the replacement backlog
+remains deferred; the replacement is not ready for public cutover.
+
+For incomplete direct requests, resolution branches on feasible source applicability
+under the selected provider and source domains. It retains no-match alternatives
+and avoids expanding independent wildcard-only dimensions. Cell provenance is a
+separate intersection against the full cells for the feasible contributor sets;
+one contributor-set witness does not prove a unique connected cell.
+Construction also removes regions infeasible under the joint source domain:
+with `D: x < y`, a rule restricted to `(x=2, y=1)` contributes no stored cell
+or output, while `(x=0, y=1)` remains eligible.
+
+Accumulator request admission preserves original scalar types: for example, text
+`"17"` is not an INT and `True` is not an INT. This does not change the standalone
+filter's existing non-Boolean, non-Decimal coercion behavior.
+INT concrete values must fit the signed 64-bit universe, including when supplied
+in an unsigned native column. FLOAT infinities are invalid. Native floating-point
+NaN is unavailable context for INT/FLOAT fields, but remains invalid for DECIMAL;
+it is not a concrete value that a mask can make valid.
+DATETIME admission distinguishes naive and aware values before matching: a concrete
+awareness mismatch is an invalid request, not an implicit timezone assumption.
+Aware scalar/range values normalize to UTC without stripping timezone information.
+UTC source-overlap witnesses now pass on both targets with the Mountainash #369
+timestamp precision repair at the qualified commit above. Automatic per-element
+timezone conversion for non-UTC aware DATETIME rule sets is deferred; supply
+UTC-normalized aware datetime lists instead. This niche requirement no longer
+gates Plan 1. Ordinary set matching and scalar/range datetime support remain in
+scope. No backend escape or timezone-stripping conversion is provided.
 
 
 ### String strategies

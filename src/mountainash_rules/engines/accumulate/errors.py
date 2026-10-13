@@ -7,3 +7,7 @@ class DomainError(ValueError):
 
 class UnsupportedDomainError(DomainError):
     """A domain uses a predicate capability this runtime does not support."""
+
+
+class RequestValidationError(ValueError):
+    """The request collection or selector configuration is malformed."""

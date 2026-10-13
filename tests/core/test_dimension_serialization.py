@@ -146,16 +146,8 @@ class TestYamlRoundTrip:
         assert DimensionsMetadata.from_yaml_file(p) == md
 
 
-import mountainash_rules as rules
-
 from mountainash_rules.core.constants import UNKNOWN_DATE
 from mountainash_rules.engines.filter.engine import ExpressionRulesEngine
-from tests.accumulator.exact_runtime_fixtures import (
-    build as build_exact,
-    declarations,
-    memberships,
-    uuid,
-)
 
 
 def _effective_dated_metadata():
@@ -164,6 +156,7 @@ def _effective_dated_metadata():
             dimension_name="asof", match_strategy=MatchStrategy.RANGE,
             data_type=DataType.DATE,
             range_min_field="eff_from", range_max_field="eff_to",
+            wildcard_values=[UNKNOWN_DATE],
         ),
     ])
 
@@ -204,42 +197,32 @@ class TestTemporalRange:
             rules=self._rules(), dimension_metadata=_effective_dated_metadata()
         )
         result = engine.evaluate({})
-        assert result.count == 3  # NOT_SET_DATE -> all UNKNOWN wildcards
+        assert result.count == 3  # unavailable context leaves every rule unconstrained
 
     def test_accumulator_retains_joint_temporal_source_membership(self):
-        source_rows = [
-            {
-                "id": uuid(1),
-                "rule_name": "A",
-                "eff_from": datetime.date(2026, 1, 1),
-                "eff_to": datetime.date(2026, 12, 31),
-                "amount": 1,
-            },
-            {
-                "id": uuid(2),
-                "rule_name": "B",
-                "eff_from": datetime.date(2026, 6, 1),
-                "eff_to": UNKNOWN_DATE,
-                "amount": 2,
-            },
+        import mountainash as ma
+
+        from mountainash_rules.core.aggregate import Aggregate
+        from mountainash_rules.engines.accumulate.build import build
+
+        source_rows = pl.DataFrame({
+            "id": ["A", "B"],
+            "eff_from": [datetime.date(2026, 1, 1), datetime.date(2026, 6, 1)],
+            "eff_to": [datetime.date(2026, 12, 31), UNKNOWN_DATE],
+            "amount": [1, 2],
+        })
+        metadata = DimensionsMetadata(
+            uuid_field="id", dimensions=_effective_dated_metadata().dimensions,
+            aggregates=[Aggregate(column_name="amount", output_name="total", data_type="int")],
+        )
+        lattice = build(ma.relation(source_rows), metadata)
+        memberships = lattice.cells.join(
+            lattice.contributors, on=["partition", "scope", "contributor_set_id"],
+        ).select("cell_id", "source_uuid").to_dicts()
+        assert {"A", "B"} in [
+            {row["source_uuid"] for row in memberships if row["cell_id"] == cell["cell_id"]}
+            for cell in lattice.cells.to_dicts()
         ]
-        kwargs = declarations(
-            _effective_dated_metadata().dimensions,
-            [
-                rules.Aggregate(
-                    column_name="amount",
-                    output_name="pricing.total",
-                    data_type="int",
-                    numeric_semantics="numeric-1",
-                )
-            ],
-        )
-        _, lattice = build_exact(
-            source_rows,
-            kwargs,
-            decisions=[("source_overlap", (uuid(1), uuid(2)))],
-        )
-        assert frozenset((uuid(1), uuid(2))) in memberships(lattice).values()
 
 class TestTemporalBackendRegression:
     def test_duckdb_backend_stores_and_compares_sentinel_dates(self):
@@ -275,7 +258,8 @@ class TestRegexSplit:
             "x": ["^AU-", "^NZ-", UNKNOWN],
         })
         md = DimensionsMetadata(dimensions=[
-            Dimension(dimension_name="x", match_strategy=MatchStrategy.REGEX),
+            Dimension(dimension_name="x", match_strategy=MatchStrategy.REGEX,
+                      wildcard_values=[UNKNOWN]),
         ])
         engine = ExpressionRulesEngine(rules=rules, dimension_metadata=md)
         result = engine.evaluate({"x": "AU-1234"})
@@ -287,7 +271,8 @@ class TestRegexSplit:
 class TestBoolDimensions:
     def _md(self):
         return DimensionsMetadata(dimensions=[
-            Dimension(dimension_name="active", data_type=DataType.BOOL),
+            Dimension(dimension_name="active", data_type=DataType.BOOL,
+                      wildcard_values=[None]),
         ])
 
     def test_bool_exact_match(self):

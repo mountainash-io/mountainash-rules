@@ -29,6 +29,7 @@ def _dimension(min_inc=True, max_inc=True):
         dimension_name="x",
         match_strategy="range",
         data_type="int",
+        wildcard_values=[S],
         range_min_field="lo",
         range_max_field="hi",
         range_min_inclusive=min_inc,

@@ -5,7 +5,7 @@ from __future__ import annotations
 import typing as t
 from dataclasses import dataclass
 from datetime import date, datetime
-from decimal import Decimal
+from decimal import Decimal, localcontext
 
 import mountainash.expressions as ma
 from mountainash import DecimalDtype, MountainashDtype, ValueKind, value_kind
@@ -33,6 +33,31 @@ class NumericOperand:
 
     value: BaseExpressionAPI
     invalid: BaseExpressionAPI
+
+
+def _decimal_operation_precision(*values: Decimal) -> int:
+    """Precision sufficient to align finite Decimal operands without rounding."""
+    exponents = [t.cast(int, value.as_tuple().exponent) for value in values]
+    lowest_exponent = min(exponents)
+    highest_digit = max(
+        exponent + len(value.as_tuple().digits)
+        for value, exponent in zip(values, exponents, strict=True)
+    )
+    return max(1, highest_digit - lowest_exponent + 1)
+
+
+def decimal_add_exact(left: Decimal, right: Decimal) -> Decimal:
+    """Add finite Decimals exactly, independent of the ambient context."""
+    with localcontext() as context:
+        context.prec = _decimal_operation_precision(left, right)
+        return left + right
+
+
+def decimal_subtract_exact(left: Decimal, right: Decimal) -> Decimal:
+    """Subtract finite Decimals exactly, independent of the ambient context."""
+    with localcontext() as context:
+        context.prec = _decimal_operation_precision(left, right)
+        return left - right
 
 
 def literal_dtype(value: t.Any) -> MountainashDtype | DecimalDtype | None:
@@ -78,6 +103,7 @@ def exact_literal(value: t.Any) -> BaseExpressionAPI:
     if dtype is MountainashDtype.TIMESTAMP and value.tzinfo is None:
         return ma.lit(value, dtype=dtype)
     return ma.lit(value)
+
 
 
 def _text_overflow(expr: BaseExpressionAPI, dtype: DecimalDtype) -> BaseExpressionAPI:

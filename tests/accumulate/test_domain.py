@@ -49,6 +49,10 @@ def domain(root, *fields):
 def enum_node(graph, field, values):
     encoded = [scalar(value, "str") for value in values]
     encoded.sort(key=lambda value: canonical_bytes({"value": value}))
+    if not encoded:
+        return node(graph, "false")
+    if len(encoded) == 1:
+        return node(graph, "eq", field=field, value=encoded[0])
     return node(graph, "in", field=field, values=encoded)
 
 
@@ -84,6 +88,64 @@ def test_no_domain_and_constants_preserve_input_identity_and_typed_empty(
     assert native_schema(empty) == actual_schema
     assert actual_schema["allowed"] == MountainashDtype.BOOL
 
+
+
+def test_feasible_assignments_adds_boundaries_without_restricting_input_and_uses_selected_domains(
+    backend_name, records,
+):
+    from mountainash_rules.engines.accumulate.domain import feasible_assignments
+
+    graph = {}
+    global_domain = domain(
+        node(graph, "true"), DomainField(name="x", data_type="int"),
+    )
+    selected_domain = DomainDefinition(
+        schema_version=1,
+        domain_id="Q",
+        predicate_id=node(graph, "false"),
+        fields=(DomainField(name="x", data_type="int"),),
+    )
+    metadata = DimensionsMetadata(
+        dimensions=[],
+        domain=global_domain,
+        context_domains=[selected_domain],
+        domain_nodes=graph,
+    )
+    pairs = ma.relation(build_backend_df(
+        backend_name, {"pair_id": [1, 2], "marker": ["left", "right"]},
+    ))
+    boundaries = ma.relation(build_backend_df(
+        backend_name, {"pair_id": [1, 1, 2], "value": [3, 5, 7]},
+    ))
+
+    assignments, value_columns, residual_columns = feasible_assignments(
+        pairs, metadata, {}, {}, pair_key="pair_id", boundaries={"x": boundaries},
+    )
+    value_name, residual_name = value_columns["x"], residual_columns["x"]
+    materialized = records(assignments.select(
+        "pair_id", "marker",
+        ma.col(value_name).alias("x"),
+        ma.col(residual_name).alias("residual"),
+    ))
+    concrete = {
+        (row["pair_id"], row["x"])
+        for row in materialized if row["residual"] == -1
+    }
+    assert {(1, 0), (1, 3), (1, 5), (2, 0), (2, 7)} <= concrete
+    assert {(row["pair_id"], row["marker"]) for row in materialized} == {
+        (1, "left"), (2, "right"),
+    }
+
+    selected, _, _ = feasible_assignments(
+        pairs,
+        metadata,
+        {},
+        {},
+        pair_key="pair_id",
+        boundaries={"x": boundaries},
+        domains=(global_domain, selected_domain),
+    )
+    assert records(selected) == []
 
 def test_interval_preserves_exclusive_boundary_and_old_reserved_integers(
     backend_name, records
@@ -288,6 +350,74 @@ def test_unary_projection_does_not_claim_joint_satisfiability(backend_name, reco
     assert records(truth(relation, lowered.predicate)) == [
         {"id": 1, "allowed": False},
         {"id": 2, "allowed": False},
+    ]
+
+
+@pytest.mark.parametrize("operation", ["interval", "lt", "le", "gt", "ge"])
+def test_float_ordered_domain_operations_are_unsupported(operation):
+    from mountainash_rules.engines.accumulate.domain import lower_domain
+    from mountainash_rules.engines.accumulate.errors import UnsupportedDomainError
+
+    graph = {}
+    if operation == "interval":
+        root = interval_node(graph, "x", 0.0, 1.0, dtype="float")
+        fields = (DomainField(name="x", data_type="float"),)
+    else:
+        root = node(graph, "compare", left="x", right="y", relation=operation)
+        fields = (
+            DomainField(name="x", data_type="float"),
+            DomainField(name="y", data_type="float"),
+        )
+    with pytest.raises(UnsupportedDomainError):
+        lower_domain(domain(root, *fields), graph)
+
+
+@pytest.mark.parametrize("gate", ["and", "or"])
+def test_float_ordered_comparison_is_rejected_inside_dead_boolean_arm(gate):
+    from mountainash_rules.engines.accumulate.domain import lower_domain
+    from mountainash_rules.engines.accumulate.errors import UnsupportedDomainError
+
+    graph = {}
+    ordered = node(graph, "compare", left="x", right="y", relation="lt")
+    constant = node(graph, "false" if gate == "and" else "true")
+    root = node(graph, gate, args=sorted([ordered, constant]))
+    with pytest.raises(UnsupportedDomainError):
+        lower_domain(
+            domain(
+                root,
+                DomainField(name="x", data_type="float"),
+                DomainField(name="y", data_type="float"),
+            ),
+            graph,
+        )
+
+
+@pytest.mark.parametrize("relation_name", ["eq", "ne"])
+def test_float_categorical_comparisons_remain_supported(
+    backend_name, records, relation_name,
+):
+    from mountainash_rules.engines.accumulate.domain import lower_domain
+
+    graph = {}
+    root = node(graph, "compare", left="x", right="y", relation=relation_name)
+    lowered = lower_domain(
+        domain(
+            root,
+            DomainField(name="x", data_type="float"),
+            DomainField(name="y", data_type="float"),
+        ),
+        graph,
+    )
+    relation = ma.relation(build_backend_df(
+        backend_name,
+        {"id": [1, 2], "x": [1.5, 2.0], "y": [1.5, 3.0]},
+    ))
+    expected = (
+        [True, False] if relation_name == "eq" else [False, True]
+    )
+    assert records(truth(relation, lowered.predicate)) == [
+        {"id": identifier, "allowed": allowed}
+        for identifier, allowed in enumerate(expected, 1)
     ]
 
 
@@ -789,3 +919,58 @@ def test_utc_unbounded_domain_intersects_utc_piece_rows_without_timezone_loss(
     ]
     assert actual.schema.field("lower").type.tz == "UTC"
     assert actual.schema.field("upper").type.tz == "UTC"
+@pytest.mark.parametrize("precision", [2, 28])
+def test_decimal_16_digit_candidate_extrema_are_exact_at_reduced_context(
+    backend_name, records, precision,
+):
+    from decimal import localcontext
+
+    from mountainash_rules.engines.accumulate.domain import feasible_assignments
+
+    graph = {}
+    declared = domain(
+        node(graph, "true"),
+        DomainField(
+            name="amount",
+            data_type="decimal",
+            numeric_dtype=DecimalDtype(16, 0),
+            rounding="half_to_even",
+        ),
+    )
+    metadata = DimensionsMetadata(
+        dimensions=[], domain=declared, domain_nodes=graph,
+    )
+    pairs = ma.relation(build_backend_df(backend_name, {"pair_id": [1]}))
+    maximum = Decimal("9999999999999999")
+    boundaries = ma.relation(build_backend_df(
+        backend_name,
+        {
+            "pair_id": [1, 1, 1],
+            "value": [
+                Decimal(0),
+                maximum,
+                Decimal("-9999999999999999"),
+            ],
+        },
+    ))
+
+    with localcontext() as context:
+        context.prec = precision
+        assignments, value_columns, residual_columns = feasible_assignments(
+            pairs, metadata, {}, {}, pair_key="pair_id",
+            boundaries={"amount": boundaries},
+        )
+    value_name, residual_name = value_columns["amount"], residual_columns["amount"]
+    candidates = {
+        row["amount"]
+        for row in records(assignments.select(
+            ma.col(value_name).alias("amount"),
+            ma.col(residual_name).alias("residual"),
+        ))
+        if row["residual"] == -1
+    }
+    assert {
+        Decimal(0), Decimal(1), Decimal(-1), maximum, maximum - 1,
+        Decimal("-9999999999999999"),
+        Decimal("-9999999999999998"),
+    } <= candidates

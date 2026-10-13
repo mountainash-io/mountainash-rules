@@ -6,11 +6,9 @@ import pytest
 from pydantic import BaseModel
 
 from mountainash_rules.core.constants import UNKNOWN, UNKNOWN_NUMERIC, MatchStrategy
-from mountainash_rules.engines.filter.engine import ExpressionRulesEngine
 
 from tests.benchmarks.benchmark_data import (
     assign_strategies,
-    build_engine,
     generate_context,
     generate_rules,
 )
@@ -215,53 +213,3 @@ class TestGenerateContext:
         ctx = generate_context(metadata, col_dict)
         for dim in metadata.dimensions:
             assert hasattr(ctx, dim.dimension_name)
-
-
-# ---------------------------------------------------------------------------
-# build_engine
-# ---------------------------------------------------------------------------
-
-
-class TestBuildEngine:
-    def test_returns_expression_rules_engine(self):
-        col_dict, metadata = generate_rules(
-            rule_count=10,
-            dim_count=2,
-            strategy_mix={MatchStrategy.EXACT: 1.0},
-        )
-        engine = build_engine(col_dict, metadata, "polars")
-        assert isinstance(engine, ExpressionRulesEngine)
-
-    def test_roundtrip_evaluate(self):
-        col_dict, metadata = generate_rules(
-            rule_count=20,
-            dim_count=2,
-            strategy_mix={MatchStrategy.EXACT: 1.0},
-            seed=42,
-        )
-        engine = build_engine(col_dict, metadata, "polars")
-        ctx = generate_context(metadata, col_dict, seed=42)
-        result = engine.evaluate(ctx)
-        # Should not raise; survivors may be zero or more
-        assert result is not None
-
-    def test_pandas_backend(self):
-        col_dict, metadata = generate_rules(
-            rule_count=10,
-            dim_count=1,
-            strategy_mix={MatchStrategy.EXACT: 1.0},
-        )
-        engine = build_engine(col_dict, metadata, "pandas")
-        assert isinstance(engine, ExpressionRulesEngine)
-
-    def test_range_roundtrip(self):
-        col_dict, metadata = generate_rules(
-            rule_count=20,
-            dim_count=1,
-            strategy_mix={MatchStrategy.RANGE: 1.0},
-            seed=42,
-        )
-        engine = build_engine(col_dict, metadata, "polars")
-        ctx = generate_context(metadata, col_dict, seed=42)
-        result = engine.evaluate(ctx)
-        assert result is not None

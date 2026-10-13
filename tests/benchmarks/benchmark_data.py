@@ -126,6 +126,7 @@ def generate_rules(
                     dimension_name=dim_name,
                     match_strategy=MatchStrategy.RANGE,
                     data_type=int,
+                    wildcard_values=[UNKNOWN_NUMERIC],
                     range_min_field=f"{dim_name}_MIN",
                     range_max_field=f"{dim_name}_MAX",
                 )
@@ -141,6 +142,7 @@ def generate_rules(
                     dimension_name=dim_name,
                     match_strategy=strategy,
                     data_type=str,
+                    wildcard_values=[UNKNOWN],
                 )
             )
 
@@ -152,6 +154,7 @@ def generate_rules(
                     dimension_name=dim_name,
                     match_strategy=MatchStrategy.GREATER_THAN,
                     data_type=int,
+                    wildcard_values=[UNKNOWN_NUMERIC],
                 )
             )
 
@@ -163,6 +166,7 @@ def generate_rules(
                     dimension_name=dim_name,
                     match_strategy=MatchStrategy.LESS_THAN,
                     data_type=int,
+                    wildcard_values=[UNKNOWN_NUMERIC],
                 )
             )
 
@@ -182,6 +186,7 @@ def generate_rules(
                     dimension_name=dim_name,
                     match_strategy=MatchStrategy.PREFIX,
                     data_type=str,
+                    wildcard_values=[UNKNOWN],
                 )
             )
 
@@ -201,6 +206,7 @@ def generate_rules(
                     dimension_name=dim_name,
                     match_strategy=MatchStrategy.SUFFIX,
                     data_type=str,
+                    wildcard_values=[UNKNOWN],
                 )
             )
 
@@ -221,6 +227,7 @@ def generate_rules(
                     dimension_name=dim_name,
                     match_strategy=MatchStrategy.CONTAINS,
                     data_type=str,
+                    wildcard_values=[UNKNOWN],
                 )
             )
 
@@ -263,6 +270,7 @@ def generate_rules(
                     dimension_name=dim_name,
                     match_strategy=strategy,
                     data_type=str,
+                    wildcard_values=[None],
                 )
             )
 
@@ -276,6 +284,7 @@ def generate_rules(
                     dimension_name=dim_name,
                     match_strategy=strategy,
                     data_type=str,
+                    wildcard_values=[UNKNOWN],
                 )
             )
 

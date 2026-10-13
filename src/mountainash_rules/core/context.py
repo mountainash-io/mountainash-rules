@@ -37,8 +37,27 @@ if t.TYPE_CHECKING:
     )
     from mountainash_rules.core.dimension import Dimension, DimensionsMetadata
 
+_CONTEXT_FLOAT_DTYPES = frozenset({MountainashDtype.FP32, MountainashDtype.FP64})
+
+
+def context_absence_expression(
+    raw: BaseExpressionAPI, source_dtype: t.Any, data_type: DataType,
+) -> BaseExpressionAPI:
+    """Recognize native missing values for strict concrete context admission."""
+    absent = (
+        raw.is_null()
+        if source_dtype in (MountainashDtype.DATE, MountainashDtype.TIMESTAMP)
+        else raw.value_kind().eq(ValueKind.ABSENT.value)
+    )
+    if (
+        data_type in (DataType.INT, DataType.FLOAT)
+        and source_dtype in _CONTEXT_FLOAT_DTYPES
+    ):
+        absent = absent | raw.is_nan()
+    return absent.fill_null(False)
 
 _BOOLEAN_TRIM = " \t\n\r\f\v"
+
 _BOOLEAN_TRUE = tuple(
     "".join(chars) for chars in product(*[(c, c.upper()) for c in "true"])
 ) + ("1",)
@@ -159,19 +178,26 @@ def context_binding_expressions(
     source_dtype: t.Any,
     supplied: BaseExpressionAPI,
     boolean_coercion: BooleanCoercion = BooleanCoercion.NONE,
+    *,
+    strict_concrete: bool = False,
 ) -> tuple[list[BaseExpressionAPI], BaseExpressionAPI]:
     """Build reusable native payload/presence/provenance and invalid admission."""
-    from mountainash_rules.core.compiler import typed_marker_predicate
+    from mountainash_rules.core.compiler import scalar_operand, typed_marker_predicate
 
     marker = supplied & typed_marker_predicate(raw, source_dtype, dim.wildcard_values)
     absent = (
-        raw.is_null()
-        if source_dtype in (MountainashDtype.DATE, MountainashDtype.TIMESTAMP)
-        else raw.value_kind().eq(ValueKind.ABSENT.value)
+        context_absence_expression(raw, source_dtype, dim.data_type)
+        if strict_concrete
+        else (
+            raw.is_null()
+            if source_dtype in (MountainashDtype.DATE, MountainashDtype.TIMESTAMP)
+            else raw.value_kind().eq(ValueKind.ABSENT.value)
+        )
     )
     present = supplied & ~marker & ~absent
     invalid = ma.lit(False)
     if dim.data_type is DataType.DECIMAL:
+        assert dim.rounding is not None
         operand = decimal_operand(
             raw, source_dtype, dim.numeric_dtype, dim.rounding, inactive=~present
         )
@@ -194,6 +220,8 @@ def context_binding_expressions(
             )
         payload = candidates[0] if len(candidates) == 1 else ma.coalesce(*candidates)
         invalid = present & payload.is_null()
+    elif strict_concrete:
+        payload, invalid = scalar_operand(dim, raw, source_dtype, ~present)
     else:
         # Only the inactive branch gets a typed null. Original business values
         # are not inspected after this binding to infer availability.
@@ -324,6 +352,7 @@ def classify_exact_context(
     from mountainash_rules.core.contracts import Issue
     from mountainash_rules.core.scalar import normalize_scalar
 
+    raw: t.Mapping[str, t.Any]
     if isinstance(context, BaseModel):
         raw = {name: getattr(context, name) for name in context.model_fields_set}
     elif isinstance(context, t.Mapping):
@@ -331,6 +360,7 @@ def classify_exact_context(
     else:
         raise ValueError("Context must be a mapping or Pydantic model")
     issues = []
+    masks: set[str]
     if isinstance(dont_care, (str, bytes)) or not isinstance(dont_care, t.Sequence):
         issues.append(
             Issue(
@@ -369,9 +399,9 @@ def classify_exact_context(
         )
 
     for name in sorted(masks - allowed):
-        dim = next((d for d in metadata.dimensions if d.dimension_name == name), None)
+        masked_dimension = next((d for d in metadata.dimensions if d.dimension_name == name), None)
         issue(
-            dim.resolved_context_field if dim else None,
+            masked_dimension.resolved_context_field if masked_dimension else None,
             name,
             "forbidden_projection",
             "Mask is not permitted by the profile",
@@ -383,7 +413,9 @@ def classify_exact_context(
         elif raw[name] is None:
             states[name] = "null"
         elif value_kind(raw[name]) is ValueKind.ABSENT or (
-            value_kind(raw[name]) is ValueKind.FLOAT and math.isnan(raw[name])
+            field.data_type in (DataType.INT, DataType.FLOAT)
+            and value_kind(raw[name]) is ValueKind.FLOAT
+            and math.isnan(raw[name])
         ):
             states[name] = "native_missing"
         else:

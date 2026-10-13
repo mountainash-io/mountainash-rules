@@ -191,8 +191,6 @@ def test_boolean_all_null_and_empty_batches_without_wildcards(backend_name):
 def test_ordinary_string_sentinels_never_earn_specificity(
     backend_name, strategy, pattern, concrete
 ):
-    if strategy == "regex" and backend_name != "polars":
-        pytest.skip("Per-row REGEX requires the existing Polars-native expression")
     engine = ExpressionRulesEngine(
         build_backend_df(
             backend_name,
