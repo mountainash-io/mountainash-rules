@@ -13,23 +13,20 @@ from mountainash.relations import concat, relation
 
 import dataclasses
 
-from mountainash_rules.core.compiler import DimensionCompiler
+from mountainash_rules.core.compiler import DimensionCompiler, normalize_rule_relation
 from mountainash_rules.core.constants import (
     CTX_PREFIX,
     BooleanCoercion,
-    DataType,
     HitPolicy,
-    MatchStrategy,
 )
 from mountainash_rules.core.context import (
-    _absent_context_value,
-    _boolean_columns,
-    _context_literal,
     _validate_boolean_coercion,
     _validate_context_ids,
+    bind_context_columns,
     extract_context_values,
 )
-from mountainash_rules.core.dimension import Dimension, DimensionsMetadata
+from mountainash_rules.core.dimension import DimensionsMetadata
+from mountainash_rules.core.numeric import exact_literal
 from mountainash_rules.core.batch_result import BatchRuleResult
 from mountainash_rules.core.hit_policy import (
     HitPolicyViolationError,
@@ -47,7 +44,6 @@ from mountainash_rules.core.hit_policy import (
     validate_output_fields,
 )
 from mountainash_rules.core.result import ExplainResult, RuleResult
-from mountainash_rules.core.set_wildcard import validate_set_columns
 
 
 class ExpressionRulesEngine:
@@ -125,7 +121,6 @@ class ExpressionRulesEngine:
             self._metadata = None
 
         self._rules = rules
-        self._set_dims_validated = False
 
     def _active_dimensions(self, dimensions: list[str] | None) -> list[str]:
         """Validate the entire projection before constructing expressions."""
@@ -185,24 +180,33 @@ class ExpressionRulesEngine:
         check_policy_config(self._rule_columns, policy, info)
         return policy, info
 
-    def _validate_set_rules_once(self) -> None:
-        """Reject set rule lists that embed the reserved sentinel — once, portably.
+    def _normalized_rules(self, active_dims: list[str]) -> t.Any:
+        rel = relation(self._rules)
+        self._check_reserved(rel, "Rules")
+        if self._metadata is not None:
+            rel = normalize_rule_relation(
+                rel,
+                [self._metadata.get_dimension(name) for name in active_dims],
+            )
+        return rel
 
-        Called from BOTH scoring entry points (single and batch) because
-        evaluate_batch does not route through _scored_relation. metadata is None
-        when the engine was built from dimension_expressions (no Dimension objects
-        to inspect), so skip that case.
-        """
-        if self._metadata is None or self._set_dims_validated:
-            return
-        set_dims = [
-            d
-            for d in self._metadata.dimensions
-            if d.match_strategy
-            in (MatchStrategy.SET_MEMBERSHIP, MatchStrategy.SET_EXCLUSION)
-        ]
-        validate_set_columns(relation(self._rules), set_dims)
-        self._set_dims_validated = True
+    @staticmethod
+    def _drop_bindings(rel: t.Any) -> t.Any:
+        return rel.drop(
+            *[
+                name
+                for name in rel.columns
+                if name.startswith(
+                    (
+                        CTX_PREFIX,
+                        "__rule_value_",
+                        "__rule_wildcard_",
+                        "__rule_min_",
+                        "__rule_max_",
+                    )
+                )
+            ]
+        )
 
     def evaluate(
         self,
@@ -279,7 +283,6 @@ class ExpressionRulesEngine:
             boolean_coercion=self._boolean_coercion,
         )
         rel = self._scored_relation(active_dims, context_values)
-        rel = rel.drop(*[f"{CTX_PREFIX}{d}" for d in active_dims])
         return ExplainResult(
             dataframe=rel.collect(),
             active_dimensions=active_dims,
@@ -300,7 +303,17 @@ class ExpressionRulesEngine:
         colliding = [
             c
             for c in rel.columns
-            if c in self._BATCH_RESERVED or c.startswith(("__t_", CTX_PREFIX))
+            if c in self._BATCH_RESERVED
+            or c.startswith(
+                (
+                    "__t_",
+                    CTX_PREFIX,
+                    "__rule_value_",
+                    "__rule_wildcard_",
+                    "__rule_min_",
+                    "__rule_max_",
+                )
+            )
         ]
         if colliding:
             raise ValueError(
@@ -312,56 +325,34 @@ class ExpressionRulesEngine:
         contexts: t.Any,
         active_dims: list[str],
         context_id_field: str | None,
-        *,
-        routing_dims: t.Sequence[Dimension] = (),
     ) -> t.Any:
-        """Admit original fields, then project dimension-addressed bindings."""
+        """Classify original per-row availability before conversion or aliasing."""
         rel = relation(contexts)
         self._check_reserved(rel, "Contexts")
-        bindings = []
-        for name in active_dims:
-            dim = self._metadata.get_dimension(name) if self._metadata else None
-            bindings.append(
-                (
-                    f"{CTX_PREFIX}{name}",
-                    dim.resolved_context_field if dim is not None else name,
-                    dim.data_type if dim is not None else None,
-                    False,
-                )
-            )
-        bindings.extend(
-            (f"__key_{d.dimension_name}", d.resolved_context_field, d.data_type, True)
-            for d in routing_dims
-        )
-        boolean_columns = _boolean_columns(
-            rel,
-            (field for _, field, dtype, _ in bindings if dtype is DataType.BOOL),
-            self._boolean_coercion,
-        )
-        available = set(rel.columns)
         if context_id_field is None:
             rel = rel.with_row_index(name="__context_id")
         else:
             _validate_context_ids(rel, context_id_field)
             rel = rel.with_columns(ma.col(context_id_field).alias("__context_id"))
-        ctx_exprs: list[t.Any] = [ma.col("__context_id")]
-        for alias, field, data_type, routing in bindings:
-            if field in available and data_type is DataType.BOOL:
-                expr = boolean_columns[field]
-            else:
-                absent = _context_literal(_absent_context_value(data_type), data_type)
-                if field not in available:
-                    expr = absent
-                elif routing and data_type is DataType.FLOAT:
-                    expr = (
-                        ma.when(ma.col(field).is_null() | ma.col(field).is_nan())
-                        .then(absent)
-                        .otherwise(ma.col(field))
+        if self._metadata is not None:
+            rel = bind_context_columns(
+                rel,
+                [self._metadata.get_dimension(name) for name in active_dims],
+                boolean_coercion=self._boolean_coercion,
+            )
+        else:
+            rel = rel.with_columns(
+                *[
+                    (ma.col(name) if name in rel.columns else ma.lit(None)).alias(
+                        CTX_PREFIX + name
                     )
-                else:
-                    expr = ma.coalesce(ma.col(field), absent)
-            ctx_exprs.append(expr.alias(alias))
-        return rel.select(*ctx_exprs)
+                    for name in active_dims
+                ]
+            )
+        return rel.select(
+            "__context_id",
+            *[name for name in rel.columns if name.startswith(CTX_PREFIX)],
+        )
 
     def evaluate_batch(
         self,
@@ -465,8 +456,8 @@ class ExpressionRulesEngine:
         combined, sorted offending set (not just the first chunk's) is reported.
         """
         hit_policy, info = selection
-        prepared_pl = prepared.to_polars()
-        if len(prepared_pl) == 0:
+        count = prepared.count_rows()
+        if count == 0:
             return self._evaluate_batch_frame(
                 prepared,
                 active_dims,
@@ -478,12 +469,12 @@ class ExpressionRulesEngine:
             )
         frames = []
         violations: list[HitPolicyViolationError] = []
-        for start in range(0, len(prepared_pl), chunk_size):
-            chunk = prepared_pl.slice(start, chunk_size)
+        for start in range(0, count, chunk_size):
+            chunk = prepared.slice(start, chunk_size)
             try:
                 frames.append(
                     self._evaluate_batch_frame(
-                        relation(chunk),
+                        chunk,
                         active_dims,
                         hit_policy,
                         info,
@@ -521,6 +512,9 @@ class ExpressionRulesEngine:
         backend = identify_backend(self._rules)
         if backend is CONST_BACKEND.IBIS:
             return relation(prepared.to_ibis())
+        native = prepared.collect()
+        if identify_backend(native) is backend:
+            return relation(native)
         if backend in (CONST_BACKEND.NARWHALS, CONST_BACKEND.PANDAS):
             module = type(self._rules).__module__
             impl = str(getattr(self._rules, "implementation", "")).lower()
@@ -539,10 +533,9 @@ class ExpressionRulesEngine:
         min_specificity: int | None,
         include_observability: bool,
     ) -> t.Any:
-        self._validate_set_rules_once()
-        rules_rel = relation(self._rules)
-        self._check_reserved(rules_rel, "Rules")
-        rules_rel = rules_rel.with_row_index(name="__rule_index")
+        rules_rel = self._normalized_rules(active_dims).with_row_index(
+            name="__rule_index"
+        )
 
         joined = rules_rel.join(self._conform_to_rules_backend(prepared), how="cross")
 
@@ -603,7 +596,8 @@ class ExpressionRulesEngine:
         if hit_policy in (HitPolicy.FIRST, HitPolicy.PRIORITY, HitPolicy.ANY):
             joined = first_per_context(joined)
 
-        drop_cols = ["__survived"] + [f"{CTX_PREFIX}{d}" for d in active_dims]
+        joined = self._drop_bindings(joined)
+        drop_cols = ["__survived"]
         if not include_observability:
             drop_cols += [f"__t_{d}" for d in active_dims]
         return joined.drop(*drop_cols).sort("__context_id", "__rank").collect()
@@ -665,26 +659,21 @@ class ExpressionRulesEngine:
         self, active_dims: list[str], context_values: dict[str, t.Any]
     ) -> t.Any:
         """Rules frame scored against a context: ternaries + __survived + __specificity, unfiltered."""
-        self._validate_set_rules_once()
-        # Steps 0-3: reserved-column guard + row index, bind ctx literals,
-        # ternary columns, survival + specificity. Steps 4-7 (filter, rank,
-        # assertions, cardinality, drop) stay in the callers.
-        rel = relation(self._rules)
-        self._check_reserved(rel, "Rules")
-        rel = rel.with_row_index(name="__rule_index")
-
-        ctx_columns = []
-        for name, value in context_values.items():
-            dim = (
-                self._metadata.get_dimension(name)
-                if self._metadata is not None
-                else None
+        rel = self._normalized_rules(active_dims).with_row_index(name="__rule_index")
+        if self._metadata is not None:
+            rel = bind_context_columns(
+                rel,
+                [self._metadata.get_dimension(name) for name in active_dims],
+                values=context_values,
+                boolean_coercion=self._boolean_coercion,
             )
-            literal = _context_literal(
-                value, dim.data_type if dim is not None else None
+        else:
+            rel = rel.with_columns(
+                *[
+                    exact_literal(context_values.get(name)).alias(CTX_PREFIX + name)
+                    for name in active_dims
+                ]
             )
-            ctx_columns.append(literal.alias(f"{CTX_PREFIX}{name}"))
-        rel = rel.with_columns(*ctx_columns)
 
         dim_columns = [
             self._expressions[dim_name].name.alias(f"__t_{dim_name}")
@@ -698,7 +687,7 @@ class ExpressionRulesEngine:
             lambda a, b: a.add(b),
             [c.eq(ma.lit(1)).cast(int) for c in t_cols],
         ).alias("__specificity")
-        return rel.with_columns(survived, specificity)
+        return self._drop_bindings(rel.with_columns(survived, specificity))
 
     def _evaluate(
         self,
@@ -737,7 +726,7 @@ class ExpressionRulesEngine:
         rel = apply_cardinality(rel, hit_policy)
 
         # Step 7: Drop temporary and observability columns
-        drop_cols = ["__survived"] + [f"{CTX_PREFIX}{d}" for d in active_dims]
+        drop_cols = ["__survived"]
         if not include_observability:
             drop_cols += [f"__t_{d}" for d in active_dims]
         rel = rel.drop(*drop_cols).sort("__rank")

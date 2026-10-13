@@ -69,7 +69,7 @@
     "Package renamed mountainash_utils_rules -> mountainash_rules and reorganised into core/+engines/{filter,accumulator}/ (2026-07-16); deprecation shims for the pre-reorganisation flat module paths were removed the same date."
   ],
   "documentation_hooks": [
-    "CLAUDE.md: 'mountainash_rules module paths are private \u2014 import public names from the package root only'"
+    "AGENTS.md: 'mountainash_rules module paths are private \u2014 import public names from the package root only'"
   ],
   "examples": [],
   "tests": [

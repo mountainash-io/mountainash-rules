@@ -58,13 +58,13 @@
     "tests/test_backend_purity.py"
   ],
   "risks": [
-    "6-step evaluation pipeline documented in CLAUDE.md must stay pure per-step DataFrame transforms for traceability."
+    "6-step evaluation pipeline documented in AGENTS.md must stay pure per-step DataFrame transforms for traceability."
   ],
   "open_questions": [],
   "evidence": [
     {
       "kind": "doc",
-      "path": "CLAUDE.md",
+      "path": "AGENTS.md",
       "detail": "'Filter engine pipeline (engine.py)' \u2014 compile/bind/evaluate/select steps"
     }
   ],

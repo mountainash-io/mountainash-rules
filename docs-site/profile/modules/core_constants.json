@@ -63,7 +63,7 @@
     "mountainash_rules.__init__"
   ],
   "extension_points": [
-    "Adding a MatchStrategy starts here: add the enum value (CLAUDE.md 'Adding a strategy' recipe)."
+    "Adding a MatchStrategy starts here: add the enum value (AGENTS.md 'Adding a strategy' recipe)."
   ],
   "lifecycle_notes": [
     "MatchStrategy grew from 11 to 12 members (added EXACT_KEY for partition routing); MatchStrategy/DimensionRole became StrEnums with stable string values (was implicit/mixed before).",

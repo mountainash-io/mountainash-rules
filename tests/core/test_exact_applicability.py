@@ -57,7 +57,7 @@ def _cases():
                 (negative,),
                 id=f"{strategy}-{dtype}-{timezone}",
             )
-        if dtype in {"str", "bool"}:
+        if dtype in {"str", "bool", "float"}:
             continue
         for low_closed, high_closed in (
             (False, False),
@@ -67,7 +67,7 @@ def _cases():
         ):
             middle = (
                 lower + (upper - lower) / 2
-                if dtype in {"float", "date", "datetime"}
+                if dtype in {"date", "datetime"}
                 else 5
             )
             positives = (

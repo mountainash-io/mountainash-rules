@@ -1,6 +1,7 @@
 """Constants for the expression-based rules engine."""
 
 import datetime
+from decimal import Decimal
 from enum import IntFlag, StrEnum
 
 
@@ -71,13 +72,14 @@ class DataType(StrEnum):
     STR = "str"
     INT = "int"
     FLOAT = "float"
+    DECIMAL = "decimal"
     BOOL = "bool"
     DATE = "date"
     DATETIME = "datetime"
 
     @property
     def is_numeric(self) -> bool:
-        return self in (DataType.INT, DataType.FLOAT)
+        return self in (DataType.INT, DataType.FLOAT, DataType.DECIMAL)
 
     @property
     def is_temporal(self) -> bool:
@@ -92,6 +94,7 @@ _DATATYPE_TO_PYTHON: dict[DataType, type] = {
     DataType.STR: str,
     DataType.INT: int,
     DataType.FLOAT: float,
+    DataType.DECIMAL: Decimal,
     DataType.BOOL: bool,
     DataType.DATE: datetime.date,
     DataType.DATETIME: datetime.datetime,

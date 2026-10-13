@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+import datetime as dt
 import pathlib
 import typing as t
 import warnings
 
 import yaml
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, Field, field_serializer, field_validator, model_validator
+
+from mountainash_rules.core.aggregate import Aggregate
+from mountainash_rules.core.codec import NumericDtype, validate_envelope
 
 from mountainash_rules.core.constants import (
     PYTHON_TO_DATATYPE,
@@ -16,7 +20,8 @@ from mountainash_rules.core.constants import (
     HitPolicy,
     MatchStrategy,
 )
-from mountainash_rules.core.contracts import ContextContract
+from mountainash_rules.core.contracts import ContextContract, DomainDefinition, ValidationPolicy
+from mountainash_rules.core.scalar import decode_scalar, encode_scalar
 
 
 class Dimension(BaseModel):
@@ -28,6 +33,12 @@ class Dimension(BaseModel):
     match_strategy: MatchStrategy = MatchStrategy.EXACT
     data_type: DataType = DataType.STR
     role: DimensionRole = DimensionRole.CONSTRAINT
+    numeric_dtype: NumericDtype | None = None
+    rounding: str | None = None
+    wildcard_values: list[t.Any] = Field(default_factory=list)
+    rule_wildcard_field: str | None = None
+    range_min_unbounded_field: str | None = None
+    range_max_unbounded_field: str | None = None
     valid_values: list[str | int | float | bool] = Field(
         default_factory=list,
         description=(
@@ -45,6 +56,36 @@ class Dimension(BaseModel):
 
     # REGEX strategy field — literal pattern stored on metadata (not per-rule)
     regex_pattern: t.Optional[str] = None
+
+    @field_validator("wildcard_values", mode="before")
+    @classmethod
+    def _decode_markers(cls, values: t.Any) -> list[t.Any]:
+        if not isinstance(values, list):
+            raise ValueError("wildcard_values must be a list of typed scalars")
+        result = []
+        for value in values:
+            if isinstance(value, dict):
+                value = decode_scalar(value, allow_null=True, allow_reserved=True)
+            else:
+                cls._encode_marker(value)
+            result.append(value)
+        return result
+
+    @staticmethod
+    def _encode_marker(value: t.Any) -> dict[str, t.Any]:
+        if value is None:
+            return encode_scalar(None, "null", allow_null=True)
+        data_type = PYTHON_TO_DATATYPE.get(type(value))
+        if data_type is None:
+            raise ValueError("wildcard_values requires supported typed scalars")
+        timezone = None
+        if isinstance(value, dt.datetime):
+            timezone = "naive" if value.tzinfo is None else "utc"
+        return encode_scalar(value, data_type, timezone=timezone, allow_reserved=True)
+
+    @field_serializer("wildcard_values", when_used="json")
+    def _encode_markers(self, values: list[t.Any]) -> list[dict[str, t.Any]]:
+        return [self._encode_marker(value) for value in values]
 
     @field_validator("data_type", mode="before")
     @classmethod
@@ -75,6 +116,20 @@ class Dimension(BaseModel):
     @model_validator(mode="after")
     def _validate_strategy_fields(self) -> "Dimension":
         orderable = self.data_type.is_numeric or self.data_type.is_temporal
+        ordered = self.match_strategy in (
+            MatchStrategy.RANGE, MatchStrategy.GREATER_THAN, MatchStrategy.LESS_THAN,
+        )
+        if ordered and self.data_type is DataType.FLOAT:
+            raise ValueError("FLOAT ordered dimensions require an explicit DECIMAL declaration")
+        if self.data_type is DataType.DECIMAL:
+            if not ordered:
+                raise ValueError("DECIMAL dimensions support ordered strategies only")
+            if self.numeric_dtype is None or self.numeric_dtype.precision > 16:
+                raise ValueError("DECIMAL dimensions require numeric_dtype with precision 1..16")
+            if self.rounding not in {"half_to_even", "half_away_from_zero"}:
+                raise ValueError("DECIMAL dimensions require explicit supported rounding")
+        elif self.numeric_dtype is not None or self.rounding is not None:
+            raise ValueError("numeric_dtype and rounding require a DECIMAL dimension")
 
         if self.match_strategy == MatchStrategy.RANGE:
             if not self.range_min_field or not self.range_max_field:
@@ -143,6 +198,83 @@ class DimensionsMetadata(BaseModel):
     priority_field: t.Optional[str] = None
     output_fields: list[str] = Field(default_factory=list)
     context_contracts: list[ContextContract] = Field(default_factory=list)
+    uuid_field: str | None = None
+    aggregates: list[Aggregate] = Field(default_factory=list)
+    partition_field: str | None = None
+    outcome_scope_field: str | None = None
+    outcome_scopes: dict[str, list[Aggregate]] = Field(default_factory=dict)
+    domain: DomainDefinition | None = None
+    context_domains: list[DomainDefinition] = Field(default_factory=list)
+    domain_nodes: dict[str, dict[str, t.Any]] = Field(default_factory=dict)
+    policy: ValidationPolicy | None = None
+
+    @model_validator(mode="after")
+    def _validate_accumulator_metadata(self) -> "DimensionsMetadata":
+        if self.outcome_scopes and self.outcome_scope_field is None:
+            raise ValueError("Declared outcome scopes require outcome_scope_field")
+        if self.outcome_scope_field is not None and not self.outcome_scopes:
+            raise ValueError("outcome_scope_field requires declared outcome scopes")
+        if self.outcome_scopes and self.aggregates:
+            raise ValueError("Use either default aggregates or declared outcome scopes")
+        for scope, aggregates in self.outcome_scopes.items():
+            if not scope or "." in scope or not aggregates:
+                raise ValueError("Scopes require nonempty dot-free names and aggregate lists")
+        for aggregates in [self.aggregates, *self.outcome_scopes.values()]:
+            outputs: set[str] = set()
+            sources: dict[str, tuple[t.Any, ...]] = {}
+            for aggregate in aggregates:
+                output = aggregate.resolved_output_name
+                if "." in output or output in outputs:
+                    raise ValueError("Aggregate output names must be unique and dot-free per scope")
+                outputs.add(output)
+                signature = aggregate.data_type, aggregate.numeric_dtype, aggregate.timezone
+                previous = sources.setdefault(aggregate.column_name, signature)
+                if previous != signature:
+                    raise ValueError("Incompatible contribution declarations within one scope")
+        return self
+
+    @model_validator(mode="after")
+    def _validate_domains(self) -> "DimensionsMetadata":
+        domains: dict[str, DomainDefinition] = {}
+        for domain in ([self.domain] if self.domain is not None else []) + self.context_domains:
+            previous = domains.setdefault(domain.domain_id, domain)
+            if previous != domain:
+                raise ValueError(f"Incompatible definitions for domain {domain.domain_id!r}")
+            if domain.predicate_id not in self.domain_nodes:
+                raise ValueError(f"Unresolved domain predicate {domain.predicate_id!r}")
+        for identifier, payload in self.domain_nodes.items():
+            validate_envelope({"id": identifier, "payload": payload}, "predicate")
+            node = payload["node"]
+            children = node.get("args", [node["arg"]] if "arg" in node else [])
+            if any(child not in self.domain_nodes for child in children):
+                raise ValueError("Unresolved domain predicate child")
+        # Standalone filter contracts may be bound to external domains. A supplied
+        # domain bundle, however, must be self-contained and never gets a fallback.
+        if domains or self.domain_nodes:
+            for contract in self.context_contracts:
+                if contract.domain_ref not in domains:
+                    raise ValueError(f"Unresolved provider domain {contract.domain_ref!r}")
+        interpretation: dict[str, tuple[t.Any, ...]] = {}
+        for domain in domains.values():
+            for field in domain.fields:
+                signature = field.data_type, field.numeric_dtype, field.rounding, field.timezone
+                previous_interpretation = interpretation.setdefault(field.name, signature)
+                if previous_interpretation != signature:
+                    raise ValueError("Domain fields require compatible concrete interpretation")
+        for dim in self.dimensions:
+            declared = interpretation.get(dim.resolved_context_field)
+            if declared is not None and declared[:3] != (
+                dim.data_type, dim.numeric_dtype, dim.rounding
+            ):
+                raise ValueError("Dimension and domain require compatible concrete interpretation")
+        for contract in self.context_contracts:
+            for field in contract.fields:
+                declared = interpretation.get(field.name)
+                if declared is not None and declared != (
+                    field.data_type, field.numeric_dtype, field.rounding, field.timezone
+                ):
+                    raise ValueError("Provider and domain require compatible concrete interpretation")
+        return self
 
     @model_validator(mode="after")
     def _validate_context_contracts(self) -> "DimensionsMetadata":
@@ -159,7 +291,9 @@ class DimensionsMetadata(BaseModel):
             fields = {field.name: field for field in contract.fields}
             for dim in self.dimensions:
                 field = fields.get(dim.resolved_context_field)
-                if field is None or field.data_type is not dim.data_type:
+                if field is None or (
+                    field.data_type, field.numeric_dtype, field.rounding
+                ) != (dim.data_type, dim.numeric_dtype, dim.rounding):
                     raise ValueError(f"Undeclared or incompatible physical field {dim.resolved_context_field!r}")
             for profile in contract.profiles:
                 if not set(profile.dimensions) <= ordinary:

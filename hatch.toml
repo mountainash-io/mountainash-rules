@@ -76,6 +76,7 @@ dependencies = [
     "mountainash_data @             {root:uri}/temp/mountainash-data",
     "mountainash @                  {root:uri}/temp/mountainash",
     "mountainash_settings @         {root:uri}/temp/mountainash-settings",
+    "mountainash_auth_client @      {root:uri}/temp/mountainash-auth-client",
 
 ]
 [envs.test_github.scripts]

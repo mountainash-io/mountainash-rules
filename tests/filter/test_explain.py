@@ -21,11 +21,13 @@ def engine():
                 dimension_name="region",
                 match_strategy=MatchStrategy.EXACT,
                 data_type="str",
+                wildcard_values=[None, "<NA>", "<NOT_SET>"],
             ),
             Dimension(
                 dimension_name="channel",
                 match_strategy=MatchStrategy.EXACT,
                 data_type="str",
+                wildcard_values=[None, "<NA>", "<NOT_SET>"],
             ),
         ]
     )

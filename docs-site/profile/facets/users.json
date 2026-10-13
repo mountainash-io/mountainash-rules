@@ -19,7 +19,7 @@
       "description": "Dimensions describe the axes your rules operate on. Each dimension pairs a data column with a MatchStrategy (EXACT, EXACT_KEY, RANGE, GREATER_THAN, LESS_THAN, PREFIX, SUFFIX, CONTAINS, REGEX, CONTEXT_REGEX, SET_MEMBERSHIP, SET_EXCLUSION), giving you fine-grained control over how context values are compared to rule metadata. DimensionsMetadata round-trips to/from YAML.",
       "recommended_docs": [
         "docs/user-quickstart.md#step-2--declare-dimensions",
-        "docs/superpowers/specs/2026-07-12-serializable-dimension-metadata-design.md"
+        "mountainash-central/04.planning/mountainash-rules/superpowers/specs/2026-07-12-serializable-dimension-metadata-design.md"
       ],
       "evidence": [
         {
@@ -89,7 +89,7 @@
       "description": "Control how many survivors you get back: collect (default, all survivors), unique (raise if more than one survives), first, priority (by a priority_field), any (raise on conflicting outputs), or rule_order. Set on DimensionsMetadata or per evaluate() call.",
       "recommended_docs": [
         "README.md#hit-policies",
-        "docs/superpowers/specs/2026-07-12-hit-policies-design.md"
+        "mountainash-central/04.planning/mountainash-rules/superpowers/specs/2026-07-12-hit-policies-design.md"
       ],
       "evidence": [
         {
@@ -99,7 +99,7 @@
         },
         {
           "kind": "doc",
-          "path": "CLAUDE.md",
+          "path": "AGENTS.md",
           "detail": "'Hit policies (hit_policy.py, constants.HitPolicy)' section"
         }
       ]
@@ -139,7 +139,7 @@
       "recommended_docs": [
         "README.md#accumulator-engine",
         "docs/user-quickstart.md#part-2-accumulatorengine",
-        "docs/superpowers/specs/2026-07-12-accumulator-correctness-design.md"
+        "mountainash-central/04.planning/mountainash-rules/superpowers/specs/2026-07-12-accumulator-correctness-design.md"
       ],
       "evidence": [
         {
@@ -161,12 +161,12 @@
       ],
       "description": "Lattice.save(dir) writes a parquet + manifest snapshot; Lattice.load(dir) rehydrates it. Build offline once, save it, and serve apply() from the loaded snapshot in production without rebuilding.",
       "recommended_docs": [
-        "docs/superpowers/specs/2026-07-16-lattice-snapshot-save-load-design.md"
+        "mountainash-central/04.planning/mountainash-rules/superpowers/specs/2026-07-16-lattice-snapshot-save-load-design.md"
       ],
       "evidence": [
         {
           "kind": "doc",
-          "path": "CLAUDE.md",
+          "path": "AGENTS.md",
           "detail": "'Lattice.save(dir) / Lattice.load(dir) \u2014 snapshot persistence'"
         },
         {
@@ -186,7 +186,7 @@
       "description": "Mark dimensions as CONTEXT_KEY to partition your rule set before building lattices. build_all() builds one lattice per partition; index(lattices) returns a LatticeIndex that routes each context (or batch) to the correct lattice via ternary + specificity semantics, with load-time ambiguity validation.",
       "recommended_docs": [
         "docs/user-quickstart.md#partitioned-lattices-context_key-dimensions",
-        "docs/superpowers/specs/2026-07-19-ternary-partition-routing-design.md"
+        "mountainash-central/04.planning/mountainash-rules/superpowers/specs/2026-07-19-ternary-partition-routing-design.md"
       ],
       "evidence": [
         {

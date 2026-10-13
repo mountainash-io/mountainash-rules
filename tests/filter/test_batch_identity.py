@@ -13,7 +13,11 @@ def _engine(rule_cid=False):
     return ExpressionRulesEngine(
         rules,
         dimension_metadata=DimensionsMetadata(
-            dimensions=[Dimension(dimension_name="region")]
+            dimensions=[
+                Dimension(
+                    dimension_name="region", wildcard_values=[None, "<NA>", "<NOT_SET>"]
+                )
+            ]
         ),
     )
 

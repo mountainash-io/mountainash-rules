@@ -7,8 +7,9 @@ import math
 import re
 import struct
 import typing as t
+from decimal import Decimal
 
-from mountainash import ValueKind, text_value, value_kind
+from mountainash import DecimalDtype, ValueKind, text_value, value_kind
 
 from mountainash_rules.core.constants import (
     NOT_SET,
@@ -44,6 +45,7 @@ _RESERVED: dict[DataType, frozenset[t.Any]] = {
     DataType.BOOL: frozenset(),
     DataType.INT: frozenset({UNKNOWN_NUMERIC, NOT_SET_NUMERIC}),
     DataType.FLOAT: frozenset({float(UNKNOWN_NUMERIC), float(NOT_SET_NUMERIC)}),
+    DataType.DECIMAL: frozenset(),
     DataType.DATE: frozenset({UNKNOWN_DATE, NOT_SET_DATE}),
     DataType.DATETIME: frozenset({UNKNOWN_DATETIME, NOT_SET_DATETIME}),
 }
@@ -180,6 +182,7 @@ def normalize_scalar(
             return None
         raise ValueError(f"{normalized_type.value} scalar cannot be null")
 
+    normalized: t.Any
     if normalized_type is DataType.STR:
         normalized = _unicode_scalar_text(value)
     elif normalized_type is DataType.BOOL:
@@ -190,6 +193,10 @@ def normalize_scalar(
         normalized = _normalize_int(value)
     elif normalized_type is DataType.FLOAT:
         normalized = _normalize_float(value, context)
+    elif normalized_type is DataType.DECIMAL:
+        if not isinstance(value, Decimal) or not value.is_finite():
+            raise ValueError("decimal scalar requires a finite Decimal")
+        normalized = value
     elif normalized_type is DataType.DATE:
         if not isinstance(value, dt.date) or isinstance(value, dt.datetime):
             raise ValueError("date scalar requires a date without a time component")
@@ -218,6 +225,8 @@ def _encode_concrete(
         return {"type": "int", "value": str(value)}
     if data_type is DataType.FLOAT:
         return {"type": "float", "value": struct.pack(">d", value).hex()}
+    if data_type is DataType.DECIMAL:
+        return {"type": "decimal", "value": format(value, "f")}
     if data_type is DataType.DATE:
         return {"type": "date", "value": value.isoformat()}
     suffix = "" if timezone == "naive" else "Z"
@@ -237,8 +246,14 @@ def encode_scalar(
     context: bool = False,
     allow_null: bool = False,
     allow_reserved: bool = False,
+    numeric_dtype: DecimalDtype | None = None,
+    rounding: str | None = None,
 ) -> dict[str, t.Any]:
     """Return the exact typed transport object for one validated scalar."""
+    if data_type == "null":
+        if value is not None or not allow_null:
+            raise ValueError("null marker requires an explicitly allowed null")
+        return {"type": "null", "value": None}
     normalized_type = _data_type(data_type)
     _validate_timezone(normalized_type, timezone)
     normalized = normalize_scalar(
@@ -273,10 +288,16 @@ def decode_scalar(
     *,
     allow_null: bool = False,
     allow_reserved: bool = False,
+    numeric_dtype: DecimalDtype | None = None,
+    rounding: str | None = None,
 ) -> t.Any:
     """Decode exactly one canonical typed transport object."""
     if type(payload) is not dict or type(payload.get("type")) is not str:
         raise ValueError("scalar payload must be an object with a string type")
+    if payload["type"] == "null":
+        if set(payload) != {"type", "value"} or payload["value"] is not None or not allow_null:
+            raise ValueError("Invalid or unpermitted null marker")
+        return None
     data_type = _data_type(payload["type"])
     expected_keys = (
         {"type", "value", "timezone"}
@@ -309,6 +330,10 @@ def decode_scalar(
         if type(value) is not str or _HEX_BITS.fullmatch(value) is None:
             raise ValueError("float payload value is not canonical binary64 bits")
         decoded = _float_from_bits(int(value, 16))
+    elif data_type is DataType.DECIMAL:
+        if type(value) is not str or re.fullmatch(r"-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?", value) is None:
+            raise ValueError("decimal payload value must be plain decimal text")
+        decoded = Decimal(value)
     elif data_type is DataType.DATE:
         if type(value) is not str or _DATE_PAYLOAD.fullmatch(value) is None:
             raise ValueError("date payload value is not canonical")

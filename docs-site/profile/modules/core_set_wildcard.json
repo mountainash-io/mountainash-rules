@@ -51,7 +51,7 @@
   "evidence": [
     {
       "kind": "doc",
-      "path": "CLAUDE.md",
+      "path": "AGENTS.md",
       "detail": "'Set-dimension wildcards use the in-band [sentinel] list (not null)...'"
     }
   ],

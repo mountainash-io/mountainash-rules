@@ -39,7 +39,14 @@ def _engine(data=None, backend="polars", **metadata):
         }
     return ExpressionRulesEngine(
         build_backend_df(backend, data),
-        DimensionsMetadata(dimensions=[Dimension(dimension_name="region")], **metadata),
+        DimensionsMetadata(
+            dimensions=[
+                Dimension(
+                    dimension_name="region", wildcard_values=[None, "<NA>", "<NOT_SET>"]
+                )
+            ],
+            **metadata,
+        ),
     )
 
 
@@ -298,7 +305,12 @@ def test_surviving_null_priority_rejected_before_filters(backend_name):
 @pytest.mark.parametrize("fields", [["price", "missing"], ["price", "price"], [""]])
 def test_declared_output_errors_are_not_hidden_by_empty_rules(fields):
     metadata = DimensionsMetadata(
-        dimensions=[Dimension(dimension_name="region")], output_fields=fields
+        dimensions=[
+            Dimension(
+                dimension_name="region", wildcard_values=[None, "<NA>", "<NOT_SET>"]
+            )
+        ],
+        output_fields=fields,
     )
     for rules in (
         pl.DataFrame({"region": ["AU"], "price": [1]}),
@@ -344,7 +356,11 @@ def test_expression_output_schema_is_explicit_and_constructor_only():
                 rules, dimension_expressions=expressions, output_fields=invalid
             )
     metadata_without_outputs = DimensionsMetadata(
-        dimensions=[Dimension(dimension_name="region")]
+        dimensions=[
+            Dimension(
+                dimension_name="region", wildcard_values=[None, "<NA>", "<NOT_SET>"]
+            )
+        ]
     )
     for fields in ([], ["price"]):
         with pytest.raises(ValueError):
@@ -453,7 +469,11 @@ def test_assertions_precede_every_output_reduction(policy, filters):
 def test_output_inference_uses_full_physical_metadata_not_active_projection():
     metadata = DimensionsMetadata(
         dimensions=[
-            Dimension(dimension_name="region", rule_field="country"),
+            Dimension(
+                dimension_name="region",
+                rule_field="country",
+                wildcard_values=[None, "<NA>", "<NOT_SET>"],
+            ),
             Dimension(
                 dimension_name="age",
                 data_type=DataType.INT,

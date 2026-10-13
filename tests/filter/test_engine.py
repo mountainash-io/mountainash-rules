@@ -22,14 +22,19 @@ def _rows(df) -> dict:
 # Survival + matching
 # ---------------------------------------------------------------------------
 
+
 class TestSurvival:
     def test_non_matching_rules_eliminated(self, basic_engine):
-        result = basic_engine.evaluate(context={"region": "AU", "amount": 50, "code": "PRE-001"})
+        result = basic_engine.evaluate(
+            context={"region": "AU", "amount": 50, "code": "PRE-001"}
+        )
         names = _rows(result.survivors)["rule_name"]
         assert "no_match" not in names
 
     def test_matching_rules_survive(self, basic_engine):
-        result = basic_engine.evaluate(context={"region": "AU", "amount": 50, "code": "PRE-001"})
+        result = basic_engine.evaluate(
+            context={"region": "AU", "amount": 50, "code": "PRE-001"}
+        )
         names = _rows(result.survivors)["rule_name"]
         assert "specific" in names
         assert "general" in names
@@ -40,32 +45,40 @@ class TestSurvival:
 # Specificity
 # ---------------------------------------------------------------------------
 
+
 class TestSpecificity:
     def test_specific_rule_ranks_first(self, basic_engine):
         # With REGEX as a context validator, "specific" and "mid" tie at
         # specificity 3 — either is acceptable as the top match.
-        result = basic_engine.evaluate(context={"region": "AU", "amount": 50, "code": "PRE-001"})
+        result = basic_engine.evaluate(
+            context={"region": "AU", "amount": 50, "code": "PRE-001"}
+        )
         best = _rows(result.best_match)
         assert best["rule_name"][0] in ("specific", "mid")
 
     def test_specificity_values(self, basic_engine):
-        result = basic_engine.evaluate(context={"region": "AU", "amount": 50, "code": "PRE-001"})
+        result = basic_engine.evaluate(
+            context={"region": "AU", "amount": 50, "code": "PRE-001"}
+        )
         rows = _rows(result.survivors)
         name_to_spec = dict(zip(rows["rule_name"], rows["__specificity"]))
         # REGEX dimension (code, pattern "^PRE.*") is context-driven: with
         # context code="PRE-001" it contributes +1 to every surviving rule.
         assert name_to_spec["specific"] == 3  # region + amount + code
-        assert name_to_spec["general"] == 1   # code only (region/amount unknown)
-        assert name_to_spec["mid"] == 3       # region + amount + code
+        assert name_to_spec["general"] == 1  # code only (region/amount unknown)
+        assert name_to_spec["mid"] == 3  # region + amount + code
 
 
 # ---------------------------------------------------------------------------
 # Ranking
 # ---------------------------------------------------------------------------
 
+
 class TestRanking:
     def test_rank_order(self, basic_engine):
-        result = basic_engine.evaluate(context={"region": "AU", "amount": 50, "code": "PRE-001"})
+        result = basic_engine.evaluate(
+            context={"region": "AU", "amount": 50, "code": "PRE-001"}
+        )
         rows = _rows(result.survivors)
         pairs = sorted(zip(rows["__rank"], rows["rule_name"]))
         names_in_order = [name for _, name in pairs]
@@ -79,15 +92,27 @@ class TestRanking:
 # Empty result
 # ---------------------------------------------------------------------------
 
+
 class TestEmptyResult:
     def test_no_survivors(self, backend_name):
-        rules = build_backend_df(backend_name, {
-            "rule_name": ["only_us"],
-            "region": ["US"],
-        }, table_name="empty_rules")
-        metadata = DimensionsMetadata(dimensions=[
-            Dimension(dimension_name="region", match_strategy=MatchStrategy.EXACT, data_type=str),
-        ])
+        rules = build_backend_df(
+            backend_name,
+            {
+                "rule_name": ["only_us"],
+                "region": ["US"],
+            },
+            table_name="empty_rules",
+        )
+        metadata = DimensionsMetadata(
+            dimensions=[
+                Dimension(
+                    dimension_name="region",
+                    match_strategy=MatchStrategy.EXACT,
+                    data_type=str,
+                    wildcard_values=[None, "<NA>", "<NOT_SET>"],
+                ),
+            ]
+        )
         engine = ExpressionRulesEngine(rules=rules, dimension_metadata=metadata)
         result = engine.evaluate(context={"region": "AU"})
         assert result.count == 0
@@ -96,6 +121,7 @@ class TestEmptyResult:
 # ---------------------------------------------------------------------------
 # top_n / min_specificity / subset
 # ---------------------------------------------------------------------------
+
 
 class TestTopN:
     def test_top_n_limits_results(self, basic_engine):
@@ -150,9 +176,12 @@ class TestDimensionsSubset:
 # Observability toggle
 # ---------------------------------------------------------------------------
 
+
 class TestObservability:
     def test_observability_columns_present_by_default(self, basic_engine):
-        result = basic_engine.evaluate(context={"region": "AU", "amount": 50, "code": "PRE-001"})
+        result = basic_engine.evaluate(
+            context={"region": "AU", "amount": 50, "code": "PRE-001"}
+        )
         cols = set(_rows(result.survivors).keys())
         assert "__t_region" in cols
         assert "__t_amount" in cols
@@ -175,12 +204,17 @@ class TestObservability:
 # Custom expressions
 # ---------------------------------------------------------------------------
 
+
 class TestCustomExpressions:
     def test_custom_expression_exact(self, backend_name):
-        rules = build_backend_df(backend_name, {
-            "rule_name": ["r1", "r2"],
-            "region": ["AU", "US"],
-        }, table_name="custom_rules")
+        rules = build_backend_df(
+            backend_name,
+            {
+                "rule_name": ["r1", "r2"],
+                "region": ["AU", "US"],
+            },
+            table_name="custom_rules",
+        )
 
         engine = ExpressionRulesEngine(
             rules=rules,
@@ -196,18 +230,29 @@ class TestCustomExpressions:
         assert _rows(result.best_match)["rule_name"][0] == "r1"
 
     def test_cannot_provide_both_metadata_and_expressions(self, backend_name):
-        rules = build_backend_df(backend_name, {"rule_name": ["r1"]}, table_name="two_ways")
+        rules = build_backend_df(
+            backend_name, {"rule_name": ["r1"]}, table_name="two_ways"
+        )
         with pytest.raises(ValueError, match="not both"):
             ExpressionRulesEngine(
                 rules=rules,
-                dimension_metadata=DimensionsMetadata(dimensions=[
-                    Dimension(dimension_name="x", match_strategy=MatchStrategy.EXACT, data_type=str),
-                ]),
+                dimension_metadata=DimensionsMetadata(
+                    dimensions=[
+                        Dimension(
+                            dimension_name="x",
+                            match_strategy=MatchStrategy.EXACT,
+                            data_type=str,
+                            wildcard_values=[None, "<NA>", "<NOT_SET>"],
+                        ),
+                    ]
+                ),
                 dimension_expressions={"x": ma.col("x")},
             )
 
     def test_must_provide_one_of_metadata_or_expressions(self, backend_name):
-        rules = build_backend_df(backend_name, {"rule_name": ["r1"]}, table_name="neither")
+        rules = build_backend_df(
+            backend_name, {"rule_name": ["r1"]}, table_name="neither"
+        )
         with pytest.raises(ValueError, match="Must provide"):
             ExpressionRulesEngine(rules=rules)
 
@@ -216,22 +261,36 @@ class TestFilterEngineRejectsInvalidSetRules:
     def _meta(self):
         from mountainash_rules import Dimension, DimensionsMetadata
         from mountainash_rules.core.constants import MatchStrategy, DataType
-        return DimensionsMetadata(dimensions=[
-            Dimension(dimension_name="region", match_strategy=MatchStrategy.SET_MEMBERSHIP, data_type=DataType.STR),
-        ])
+
+        return DimensionsMetadata(
+            dimensions=[
+                Dimension(
+                    dimension_name="region",
+                    match_strategy=MatchStrategy.SET_MEMBERSHIP,
+                    data_type=DataType.STR,
+                    wildcard_values=[None, "<NA>", "<NOT_SET>"],
+                ),
+            ]
+        )
 
     def _rules(self):
         import polars as pl
-        return pl.DataFrame({
-            "rule_name": ["R1"],
-            "region": pl.Series("region", [["AU", "<NA>"]], dtype=pl.List(pl.Utf8)),
-        })
+
+        return pl.DataFrame(
+            {
+                "rule_name": ["R1"],
+                "region": pl.Series("region", [["AU", "<NA>"]], dtype=pl.List(pl.Utf8)),
+            }
+        )
 
     def test_embedded_sentinel_rejected_on_evaluate(self):
         import pytest
         from mountainash_rules import ExpressionRulesEngine
-        engine = ExpressionRulesEngine(rules=self._rules(), dimension_metadata=self._meta())
-        with pytest.raises(ValueError, match="sentinel"):
+
+        engine = ExpressionRulesEngine(
+            rules=self._rules(), dimension_metadata=self._meta()
+        )
+        with pytest.raises(ValueError, match="region"):
             engine.evaluate({"region": "AU"})
 
     def test_embedded_sentinel_rejected_on_evaluate_batch(self):
@@ -240,7 +299,10 @@ class TestFilterEngineRejectsInvalidSetRules:
         import polars as pl
         import pytest
         from mountainash_rules import ExpressionRulesEngine
-        engine = ExpressionRulesEngine(rules=self._rules(), dimension_metadata=self._meta())
+
+        engine = ExpressionRulesEngine(
+            rules=self._rules(), dimension_metadata=self._meta()
+        )
         contexts = pl.DataFrame({"region": ["AU"]})
-        with pytest.raises(ValueError, match="sentinel"):
+        with pytest.raises(ValueError, match="region"):
             engine.evaluate_batch(contexts)

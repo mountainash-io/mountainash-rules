@@ -21,7 +21,7 @@ What this pass actually changed, backed by the unchanged source above (no new so
 
 - Added the required `documentation_plan` array to all five facets.
 - Added `recommended_docs`/`evidence` to every existing concept in `users`, `maintainers`, `contributors`, and
-  `backend-architecture` (32 concepts), citing already-established module evidence, README.md/CLAUDE.md
+  `backend-architecture` (32 concepts), citing already-established module evidence, README.md/AGENTS.md
   sections, `docs/user-quickstart.md` sections, and `docs/superpowers/specs/*.md` design docs.
 - Added a `concepts` array to `facets/broader-hype.json` (previously absent — a required-field gap, not a
   missing-`documentation_plan`-only gap), covering all 7 `what_it_makes_possible` capabilities against the
@@ -103,7 +103,7 @@ The prior profile (`41d5846`) recorded seven open questions. Current status:
 2. REGEX pattern scope — **Unchanged, now clarified.** `REGEX` (per-row pattern column) is now distinct from
    `CONTEXT_REGEX` (metadata-level literal pattern); both exist as separate, correctly-scoped strategies.
 3. SET_MEMBERSHIP / SET_EXCLUSION backend parity — **Still a caveat.** Narwhals list-op support tracked
-   upstream as `mountainash#89`; documented in CLAUDE.md and xfailed in `tests/conftest.py`.
+   upstream as `mountainash#89`; documented in AGENTS.md and xfailed in `tests/conftest.py`.
 4. ~~AccumulatorEngine: string/set strategies unsupported~~ — **Resolved.** Set membership/exclusion now
    supported in the accumulator via `core/set_wildcard` + `engines/accumulator/compiler`.
 5. ~~Prime table limit ~500 rows~~ — **Resolved/raised.** `MAX_RULES_PER_PARTITION = 10_000`, an explicit

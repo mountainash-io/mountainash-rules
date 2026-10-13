@@ -23,14 +23,6 @@ class TestNumericStrategyValidation:
         )
         assert d.match_strategy == MatchStrategy.GREATER_THAN
 
-    def test_greater_than_accepts_float(self):
-        d = Dimension(
-            dimension_name="x",
-            match_strategy=MatchStrategy.GREATER_THAN,
-            data_type=float,
-        )
-        assert d.match_strategy == MatchStrategy.GREATER_THAN
-
     def test_less_than_requires_numeric(self):
         with pytest.raises(ValueError, match="less_than"):
             Dimension(

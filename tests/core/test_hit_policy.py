@@ -25,7 +25,9 @@ class TestMetadataFields:
 
 
 def _region_md(**kwargs):
-    return DimensionsMetadata(dimensions=[Dimension(dimension_name="region")], **kwargs)
+    return DimensionsMetadata(
+        dimensions=[Dimension(dimension_name="region", wildcard_values=["<NA>"])], **kwargs,
+    )
 
 
 class TestDeterministicTieBreak:

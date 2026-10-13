@@ -18,8 +18,12 @@ from mountainash_rules import (
 def _metadata():
     return DimensionsMetadata(
         dimensions=[
-            Dimension(dimension_name="region"),
-            Dimension(dimension_name="channel"),
+            Dimension(
+                dimension_name="region", wildcard_values=[None, "<NA>", "<NOT_SET>"]
+            ),
+            Dimension(
+                dimension_name="channel", wildcard_values=[None, "<NA>", "<NOT_SET>"]
+            ),
         ],
         priority_field="price",
         output_fields=["price"],
@@ -229,6 +233,7 @@ def _boolean_boundary_engine(rules):
                     rule_field="flag",
                     context_field="active",
                     data_type=DataType.BOOL,
+                    wildcard_values=[None],
                 )
             ]
         ),

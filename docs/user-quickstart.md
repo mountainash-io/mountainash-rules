@@ -25,13 +25,11 @@ Resolve the configured `mountainash` dependency at delivered merge `b9c0ab4ab638
 
 Rules live in a DataFrame. Each row is a rule; each column is either a rule name, a dimension column, or metadata. The engine evaluates a **context** (a dict or Pydantic model) against every rule in one vectorised pass and returns surviving rules ranked by **specificity** — how many dimensions the rule constrains explicitly.
 
-Wildcards are sentinel values that let a rule skip a dimension entirely:
-
-| Data type | Wildcard sentinel |
-|-----------|------------------|
-| `str` | `"<NA>"` |
-| `int` / `float` | `-999999999` |
-
+Wildcards are explicitly declared per dimension with `wildcard_values`, or mapped
+from Boolean rule-state columns. There are no implicit sentinel values:
+`"<NA>"`, `"<NOT_SET>"`, `-999999999` and `-999999998` are concrete values unless
+that dimension declares them as markers. Marker comparison preserves the original
+type and occurs before numeric conversion.
 A wildcard dimension scores 0 (unknown) in ternary logic. The rule still survives, but ranks lower than a rule that explicitly matched that dimension.
 
 ---
@@ -50,7 +48,7 @@ rules = pl.DataFrame({
 })
 ```
 
-`"<NA>"` and `-999999999` are the wildcard sentinels. A rule with a wildcard on a dimension matches any context value for that dimension.
+This example declares `"<NA>"` and `-999999999` as markers below. Without those declarations, they remain ordinary rule values.
 
 ---
 
@@ -64,16 +62,19 @@ metadata = DimensionsMetadata(dimensions=[
         dimension_name="region",
         match_strategy=MatchStrategy.EXACT,
         data_type=str,
+        wildcard_values=["<NA>"],
     ),
     Dimension(
         dimension_name="tier",
         match_strategy=MatchStrategy.EXACT,
         data_type=str,
+        wildcard_values=["<NA>"],
     ),
     Dimension(
         dimension_name="spend",
         match_strategy=MatchStrategy.RANGE,
         data_type=int,
+        wildcard_values=[-999999999],
         range_min_field="spend_min",
         range_max_field="spend_max",
     ),
@@ -265,7 +266,7 @@ result = engine.evaluate(context, include_observability=False)
 
 ### Context with missing fields
 
-For metadata-backed evaluation, an absent field or `None` binds to the datatype's NOT_SET sentinel; Boolean absence uses null instead of a string marker. Single, batch and chunked evaluation use the same matching semantics. Explicit UNKNOWN and NOT_SET markers remain distinct stored values.
+Metadata-backed evaluation keeps availability separate from the typed comparison value. An absent field, null or configured context marker is unavailable; it is not replaced by a NOT_SET sentinel. Original omission and supplied-null provenance remain distinct. Single, batch and chunked evaluation share these semantics. In a relation, a present column is supplied for every row, including its null cells.
 
 Boolean dimensions default to `BooleanCoercion.NONE` (`0`), admitting only semantic `True`/`False` plus absence. The standalone filter supports these additional input domains:
 
@@ -298,11 +299,11 @@ Classification never chains through another domain: numeric `2` is true with `NU
 
 Semantic scalars include Python `bool` and NumPy `bool_`. Numeric flags admit Python/NumPy integers and floats, not Decimal, complex, bytes, or custom truthiness objects. Recognized backend nulls remain absent; concrete NaN/infinity is invalid. Rules sees values after Pydantic `model_dump` or dataframe ingestion and cannot recover types already changed by the caller.
 
-Ordinary comparisons and string predicates treat unavailable context as ternary 0: the rule may survive, but that dimension earns no specificity. In particular, PREFIX, SUFFIX, CONTAINS and per-row REGEX never match the spelling of a missing-value marker.
+Ordinary comparisons and string predicates treat unavailable context as ternary 0: the rule may survive, but that dimension earns no specificity. A former sentinel spelling is concrete when it is not declared as a marker, so it can match an ordinary string predicate.
 
 Strict strategies differ: `CONTEXT_REGEX` rejects unavailable context with -1, even when its pattern would match `<NOT_SET>` or empty text. A concrete empty string is tested against the pattern normally. `EXACT_KEY` accepts only authored rule-side wildcards when context is unavailable; concrete partition keys do not match missing input. Unknown in another dimension never rescues a known non-match.
 
-The expressions-only constructor has no datatype metadata and retains string NOT_SET binding; custom expressions own its interpretation.
+The expressions-only constructor has no datatype metadata. It binds missing inputs as null under the existing `__ctx_<name>` column names; custom expressions own their interpretation.
 
 ```python
 # Context missing 'tier' — this ordinary EXACT dimension cannot eliminate rules
@@ -331,16 +332,139 @@ Dimension(
 Dimension(
     dimension_name="score",
     match_strategy=MatchStrategy.GREATER_THAN,
-    data_type=float,
+    data_type=int,
 )
 
 # LESS_THAN: context value < rule threshold
 Dimension(
     dimension_name="risk",
     match_strategy=MatchStrategy.LESS_THAN,
-    data_type=float,
+    data_type=int,
 )
 ```
+
+#### Replacement authoring metadata
+
+Fractional ordered declarations use `data_type="decimal"`, a Mountainash
+`DecimalDtype(precision, scale)` and explicit `rounding="half_to_even"` or
+`"half_away_from_zero"`. Ordered precision is 1–16 digits; scale is 0–precision.
+FLOAT RANGE/GREATER_THAN/LESS_THAN declarations are no longer accepted.
+The replacement also rejects FLOAT intervals and ordered field comparisons
+(`lt`, `le`, `gt`, `ge`) in both source domains and provider domains, including
+inside inactive Boolean branches. FLOAT categorical exact/set matching and
+domain `eq`/`ne` comparisons remain supported. Integer and temporal ordering
+remain supported.
+
+Metadata JSON/YAML preserves `numeric_dtype` as the Mountainash numeric descriptor
+(`kind`, `precision`, `scale`). A dimension's `wildcard_values` retains original
+scalar types: no declarations (`[]`) differs from an explicit null marker
+(`[None]`), and decimal markers are not rounded during serialization. Optional
+rule mappings are `rule_wildcard_field`, `range_min_unbounded_field` and
+`range_max_unbounded_field`.
+
+Mapped Boolean flags are authoritative: `True` makes the associated payload
+unused, including an otherwise invalid payload. Flags must be nonnull Booleans;
+`False` combined with a declared marker is inconsistent authoring. RANGE endpoints
+have independent unbounded flags. With no flags, declared markers determine state.
+
+The filter converts admitted Decimal values once before comparing them. Native
+integers, finite Decimal values representable with at most 38 source digits, and
+plain ASCII decimal text are accepted; floating-point values, exponent notation,
+whitespace and overflow are rejected.
+
+```python
+from decimal import Decimal
+from mountainash import DecimalDtype
+
+decimal_rules = pl.DataFrame({
+    "rule": ["singleton", "upper"],
+    "lo": ["0.004", "0.010"],
+    "hi": ["0.004", "0.020"],
+})
+decimal_metadata = DimensionsMetadata(dimensions=[Dimension(
+    dimension_name="amount", context_field="quoted",
+    match_strategy="range", data_type="decimal",
+    numeric_dtype=DecimalDtype(10, 3), rounding="half_to_even",
+    range_min_field="lo", range_max_field="hi",
+)])
+decimal_engine = ExpressionRulesEngine(decimal_rules, decimal_metadata)
+decimal_engine.evaluate({"quoted": Decimal("0.00449")})  # singleton
+decimal_engine.evaluate({"quoted": Decimal("0.00451")})  # no survivor
+decimal_engine.evaluate({"quoted": Decimal("0.01950")})  # upper
+```
+
+Replacement metadata also carries `uuid_field`, `partition_field`,
+`outcome_scope_field`/`outcome_scopes`, default-scope `aggregates`, source `domain`,
+`context_domains`, predicate-1 `domain_nodes`, retained `context_contracts` and
+optional `policy`. Declared scope names and resolved output names are dot-free
+for the `<scope>.<output>` wide view. The new aggregate model remains internal
+until the coordinated public cutover; existing public `Aggregate` is still the
+old accumulator model.
+
+For DECIMAL SUM/MIN/MAX, final `output_numeric_dtype`/`output_rounding` conversion
+is optional. Omitting it retains the native aggregate dtype and value; supplying
+it converts the final result once. PRODUCT requires an explicit final output
+dtype and rounding policy.
+
+The shared filter Decimal/state paths have executable Polars and Ibis-DuckDB
+coverage. The replacement accumulator remains internal; its public package-root
+cutover is separate. Per-row REGEX on the filter uses public expression-valued
+`str.regex_contains`, qualified on Polars and Ibis-DuckDB against Mountainash
+commit `4a4991253fb629a2b9ede26f6f1cef12755109ef` (including the #364 repair).
+There is no Rules-native backend escape.
+
+Internal replacement snapshots support ordinary unchecked publication and
+save/load of stored geometry, contributions and outputs. Saving requires a new
+directory; it does not replace an existing version. Native table attachment
+captures independent relations rather than rebuilding or refolding sources.
+Validation remains a separate, explicitly invoked operation. Attachment accepts
+optional existing evidence; omitted report contents remain unavailable historical
+references, not passing reports or a reason to reject ordinary attachment.
+Geometry tables use resolved physical context fields, including aliases; retained
+source-state tables use logical dimension names. Both full-source and
+contribution-only updates return a new artifact and leave the parent unchanged.
+
+Source checks report a missing configured identity column once, even on an empty
+source. Checks requiring that identity return `not_run`, not `passed`; independent
+checks still run. Findings do not invent subject identities. A missing configured
+scope also prevents scoped contribution checks. Strict publication requires
+complete reports and therefore rejects `not_run`; unchecked publication and
+save/load preserve the factual report.
+
+Internal direct and stored resolution share original-value admission, explicit
+profile selection and observation masks. Stored resolution reads retained outputs
+rather than refolding sources. Requested cell identities retain the original
+source-domain region, not its intersection with a provider query: two disconnected
+components can agree on outputs and contributors while cell identity is uncertain.
+The correlated-domain connected-component case recorded in the replacement backlog
+remains deferred; the replacement is not ready for public cutover.
+
+For incomplete direct requests, resolution branches on feasible source applicability
+under the selected provider and source domains. It retains no-match alternatives
+and avoids expanding independent wildcard-only dimensions. Cell provenance is a
+separate intersection against the full cells for the feasible contributor sets;
+one contributor-set witness does not prove a unique connected cell.
+Construction also removes regions infeasible under the joint source domain:
+with `D: x < y`, a rule restricted to `(x=2, y=1)` contributes no stored cell
+or output, while `(x=0, y=1)` remains eligible.
+
+Accumulator request admission preserves original scalar types: for example, text
+`"17"` is not an INT and `True` is not an INT. This does not change the standalone
+filter's existing non-Boolean, non-Decimal coercion behavior.
+INT concrete values must fit the signed 64-bit universe, including when supplied
+in an unsigned native column. FLOAT infinities are invalid. Native floating-point
+NaN is unavailable context for INT/FLOAT fields, but remains invalid for DECIMAL;
+it is not a concrete value that a mask can make valid.
+DATETIME admission distinguishes naive and aware values before matching: a concrete
+awareness mismatch is an invalid request, not an implicit timezone assumption.
+Aware scalar/range values normalize to UTC without stripping timezone information.
+UTC source-overlap witnesses now pass on both targets with the Mountainash #369
+timestamp precision repair at the qualified commit above. Automatic per-element
+timezone conversion for non-UTC aware DATETIME rule sets is deferred; supply
+UTC-normalized aware datetime lists instead. This niche requirement no longer
+gates Plan 1. Ordinary set matching and scalar/range datetime support remain in
+scope. No backend escape or timezone-stripping conversion is provided.
+
 
 ### String strategies
 
@@ -418,7 +542,11 @@ Dimension(
 )
 ```
 
-> **Backend note:** SET_MEMBERSHIP and SET_EXCLUSION use mountainash's backend-agnostic `list.t_contains()` API, preserving typed unknown-context sentinels. Use Polars or Ibis-DuckDB for engine evaluation. Pandas/Narwhals reject column-valued needles, SQLite has no list column type, and Ibis-Polars cannot execute engine row indexing. See [backend support](../README.md#backend-support).
+An empty list is concrete: membership matches nothing and exclusion excludes
+nothing. A singleton declared marker represents a wildcard; a mixed marker/value
+list is invalid unless a mapped wildcard flag makes the payload unused.
+
+> **Backend note:** SET_MEMBERSHIP and SET_EXCLUSION use mountainash's native list membership expressions with separate availability state. Use Polars or Ibis-DuckDB for engine evaluation. Pandas/Narwhals reject column-valued needles, SQLite has no list column type, and Ibis-Polars cannot execute engine row indexing. See [backend support](../README.md#backend-support).
 
 ---
 

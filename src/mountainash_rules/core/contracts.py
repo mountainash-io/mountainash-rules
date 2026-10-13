@@ -18,6 +18,7 @@ from pydantic import (
     model_validator,
 )
 
+from mountainash_rules.core.codec import NumericDtype
 from mountainash_rules.core.constants import DataType
 from mountainash_rules.core.language import LanguageLimits
 
@@ -158,6 +159,8 @@ class DomainField(_ExactModel):
     name: str
     data_type: DataType
     timezone: str | None = None
+    numeric_dtype: NumericDtype | None = None
+    rounding: str | None = None
 
     _name = field_validator("name")(_label)
 
@@ -176,6 +179,13 @@ class DomainField(_ExactModel):
                 raise ValueError("datetime fields require timezone naive or utc")
         elif self.timezone is not None:
             raise ValueError("timezone is only permitted for datetime fields")
+        if self.data_type is DataType.DECIMAL:
+            if self.numeric_dtype is None or self.numeric_dtype.precision > 16:
+                raise ValueError("DECIMAL domain fields require precision 1..16")
+            if self.rounding not in {"half_to_even", "half_away_from_zero"}:
+                raise ValueError("DECIMAL domain fields require explicit supported rounding")
+        elif self.numeric_dtype is not None or self.rounding is not None:
+            raise ValueError("numeric_dtype and rounding require a DECIMAL domain field")
         return self
 
 
