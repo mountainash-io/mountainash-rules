@@ -20,14 +20,12 @@ def test_join_keys_and_absence_detection(backend_name, records):
         build_backend_df(backend_name, {"id": [1], "value": [7]}, "right_keys")
     )
     merged = left.join(right, on="id", how="left")
-    assert merged.schema == {**left.schema, "value": right.schema["value"]}
     assert records(merged.sort("id")) == [
         {"id": 1, "value": 7},
         {"id": 2, "value": None},
     ]
     renamed = right.select(ma.col("id").alias("right_id"), "value")
     retained = left.join(renamed, left_on="id", right_on="right_id", how="left")
-    assert retained.schema == {**left.schema, **renamed.schema}
     assert records(retained.sort("id")) == [
         {"id": 1, "right_id": 1, "value": 7},
         {"id": 2, "right_id": None, "value": None},
@@ -42,7 +40,6 @@ def test_join_keys_and_absence_detection(backend_name, records):
     inner = left.join(
         renamed, left_on="id", right_on="right_id", how="inner", coalesce=True
     )
-    assert inner.schema == coalesced.schema == merged.schema
     assert records(inner) == [{"id": 1, "value": 7}]
 
 

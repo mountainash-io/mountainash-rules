@@ -14,7 +14,8 @@ from uuid import UUID, uuid4
 
 import yaml
 import mountainash.expressions as ma
-from mountainash import DecimalDtype, MountainashDtype, materialization_scope
+from mountainash import MountainashDtype, materialization_scope
+from mountainash.core.dtypes import PortableDtype, TypeTarget, registry
 from mountainash.relations import Relation, relation
 from mountainash.typespec import FieldSpec, TypeSpec, UniversalType
 from mountainash.typespec.universal_types import from_canonical
@@ -56,8 +57,11 @@ def _schema_descriptor(schema: tuple[tuple[str, Any], ...]) -> dict[str, Any]:
     fields = []
     for name, dtype in schema:
         text = str(dtype).lower()
-        if isinstance(dtype, DecimalDtype):
-            fields.append(FieldSpec(name=name, type=UniversalType.NUMBER, dtype=dtype))
+        if isinstance(dtype, PortableDtype):
+            universal, format_hint = from_canonical(dtype)
+            fields.append(FieldSpec(
+                name=name, type=universal, format=format_hint or "default", dtype=dtype,
+            ))
             continue
         canonical = dtype if isinstance(dtype, MountainashDtype) else None
         if canonical is None:
@@ -111,8 +115,13 @@ def _matches_schema(spec: TypeSpec, schema: tuple[tuple[str, Any], ...]) -> bool
         return False
     for (_, actual), field in zip(schema, spec.fields):
         expected = _schema_dtype(field)
-        if isinstance(expected, (MountainashDtype, DecimalDtype)):
-            if actual != expected:
+        if isinstance(expected, PortableDtype):
+            if not isinstance(actual, PortableDtype):
+                return False
+            # Compare transport representations through the shared type owner:
+            # an aware timestamp without a zone name is represented as UTC.
+            # Precision, awareness and nested child types remain significant.
+            if registry.to_native_schema(actual, TypeTarget.PYARROW) != registry.to_native_schema(expected, TypeTarget.PYARROW):
                 return False
         elif expected != str(actual).lower():
             return False
@@ -288,7 +297,7 @@ def _read_table(path: Path, descriptor: Mapping[str, Any]) -> Relation:
     if list(frame.columns) != [field.name for field in expected.fields]:
         raise ValueError(f"Parquet columns do not match manifest for {descriptor['table_id']}")
     actual = relation(frame)
-    if not _matches_schema(expected, tuple(actual.schema.items())):
+    if not _matches_schema(expected, tuple(actual.collect_schema(allow_execution=False).items())):
         raise ValueError(f"Parquet schema does not match manifest for {descriptor['table_id']}")
     return actual
 
@@ -480,7 +489,7 @@ def _make_lattice(manifest: Mapping[str, Any], relations: Mapping[str, Relation]
         if table_id not in relations:
             raise ValueError(f"missing attached relation {table_id}")
         rel = relations[table_id]
-        schema = tuple(rel.schema.items())
+        schema = tuple(rel.collect_schema(allow_execution=False).items())
         spec = TypeSpec.from_frictionless(row["schema"])
         declared_names = tuple(field.name for field in spec.fields)
         if tuple(rel.columns) != declared_names:

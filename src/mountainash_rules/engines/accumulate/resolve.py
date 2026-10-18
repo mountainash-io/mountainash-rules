@@ -109,9 +109,9 @@ def _field_declarations(sources: SourceBundle, domains=(), fields=()) -> dict[st
             else:
                 state = sources.states[dim.dimension_name]
                 column = "lower" if dim.match_strategy is MatchStrategy.RANGE else "value"
-                native_type = state.filter(ma.lit(False)).to_polars().schema[column]
-                native_type = getattr(native_type, "inner", native_type)
-                timezone = "utc" if native_type.time_zone is not None else "naive"
+                native_type = state.collect_schema(allow_execution=False)[column]
+                native_type = getattr(native_type, "element", native_type)
+                timezone = "utc" if getattr(native_type, "timezone_aware", False) else "naive"
         declaration = DomainField(
             name=field, data_type=dim.data_type, numeric_dtype=dim.numeric_dtype,
             rounding=dim.rounding, timezone=timezone,

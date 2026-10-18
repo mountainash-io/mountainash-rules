@@ -34,7 +34,9 @@ from mountainash_rules.engines.accumulate.errors import (
 )
 
 
-def _materialize_owned(owner: t.Any, query: Relation) -> Relation:
+def _materialize_owned(owner: t.Any | None, query: Relation) -> Relation:
+    if owner is None:
+        return query
     return owner.snapshot(relation(query.collect()))
 
 @dataclass(frozen=True)
@@ -465,6 +467,24 @@ def feasible_assignments(
         return owner.detach(assignments), names, residuals
 
 
+def feasible_assignments_expression(
+    pair_relation: Relation,
+    metadata: DimensionsMetadata,
+    left: t.Mapping[str, FieldRestriction],
+    right: t.Mapping[str, FieldRestriction],
+    *,
+    pair_key: str | None = None,
+    boundaries: t.Mapping[str, Relation] | None = None,
+    domains: t.Sequence[DomainDefinition] | None = None,
+) -> tuple[Relation, dict[str, str], dict[str, str]]:
+    """Build feasible assignments lazily for composition into a serving query."""
+    assignments, names, residuals, _ = _feasible_assignments_owned(
+        pair_relation, metadata, left, right, pair_key=pair_key,
+        boundaries=boundaries, domains=domains, owner=None,
+    )
+    return assignments, names, residuals
+
+
 def _feasible_assignments_owned(
     pair_relation: Relation,
     metadata: DimensionsMetadata,
@@ -835,7 +855,7 @@ def _feasible_assignments_owned(
             ma.col("__candidate").alias(assigned_name),
             ma.col("__residual").alias(residual_name),
         )
-        local = indexed.join(candidates, on=pair_id)
+        local = indexed.join(candidates, on=pair_id, execute_on="right")
         local_valid = ma.lit(True)
         candidate = ma.col(assigned_name)
         residual = ma.col(residual_name)
@@ -864,6 +884,7 @@ def _feasible_assignments_owned(
                         members,
                         on=[pair_id, assigned_name],
                         how="inner" if constraint.allowed else "anti",
+                        execute_on="right",
                     )
                     if constraint.allowed:
                         local = concat([matching, inactive_rows])
@@ -885,7 +906,9 @@ def _feasible_assignments_owned(
         local = local.filter(local_valid.fill_null(False)).select(
             pair_id, assigned_name, residual_name,
         ).unique(subset=[pair_id, assigned_name, residual_name])
-        assignments = _materialize_owned(owner, assignments.join(local, on=pair_id))
+        assignments = _materialize_owned(
+            owner, assignments.join(local, on=pair_id, execute_on="right"),
+        )
 
     valid = ma.lit(True)
     def symbolic_domain(domain: DomainDefinition) -> BaseExpressionAPI:

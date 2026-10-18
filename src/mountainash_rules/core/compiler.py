@@ -6,6 +6,7 @@ import typing as t
 
 import mountainash.expressions as ma
 from mountainash import DecimalDtype, MountainashDtype
+from mountainash.core.dtypes import dtype_family
 from mountainash.expressions import BaseExpressionAPI
 
 from mountainash_rules.core.constants import DataType, MatchStrategy
@@ -44,6 +45,7 @@ _SCALAR_DTYPES = {
 
 def same_scalar_type(left: t.Any, right: t.Any) -> bool:
     """Compare original scalar domains, allowing widths but not coercive equality."""
+    left, right = dtype_family(left), dtype_family(right)
     return (
         left == right
         or (left in _INTEGER_DTYPES and right in _INTEGER_DTYPES)
@@ -97,7 +99,7 @@ def rule_flag_state(
     """Mapped flags are authoritative only when their authoring is consistent."""
     if field is None:
         return marker, ma.lit(False)
-    if field not in rel.columns or rel.schema[field] is not MountainashDtype.BOOL:
+    if field not in rel.columns or dtype_family(rel.schema[field]) is not MountainashDtype.BOOL:
         raise ValueError(f"Rule flag {field!r} must be an existing Boolean column")
     flag = ma.col(field)
     return flag.fill_null(False), flag.is_null() | ((~flag).fill_null(False) & marker)
@@ -110,6 +112,9 @@ def scalar_operand(
     inactive: BaseExpressionAPI,
 ) -> tuple[BaseExpressionAPI, BaseExpressionAPI]:
     """Admit the original scalar domain and provide an unused typed payload."""
+    # Classification is not a cast: the original expression retains its native
+    # parameters and missing-value representation.
+    source_dtype = dtype_family(source_dtype)
     if dim.data_type is DataType.DECIMAL:
         assert dim.numeric_dtype is not None and dim.rounding is not None
         operand = decimal_operand(
@@ -138,7 +143,7 @@ def rule_binding_expressions(
     """Return native bindings/admission so callers can retain invalid source rows."""
     columns = []
     invalid = {}
-    schema = rel.schema
+    schema = rel.collect_schema(allow_execution=False)
     for dim in dimensions:
         if dim.match_strategy is MatchStrategy.CONTEXT_REGEX:
             continue

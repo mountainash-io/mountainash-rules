@@ -424,6 +424,13 @@ Geometry tables use resolved physical context fields, including aliases; retaine
 source-state tables use logical dimension names. Both full-source and
 contribution-only updates return a new artifact and leave the parent unchanged.
 
+Snapshot schemas encode parameterized types through Mountainash's shared dtype
+codec, rather than backend-specific dtype strings. Timestamp precision and
+awareness survive transport; an aware timestamp without a source zone name uses
+UTC as its transport representation. Loading still rejects incompatible precision
+or awareness. This path requires Mountainash's parameterized construction and
+schema support from PR #401 (`03f53c5d`).
+
 Source checks report a missing configured identity column once, even on an empty
 source. Checks requiring that identity return `not_run`, not `passed`; independent
 checks still run. Findings do not invent subject identities. A missing configured

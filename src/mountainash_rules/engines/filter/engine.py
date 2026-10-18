@@ -675,19 +675,28 @@ class ExpressionRulesEngine:
                 ]
             )
 
-        dim_columns = [
-            self._expressions[dim_name].name.alias(f"__t_{dim_name}")
-            for dim_name in active_dims
-        ]
-        rel = rel.with_columns(*dim_columns)
+        return self._drop_bindings(self._score_relation(rel, active_dims, self._expressions))
 
-        t_cols = [ma.col(f"__t_{d}") for d in active_dims]
-        survived = self._survival_expression(t_cols)
+    @staticmethod
+    def _score_relation(
+        rel: t.Any,
+        active_dims: list[str],
+        dimension_expressions: dict[str, BaseExpressionAPI],
+    ) -> t.Any:
+        """Add ternary scores and match summaries without executing the relation."""
+        rel = rel.with_columns(
+            *[
+                dimension_expressions[dim_name].name.alias(f"__t_{dim_name}")
+                for dim_name in active_dims
+            ]
+        )
+        t_cols = [ma.col(f"__t_{dim_name}") for dim_name in active_dims]
+        survived = ExpressionRulesEngine._survival_expression(t_cols)
         specificity = functools.reduce(
             lambda a, b: a.add(b),
-            [c.eq(ma.lit(1)).cast(int) for c in t_cols],
+            [col.eq(ma.lit(1)).cast(int) for col in t_cols],
         ).alias("__specificity")
-        return self._drop_bindings(rel.with_columns(survived, specificity))
+        return rel.with_columns(survived, specificity)
 
     def _evaluate(
         self,

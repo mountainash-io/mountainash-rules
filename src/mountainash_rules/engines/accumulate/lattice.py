@@ -22,6 +22,7 @@ if t.TYPE_CHECKING:
     from mountainash_rules.engines.accumulate.manifest import UnavailableEvidenceReference
     from mountainash_rules.engines.accumulate.validate import Approval, ArtifactReport
     from mountainash_rules.engines.accumulate.result import ResolutionResult
+    from mountainash_rules.engines.accumulate.retrieval import QueryOperation
 
 
 @dataclass(frozen=True, slots=True)
@@ -74,6 +75,20 @@ class Lattice:
     def observations(self) -> list[t.Any]:
         """Return independent copies of retained transport observations."""
         return json.loads(self._observations_json)
+
+    def query(
+        self, contexts: Relation | t.Sequence[t.Mapping[str, t.Any]],
+        scopes: t.Sequence[str] | None = None, *,
+        request_control: Relation | None = None, masks: Relation | None = None,
+        include_cell_key: bool = False, include_contributors: bool = False,
+    ) -> QueryOperation:
+        """Compose stored retrieval; admission and matching finish at fetch."""
+        from mountainash_rules.engines.accumulate.retrieval import query
+
+        return query(
+            self, contexts, scopes, request_control=request_control, masks=masks,
+            include_cell_key=include_cell_key, include_contributors=include_contributors,
+        )
 
     def resolve(
         self, contexts: Relation, scopes: t.Sequence[str] | None = None, *,

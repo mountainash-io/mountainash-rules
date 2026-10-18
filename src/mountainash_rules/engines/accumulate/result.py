@@ -5,6 +5,7 @@ from __future__ import annotations
 import typing as t
 from dataclasses import dataclass
 from types import MappingProxyType
+from uuid import UUID
 
 import mountainash.expressions as ma
 from mountainash.relations import Relation
@@ -63,3 +64,41 @@ class ResolutionResult:
             ])
             result = result.join(named, on="request_id", how="left")
         return result.sort("request_order").drop("request_order")
+
+
+@dataclass(frozen=True, slots=True)
+class QueryResult:
+    """Owned local matches; retrieval makes no business-policy decision."""
+
+    requests: Relation
+    scopes: tuple[str, ...]
+    matches: t.Mapping[str, Relation]
+    payload_columns: t.Mapping[str, t.Mapping[str, str]]
+    _metadata_json: str
+    version_id: UUID
+    contributors: Relation | None = None
+    cell_identity: Relation | None = None
+    cell_identity_boxes: Relation | None = None
+    cell_identity_contributors: Relation | None = None
+    cell_identity_ordered_bounds: t.Mapping[str, Relation] | None = None
+    cell_identity_category_sets: t.Mapping[str, Relation] | None = None
+    cell_identity_category_values: t.Mapping[str, Relation] | None = None
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "scopes", tuple(self.scopes))
+        object.__setattr__(self, "matches", MappingProxyType(dict(self.matches)))
+        object.__setattr__(self, "payload_columns", MappingProxyType({
+            scope: MappingProxyType(dict(columns)) for scope, columns in self.payload_columns.items()
+        }))
+        for name in ("cell_identity_ordered_bounds", "cell_identity_category_sets", "cell_identity_category_values"):
+            value = getattr(self, name)
+            if value is not None:
+                object.__setattr__(self, name, MappingProxyType(dict(value)))
+
+    @property
+    def metadata(self) -> DimensionsMetadata:
+        return DimensionsMetadata.model_validate_json(self._metadata_json)
+
+    def scope(self, name: str) -> Relation:
+        """Return stored matches for a selected scope, without further execution."""
+        return self.matches[name]

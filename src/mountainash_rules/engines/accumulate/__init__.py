@@ -13,7 +13,7 @@ from mountainash_rules.engines.accumulate.errors import (
 )
 from mountainash_rules.engines.accumulate.lattice import Lattice
 from mountainash_rules.engines.accumulate.resolve import resolve
-from mountainash_rules.engines.accumulate.result import ResolutionResult
+from mountainash_rules.engines.accumulate.result import QueryResult, ResolutionResult
 from mountainash_rules.engines.accumulate.sources import SourceReport, check_sources
 from mountainash_rules.engines.accumulate.updates import UpdateResult
 from mountainash_rules.engines.accumulate.validate import (
@@ -28,6 +28,7 @@ __all__ = [
     "ArtifactReport",
     "DomainError",
     "Lattice",
+    "QueryResult",
     "RequestValidationError",
     "ResolutionResult",
     "SourceReport",

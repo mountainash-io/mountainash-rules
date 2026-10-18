@@ -49,14 +49,18 @@ def stored_boundaries(
             *_KEYS, ma.col("upper_value").alias("value"),
         )
         values = concat((lower, upper), distinct=True)
-        result[field] = request_keys.join(values, on=list(_KEYS), how="inner").select(
-            "request_id", "value",
-        ).unique(subset=["request_id", "value"])
+        result[field] = request_keys.join(
+            values, on=list(_KEYS), how="inner", execute_on="right"
+        ).select("request_id", "value").unique(
+            subset=["request_id", "value"]
+        )
     for field, values in lattice.cell_category_values.items():
         selected = values.select(*_KEYS, "value")
-        per_requests = request_keys.join(selected, on=list(_KEYS), how="inner").select(
-            "request_id", "value",
-        ).unique(subset=["request_id", "value"])
+        per_requests = request_keys.join(
+            selected, on=list(_KEYS), how="inner", execute_on="right"
+        ).select("request_id", "value").unique(
+            subset=["request_id", "value"]
+        )
         if field in result:
             result[field] = concat((result[field], per_requests), distinct=True)
         else:
@@ -69,6 +73,8 @@ def _matching_cells(
     point_keys: Sequence[str],
 ) -> Relation:
     """Match points against all stored joint regions, without outputs or sources."""
+    from mountainash_rules.engines.filter.engine import ExpressionRulesEngine
+
     point_keys = tuple(point_keys)
     key_columns = tuple(dict.fromkeys((*point_keys, *_KEYS)))
     point_rows = points.drop("scope") if "scope" in points.columns else points
@@ -76,14 +82,18 @@ def _matching_cells(
     cells = geometry.cells.select(*_KEYS, "cell_id", "contributor_set_id")
     boxes = geometry.cell_boxes.select(*_KEYS, "cell_id", "box_id")
     candidates = point_rows.join(
-        boxes.join(cells, on=[*_KEYS, "cell_id"], how="inner"),
-        on=list(_KEYS), how="inner",
+        boxes.join(
+            cells, on=[*_KEYS, "cell_id"], how="inner", execute_on="right"
+        ),
+        on=list(_KEYS), how="inner", execute_on="right",
     )
     match_columns = tuple(candidates.columns)
 
     for field, bounds in geometry.cell_ordered_bounds.items():
         join_keys = (*_KEYS, "cell_id", "box_id")
-        joined = candidates.join(bounds, on=list(join_keys), how="inner")
+        joined = candidates.join(
+            bounds, on=list(join_keys), how="inner", execute_on="right"
+        )
         value = ma.col(f"__point_value_{field}")
         concrete = ma.col(f"__point_residual_{field}").eq(-1)
         lower = (
@@ -96,18 +106,19 @@ def _matching_cells(
             | value.lt(ma.col("upper_value"))
             | (value.eq(ma.col("upper_value")) & ma.col("upper_inclusive"))
         )
-        candidates = joined.filter(
-            concrete & lower & upper,
-        ).select(*match_columns)
+        expression = ma.when(concrete & lower & upper).then(1).otherwise(-1)
+        scored = ExpressionRulesEngine._score_relation(
+            joined, [field], {field: expression}
+        )
+        candidates = scored.filter(ma.col("__survived")).select(*match_columns)
 
     for field, sets in geometry.cell_category_sets.items():
         join_keys = (*_KEYS, "cell_id", "box_id")
-        with_sets = candidates.join(sets, on=list(join_keys), how="inner")
+        with_sets = candidates.join(
+            sets, on=list(join_keys), how="inner", execute_on="right"
+        )
         residual = ma.col(f"__point_residual_{field}")
-        symbolic = with_sets.filter(
-            residual.ge(0) & ma.col("residual_class_included").fill_null(False),
-        ).select(*match_columns)
-        concrete = with_sets.filter(residual.eq(-1)).with_columns(
+        concrete = with_sets.with_columns(
             ma.col(f"__point_value_{field}").alias("__stored_point_value"),
         )
         members = geometry.cell_category_values[field].select(
@@ -120,13 +131,30 @@ def _matching_cells(
             left_on=[*join_keys, "__stored_point_value"],
             right_on=[*join_keys, "__stored_region_value"],
             how="left",
+            execute_on="right",
         )
         found = ma.col("__stored_value_found").fill_null(False)
-        concrete = concrete.filter(
-            (ma.col("membership_kind").eq("finite") & found)
-            | (ma.col("membership_kind").eq("cofinite") & ~found)
-        ).select(*match_columns)
-        candidates = concat((symbolic, concrete), distinct=True)
+        membership = (
+            ma.when(
+                ma.col("membership_kind").eq("finite") & found
+            ).then(1)
+            .when(
+                ma.col("membership_kind").eq("cofinite") & ~found
+            ).then(1)
+            .otherwise(-1)
+        )
+        expression = (
+            ma.when(residual.ge(0))
+            .then(
+                ma.when(ma.col("residual_class_included").fill_null(False))
+                .then(0).otherwise(-1)
+            )
+            .otherwise(membership)
+        )
+        scored = ExpressionRulesEngine._score_relation(
+            concrete, [field], {field: expression}
+        )
+        candidates = scored.filter(ma.col("__survived")).select(*match_columns)
 
     return candidates.select(*key_columns, "cell_id", "contributor_set_id").unique(
         subset=[*key_columns, "cell_id", "contributor_set_id"],
@@ -152,7 +180,7 @@ def point_results(
             *key_columns, "contributor_set_id",
         ).join(
             lattice.contributors.select(*_KEYS, "contributor_set_id", "source_uuid"),
-            on=[*_KEYS, "contributor_set_id"], how="inner",
+            on=[*_KEYS, "contributor_set_id"], how="inner", execute_on="right",
         ).select(*key_columns, "source_uuid").unique(
             subset=[*key_columns, "source_uuid"],
         )
@@ -163,9 +191,9 @@ def point_results(
         subset=[*_KEYS, "contributor_set_id"],
     ).join(
         outputs.select(*_KEYS, "contributor_set_id").unique(
-            subset=[*_KEYS, "contributor_set_id"],
+            subset=[*_KEYS, "contributor_set_id"]
         ),
-        on=[*_KEYS, "contributor_set_id"], how="anti",
+        on=[*_KEYS, "contributor_set_id"], how="anti", execute_on="right",
     )
     if missing.count_rows():
         raise ValueError("stored output is missing for a matched contributor set")
@@ -173,11 +201,11 @@ def point_results(
         raise ValueError("selected stored output column is absent")
     matched_outputs = matches.select(*key_columns, "contributor_set_id").join(
         outputs.select(*_KEYS, "contributor_set_id", *output_names),
-        on=[*_KEYS, "contributor_set_id"], how="inner",
+        on=[*_KEYS, "contributor_set_id"], how="inner", execute_on="right",
     ).select(*key_columns, *output_names)
     point_rows = points.drop("scope") if "scope" in points.columns else points
     point_rows = point_rows.with_columns(ma.lit(scope).alias("scope")).select(*key_columns)
     alternatives = point_rows.join(
-        matched_outputs, on=list(key_columns), how="left",
+        matched_outputs, on=list(key_columns), how="left", execute_on="right",
     )
     return alternatives, cell_hits, contributor_hits

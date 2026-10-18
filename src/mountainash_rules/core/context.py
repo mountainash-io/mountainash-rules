@@ -19,6 +19,7 @@ from mountainash import (
     text_value,
     value_kind,
 )
+from mountainash.core.dtypes import TimestampDtype
 from mountainash.expressions import BaseExpressionAPI
 
 from mountainash_rules.core.constants import BooleanCoercion, DataType
@@ -46,7 +47,7 @@ def context_absence_expression(
     """Recognize native missing values for strict concrete context admission."""
     absent = (
         raw.is_null()
-        if source_dtype in (MountainashDtype.DATE, MountainashDtype.TIMESTAMP)
+        if source_dtype in (MountainashDtype.DATE, MountainashDtype.TIMESTAMP) or isinstance(source_dtype, TimestampDtype)
         else raw.value_kind().eq(ValueKind.ABSENT.value)
     )
     if (
@@ -190,7 +191,7 @@ def context_binding_expressions(
         if strict_concrete
         else (
             raw.is_null()
-            if source_dtype in (MountainashDtype.DATE, MountainashDtype.TIMESTAMP)
+            if source_dtype in (MountainashDtype.DATE, MountainashDtype.TIMESTAMP) or isinstance(source_dtype, TimestampDtype)
             else raw.value_kind().eq(ValueKind.ABSENT.value)
         )
     )
@@ -287,12 +288,13 @@ def bind_context_columns(
     """Filter admission convenience around reusable context binding expressions."""
     columns = []
     invalid = {}
+    schema = rel.schema if values is None else {}
     for dim in dimensions:
         if values is None:
             field = dim.resolved_context_field
             supplied = field in rel.columns
             raw = ma.col(field) if supplied else ma.lit(None)
-            dtype = rel.schema.get(field)
+            dtype = schema.get(field)
         else:
             supplied = dim.dimension_name in values
             value = values.get(dim.dimension_name)
