@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import typing as t
+from dataclasses import dataclass
 
 import mountainash.expressions as ma
 from mountainash import MountainashDtype, materialization_scope
@@ -20,12 +21,73 @@ from mountainash_rules.engines.accumulate.applicability import logical_source_po
 from mountainash_rules.engines.accumulate.folds import fold_contributions
 from mountainash_rules.engines.accumulate.sources import KEYS, SourceBundle, capture_sources
 from mountainash_rules.engines.accumulate.domain import feasible_assignments
-from mountainash_rules.engines.accumulate.result import ResolutionResult
+from mountainash_rules.engines.accumulate.result import QueryResult, ResolutionResult
 from mountainash_rules.engines.accumulate.errors import RequestValidationError
-from mountainash_rules.engines.accumulate.serving import point_results, stored_boundaries
 
 if t.TYPE_CHECKING:
     from mountainash_rules.engines.accumulate.lattice import Lattice
+    from mountainash_rules.engines.accumulate.decision import ResolutionOperation
+
+
+def _evidence_options(profile, *, include_cell_key, include_contributors, include_candidates):
+    """Include diagnostic requests and evidence required by the selected policy."""
+    if profile is not None:
+        include_cell_key |= profile.provenance == "cell"
+        include_contributors |= profile.provenance in {"contributors", "cell"}
+        include_candidates |= profile.mode == "candidates" or profile.on_unresolved == "withhold"
+    return include_cell_key, include_contributors, include_candidates
+
+
+def _decision_status(status: Relation, scope: str, profile, *, include_cell_key: bool) -> Relation:
+    """Apply the same establishment and disposition policy to either algorithm."""
+    established = ma.col("__outputs_determined").fill_null(False)
+    candidate_mode = profile is not None and profile.mode == "candidates"
+    if profile is not None and profile.provenance in {"contributors", "cell"}:
+        established = established & ma.col("__contributors_determined").fill_null(False)
+    if profile is not None and profile.provenance == "cell":
+        established = established & ma.col("__cell_determined").fill_null(False)
+    if candidate_mode:
+        established = ma.lit(False)
+    unresolved = (
+        {"return": "unresolved", "withhold": "withheld", "reject": "rejected"}[profile.on_unresolved]
+        if profile is not None and profile.mode == "resolve" else "unresolved"
+    )
+    invalid = ma.col("admission_status").eq("invalid")
+    return status.select(
+        "request_id", ma.lit(scope).alias("scope"),
+        ma.when(invalid).then("invalid").when(established).then("resolved").otherwise("unresolved").alias("status"),
+        ma.when(invalid).then("rejected").when(established).then("decision")
+        .otherwise("candidates" if candidate_mode else unresolved).alias("disposition"),
+        ma.when(invalid).then(ma.col("reason_code")).when(established).then("established")
+        .otherwise("candidate_query" if candidate_mode else "insufficient_context").alias("reason_code"),
+        ma.col("__contributors_determined").alias("contributors_determined"),
+        ma.col("__cell_determined").alias("cell_determined"),
+        *(["cell_key"] if include_cell_key else []),
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class SourceResolutionOperation:
+    """Deferred resolution against an eagerly captured immutable source bundle."""
+
+    _sources: SourceBundle
+    _contexts: Relation
+    _scopes: tuple[str, ...]
+    _request_control: Relation | None
+    _masks: Relation | None
+    _include_cell_key: bool
+    _include_contributors: bool
+    _include_candidates: bool
+
+    def fetch(self, *, include_matches: bool = False) -> ResolutionResult:
+        return _resolve_captured(
+            self._sources, self._contexts, self._scopes,
+            request_control=self._request_control, masks=self._masks,
+            include_cell_key=self._include_cell_key,
+            include_contributors=self._include_contributors,
+            include_candidates=self._include_candidates,
+            include_matches=include_matches,
+        )
 
 
 def fold_request_points(
@@ -71,11 +133,12 @@ def outcome_agreement(alternatives: Relation, output_columns: t.Sequence[str]) -
     )
 
 
-def contributor_agreement(points: Relation, hits: Relation, *, point_key: str) -> Relation:
+def contributor_agreement(points: Relation, hits: Relation, *, point_key: str | t.Sequence[str]) -> Relation:
     """A source set is fixed iff every observed UUID belongs to every completion."""
+    completion_keys = [point_key] if isinstance(point_key, str) else list(point_key)
     totals = points.group_by("request_id").agg(ma.count_records().alias("__completion_count"))
-    occurrences = hits.select("request_id", point_key, "source_uuid").unique(
-        subset=["request_id", point_key, "source_uuid"],
+    occurrences = hits.select("request_id", *completion_keys, "source_uuid").unique(
+        subset=["request_id", *completion_keys, "source_uuid"],
     ).group_by("request_id", "source_uuid").agg(ma.count_records().alias("__source_count"))
     uncertain = occurrences.join(totals, on="request_id").filter(
         ma.col("__source_count").ne(ma.col("__completion_count")),
@@ -160,7 +223,7 @@ def _empty_payload(sources, requests, scope, aggregates):
 def _direct_cells(sources, points, hits, scope, owner, requests, effective, domains):
     from mountainash_rules.engines.accumulate.build import construct_targeted_geometry
     from mountainash_rules.engines.accumulate.geometry import _membership_labels
-    from mountainash_rules.engines.accumulate.serving import _matching_cells
+    from mountainash_rules.engines.accumulate.serving import _matching_cells, stored_boundaries
 
     point_keys = ("request_id", "__completion_id")
     keys = ("partition", "scope")
@@ -204,7 +267,7 @@ def _resolve_group(
     include_contributors: bool = False,
     include_cell_key: bool = False,
     include_candidates: bool = False,
-    lattice: Lattice | None = None,
+    include_matches: bool = False,
 ) -> ResolutionResult:
     """Resolve a group with one explicitly selected observation contract."""
     metadata = sources.metadata
@@ -215,15 +278,11 @@ def _resolve_group(
                         if domain.domain_id == contract.domain_ref)
         if provider not in domains:
             domains += (provider,)
-    required_cell = profile is not None and profile.provenance == "cell"
-    required_contributors = profile is not None and profile.provenance in {"contributors", "cell"}
-    candidate_mode = profile is not None and profile.mode == "candidates"
-    include_candidates = include_candidates or candidate_mode or (
-        profile is not None and profile.on_unresolved == "withhold"
+    include_cell_key, include_contributors, include_candidates = _evidence_options(
+        profile, include_cell_key=include_cell_key,
+        include_contributors=include_contributors, include_candidates=include_candidates,
     )
-    include_cell_key = include_cell_key or required_cell
     need_cells = include_cell_key or include_candidates
-    include_contributors = include_contributors or required_contributors
     with materialization_scope() as owner:
         working, original, effective = project_physical_fields(
             contexts, working, metadata,
@@ -260,6 +319,7 @@ def _resolve_group(
         has_partial = bool(partial_requests.limit(1).count_rows())
         statuses, selections, contributors = [], [], []
         payloads, payload_columns = {}, {}
+        matched_contributions: dict[str, Relation] = {}
         candidate_rows, identity_rows, identity_boxes, identity_contributors = [], [], [], []
         identity_bounds: dict[str, list[Relation]] = {}
         identity_sets: dict[str, list[Relation]] = {}
@@ -292,6 +352,7 @@ def _resolve_group(
             sources.identities.filter(ma.lit(False)).select("scope", "source_uuid"), how="cross",
         )
         for scope in selected:
+            scope_matches: list[Relation] = []
             aggregates = declarations[scope]
             output_names = [f"v{index:04d}" for index in range(1, len(aggregates) + 1)]
             positions = tuple(
@@ -319,15 +380,9 @@ def _resolve_group(
                     *bindings, ma.lit(0, dtype=MountainashDtype.I64).alias("__completion_id"),
                 ))
             if has_partial:
-                if lattice is None:
-                    assignments, values, residuals = logical_source_points(
-                        sources, partial_requests, effective, domains, scope,
-                    )
-                else:
-                    assignments, values, residuals = feasible_assignments(
-                        partial_requests, metadata, effective, {}, pair_key="request_id",
-                        boundaries=stored_boundaries(lattice, partial_requests, scope), domains=domains,
-                    )
+                assignments, values, residuals = logical_source_points(
+                    sources, partial_requests, effective, domains, scope,
+                )
                 bindings = _point_bindings(metadata, {
                     field: ma.col(name) for field, name in values.items()
                 }, residuals)
@@ -345,23 +400,22 @@ def _resolve_group(
                 ])]
             for point_relation in point_relations:
                 points = _materialize(owner, point_relation)
-                if lattice is None:
-                    outcomes, hits = fold_request_points(
-                        sources, points, scope, aggregates, positions,
-                        point_keys=("request_id", "__completion_id"),
-                    )
-                else:
-                    outcomes, cell_hits, hits = point_results(
-                        lattice, points, scope, positions,
-                        include_contributors=include_contributors,
-                    )
+                outcomes, hits = fold_request_points(
+                    sources, points, scope, aggregates, positions,
+                    point_keys=("request_id", "__completion_id"),
+                )
                 outcomes = _materialize(owner, outcomes)
-                if include_contributors or (need_cells and lattice is None):
-                    assert hits is not None
+                if include_contributors or need_cells or include_matches:
                     hits = _materialize(owner, hits)
                 alternatives.append(outcomes.select("request_id", *selected_names))
+                if include_matches:
+                    scope_matches.append(hits.select("request_id", *KEYS).unique().join(
+                        sources.payloads[scope], on=list(KEYS),
+                    ).select("request_id", *KEYS, *[
+                        ma.col(f"a{index:04d}").alias(name)
+                        for index, name in enumerate(output_names, 1)
+                    ]))
                 if include_contributors:
-                    assert hits is not None
                     certainty = _materialize(owner, contributor_agreement(points, hits, point_key="__completion_id"))
                     certainties.append(certainty)
                     scope_contributors.append(hits.join(
@@ -371,15 +425,9 @@ def _resolve_group(
                         subset=["request_id", "scope", "source_uuid"],
                     ))
                 if need_cells:
-                    if lattice is None:
-                        assert hits is not None
-                        geometry, cell_hits, cell_points = _direct_cells(
-                            sources, points, hits, scope, owner, valid, effective, domains,
-                        )
-                    else:
-                        geometry = lattice
-                        cell_points = points
-                        cell_hits = _materialize(owner, cell_hits)
+                    geometry, cell_hits, cell_points = _direct_cells(
+                        sources, points, hits, scope, owner, valid, effective, domains,
+                    )
                     cell_outcomes = cell_points.select("request_id", "__completion_id").join(
                         cell_hits.select("request_id", "__completion_id", "cell_id"),
                         on=["request_id", "__completion_id"], how="left",
@@ -425,12 +473,7 @@ def _resolve_group(
                         ):
                             for field, table in tables.items():
                                 target.setdefault(field, []).append(identity_child(table))
-            template = _materialize(owner, (
-                _empty_payload(sources, requests, scope, aggregates) if lattice is None
-                else requests.filter(ma.lit(False)).select("request_id").join(
-                    lattice.outputs[scope].filter(ma.lit(False)).select(*output_names), how="cross",
-                )
-            ))
+            template = _materialize(owner, _empty_payload(sources, requests, scope, aggregates))
             all_outcomes = _materialize(owner, concat(alternatives) if alternatives else template.select("request_id", *selected_names))
             agreement = outcome_agreement(all_outcomes, selected_names)
             status = requests.join(agreement, on="request_id", how="left")
@@ -449,28 +492,8 @@ def _resolve_group(
                     status = status.join(concat(cell_keys), on="request_id", how="left")
                 else:
                     status = status.with_columns(ma.lit(None, dtype=MountainashDtype.I64).alias("cell_key"))
-            established = ma.col("__outputs_determined").fill_null(False)
-            if required_contributors:
-                established = established & ma.col("__contributors_determined").fill_null(False)
-            if required_cell:
-                established = established & ma.col("__cell_determined").fill_null(False)
-            if candidate_mode:
-                established = ma.lit(False)
-            unresolved_disposition = (
-                {"return": "unresolved", "withhold": "withheld", "reject": "rejected"}[profile.on_unresolved]
-                if profile is not None and profile.mode == "resolve" else "unresolved"
-            )
-            invalid = ma.col("admission_status").eq("invalid")
-            scope_status = _materialize(owner, status.select(
-                "request_id", ma.lit(scope).alias("scope"),
-                ma.when(invalid).then("invalid").when(established).then("resolved").otherwise("unresolved").alias("status"),
-                ma.when(invalid).then("rejected").when(established).then("decision")
-                .otherwise("candidates" if candidate_mode else unresolved_disposition).alias("disposition"),
-                ma.when(invalid).then(ma.col("reason_code")).when(established).then("established")
-                .otherwise("candidate_query" if candidate_mode else "insufficient_context").alias("reason_code"),
-                ma.col("__contributors_determined").alias("contributors_determined"),
-                ma.col("__cell_determined").alias("cell_determined"),
-                *(["cell_key"] if include_cell_key else []),
+            scope_status = _materialize(owner, _decision_status(
+                status, scope, profile, include_cell_key=include_cell_key,
             ))
             statuses.append(scope_status)
             resolved_values = all_outcomes.join(
@@ -484,17 +507,33 @@ def _resolve_group(
                 )
             payloads[scope] = owner.detach(_materialize(owner, resolved_values.select("request_id", *output_names)))
             contributors.extend(scope_contributors)
+            if include_matches:
+                empty_matches = empty.join(
+                    sources.payloads[scope].filter(ma.lit(False)), how="cross",
+                ).select("request_id", *KEYS, *[
+                    ma.col(f"a{index:04d}").alias(name)
+                    for index, name in enumerate(output_names, 1)
+                ])
+                matched_contributions[scope] = owner.detach(_materialize(
+                    owner, (concat(scope_matches) if scope_matches else empty_matches).unique(),
+                ))
         def retain(rows, empty_relation):
             return owner.detach(_materialize(owner, concat(rows) if rows else empty_relation))
 
         def retain_fields(fields):
             return {field: retain(rows, rows[0]) for field, rows in fields.items()}
 
+        retained_requests = owner.detach(_materialize(owner, requests))
         return ResolutionResult(
-            requests=owner.detach(_materialize(owner, requests)),
+            requests=retained_requests,
             status=owner.detach(_materialize(owner, concat(statuses) if statuses else empty_status)),
             requested_outputs=owner.detach(_materialize(owner, concat(selections) if selections else empty_selection)),
             payloads=payloads, payload_columns=payload_columns, _metadata_json=sources._metadata_json,
+            matches=QueryResult(
+                requests=retained_requests, scopes=tuple(selected),
+                matches=matched_contributions, payload_columns=payload_columns,
+                _metadata_json=sources._metadata_json, version_id=None,
+            ) if include_matches else None,
             contributors=owner.detach(_materialize(owner, concat(contributors) if contributors else empty_contributors)) if include_contributors else None,
             candidates=retain(candidate_rows, empty_candidates) if include_candidates else None,
             cell_identity=retain(identity_rows, empty_identity) if need_cells else None,
@@ -520,7 +559,7 @@ def _resolve_captured(
     include_contributors: bool = False,
     include_cell_key: bool = False,
     include_candidates: bool = False,
-    lattice: Lattice | None = None,
+    include_matches: bool = False,
 ) -> ResolutionResult:
     """Resolve each request under its explicit profile, or without a contract."""
     metadata = sources.metadata
@@ -550,7 +589,7 @@ def _resolve_captured(
                 sources, contexts, group, selected, contract=contract, profile=profile,
                 include_contributors=include_contributors,
                 include_cell_key=include_cell_key, include_candidates=include_candidates,
-                lattice=lattice,
+                include_matches=include_matches,
             )
             for contract, profile, group in groups if group.limit(1).count_rows()
         ]
@@ -558,7 +597,7 @@ def _resolve_captured(
             return _resolve_group(
                 sources, contexts, working, selected, include_contributors=include_contributors,
                 include_cell_key=include_cell_key, include_candidates=include_candidates,
-                lattice=lattice,
+                include_matches=include_matches,
             )
 
         def merge(name):
@@ -581,14 +620,27 @@ def _resolve_captured(
                 for field in sorted({field for mapping in maps for field in mapping})
             }
 
+        retained_requests = owner.detach(_materialize(
+            owner, concat([r.requests for r in results]).sort("request_order"),
+        ))
         return ResolutionResult(
-            requests=owner.detach(_materialize(owner, concat([r.requests for r in results]).sort("request_order"))),
+            requests=retained_requests,
             status=merge("status"), requested_outputs=merge("requested_outputs"),
             payloads={
                 scope: owner.detach(_materialize(owner, concat([r.payloads[scope] for r in results])))
                 for scope in selected
             },
             payload_columns=results[0].payload_columns, _metadata_json=sources._metadata_json,
+            matches=QueryResult(
+                requests=retained_requests, scopes=tuple(selected),
+                matches={
+                    scope: owner.detach(_materialize(owner, concat([
+                        t.cast(QueryResult, r.matches).scope(scope) for r in results
+                    ]))) for scope in selected
+                },
+                payload_columns=results[0].payload_columns,
+                _metadata_json=sources._metadata_json, version_id=None,
+            ) if include_matches else None,
             contributors=merge("contributors"),
             candidates=merge("candidates"), cell_identity=merge("cell_identity"),
             cell_identity_boxes=merge("cell_identity_boxes"),
@@ -605,25 +657,28 @@ def resolve(
     request_control: Relation | None = None, masks: Relation | None = None,
     include_cell_key: bool = False, include_contributors: bool = False,
     include_candidates: bool = False,
-) -> ResolutionResult:
-    """Resolve directly from immutable source facts, without building a lattice."""
-    selected = select_scopes(metadata, scopes)
-    return _resolve_captured(
-        capture_sources(rules, metadata), contexts, selected,
-        request_control=request_control, masks=masks, include_cell_key=include_cell_key,
-        include_contributors=include_contributors, include_candidates=include_candidates,
+) -> SourceResolutionOperation:
+    """Capture sources eagerly and defer direct resolution until fetch."""
+    selected = tuple(select_scopes(metadata, scopes))
+    sources = capture_sources(rules, metadata)
+    return SourceResolutionOperation(
+        sources, contexts, selected, request_control, masks,
+        include_cell_key, include_contributors, include_candidates,
     )
 
 
 def resolve_lattice(
-    lattice: Lattice, contexts: Relation, scopes: t.Sequence[str] | None = None, *,
+    lattice: Lattice, contexts: Relation | t.Sequence[t.Mapping[str, t.Any]],
+    scopes: t.Sequence[str] | None = None, *,
     request_control: Relation | None = None, masks: Relation | None = None,
     include_cell_key: bool = False, include_contributors: bool = False,
     include_candidates: bool = False,
-) -> ResolutionResult:
-    """Resolve against stored regions and outputs, without source predicate replay."""
-    return _resolve_captured(
-        lattice.sources, contexts, select_scopes(lattice.metadata, scopes), lattice=lattice,
-        request_control=request_control, masks=masks, include_cell_key=include_cell_key,
-        include_contributors=include_contributors, include_candidates=include_candidates,
+) -> ResolutionOperation:
+    """Compose decisioning over stored retrieval, with an explicit terminal."""
+    from mountainash_rules.engines.accumulate.decision import resolve_stored
+
+    return resolve_stored(
+        lattice, contexts, scopes, request_control=request_control, masks=masks,
+        include_cell_key=include_cell_key, include_contributors=include_contributors,
+        include_candidates=include_candidates,
     )

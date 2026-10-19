@@ -21,7 +21,7 @@ from mountainash_rules.engines.accumulate.updates import UpdateResult, classify_
 if t.TYPE_CHECKING:
     from mountainash_rules.engines.accumulate.manifest import UnavailableEvidenceReference
     from mountainash_rules.engines.accumulate.validate import Approval, ArtifactReport
-    from mountainash_rules.engines.accumulate.result import ResolutionResult
+    from mountainash_rules.engines.accumulate.decision import ResolutionOperation
     from mountainash_rules.engines.accumulate.retrieval import QueryOperation
 
 
@@ -91,12 +91,13 @@ class Lattice:
         )
 
     def resolve(
-        self, contexts: Relation, scopes: t.Sequence[str] | None = None, *,
+        self, contexts: Relation | t.Sequence[t.Mapping[str, t.Any]],
+        scopes: t.Sequence[str] | None = None, *,
         request_control: Relation | None = None, masks: Relation | None = None,
         include_cell_key: bool = False, include_contributors: bool = False,
         include_candidates: bool = False,
-    ) -> ResolutionResult:
-        """Read retained geometry and outputs under the selected request profiles."""
+    ) -> ResolutionOperation:
+        """Compose decisions over retained geometry until explicit fetch."""
         from mountainash_rules.engines.accumulate.resolve import resolve_lattice
 
         return resolve_lattice(

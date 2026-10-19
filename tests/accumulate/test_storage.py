@@ -115,7 +115,7 @@ def test_transport_uses_physical_context_fields(backend_name, geometry, tmp_path
     attached = type(original).from_tables(original.tables, manifest=manifest_data)
     contexts = ma.relation(build_backend_df(backend_name, {"request_id": [1, 2], "age": [2, 20]}))
     for lattice in (restored, attached):
-        assert payload_values(lattice.resolve(contexts), output="amount") == [
+        assert payload_values(lattice.resolve(contexts).fetch(), output="amount") == [
             {"request_id": 1, "value": 7}, {"request_id": 2, "value": None},
         ]
 

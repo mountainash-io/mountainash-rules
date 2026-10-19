@@ -151,12 +151,15 @@ def _terminal(views: t.Mapping[str, View], errors: t.Sequence[tuple[Relation, Va
 @dataclass(frozen=True)
 class QueryOperation:
     """Retain lattice and lazy inputs until an explicit, uncached fetch."""
-    _terminal: _Terminal
+    _views: dict[str, View]
+    _errors: list[tuple[Relation, ValueError]]
     _lattice: Lattice
     _scopes: tuple[str, ...]
 
     def fetch(self) -> QueryResult:
-        views = self._terminal.fetch()
+        return self._result(_terminal(self._views, self._errors).fetch())
+
+    def _result(self, views: dict[str, Relation]) -> QueryResult:
         evidence = {name: views.get(name) for name in (
             "contributors", "cell_identity", "cell_identity_boxes", "cell_identity_contributors",
         )}
@@ -170,6 +173,23 @@ class QueryOperation:
             _metadata_json=self._lattice._metadata_json, version_id=self._lattice.version_id,
             **evidence,
         )
+
+
+@dataclass(frozen=True)
+class _DecisionGroup:
+    requests: Relation
+    profile: t.Any
+    points: dict[str, Relation]
+    matches: dict[str, Relation]
+    point_keys: dict[str, tuple[str, ...]]
+
+
+@dataclass(frozen=True)
+class _PreparedRetrieval:
+    operation: QueryOperation
+    views: dict[str, View]
+    errors: list[tuple[Relation, ValueError]]
+    groups: list[_DecisionGroup]
 
 
 def _stored_schema(lattice: Lattice, role: str, *, scope=None, field=None) -> dict:
@@ -210,8 +230,9 @@ def _identity_views(lattice: Lattice, refs: Relation, ref_schema: Schema) -> dic
     return views
 
 
-def query(lattice: Lattice, contexts, scopes=None, *, request_control=None, masks=None,
-          include_cell_key=False, include_contributors=False) -> QueryOperation:
+def _prepare_query(lattice: Lattice, contexts, scopes=None, *, request_control=None, masks=None,
+                   include_cell_key=False, include_contributors=False,
+                   decision=False) -> _PreparedRetrieval:
     from mountainash_rules.engines.accumulate.resolve import _field_declarations, _point_bindings
     from mountainash_rules.engines.accumulate.serving import _matching_cells, stored_boundaries
 
@@ -259,6 +280,8 @@ def query(lattice: Lattice, contexts, scopes=None, *, request_control=None, mask
     declarations = metadata.outcome_scopes or {"default": metadata.aggregates}
     requests = []
     matches: dict[str, list[Relation]] = {scope: [] for scope in selected}
+    matched_keys: dict[str, list[Relation]] = {scope: [] for scope in selected}
+    decision_groups: list[_DecisionGroup] = []
     for contract, profile in profiles:
         condition = ma.col("contract_id").is_null() if contract is None else (
             ma.col("contract_id").eq(contract.contract_id) & ma.col("profile_id").eq(profile.profile_id)
@@ -307,6 +330,11 @@ def query(lattice: Lattice, contexts, scopes=None, *, request_control=None, mask
             ma.when(ma.col("__admission_reason").is_null()).then("admitted").otherwise("invalid").alias("admission_status"),
             ma.col("__admission_reason").alias("reason_code"),
         ))
+        group_points: dict[str, Relation] = {}
+        group_matches: dict[str, Relation] = {}
+        group_keys: dict[str, tuple[str, ...]] = {}
+        if decision:
+            decision_groups.append(_DecisionGroup(requests[-1], profile, group_points, group_matches, group_keys))
         for scope in selected:
             assignments, values, residuals = feasible_assignments_expression(
                 valid, metadata, effective, {}, pair_key="request_id", domains=domains,
@@ -323,17 +351,43 @@ def query(lattice: Lattice, contexts, scopes=None, *, request_control=None, mask
             points = assignments.with_columns(*_point_bindings(
                 metadata, {field: ma.col(name) for field, name in values.items()}, residuals,
             ))
-            hits = _matching_cells(lattice, points, scope, ("request_id",))
+            point_keys: tuple[str, ...] = ("request_id",)
+            if decision:
+                # Completion identity is its exact symbolic coordinates, not an
+                # unordered row number evaluated independently on each branch.
+                identity_columns: list[t.Any] = []
+                for index, (field, value_name) in enumerate(values.items()):
+                    value = ma.col(value_name)
+                    if fields[field].data_type == "str":
+                        value = value.fill_null("")
+                    elif fields[field].data_type == "float":
+                        value = value.fill_null(0.0)
+                    value_key, residual_key = f"__completion_value_{index}", f"__completion_residual_{index}"
+                    identity_columns.extend((
+                        value.alias(value_key), ma.col(residuals[field]).alias(residual_key),
+                    ))
+                    point_keys += (value_key, residual_key)
+                points = points.with_columns(*identity_columns) if identity_columns else points
+                group_points[scope] = points
+                group_keys[scope] = point_keys
+            hits = _matching_cells(lattice, points, scope, point_keys)
             output = lattice.outputs[scope]
             names = tuple(f"v{index:04d}" for index in range(1, len(declarations[scope]) + 1))
             if any(name not in output.columns for name in names):
                 raise ValueError("selected stored output column is absent")
             keys = ["partition", "scope", "contributor_set_id"]
-            errors.append((hits.join(output.select(*keys).unique(), on=keys, how="anti", execute_on="right"),
-                           ValueError("stored output is missing for a matched contributor set")))
-            matches[scope].append(hits.join(output.select(*keys, *names), on=keys, execute_on="right"))
+            matched_keys[scope].append(hits.select(*keys))
+            matched = hits.join(output.select(*keys, *names), on=keys, execute_on="right")
+            if decision:
+                group_matches[scope] = matched
+            matches[scope].append(matched.select(*refs_schema, *names))
     views: dict[str, View] = {}
     for scope, rows in matches.items():
+        keys = ["partition", "scope", "contributor_set_id"]
+        errors.append((concat(matched_keys[scope]).unique().join(
+            lattice.outputs[scope].select(*keys).unique(),
+            on=keys, how="anti", execute_on="right",
+        ), ValueError("stored output is missing for a matched contributor set")))
         names = tuple(f"v{index:04d}" for index in range(1, len(declarations[scope]) + 1))
         schema = _stored_schema(lattice, "outputs", scope=scope)
         views[f"matches:{scope}"] = (concat(rows).unique(), {**refs_schema, **{name: schema[name] for name in names}})
@@ -357,4 +411,14 @@ def query(lattice: Lattice, contexts, scopes=None, *, request_control=None, mask
             })
         if include_cell_key:
             views.update(_identity_views(lattice, refs, refs_schema))
-    return QueryOperation(_terminal(views, errors), lattice, selected)
+    return _PreparedRetrieval(
+        QueryOperation(views, errors, lattice, selected), views, errors, decision_groups,
+    )
+
+
+def query(lattice: Lattice, contexts, scopes=None, *, request_control=None, masks=None,
+          include_cell_key=False, include_contributors=False) -> QueryOperation:
+    return _prepare_query(
+        lattice, contexts, scopes, request_control=request_control, masks=masks,
+        include_cell_key=include_cell_key, include_contributors=include_contributors,
+    ).operation

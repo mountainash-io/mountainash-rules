@@ -446,6 +446,24 @@ components can agree on outputs and contributors while cell identity is uncertai
 The correlated-domain connected-component case recorded in the replacement backlog
 remains deferred; the replacement is not ready for public cutover.
 
+The internal replacement uses explicit operation terminals:
+`lattice.query(contexts).fetch()` retrieves applicable stored cells without
+business policy; `lattice.resolve(contexts).fetch()` returns decisions.
+`lattice.resolve(contexts).fetch(include_matches=True)` includes both views of
+the same prepared request, profile, masks and artifact. Stored operations defer
+data computation until fetch; the result projections are local and do not
+execute further stored queries. Record batches and existing Relation inputs
+use the same admission rules. An empty scope selection still returns admission
+and typed empty requested evidence.
+
+Direct `resolve(rules, metadata, contexts)` also returns an operation, but captures
+immutable sources at construction and evaluates at `.fetch()`. This preserves
+the captured values if the original source changes. Its combined match evidence
+contains individual `source_uuid` contributions, not folded outputs or invented
+stored cells; `matches.version_id` is `None`. Stored match results retain their
+artifact version. Direct-source staging is separate from the single-terminal
+stored-operation contract.
+
 For incomplete direct requests, resolution branches on feasible source applicability
 under the selected provider and source domains. It retains no-match alternatives
 and avoids expanding independent wildcard-only dimensions. Cell provenance is a

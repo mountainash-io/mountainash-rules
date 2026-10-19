@@ -22,6 +22,20 @@ def payload_values(result, scope="default", output="total"):
     ).sort("request_id").to_dicts()
 
 
+@pytest.fixture(params=["direct", "stored"])
+def resolve_operation(request):
+    from mountainash_rules.engines.accumulate.build import build
+    from mountainash_rules.engines.accumulate.resolve import resolve
+
+    if request.param == "direct":
+        return resolve
+
+    def stored(rules, metadata, contexts, **options):
+        return build(rules, metadata).resolve(contexts, **options)
+
+    return stored
+
+
 @pytest.mark.parametrize("operation,expected", [
     ("sum", [0, 0, 5, None]), ("min", [0, -10, 5, None]),
     ("max", [0, 10, 5, None]), ("product", [0, -100, 5, None]),
@@ -40,9 +54,9 @@ def test_complete_folds_distinguish_zero_cancellation_and_no_match(backend_name,
         from mountainash.core.types import BackendCapabilityError
 
         with pytest.raises(BackendCapabilityError):
-            resolve(rules, metadata, contexts, include_contributors=True)
+            resolve(rules, metadata, contexts, include_contributors=True).fetch()
         return
-    result = resolve(rules, metadata, contexts, include_contributors=True)
+    result = resolve(rules, metadata, contexts, include_contributors=True).fetch()
     assert payload_values(result) == [dict(request_id=index, value=value) for index, value in enumerate(expected, 1)]
     assert result.contributors.select("request_id", "source_uuid").sort("request_id", "source_uuid").to_dicts() == [
         {"request_id": 1, "source_uuid": "zero"},
@@ -69,7 +83,7 @@ def test_partial_agreement_includes_feasible_no_match(backend_name, allowed, con
         aggregates=[Aggregate(column_name="amount", output_name="total", data_type="int")],
         domain=domain(root, DomainField(name="region", data_type="str")), domain_nodes=graph)
     rules = frame(backend_name, {"uuid": ["EU", "US"], "region": ["EU", "US"], "amount": [contribution, contribution]})
-    result = resolve(rules, metadata, frame(backend_name, {"request_id": [9]}))
+    result = resolve(rules, metadata, frame(backend_name, {"request_id": [9]})).fetch()
     assert result.status.select("status").to_dicts() == [{"status": status}]
     assert payload_values(result) == ([{"request_id": 9, "value": value}] if status == "resolved" else [])
 
@@ -82,7 +96,7 @@ def test_empty_scope_selection_keeps_partition_admission(backend_name):
         aggregates=[Aggregate(column_name="amount", output_name="total", data_type="int")])
     rules = frame(backend_name, {"uuid": ["A"], "market": ["EU"], "x": [5], "amount": [7]})
     contexts = frame(backend_name, {"request_id": [8, 2], "market": ["EU", "unknown"], "x": [5, 5]})
-    result = resolve(rules, metadata, contexts, scopes=[])
+    result = resolve(rules, metadata, contexts, scopes=[]).fetch()
     assert result.requests.select("request_id", "request_order", "admission_status").sort("request_order").to_dicts() == [
         {"request_id": 8, "request_order": 0, "admission_status": "admitted"},
         {"request_id": 2, "request_order": 1, "admission_status": "invalid"},
@@ -102,7 +116,7 @@ def test_decimal_sum_rounds_only_after_folding(backend_name):
             output_numeric_dtype=DecimalDtype(10, 2), output_rounding="half_to_even"),
     ])
     rules = frame(backend_name, {"uuid": ["A", "B"], "region": ["EU", "EU"], "amount": [Decimal("0.004"), Decimal("0.004")]})
-    result = resolve(rules, metadata, frame(backend_name, {"request_id": [1, 2], "region": ["EU", "US"]}))
+    result = resolve(rules, metadata, frame(backend_name, {"request_id": [1, 2], "region": ["EU", "US"]})).fetch()
     assert payload_values(result) == [{"request_id": 1, "value": Decimal("0.01")}, {"request_id": 2, "value": None}]
 
 
@@ -123,7 +137,7 @@ def test_request_admission_rejects_coercible_original_types(backend_name, data_t
     result = resolve(
         frame(backend_name, {"uuid": ["A"], "x": [source_value], "any_x": [True], "amount": [7]}),
         metadata, frame(backend_name, {"request_id": [7], "x": [value]}),
-    )
+    ).fetch()
     assert result.requests.select("request_id", "admission_status", "reason_code").to_dicts() == [
         {"request_id": 7, "admission_status": "invalid", "reason_code": "invalid_value"},
     ]
@@ -195,8 +209,7 @@ def test_request_controls_leave_unspecified_rows_uncontracted(backend_name):
     ]
 
 
-def test_profile_output_projection_does_not_claim_unrequested_values(backend_name):
-    from mountainash_rules.engines.accumulate.resolve import resolve
+def test_profile_output_projection_does_not_claim_unrequested_values(backend_name, resolve_operation):
 
     metadata = controlled_metadata()
     authored = metadata.model_dump()
@@ -213,12 +226,12 @@ def test_profile_output_projection_does_not_claim_unrequested_values(backend_nam
     rules = frame(backend_name, {
         "uuid": ["E", "U"], "region": ["EU", "US"], "amount": [10, 10], "other": [1, 2],
     })
-    result = resolve(
+    result = resolve_operation(
         rules, metadata, frame(backend_name, {"request_id": [1, 2]}),
         request_control=frame(backend_name, {
             "request_id": [1, 2], "contract_id": ["P", "P"], "profile_id": ["a_only", "both"],
         }),
-    )
+    ).fetch()
     assert result.status.select("request_id", "status").sort("request_id").to_dicts() == [
         {"request_id": 1, "status": "resolved"}, {"request_id": 2, "status": "unresolved"},
     ]
@@ -230,14 +243,13 @@ def test_profile_output_projection_does_not_claim_unrequested_values(backend_nam
     ]
 
 
-def test_requiredness_and_original_provider_domain_precede_permitted_masks(backend_name):
-    from mountainash_rules.engines.accumulate.resolve import resolve
+def test_requiredness_and_original_provider_domain_precede_permitted_masks(backend_name, resolve_operation):
 
     authored = controlled_metadata().model_dump()
     authored["context_contracts"][0]["fields"][0]["required"] = True
     metadata = DimensionsMetadata.model_validate(authored)
     rules = frame(backend_name, {"uuid": ["E", "U"], "region": ["EU", "US"], "amount": [10, 20]})
-    result = resolve(
+    result = resolve_operation(
         rules, metadata, frame(backend_name, {
             "request_id": [1, 2, 3, 4], "region": [None, "APAC", "EU", "EU"],
         }),
@@ -245,7 +257,7 @@ def test_requiredness_and_original_provider_domain_precede_permitted_masks(backe
             "request_id": [1, 2, 3, 4], "contract_id": ["P"] * 4, "profile_id": ["decision"] * 4,
         }),
         masks=frame(backend_name, {"request_id": [1, 2, 3], "dimension_name": ["region"] * 3}),
-    )
+    ).fetch()
     assert result.requests.sort("request_order").select("admission_status").to_dicts() == [
         {"admission_status": status} for status in ["invalid", "invalid", "admitted", "admitted"]
     ]
@@ -255,8 +267,7 @@ def test_requiredness_and_original_provider_domain_precede_permitted_masks(backe
     assert result.payload("default").to_dicts() == [{"request_id": 4, "v0001": 10}]
 
 
-def test_masked_alias_does_not_erase_another_observation_of_the_same_field(backend_name):
-    from mountainash_rules.engines.accumulate.resolve import resolve
+def test_masked_alias_does_not_erase_another_observation_of_the_same_field(backend_name, resolve_operation):
     from tests.accumulate.test_domain import node, scalar
 
     graph = {}
@@ -283,13 +294,13 @@ def test_masked_alias_does_not_erase_another_observation_of_the_same_field(backe
         }],
     )
     rules = frame(backend_name, {"uuid": ["A", "B"], "left": [1, 2], "right": [1, 2], "amount": [5, 9]})
-    result = resolve(
+    result = resolve_operation(
         rules, metadata, frame(backend_name, {"request_id": [1, 2], "x": [1, 1]}),
         request_control=frame(backend_name, {
             "request_id": [1, 2], "contract_id": ["P", "P"], "profile_id": ["decision", "decision"],
         }),
         masks=frame(backend_name, {"request_id": [1, 2, 2], "dimension_name": ["left", "left", "right"]}),
-    )
+    ).fetch()
     assert result.status.sort("request_id").select("status").to_dicts() == [
         {"status": "resolved"}, {"status": "unresolved"},
     ]
@@ -330,7 +341,7 @@ def test_original_numeric_admission_distinguishes_missing_from_invalid(backend_n
         # The Ibis fixture's pandas ingestion turns NaN into null; supply an
         # actual backend NaN so this exercises nonfinite admission, not null.
         contexts = contexts.with_columns(ma.lit(value, dtype=ma.MountainashDtype.FP64).alias("x"))
-    result = resolve(rules, metadata, contexts)
+    result = resolve(rules, metadata, contexts).fetch()
     assert result.requests.select("admission_status", "reason_code").to_dicts() == [{
         "admission_status": "invalid" if invalid else "admitted",
         "reason_code": "invalid_value" if invalid else None,
@@ -370,21 +381,20 @@ def cell_profile_metadata(*, mode="resolve", values=(2, 12)):
     )
 
 
-def test_cell_promise_distinguishes_components_without_clipping_identity_to_provider(backend_name):
-    from mountainash_rules.engines.accumulate.resolve import resolve
+def test_cell_promise_distinguishes_components_without_clipping_identity_to_provider(backend_name, resolve_operation):
     contexts = frame(backend_name, {"request_id": [1, 2, 3], "x": [0, 2, 12]}).with_columns(
         ma.when(ma.col("request_id").eq(1)).then(ma.lit(None, dtype=ma.MountainashDtype.I64))
         .otherwise(ma.col("x")).alias("x"),
     )
 
-    result = resolve(
+    result = resolve_operation(
         frame(backend_name, {"uuid": ["A", "B"], "minimum": [0, 5],
                              "maximum": [20, 10], "amount": [10, 5]}),
         cell_profile_metadata(), contexts,
         request_control=frame(backend_name, {
             "request_id": [1, 2, 3], "contract_id": ["P"] * 3, "profile_id": ["decision"] * 3,
         }),
-    )
+    ).fetch()
     assert result.status.sort("request_id").select(
         "status", "contributors_determined", "cell_determined",
     ).to_dicts() == [
@@ -404,10 +414,9 @@ def test_cell_promise_distinguishes_components_without_clipping_identity_to_prov
 
 
 @pytest.mark.parametrize("value,candidate_count", [(2, 1), (100, 0)])
-def test_candidate_profile_never_turns_one_or_zero_candidates_into_a_decision(backend_name, value, candidate_count):
-    from mountainash_rules.engines.accumulate.resolve import resolve
+def test_candidate_profile_never_turns_one_or_zero_candidates_into_a_decision(backend_name, value, candidate_count, resolve_operation):
 
-    result = resolve(
+    result = resolve_operation(
         frame(backend_name, {"uuid": ["A", "B"], "minimum": [0, 5],
                              "maximum": [20, 10], "amount": [10, 5]}),
         cell_profile_metadata(mode="candidates", values=(value,)),
@@ -415,7 +424,7 @@ def test_candidate_profile_never_turns_one_or_zero_candidates_into_a_decision(ba
         request_control=frame(backend_name, {
             "request_id": [1], "contract_id": ["P"], "profile_id": ["decision"],
         }),
-    )
+    ).fetch()
     assert result.status.select("status", "disposition", "reason_code").to_dicts() == [
         {"status": "unresolved", "disposition": "candidates", "reason_code": "candidate_query"},
     ]
@@ -445,7 +454,7 @@ def test_stored_resolution_reads_retained_outputs_after_reload_without_refolding
     result = restored.resolve(
         frame(backend_name, {"request_id": [1, 2, 3], "x": [2, 7, 100]}),
         include_contributors=True,
-    )
+    ).fetch()
     assert result.payload("default").sort("request_id").to_dicts() == [
         {"request_id": 1, "v0001": 110}, {"request_id": 2, "v0001": 115},
         {"request_id": 3, "v0001": None},
@@ -476,7 +485,7 @@ def test_declared_dont_care_requires_permission_for_an_observed_profile_dimensio
             "request_id": [1, 2, 3], "contract_id": ["P"] * 3,
             "profile_id": ["allow", "forbid", "project_away"],
         }),
-    )
+    ).fetch()
     assert result.status.sort("request_id").select("status").to_dicts() == [
         {"status": "resolved"}, {"status": "invalid"}, {"status": "resolved"},
     ]
@@ -505,7 +514,7 @@ def test_datetime_awareness_controls_request_admission(backend_name, source_awar
             "maximum": [dt.datetime(2026, 1, 3, tzinfo=source_zone)], "amount": [7],
         }), metadata,
         frame(backend_name, {"request_id": [1], "x": [dt.datetime(2026, 1, 2, tzinfo=context_zone)]}),
-    )
+    ).fetch()
     compatible = source_aware == context_aware
     assert result.requests.select("admission_status").to_dicts() == [
         {"admission_status": "admitted" if compatible else "invalid"}
@@ -554,7 +563,7 @@ def test_aware_datetime_operands_preserve_instants_across_timezones(
             "x": [value.astimezone(ZoneInfo(context_zone)) for value in
                   (instant, instant + dt.timedelta(hours=1))],
         }),
-    )
+    ).fetch()
     assert result.status.sort("request_id").select("status").to_dicts() == [
         {"status": "resolved"}, {"status": "resolved"},
     ]
@@ -562,3 +571,115 @@ def test_aware_datetime_operands_preserve_instants_across_timezones(
     assert payload_values(result, output="amount") == [
         {"request_id": index, "value": value} for index, value in enumerate(expected, 1)
     ]
+
+
+def test_direct_source_resolution_captures_before_deferred_fetch():
+    import ibis
+    from mountainash_rules.engines.accumulate.resolve import resolve
+
+    connection = ibis.duckdb.connect()
+    native = connection.create_table(
+        "captured_source", {"uuid": ["A"], "region": ["EU"], "amount": [7]},
+    )
+    metadata = DimensionsMetadata(
+        uuid_field="uuid", dimensions=[Dimension(dimension_name="region")],
+        aggregates=[Aggregate(column_name="amount", data_type="int")],
+    )
+    rules = ma.relation(native)
+    contexts = frame("polars", {"request_id": [1], "region": ["EU"]})
+    operation = resolve(rules, metadata, contexts, include_contributors=True)
+    connection.raw_sql('UPDATE captured_source SET amount = 99')
+    assert connection.table("captured_source").execute()["amount"].tolist() == [99]
+    result = operation.fetch(include_matches=True)
+    connection.drop_table("captured_source")
+    del operation, rules, contexts
+    assert payload_values(result, output="amount") == [{"request_id": 1, "value": 7}]
+    assert result.contributors.select("source_uuid").to_dicts() == [{"source_uuid": "A"}]
+    assert result.matches.version_id is None
+    assert result.matches.scope("default").select("source_uuid", "v0001").to_dicts() == [
+        {"source_uuid": "A", "v0001": 7},
+    ]
+
+
+def test_stored_decisions_keep_no_match_alternatives_and_profile_domain(backend_name):
+    from mountainash_rules.engines.accumulate.build import build
+
+    metadata = controlled_metadata()
+    lattice = build(frame(backend_name, {
+        "uuid": ["E", "U"], "region": ["EU", "US"], "amount": [7, 7],
+    }), metadata)
+    records = [
+        {"request_id": 1, "context": {"region": "EU"}},
+        {"request_id": 2, "context": {"region": "APAC"}},
+        {"request_id": 3, "context": {}},
+        {"request_id": 4, "context": {}, "contract_id": "P", "profile_id": "decision"},
+    ]
+    result = lattice.resolve(records).fetch(include_matches=True)
+    assert result.status.select("request_id", "status").sort("request_id").to_dicts() == [
+        {"request_id": 1, "status": "resolved"},
+        {"request_id": 2, "status": "resolved"},
+        {"request_id": 3, "status": "unresolved"},
+        {"request_id": 4, "status": "resolved"},
+    ]
+    assert payload_values(result, output="amount") == [
+        {"request_id": 1, "value": 7},
+        {"request_id": 2, "value": None},
+        {"request_id": 4, "value": 7},
+    ]
+    assert result.matches.scope("default").select("request_id", "v0001").sort("request_id").to_dicts() == [
+        {"request_id": 1, "v0001": 7},
+        {"request_id": 3, "v0001": 7}, {"request_id": 3, "v0001": 7},
+        {"request_id": 4, "v0001": 7}, {"request_id": 4, "v0001": 7},
+    ]
+
+
+def test_direct_combined_retains_contributions_not_folded_or_fabricated_cells(backend_name):
+    from mountainash_rules.engines.accumulate.resolve import resolve
+
+    metadata = controlled_metadata()
+    result = resolve(
+        frame(backend_name, {
+            "uuid": ["E1", "E2", "U"], "region": ["EU", "EU", "US"],
+            "amount": [7, -7, 9],
+        }), metadata,
+        frame(backend_name, {
+            "request_id": [1, 2, 3], "region": ["EU", None, "APAC"],
+        }),
+    ).fetch(include_matches=True)
+    assert payload_values(result, output="amount") == [
+        {"request_id": 1, "value": 0}, {"request_id": 3, "value": None},
+    ]
+    assert result.matches.scope("default").select(
+        "request_id", "source_uuid", "v0001",
+    ).sort("request_id", "source_uuid").to_dicts() == [
+        {"request_id": 1, "source_uuid": "E1", "v0001": 7},
+        {"request_id": 1, "source_uuid": "E2", "v0001": -7},
+        {"request_id": 2, "source_uuid": "E1", "v0001": 7},
+        {"request_id": 2, "source_uuid": "E2", "v0001": -7},
+        {"request_id": 2, "source_uuid": "U", "v0001": 9},
+    ]
+    assert result.matches.cell_identity is None
+    assert "cell_id" not in result.matches.scope("default").columns
+
+def test_stored_empty_scopes_preserve_requested_empty_evidence(backend_name):
+    from mountainash_rules.engines.accumulate.build import build
+
+    lattice = build(frame(backend_name, {
+        "uuid": ["E"], "region": ["EU"], "amount": [7],
+    }), controlled_metadata())
+    result = lattice.resolve(
+        [{"request_id": 1, "context": {"region": "EU"}}], scopes=[],
+        include_contributors=True, include_candidates=True, include_cell_key=True,
+    ).fetch(include_matches=True)
+    assert result.requests.select("request_id", "admission_status").to_dicts() == [
+        {"request_id": 1, "admission_status": "admitted"},
+    ]
+    for name in (
+        "contributors", "candidates", "cell_identity", "cell_identity_boxes",
+        "cell_identity_contributors",
+    ):
+        evidence = getattr(result, name)
+        assert evidence is not None
+        assert evidence.to_dicts() == []
+    assert result.status.to_dicts() == []
+    assert result.matches.contributors.to_dicts() == []

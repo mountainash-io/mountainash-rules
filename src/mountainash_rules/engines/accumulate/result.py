@@ -23,6 +23,7 @@ class ResolutionResult:
     payloads: t.Mapping[str, Relation]
     payload_columns: t.Mapping[str, t.Mapping[str, str]]
     _metadata_json: str
+    matches: QueryResult | None = None
     contributors: Relation | None = None
     candidates: Relation | None = None
     cell_identity: Relation | None = None
@@ -75,7 +76,7 @@ class QueryResult:
     matches: t.Mapping[str, Relation]
     payload_columns: t.Mapping[str, t.Mapping[str, str]]
     _metadata_json: str
-    version_id: UUID
+    version_id: UUID | None
     contributors: Relation | None = None
     cell_identity: Relation | None = None
     cell_identity_boxes: Relation | None = None
@@ -100,5 +101,5 @@ class QueryResult:
         return DimensionsMetadata.model_validate_json(self._metadata_json)
 
     def scope(self, name: str) -> Relation:
-        """Return stored matches for a selected scope, without further execution."""
+        """Return stored matches or source contributions without further execution."""
         return self.matches[name]

@@ -7,10 +7,8 @@ from typing import Mapping, Protocol, Sequence
 import mountainash.expressions as ma
 from mountainash.relations import Relation, concat
 
-from mountainash_rules.engines.accumulate.lattice import Lattice
 
 _KEYS = ("partition", "scope")
-_DEFAULT_POINT_KEYS = ("request_id", "__completion_id")
 
 
 class _StoredGeometry(Protocol):
@@ -161,51 +159,3 @@ def _matching_cells(
     )
 
 
-def point_results(
-    lattice: Lattice, points: Relation, scope: str,
-    selected_outputs: Sequence[int], *,
-    include_contributors: bool,
-    point_keys: Sequence[str] = _DEFAULT_POINT_KEYS,
-) -> tuple[Relation, Relation, Relation | None]:
-    """Read stored output alternatives and requested cell/contributor witnesses."""
-    point_keys = tuple(point_keys)
-    matches = _matching_cells(lattice, points, scope, point_keys)
-    key_columns = tuple(dict.fromkeys((*point_keys, *_KEYS)))
-    cell_hits = matches.select(
-        *key_columns, "cell_id", "contributor_set_id",
-    ).unique(subset=[*key_columns, "cell_id", "contributor_set_id"])
-    contributor_hits = None
-    if include_contributors:
-        contributor_hits = matches.select(
-            *key_columns, "contributor_set_id",
-        ).join(
-            lattice.contributors.select(*_KEYS, "contributor_set_id", "source_uuid"),
-            on=[*_KEYS, "contributor_set_id"], how="inner", execute_on="right",
-        ).select(*key_columns, "source_uuid").unique(
-            subset=[*key_columns, "source_uuid"],
-        )
-
-    outputs = lattice.outputs[scope]
-    output_names = tuple(f"v{position + 1:04d}" for position in selected_outputs)
-    missing = matches.select(*_KEYS, "contributor_set_id").unique(
-        subset=[*_KEYS, "contributor_set_id"],
-    ).join(
-        outputs.select(*_KEYS, "contributor_set_id").unique(
-            subset=[*_KEYS, "contributor_set_id"]
-        ),
-        on=[*_KEYS, "contributor_set_id"], how="anti", execute_on="right",
-    )
-    if missing.count_rows():
-        raise ValueError("stored output is missing for a matched contributor set")
-    if any(name not in outputs.columns for name in output_names):
-        raise ValueError("selected stored output column is absent")
-    matched_outputs = matches.select(*key_columns, "contributor_set_id").join(
-        outputs.select(*_KEYS, "contributor_set_id", *output_names),
-        on=[*_KEYS, "contributor_set_id"], how="inner", execute_on="right",
-    ).select(*key_columns, *output_names)
-    point_rows = points.drop("scope") if "scope" in points.columns else points
-    point_rows = point_rows.with_columns(ma.lit(scope).alias("scope")).select(*key_columns)
-    alternatives = point_rows.join(
-        matched_outputs, on=list(key_columns), how="left", execute_on="right",
-    )
-    return alternatives, cell_hits, contributor_hits

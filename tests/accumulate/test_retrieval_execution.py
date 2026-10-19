@@ -66,6 +66,40 @@ class _CursorTrace:
         return native
 
 
+
+
+def test_duckdb_stored_resolve_is_deferred_and_combines_matches_in_one_fetch():
+    from tests.accumulate.test_resolve import controlled_metadata
+    from tests.conftest import build_backend_df
+    from mountainash_rules.engines.accumulate.build import build
+
+    lattice = build(ma.relation(build_backend_df("ibis-duckdb", {
+        "uuid": ["E", "U"], "region": ["EU", "US"], "amount": [10, 20],
+    }, "resolve_execution_rules")), controlled_metadata())
+    backend = lattice.cells.compile()._find_backend(use_default=False)
+    trace = DuckDBTrace(backend.con)
+    backend.con = trace
+    try:
+        operation = lattice.resolve([
+            {"request_id": 31, "context": {"region": "EU"},
+             "contract_id": "P", "profile_id": "decision"},
+        ], include_contributors=True)
+        assert all(kind in ("binding", "metadata", "fetch:metadata") for kind, _ in trace.events), trace.events
+        trace.events.clear()
+        result = operation.fetch(include_matches=True)
+        data = [sql for kind, sql in trace.events if kind == "data"]
+        assert len(data) == 1, trace.events
+        assert sum(kind == "fetch:data" for kind, _ in trace.events) == 1, trace.events
+        assert result.matches is not None
+        assert result.status.select("request_id", "status").to_dicts() == [
+            {"request_id": 31, "status": "resolved"},
+        ]
+        assert result.payload("default").to_dicts() == [{"request_id": 31, "v0001": 10}]
+        assert result.matches.scope("default").select("request_id", "v0001").to_dicts() == [
+            {"request_id": 31, "v0001": 10},
+        ]
+    finally:
+        backend.con = trace.connection
 def test_duckdb_retrieval_preserves_stored_placement_and_local_result_lifetime():
     lattice = range_lattice("ibis-duckdb")
     backend = lattice.cells.compile()._find_backend(use_default=False)
