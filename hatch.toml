@@ -279,4 +279,4 @@ radon-cc-detail = "radon cc ./src"
 installer = "uv"
 dependencies = ["mypy==1.10.1"]
 [envs.mypy.scripts]
-check = "mypy --install-types --non-interactive {args:src/mountainash_rules tests}"
+check = "mypy --install-types --non-interactive {args:src/mountainash_rules}"

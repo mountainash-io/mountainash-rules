@@ -3,7 +3,7 @@
 This guide covers the two evaluation paths in `mountainash_rules`:
 
 - **ExpressionRulesEngine** — direct context evaluation against a rules DataFrame.
-- **AccumulatorEngine** — build validated exact cells, then resolve named contract/profile requests.
+- **AccumulatorEngine** — the current source-gated exact-cell prototype; not yet the required backend-executed construction product.
 
 ---
 
@@ -569,7 +569,7 @@ Dimension(
 
 ## Backend selection
 
-Pass any supported DataFrame as `rules`. The result returns in the same backend.
+For **ExpressionRulesEngine**, pass a supported DataFrame as `rules`; filter results retain that backend. This statement does not apply to exact accumulator construction in Part 2.
 
 ```python
 # Polars (recommended)
@@ -595,6 +595,16 @@ Use `AccumulatorEngine` for an authorized, contract-bound exact-cell artifact.
 It is not the legacy combination/ranking API: source material is analyzed and
 gated before build, and an application resolves a named contract/profile
 against the resulting immutable lattice.
+
+**Architectural qualification (2026-09-19):** This documents the implemented
+prototype API, not an accepted product execution design. Exact build extracts
+dataframe inputs into Python rows, constructs geometry and folds locally, and
+replays/checks semantic evidence across several stages before wrapping results
+as relations. It does not execute construction on the input backend followed by
+an independent post-validation pass. See the
+[architectural review](https://github.com/mountainash-io/mountainash-central/blob/main/04.planning/mountainash-rules/superpowers/reviews/2026-09-19-backend-execution-architectural-review.md).
+Keep using the required current gates when exercising this prototype; no
+replacement API or weaker validation contract has been approved.
 
 ### Inputs the application must own
 

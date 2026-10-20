@@ -9,6 +9,8 @@ Mountainash Rules has two deliberately different execution models. The Expressio
 
 This chapter is for maintainers. It describes the current boundaries and the evidence an extension must preserve; it does not promise that an unfinished analysis, warning review, build, snapshot, or request will succeed.
 
+Architectural acceptance is separate from these prototype contracts. The accumulator constructs geometry and outputs locally after extracting source rows. Input compatibility and import-purity tests do not demonstrate backend execution. The product objective remains construction through Mountainash expressions followed by independent result validation. Faster local solving, higher budgets, or successful transport does not satisfy that objective.
+
 ## Keep the public boundary small
 
 Applications import public types and functions from `mountainash_rules`. That root exports the engines, exact models (`ExactLimits`, `ValidatedBuildInput`, `ValidationBundle`, `WarningApproval`, contracts and profiles), source-analysis functions, lattices, results, aggregate declarations, and public error classes.
@@ -47,7 +49,7 @@ The table is intentionally end-to-end. Updating only a row representation, a rel
 
 ## Source gate before compilation
 
-The source gate is part of the accumulator's semantics, not optional application ceremony.
+The source gate is required by the current prototype contract and must not be bypassed. Its lifecycle is under architectural reconciliation: source analysis already performs semantic construction, and later replay and compiled validation repeat some work. This gate does not establish delivery of the intended construction/post-validation architecture.
 
 1. Call `analyze_sources(...)` with the current rows, metadata, aggregates, source identity fields, domain and predicate material, routing, contracts, validation policy, and `ExactLimits`. Its `ValidationBundle` records source diagnostics.
 2. Review only actual warning findings. If a warning is accepted, create a `WarningApproval` with the selected analysis input, source report, warning IDs, and a scope that covers those findings. Attach it with `attach_warning_approvals(..., limits=limits)`.

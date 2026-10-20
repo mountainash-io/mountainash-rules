@@ -6,13 +6,13 @@ Business rules that live in code are slow to change — every update requires a 
 
 The engine evaluates rules against a context and ranks matches by specificity. Define dimensions with match strategies (exact, range, regex, prefix, set membership, etc.), pass a context, and get back the most specific matching rules — ranked, explained, and ready to use.
 
-Built on [mountainash](https://github.com/mountainash-io/mountainash) expressions for backend-agnostic evaluation. Rules compile once; contexts evaluate in a single vectorised pass. Supports Polars, Pandas, Ibis (DuckDB, SQLite, Polars), and Narwhals backends with zero code changes.
+`ExpressionRulesEngine` uses [mountainash](https://github.com/mountainash-io/mountainash) expressions for backend-agnostic filter evaluation. Rules compile once; contexts evaluate in a vectorised pass on supported strategy/backend combinations. See [Backend Support](#backend-support) for capability limits. The exact accumulator has a different, currently host-based execution path described below.
 
 ### Why metadata, not code?
 
 - **Rules change faster than code.** Pricing tiers, eligibility criteria, fraud thresholds — these are business decisions that shift weekly. When rules are data, a product owner can update them in a database and the engine picks up the change on the next evaluation. No PR, no deploy, no downtime.
 - **Rules are auditable.** Every rule is a row with a name, dimensions, and match criteria. You can diff two rule sets, version them in a table, and explain exactly why a context matched — because the engine tracks per-dimension ternary results (match / unknown / non-match) for every rule.
-- **Rules scale without branching.** A hand-coded rule system with 2,000 rules is unmaintainable. A DataFrame with 2,000 rows is just data. The engine evaluates all of them in one vectorised pass regardless of count.
+- **Filter rules avoid per-rule Python branching.** The filter expresses evaluation over the rules relation; work still depends on rule count, strategies and backend capabilities. This is not a scaling claim for accumulator construction.
 
 ## Installation
 
@@ -218,11 +218,18 @@ On `evaluate`, `evaluate_batch`, and `explain`, `dimensions=None` means all conf
 
 ## Accumulator Engine
 
-`AccumulatorEngine` builds immutable **exact-cell** artifacts. It is separate
-from the filter engine: a build is authorized from analyzed source material,
-and an application resolves a contract-bound context against native cells. This
-guide covers the available E6–E8 interfaces only; it does not assert that E8
-is complete or make a release or consumer-completeness claim.
+`AccumulatorEngine` builds immutable **exact-cell** artifacts through the current
+source-gated prototype API. Phases 1–5 and their consumer integrations are merged,
+but the implementation is **not accepted against the original backend-executed
+product architecture**.
+
+Dataframe inputs are extracted into Python rows. Predicate geometry and numeric
+folds run locally, with semantic checks and witness replay before/during build
+and further checks afterwards; computed records are then wrapped as relations.
+Multi-backend input support does not mean construction executes on that backend.
+The [architectural review](https://github.com/mountainash-io/mountainash-central/blob/main/04.planning/mountainash-rules/superpowers/reviews/2026-09-19-backend-execution-architectural-review.md)
+records the execution mismatch and modest pricing-domain build failures.
+Product requirements/design reconciliation precedes further acceptance or release.
 
 The application owns every declaration and limit. It supplies native source
 rows with stable UUIDs, `DimensionsMetadata`, complete native `Aggregate`
@@ -248,7 +255,7 @@ Decision output values may equal reserved dimension markers when their declared
 aggregate type admits them. This output rule does not change context admission:
 supplied markers remain unavailable rather than concrete business inputs.
 
-The source gate is deliberately a real workflow, not a constructor shortcut:
+The following source gate is required by the **current prototype API**; it is not the owner-confirmed product target of backend-executed construction followed by independent result validation:
 
 1. Call `analyze_sources(rows, ...)` with the application's complete
    declarations and explicit `limits`.
@@ -350,13 +357,14 @@ artifact rather than legacy `is_composed`. Flat legacy/imported lattices remain
 inspection-only; they are not valid inputs to exact build, bind, route, or
 apply operations.
 
-### Phase5 migration handoff
+### Prototype consumer integration status
 
-The remaining external migration is owned outside this documentation change:
-Babel's base `LatticeView`, CSV/DMN exporters and importers, and manifest
-dispatch; plus the service registry, model, route, configuration, and fixtures.
-Those owners must migrate their own bound-artifact handling. They are not
-modified here, and E8 is not claimed complete.
+Rules [#67](https://github.com/mountainash-io/mountainash-rules/pull/67),
+Babel [#4](https://github.com/mountainash-io/mountainash-rules-babel/pull/4) and
+service [#13](https://github.com/mountainash-io/mountainash-rules-service/pull/13)
+merged the native consumer chain. That delivery remains valid evidence for the
+implemented interfaces, not proof of backend-resident construction, realistic
+pricing-domain capacity, or product release qualification.
 
 ## Serialisable Metadata
 
@@ -371,7 +379,7 @@ The [mountainash-rules-babel](https://github.com/mountainash-io/mountainash-rule
 
 ## Backend Support
 
-The engine is backend-agnostic. Pass any supported DataFrame type as `rules`:
+The following table describes filter input backends, subject to the capability limits below. It does **not** certify backend-resident exact accumulator construction:
 
 | Backend | Type |
 |---------|------|
@@ -391,6 +399,12 @@ Supported operations produce identical results; backend capability limits still 
 - Per-row REGEX retains its Polars-native implementation.
 
 Polars is recommended for performance.
+
+Exact accumulator inputs also pass through supported relation adapters, but the
+current build extracts their rows to local memory. Its result tables are
+materialised through the default Python-ingress backend rather than retaining
+the input execution backend; the architecture probe observed Pandas input and
+Polars output. A backend input sweep or import-purity test does not close this gap.
 
 ## Installation
 

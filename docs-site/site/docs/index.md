@@ -1,13 +1,13 @@
 ---
 title: Mountainash Rules
-description: Learn the shared rule model, match individual rules with the Expression Rules Engine, and build compatible combinations with the Accumulator Engine
+description: Learn the shared rule model, expression-engine evaluation, and the exact accumulator prototype
 ---
 
 [Back to the Mountainash ecosystem](https://docs.mountainash.io/)
 
 # Mountainash Rules
 
-Mountainash Rules provides two engines built on a shared rule model. Use the **Expression Rules Engine** to match, rank and select individual rules. Use the **Accumulator Engine** to build compatible rule combinations, combine their values and apply contexts to the resulting lattice.
+Mountainash Rules provides two engines sharing a rule model. The **Expression Rules Engine** matches, ranks, and selects individual rules through backend expressions. The **Accumulator Engine** prototype constructs exact cells with accumulated values and contributor provenance, then resolves contexts against them. Its local Python/native construction is not accepted delivery of the original backend-executed product architecture.
 
 Both engines use rule tables, contexts, dimensions and metadata. The shared foundations explain these structures before developing each engine's workflows.
 
@@ -21,7 +21,7 @@ The menu follows these four parts. Read the shared foundations first, then choos
 |---|---|---|
 | [Shared foundations](chapters/index.md#shared-foundations) | 1–3 | The two engines, their common primitive structures, and matching concepts |
 | [The Expression Rules Engine](chapters/index.md#the-expression-rules-engine) | 4–6 | Individual-rule evaluation, hit policies, explanations and batches |
-| [The Accumulator Engine](chapters/index.md#the-accumulator-engine) | 7–8 | Compatible combinations, aggregate results, lattices, routing and persistence |
+| [The Accumulator Engine](chapters/index.md#the-accumulator-engine) | 7–8 | Exact prototype cells, outputs, provenance, routing, and persistence |
 | [Implementation and extension](chapters/index.md#implementation-and-extension) | 9–11 | How each engine works and where shared changes differ from engine-specific extensions |
 
 The [complete book contents](chapters/index.md) describe all eleven chapters and both appendices.

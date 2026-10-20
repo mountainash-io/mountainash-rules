@@ -11,8 +11,7 @@ material, obtains any required scoped warning approvals, passes the build gate,
 and builds an immutable artifact. A later request resolves against that artifact
 under a named context contract and resolution profile.
 
-This chapter documents the available E6–E8 interfaces only. It does not claim
-that E8 is complete or make a release or consumer-completeness claim.
+This chapter documents current prototype interfaces, not architectural or release acceptance. “Native” describes the artifact/runtime format, not execution on the input DataFrame backend. Construction extracts source rows and computes geometry and folds locally in Python/native code. The product requires backend-executed construction through Mountainash expressions followed by result validation; that requirement remains unmet.
 
 ## Inputs and limits are application-owned {#inputs-and-limits-are-application-owned}
 

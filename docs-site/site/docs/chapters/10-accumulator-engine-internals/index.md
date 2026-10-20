@@ -7,6 +7,8 @@ description: "Follow source validation, exact predicate compilation, disjoint ce
 
 The accumulator is an exact-artifact pipeline, not a rule-expansion engine. It accepts authored source rows only after source validation, compiles their normalized predicates into immutable, disjoint cells, and resolves a normalized context against a contract-bound artifact. It exposes cell and contributor identity rather than legacy combination bookkeeping or a reused filter-engine execution path.
 
+This is the working prototype, not accepted delivery of the backend-executed product architecture. Source rows are extracted into Python; geometry and folds execute locally in Python/native code. Relations hold already-computed records. Backend-purity tests do not establish backend-executed construction or the intended independent post-validation lifecycle.
+
 Use the public package root for application imports. The implementation packages that produce predicates, layouts, native tables, and codec records are private implementation details.
 
 ## The bounded lifecycle
@@ -46,7 +48,7 @@ flowchart LR
 
 ## Source analysis is separate from compilation
 
-Source analysis and compiled evidence are different stages with different claims.
+Source analysis and compiled evidence have different claims, but do not use independent construction algorithms. Source diagnostics already construct partition geometry and fold outputs. Witness replay and build preparation can reconstruct that geometry; compiled proof checks revisit cells, contributors, and folds. This is not lightweight preflight followed by one backend construction query.
 
 1. `analyze_sources(...)` normalizes the current authored rows, metadata, aggregate declarations, domains, predicates, languages, routing, contracts, validation policy, and limits. It returns a `ValidationBundle` containing a **source** report and findings. A returned bundle is diagnostic evidence, not build permission and not a compiled artifact.
 2. `attach_warning_approvals(bundle, approvals, *, limits)` records only explicit `WarningApproval` records. Each approval identifies the source analysis and report, names the warnings it approves, and carries a scope. It does not invent authority, expand scope, or convert any finding into a clean result.

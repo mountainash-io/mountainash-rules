@@ -18,7 +18,7 @@ Read [AccumulatorEngine](chapters/07-accumulator-engine/index.md#accumulatorengi
 
 ### What does "backend-agnostic" mean in the context of mountainash-rules?
 
-The normal implementation uses Mountainash expressions and relations instead of directly coding against one DataFrame library. That boundary has documented exceptions and backend-specific limitations, notably per-row `REGEX`. Supported relation types do not guarantee that every strategy, dtype and operation works identically on every backend.
+Expression-engine matching executes through Mountainash expressions and relations, with documented limitations such as per-row `REGEX`. The exact accumulator prototype accepts several input formats but extracts source rows into Python and computes geometry and folds locally in Python/native code before materializing typed relations. It does not construct an accumulator plan on the source backend. Input compatibility and backend-purity tests therefore do not establish its architectural acceptance.
 
 Read [Backend-Agnostic Design](chapters/01-two-rule-engines/index.md#using-other-dataframe-libraries).
 

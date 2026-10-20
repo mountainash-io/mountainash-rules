@@ -10,7 +10,7 @@ Mountainash Rules is a Python package for evaluating business rules stored in ta
 The package provides two engines:
 
 - The **Expression Rules Engine** compares a context with the rules table and returns matching rules, with configurable ordering and selection.
-- The **Accumulator Engine** builds combinations of rules whose conditions can hold together and aggregates selected numeric values within each combination. It then compares a context with the built combinations to find those that apply.
+- The **Accumulator Engine** prototype constructs disjoint cells with accumulated outputs and contributor provenance, then resolves contexts against those cells. Construction currently executes locally, not as a plan on the source backend.
 
 Both engines use **dimension metadata** to interpret the rules table. A dimension defines one comparison between rule conditions and a context value. Its metadata specifies the fields to read, the data type and the comparison strategy, such as exact equality or a numeric range.
 
@@ -172,16 +172,16 @@ Omitting `service` broadens the result to include `rush_au` because its service 
 <!-- concept:6 -->
 ## DataFrame backends {#using-other-dataframe-libraries}
 
-A **backend** stores the data or executes table operations. Mountainash Rules accesses supported backends through the `mountainash` package's expression and relation interfaces. The examples here use Polars for storage and execution.
+A **backend** stores data or executes table operations. The Expression Rules Engine executes matching through Mountainash expressions and relations. The exact accumulator instead extracts source rows into Python, constructs geometry and folds locally in Python/native code, and wraps computed records in typed relations.
 
-**Backend-agnostic design** separates matching logic from the implementation of DataFrame operations. The normal engine code uses two shared abstractions:
+For the expression engine, **backend-agnostic design** separates matching logic from DataFrame operations through two shared abstractions:
 
 - An **expression** describes a calculation, such as comparing the region column with the context's region.
 - A **relation** exposes table operations, such as adding a comparison column or retaining matching rows, over a supported input.
 
 Expressions and relations work together within an engine. An expression defines a calculation, and a relation applies it to a table through the selected backend. The dimension metadata specifies the matching behavior independently of that backend. Chapter 2 introduces both APIs.
 
-The diagram shows how the rules table, metadata and context connect to these execution interfaces:
+The diagram describes expression-engine evaluation, not exact-accumulator construction:
 
 ```mermaid
 flowchart TB
@@ -203,10 +203,10 @@ Backend support depends on both the accepted input types and the operations used
 |---|---|
 | Ordinary expression-engine matching uses Mountainash's expression and relation interfaces | Shared dimension definitions can be reused where the backend supports the required operations. |
 | Per-row `REGEX` uses a Polars-native expression | A table of different regex patterns is not a portable example for every backend. |
-| Accumulator `build()` materializes input to Polars | Accepting another input type does not make the whole combination build native to that original backend. |
+| Exact accumulator construction extracts source rows and computes geometry and folds locally | Accepting another input type does not establish construction on that backend. |
 | Batch evaluation prepares compatible inputs before joining them | Reusing metadata does not eliminate table conversion or staging costs. |
 
-The [comparison compiler][compiler-source] contains the Polars-native per-row regex path. The [accumulator build implementation][accumulator-source] converts its input to Polars before constructing combinations.
+The [comparison compiler][compiler-source] contains the Polars-native per-row regex path. The [accumulator build implementation][accumulator-source] orchestrates local preparation, geometry construction, validation, and relation materialization. The original backend-executed construction requirement remains unmet.
 
 Moving the warehouse rules from Polars to Pandas would change their representation while preserving the intended exact comparisons for `region` and `service`. A rule library using list membership or per-row regex also needs backend support for those operations. Verify the actual comparisons and engine calls when selecting a backend.
 
@@ -214,7 +214,7 @@ Moving the warehouse rules from Polars to Pandas would change their representati
 
 ## Individual rules and combinations {#individual-rules-or-compatible-combinations}
 
-The Accumulator Engine constructs combinations of compatible rules and aggregates selected values within them. For the warehouse example, summing the task estimates in a combination gives its total processing time. We can use the same four rules and Australian standard context to compare this result with the expression engine's output.
+The exact accumulator prototype constructs disjoint cells and aggregates their applicable contributors. The comparison below illustrates the warehouse example's arithmetic, not a complete source-validation/build example.
 
 The expression engine returned `inspect_au` and `pack_au` as two individual rows, carrying two and five minutes respectively. The accumulator first checks which rules have conditions that can hold together. Inspection and packing agree on both region and service, so they can form a combination. The New Zealand rule conflicts on region; the rush rule conflicts on service.
 
@@ -227,7 +227,7 @@ If we configure the accumulator to sum `minutes`, its build produces an inspecti
 
 In this comparison table, `inspect_au` + `pack_au` identifies the contributing source rules. The actual numeric total is stored in an accumulator result field. An aggregate declaration specifies the source column and operation: `minutes` and sum in this example. Chapter 7 covers the configuration and result fields.
 
-The built combination table is called a **lattice**. The engine constructs it from the rules' conditions before evaluating a context, then uses the shared matching machinery to compare the context with the combined conditions. A built lattice can be reused for multiple contexts. The combination search has its own costs and limits, separate from those of matching a context against the lattice.
+The built artifact is called a **lattice**. The exact prototype retains cell predicates, outputs, and contributor identities for contract-bound resolution; it does not reuse expression-engine ranking. Construction and resolution have separate costs and limits. Chapters 7 and 10 describe the current workflow and execution boundary.
 
 A lattice can contain combinations of different sizes. With wildcards, a single unrestricted rule can remain alongside a more specific combination of several rules. Applying a context can therefore return more than one combination. Chapters 7 and 8 explain how the build retains combinations and how to interpret these results.
 
