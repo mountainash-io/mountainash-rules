@@ -54,8 +54,9 @@ def rule_ordinals(sources: Relation) -> Relation:
 
     ``sources`` has distinct ``(scope, source_uuid)`` rows.  Returns ``(scope, source_uuid,
     __word_index, __word_bit)`` where the 0-based ordinal is ``word_index * 63 + word_bit``.
-    ``row_number`` starts at 0 or 1 depending on the backend, so each scope's minimum is
-    subtracted.
+    ``row_number`` starts at 0 or 1 depending on the backend (mountainash backlog #365), so
+    each scope's minimum is subtracted. ``//``/``%`` run through float on Ibis-DuckDB
+    (backlog #366); exact here because ordinals stay far below 2**53.
     """
     ranked = sources.unique().with_columns(
         ma.col(SOURCE_UUID).row_number().over(SCOPE, order_by=SOURCE_UUID).alias("__rn")
@@ -122,9 +123,9 @@ def entry_sources_ids(
             empty.select(*keys, ma.lit(0).cast("int64").alias(ENTRY_SOURCES_ID)),
         )
     distinct = cell_words.select(SCOPE, *columns).unique()
-    # A window orders by one column, so the tuple is ordered through one key: each word as
-    # fixed-width decimal text, concatenated.  Words are non-negative, so the text order is
-    # the lexicographic order of the integer tuple.
+    # Workaround for mountainash backlog #364: a window honours only the first order_by key,
+    # so the tuple is ordered through one key: each word as fixed-width decimal text,
+    # concatenated. Words are non-negative, so the text order is the integer-tuple order.
     key = ma.col(columns[0]).cast("string").str.zfill(WORD_DIGITS)
     for column in columns[1:]:
         key = key + ma.col(column).cast("string").str.zfill(WORD_DIGITS)
