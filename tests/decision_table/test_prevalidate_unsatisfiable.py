@@ -126,9 +126,8 @@ def test_truthy_explicit_null_mapping_is_not_unmapped(backend_name):
 
 @pytest.mark.parametrize("backend_name", BACKENDS)
 def test_presence_null_with_concrete_condition_warns(backend_name):
-    field = ContextField(name="s", data_type=DataType.STR, wildcard="*")
-    m = meta(field, (M.EXACT, {"rule_field": "a"}), (M.PRESENCE, {"rule_field": "p"}))
-    data = {"rule_id": ["bad", "ok", "any"], "a": ["x", "x", "*"], "p": ["IS_NULL", "IS_NOT_NULL", "IS_NULL"]}
+    m = meta(INT, (M.EXACT, {"rule_field": "a"}), (M.PRESENCE, {"rule_field": "p"}))
+    data = {"rule_id": ["bad", "ok", "any"], "a": [4, 4, -1], "p": ["IS_NULL", "IS_NOT_NULL", "IS_NULL"]}
     assert warned(backend_name, data, m) == UNSAT
 
 

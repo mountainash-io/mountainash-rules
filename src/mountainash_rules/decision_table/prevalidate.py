@@ -194,6 +194,9 @@ def _signature_scalar_payload(
         [dim.field.wildcard] if dim.field.wildcard_declared else [],
     )
     missing = raw.is_null() & ~wildcard
+    if dim.match_strategy is MatchStrategy.PRESENCE:
+        # A PRESENCE rule column holds text whatever the field's data type.
+        return wildcard, missing, ma.when(wildcard | missing).then(ma.lit("")).otherwise(raw)
     payload = (
         raw.cast(dim.decimal_dtype, rounding=dim.rounding)
         if dim.data_type is DataType.DECIMAL

@@ -271,3 +271,31 @@ def test_mixed_normalized_signature_fixture_has_expected_uuid_groups(backend_nam
         "duplicate_rule": ("duplicate-a", "duplicate-b"),
         "conflicting_rule": ("conflict-a", "conflict-b"),
     }
+
+
+@pytest.mark.parametrize("backend_name", ["polars", "ibis-duckdb"])
+def test_presence_column_on_int_field_signs_as_text(backend_name):
+    metadata = DimensionsMetadata(
+        uuid_column="rule_id",
+        fields=(ContextField(name="n", data_type=DataType.INT, wildcard=-1),),
+        dimensions=(
+            Dimension(
+                dimension_name="presence",
+                context_field="n",
+                rule_field="presence",
+                match_strategy=MatchStrategy.PRESENCE,
+            ),
+        ),
+        outputs=(_result_output(),),
+    )
+    data = {
+        "rule_id": ["dup-1", "dup-2", "conflict", "other"],
+        "presence": ["IS_NULL", "IS_NULL", "IS_NULL", "IS_NOT_NULL"],
+        "result": [1, 1, 2, 1],
+    }
+    findings = _findings(backend_name, data, metadata, "presence_int")
+    assert findings["duplicate_rule"].rule_uuids == ("dup-1", "dup-2")
+    assert findings["conflicting_rule"].rule_uuids == ("conflict", "dup-1", "dup-2")
+
+    clean = {"rule_id": ["a", "b"], "presence": ["IS_NULL", "IS_NOT_NULL"], "result": [1, 1]}
+    assert prevalidate(_relation(backend_name, clean, "presence_clean"), metadata).warnings == ()
