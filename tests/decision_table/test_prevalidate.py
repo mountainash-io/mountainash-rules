@@ -260,3 +260,39 @@ def test_prevalidate_treats_a_wildcard_inside_a_set_as_ignoring_other_payload():
 
     duplicate = next(finding for finding in caught.value.breaches if finding.kind == "duplicate_rule")
     assert duplicate.rule_uuids == ("clean", "dirty")
+
+
+def test_normalized_signatures_are_scoped_and_ignore_undeclared_columns():
+    declared = metadata().model_copy(
+        update={
+            "scope_column": "scope",
+            "outputs": (
+                Aggregate(
+                    scope="one",
+                    output_name="result",
+                    contribution_column="one_result",
+                    data_type=DataType.INT,
+                ),
+                Aggregate(
+                    scope="two",
+                    output_name="result",
+                    contribution_column="two_result",
+                    data_type=DataType.INT,
+                ),
+            ),
+        }
+    )
+    source = relation(
+        {
+            "rule_id": ["one", "two"],
+            "scope": ["one", "two"],
+            "region": ["EU", "EU"],
+            "one_result": [1, 99],
+            "two_result": [99, 1],
+            "notes": ["first", "second"],
+        }
+    )
+
+    validated = prevalidate(source, declared)
+
+    assert validated.warnings == ()
