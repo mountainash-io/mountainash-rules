@@ -350,6 +350,7 @@ def _relation_value_findings(
                 "unsatisfiable_rule", "warning", f"{field_name!r} is both null and concrete",
                 _uuids([row[uuid_column] for row in selected.select(uuid_column).to_dicts()]),
             ))
+
 def prevalidate(rules: Any, metadata: DimensionsMetadata) -> ValidatedRules:
     """Capture ``rules`` once, aggregate all breaches, or return owned validation."""
     captured = rules.snapshot()
@@ -359,6 +360,23 @@ def prevalidate(rules: Any, metadata: DimensionsMetadata) -> ValidatedRules:
     warnings: list[Finding] = []
     _add_schema_findings(copied_metadata, schema, errors)
     _relation_value_findings(captured, copied_metadata, errors, warnings)
+    if copied_metadata.uuid_column in schema:
+        scoped = (
+            captured.with_columns(ma.lit("default").alias("__pv_scope"))
+            if copied_metadata.scope_column is None
+            else captured.with_columns(ma.col(copied_metadata.scope_column).alias("__pv_scope"))
+        )
+        duplicate_ids = scoped.group_by("__pv_scope", copied_metadata.uuid_column).agg(
+            ma.count_records().alias("__pv_n")
+        ).filter(
+            ma.col(copied_metadata.uuid_column).is_not_null() & ma.col("__pv_n").gt(1)
+        )
+        for row in duplicate_ids.select("__pv_scope", copied_metadata.uuid_column).to_dicts():
+            errors.append(Finding(
+                "duplicate_uuid", "error",
+                f"Duplicate UUID in scope {row['__pv_scope']!r}",
+                (row[copied_metadata.uuid_column],),
+            ))
     signature_columns = {
         column
         for dim in copied_metadata.dimensions
@@ -368,25 +386,22 @@ def prevalidate(rules: Any, metadata: DimensionsMetadata) -> ValidatedRules:
             if dim.match_strategy is MatchStrategy.RANGE
             else (dim.resolved_rule_field,)
         )
-        if column is not None
+        if column is not None and column in schema
     }
     signature_columns.update(
-        output.contribution_column for output in copied_metadata.outputs
+        output.contribution_column
+        for output in copied_metadata.outputs
+        if output.contribution_column in schema
     )
-    if copied_metadata.uuid_column is not None:
+    if copied_metadata.uuid_column in schema:
         signature_columns.add(copied_metadata.uuid_column)
-    if copied_metadata.scope_column is not None:
+    if copied_metadata.scope_column in schema:
         signature_columns.add(copied_metadata.scope_column)
-    signature_rows = captured.select(*sorted(signature_columns & set(schema))).to_dicts()
-    seen: dict[tuple[Any, Any], list[Any]] = {}
-    for row in signature_rows:
-        uuid = row.get(copied_metadata.uuid_column) if copied_metadata.uuid_column else None
-        scope = _scope(row, copied_metadata)
-        seen.setdefault((scope, uuid), []).append(uuid)
-    for (scope, uuid), values in seen.items():
-        if uuid is not None and len(values) > 1:
-            errors.append(Finding("duplicate_uuid", "error", f"Duplicate UUID in scope {scope!r}", _uuids(values)))
-    _signatures(signature_rows, copied_metadata, errors)
+    _signatures(
+        captured.select(*sorted(signature_columns)).to_dicts(),
+        copied_metadata,
+        errors,
+    )
     breaches, found_warnings = _sorted_findings(errors), _sorted_findings(warnings)
     if breaches:
         raise DataContractError(breaches, found_warnings)
