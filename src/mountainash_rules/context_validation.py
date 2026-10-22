@@ -65,9 +65,6 @@ from mountainash_rules.decision_table.apply import REQUEST_ID, contexts_to_relat
 
 __all__: t.Sequence[str] = ("check_context_schema", "validate_contexts")
 
-_MAX_LISTED = 20
-"""Offending request ids named per finding before the message elides the rest."""
-
 _INT_RANGES = {
     MountainashDtype.I8: (-(1 << 7), (1 << 7) - 1),
     MountainashDtype.I16: (-(1 << 15), (1 << 15) - 1),
@@ -255,12 +252,17 @@ def _value_problem(value: t.Any, field: ContextField, shape: _Shape) -> str | No
         if not low <= value <= high:
             return f"{value!r} is outside the schema's integer range"
     if data_type is DataType.DECIMAL:
-        exponent = Decimal(value).normalize().as_tuple().exponent
+        number = Decimal(value)
+        exponent = number.normalize().as_tuple().exponent
         scale = min(s for s in (field.scale, shape.scale) if s is not None)
         if isinstance(exponent, int) and exponent < -scale:
             return f"{value!r} has more than {scale} decimal places"
-        if abs(Decimal(value)) >= Decimal(10) ** (field.precision - scale):
-            return f"{value!r} exceeds the declared precision"
+        for owner, precision, owner_scale in (
+            ("declared", field.precision, field.scale),
+            ("schema's", shape.precision, shape.scale),
+        ):
+            if precision is not None and owner_scale is not None and abs(number) >= Decimal(10) ** (precision - owner_scale):
+                return f"{value!r} exceeds the {owner} precision"
     if data_type is DataType.DATETIME:
         step = {"s": 1_000_000, "ms": 1_000}.get(field.datetime_unit, 1)
         if value.microsecond % step:
@@ -338,8 +340,7 @@ def check_context_schema(
 
 
 def _name_ids(ids: list[t.Any]) -> str:
-    shown = ", ".join(repr(i) for i in ids[:_MAX_LISTED])
-    return shown + (f" and {len(ids) - _MAX_LISTED} more" if len(ids) > _MAX_LISTED else "")
+    return ", ".join(repr(i) for i in ids)
 
 
 def _identity_errors(rel: Relation) -> list[str]:
@@ -414,7 +415,7 @@ def validate_contexts(
     elif isinstance(contexts, (list, tuple)):
         absent = [i for i, obj in enumerate(contexts) if not hasattr(obj, REQUEST_ID)]
         if absent:
-            raise ValueError(f"context object(s) at position(s) {absent[:_MAX_LISTED]} have no {REQUEST_ID!r}")
+            raise ValueError(f"context object(s) at position(s) {absent} have no {REQUEST_ID!r}")
         rel = contexts_to_relation(contexts, [field.name for field in metadata.fields])
     else:
         raise ValueError("contexts must be a Relation or a list of context objects")
