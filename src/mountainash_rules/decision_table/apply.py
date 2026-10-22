@@ -44,6 +44,7 @@ from mountainash_rules.core.constants import HitPolicy, MatchStrategy
 from mountainash_rules.core.context import bind_context_columns
 from mountainash_rules.core.dimension import Dimension, DimensionsMetadata
 from mountainash_rules.decision_table.errors import DecisionTableError
+from mountainash_rules.decision_table.fields import TruthyField
 from mountainash_rules.decision_table.helpers import select_scopes
 from mountainash_rules.decision_table.table import OUTCOME_STRATEGIES, DecisionTable, outcome_field
 
@@ -372,17 +373,8 @@ def _outcome_expression(source: _OutcomeSource, present: set[str]) -> BaseExpres
         if companion in present:
             return ma.when(ma.col(companion).eq(ma.lit(0))).then(0).otherwise(mapped)
         return mapped
-    value = ma.col(f"__ctx_value_{name}")
-    pattern = source.pattern
-    match strategy:
-        case MatchStrategy.PREFIX:
-            holds = value.str.starts_with(pattern)
-        case MatchStrategy.SUFFIX:
-            holds = value.str.ends_with(pattern)
-        case MatchStrategy.CONTAINS:
-            holds = value.str.contains(pattern)
-        case _:  # REGEX, CONTEXT_REGEX
-            holds = value.str.regex_contains(pattern)
+    # The one pattern operation: construction classifies named values with the same call.
+    holds = TruthyField.pattern_match(strategy, ma.col(f"__ctx_value_{name}"), source.pattern)
     return ma.when(~ma.col(f"__ctx_present_{name}")).then(0).when(holds).then(1).otherwise(-1)
 
 
