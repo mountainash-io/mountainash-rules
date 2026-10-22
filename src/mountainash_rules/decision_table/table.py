@@ -116,6 +116,30 @@ class DecisionTable:
         """How the engine reads ``entries``: ``derive_entry_metadata`` of the saved parts."""
         return derive_entry_metadata(self.source_metadata, self.pattern_conditions)
 
+    def save(self, path: str, *, storage_profile: t.Any = None) -> None:
+        """Save to the directory ``path``, replacing any earlier save there.
+
+        ``path`` is a local path or any location ``mountainash-transport`` resolves;
+        ``storage_profile`` is a profile name or profile object.  The manifest is written last.
+        """
+        from mountainash_rules.decision_table.persistence import save_table
+
+        save_table(self, path, storage_profile=storage_profile)
+
+    @classmethod
+    def load(
+        cls, path: str, *, connection: t.Any = None, storage_profile: t.Any = None
+    ) -> DecisionTable:
+        """Load a saved table without checking it (see ``verify_saved_table``).
+
+        With no ``connection`` the three construction relations load into in-process Polars;
+        otherwise they load onto the Ibis-DuckDB ``connection``, which the caller keeps open
+        while the table is in use.  The five metadata tables always load host-side.
+        """
+        from mountainash_rules.decision_table.persistence import load_table
+
+        return load_table(path, connection=connection, storage_profile=storage_profile)
+
     def match(
         self, contexts: Relation | t.Sequence[t.Any], scopes: t.Sequence[str] | None = None
     ) -> MatchOperation:

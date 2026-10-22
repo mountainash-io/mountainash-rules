@@ -30,8 +30,8 @@ dependencies = [
     "duckdb<2.0",
     "narwhals>=1.0.0",
     "pyyaml>=6.0",
-    # mountainash is required at runtime but not
-    # yet published to PyPI. Test environments install it via path in hatch.toml.
+    # mountainash, mountainash-files and mountainash-transport are required at runtime but not
+    # yet published to PyPI. Test environments install them via path in hatch.toml.
 ]
 
 

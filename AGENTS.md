@@ -200,7 +200,7 @@ Known upstream issues are registered as xfails in `tests/conftest.py` (`_UPSTREA
 
 ## Dependencies
 
-Core: `mountainash` (expressions/relations — the only DataFrame API the engine core may use), `polars`, `pandas`, `ibis-framework`, `pydantic`, `pyyaml`. Sibling checkouts of `mountainash`, `mountainash-data`, `mountainash-settings`, and `mountainash-auth-client` are required for dev and CI (see `hatch.toml` and `.github/config/mountainash_dependencies.yml`). Building from source (`hatch build`, editable installs) also requires a **Rust toolchain** (`cargo`) — `hatch_build.py` compiles the `mountainash_rules._native` PyO3 extension per interpreter/platform; there is no pure-Python fallback.
+Core: `mountainash` (expressions/relations — the only DataFrame API the engine core may use), `polars`, `pandas`, `ibis-framework`, `pydantic`, `pyyaml`. Sibling checkouts of `mountainash`, `mountainash-files`, `mountainash-transport`, `mountainash-data`, `mountainash-settings`, and `mountainash-auth-client` are required for dev and CI (see `hatch.toml` and `.github/config/mountainash_dependencies.yml`). Building from source (`hatch build`, editable installs) also requires a **Rust toolchain** (`cargo`) — `hatch_build.py` compiles the `mountainash_rules._native` PyO3 extension per interpreter/platform; there is no pure-Python fallback.
 
 ## Branch Strategy & Releases
 
