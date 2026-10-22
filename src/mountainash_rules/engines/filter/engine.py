@@ -157,6 +157,7 @@ class ExpressionRulesEngine:
         policy: HitPolicy | str | None,
         priority_field: str | None,
         observability: bool,
+        output_fields: list[str] | None = None,
     ) -> tuple[HitPolicy, SelectionInfo]:
         if policy is None:
             policy = HitPolicy.COLLECT
@@ -165,7 +166,7 @@ class ExpressionRulesEngine:
             self._metadata,
             priority_field,
             observability,
-            output_fields=self._output_fields,
+            output_fields=output_fields if output_fields is not None else self._output_fields,
         )
         check_policy_config(self._rule_columns, policy, info)
         return policy, info
@@ -207,6 +208,7 @@ class ExpressionRulesEngine:
         include_observability: bool = True,
         hit_policy: HitPolicy | str | None = None,
         priority_field: str | None = None,
+        output_fields: list[str] | None = None,
     ) -> RuleResult:
         """Evaluate rules against a context.
 
@@ -229,7 +231,7 @@ class ExpressionRulesEngine:
         self._validate_limit("min_specificity", min_specificity)
 
         hit_policy, info = self._selection_config(
-            hit_policy, priority_field, include_observability
+            hit_policy, priority_field, include_observability, output_fields
         )
 
         context_values = extract_context_values(
@@ -351,6 +353,7 @@ class ExpressionRulesEngine:
         dimensions: list[str] | None = None,
         hit_policy: HitPolicy | str | None = None,
         priority_field: str | None = None,
+        output_fields: list[str] | None = None,
         top_n_per_context: int | None = None,
         min_specificity: int | None = None,
         include_observability: bool = True,
@@ -366,7 +369,7 @@ class ExpressionRulesEngine:
         ):
             raise ValueError("context_id_field must be a nonempty string or None")
         selection = self._selection_config(
-            hit_policy, priority_field, include_observability
+            hit_policy, priority_field, include_observability, output_fields
         )
 
         prepared = self._prepare_contexts(contexts, active_dims, context_id_field)
