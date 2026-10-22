@@ -10,6 +10,12 @@ b. ``stage_b_pieces`` turns cut values into closed pieces and named values into
 c. ``stage_c_coverage`` computes each rule's coverage per column, and the
    covered ``(scope, source_uuid, cell columns)`` rows that stages d-f
    (contributor words, folds, emitted entries) consume.
+d. ``stage_d_membership`` turns the covered rows into each cell's contributor
+   words (dynamic 63-bit int64 words, see ``masks``) and assigns
+   ``entry_sources_id`` by sorted natural word tuple within each scope.
+e. ``stage_e_entry_sources`` decodes the words into
+   ``entry_sources(scope, entry_sources_id, source_uuid)`` and folds each
+   declared output once per contributing rule per contributor set.
 
 Natural keys are scope, plan, sorted cut/value and rule UUID, never row order;
 ``stage_key`` names them.
@@ -54,7 +60,17 @@ from mountainash_rules.decision_table.fields import (
     Unsatisfiable,
     is_expression,
 )
+from mountainash_rules.decision_table.folds import fold_contributions
 from mountainash_rules.decision_table.helpers import check_sources
+from mountainash_rules.decision_table.masks import (
+    ENTRY_SOURCES_ID,
+    decode_entry_sources,
+    entry_sources_ids,
+    membership_words,
+    rule_ordinals,
+    word_column,
+    word_count,
+)
 from mountainash_rules.decision_table.prevalidate import ValidatedRules
 from mountainash_rules.decision_table.strategies import strategy_for
 
@@ -116,6 +132,38 @@ class Coverage:
     by_plan: dict[str, Relation]
     cell_coverage: Relation
     cell_columns: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class Membership:
+    """Stage d: contributor words per covered cell and the ids of their word tuples.
+
+    ``cell_words`` is ``(scope, cell columns..., word columns...)`` with one row per covered
+    cell; ``word_ids`` is ``(scope, entry_sources_id, word columns...)`` with one row per
+    distinct word tuple in a scope; ``cells`` is ``(scope, cell columns..., entry_sources_id)``;
+    ``ordinals`` is ``(scope, source_uuid, __word_index, __word_bit)`` for the contributors.
+    """
+
+    ordinals: Relation
+    words: int
+    word_columns: tuple[str, ...]
+    cell_columns: tuple[str, ...]
+    cell_words: Relation
+    word_ids: Relation
+    cells: Relation
+
+
+@dataclass(frozen=True)
+class EntrySourcesAndFolds:
+    """Stage e: ``entry_sources`` and one folded output row per scope and contributor set.
+
+    ``outputs`` is ``(scope, entry_sources_id, output names...)``: a scope without an output
+    declares null in that output's column.
+    """
+
+    entry_sources: Relation
+    outputs: Relation
+    output_names: tuple[str, ...]
 
 
 def stage_key(stage: str, plan: ColumnPlan) -> tuple[str, ...]:
@@ -357,3 +405,71 @@ def stage_c_coverage(boundaries: Boundaries, pieces: Pieces) -> Coverage:
     else:
         cells = boundaries.sources
     return Coverage(by_plan=by_plan, cell_coverage=cells, cell_columns=cell_columns)
+
+
+# ---------------------------------------------------------------------------
+# Stage d
+# ---------------------------------------------------------------------------
+
+
+def stage_d_membership(coverage: Coverage) -> Membership:
+    """Stage d: contributor words per covered cell, ``entry_sources_id`` per distinct tuple.
+
+    A rule contributes once per covered cell however many derivations reach the cell, so the
+    covered rows are made distinct on ``(scope, cell columns, source_uuid)`` first.
+    """
+    cell_columns = coverage.cell_columns
+    keys = (SCOPE, *cell_columns)
+    covered = coverage.cell_coverage.select(*keys, SOURCE_UUID).unique()
+    ordinals = rule_ordinals(covered.select(SCOPE, SOURCE_UUID).unique())
+    words = word_count(ordinals)
+    cell_words = membership_words(covered, ordinals, words, keys)
+    word_ids, cells = entry_sources_ids(cell_words, keys, words)
+    return Membership(
+        ordinals=ordinals,
+        words=words,
+        word_columns=tuple(word_column(index) for index in range(words)),
+        cell_columns=cell_columns,
+        cell_words=cell_words,
+        word_ids=word_ids,
+        cells=cells,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Stage e
+# ---------------------------------------------------------------------------
+
+
+def stage_e_entry_sources(
+    validated: ValidatedRules, membership: Membership
+) -> EntrySourcesAndFolds:
+    """Stage e: ``entry_sources`` from the words' bits, and each output folded per contributor set.
+
+    Every contributor set holds each source rule once, so a rule contributes once to every
+    cell sharing the set; no output exists for a cell no rule covers.
+    """
+    entry_sources = decode_entry_sources(membership.word_ids, membership.ordinals, membership.words)
+    bound = _bound_rules(validated)
+    folds: dict[str, list[Relation]] = {}
+    for output in validated.source_metadata.outputs:
+        scope = output.scope or "default"
+        contributions = bound.select(
+            ma.col(BOUND_SCOPE).alias(SCOPE),
+            ma.col(BOUND_UUID).alias(SOURCE_UUID),
+            ma.col(output.contribution_column).alias("a0001"),
+        )
+        contributors = entry_sources.filter(ma.col(SCOPE).eq(scope)).join(
+            contributions, on=[SCOPE, SOURCE_UUID], how="inner"
+        )
+        folds.setdefault(output.output_name, []).append(
+            fold_contributions(contributors, [output], [SCOPE, ENTRY_SOURCES_ID])
+        )
+    outputs = membership.word_ids.select(SCOPE, ENTRY_SOURCES_ID)
+    for parts in folds.values():
+        outputs = outputs.join(
+            parts[0] if len(parts) == 1 else concat(parts),
+            on=[SCOPE, ENTRY_SOURCES_ID],
+            how="left",
+        )
+    return EntrySourcesAndFolds(entry_sources, outputs, tuple(folds))
