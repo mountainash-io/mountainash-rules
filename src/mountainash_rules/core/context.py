@@ -211,6 +211,7 @@ def context_binding_expressions(
         payload.alias(f"__ctx_value_{name}"),
         (present & ~invalid).alias(f"__ctx_present_{name}"),
         supplied.alias(f"__ctx_supplied_{name}"),
+        (supplied & raw.is_null()).fill_null(False).alias(f"__ctx_null_{name}"),
         origin.alias(f"__ctx_origin_{name}"),
     ], invalid
 

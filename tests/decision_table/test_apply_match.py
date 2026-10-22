@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import dataclasses
 import importlib
 
+import mountainash.expressions as ma
 import polars as pl
 import pytest
 from mountainash.relations import Relation
@@ -241,3 +243,17 @@ def test_presence_reads_a_relation_null_cell_as_null_and_an_absent_column_as_uns
     assert survivors(null_table, with_null_cell) == {1: frozenset({"R1", "R2"})}
     assert survivors(null_table, without_column) == {1: frozenset({"R1", "R2"})}
     assert survivors(null_table, with_value) == {}  # R2 needs a null region, R3 needs vip
+
+
+def test_fetch_does_not_admit_its_entries_again(backend_name, fees_rates):
+    """Entries are admitted once, at construction: a cell fetch would reject must not stop a match.
+
+    A null region cell with no declared null is an authoring breach that rule admission would
+    raise as a ``ValueError``.  Fetch only scores what it is given: the null cell matches nothing.
+    """
+    unadmitted = dataclasses.replace(
+        fees_rates,
+        entries=fees_rates.entries.with_columns(ma.lit(None).cast(str).alias("region")),
+    )
+
+    assert fetch(unadmitted, context_relation(backend_name, {"request_id": [1], "region": ["EU"]})) == []

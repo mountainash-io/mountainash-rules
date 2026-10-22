@@ -15,7 +15,6 @@ from mountainash_rules.core.numeric import (
     decimal_operand,
     exact_literal,
     literal_dtype,
-    reject_invalid,
 )
 from mountainash_rules.core.set_wildcard import set_state
 
@@ -132,10 +131,13 @@ def scalar_operand(
 def rule_binding_expressions(
     rel: t.Any,
     dimensions: t.Sequence[Dimension],
-) -> tuple[list[BaseExpressionAPI], dict[str, BaseExpressionAPI]]:
-    """Return native bindings/admission so callers can retain invalid source rows."""
+) -> list[BaseExpressionAPI]:
+    """Native payload and wildcard-state bindings of every rule operand; no admission.
+
+    A PRESENCE operand is the authored ``IS_NULL``/``IS_NOT_NULL`` text whatever the observed
+    field's datatype, so it binds as text rather than as a value of the field.
+    """
     columns = []
-    invalid = {}
     schema = rel.collect_schema(allow_execution=False)
     for dim in dimensions:
         if dim.match_strategy is MatchStrategy.CONTEXT_REGEX:
@@ -149,29 +151,25 @@ def rule_binding_expressions(
                 raise ValueError(f"Missing rule operand {field!r}")
             raw = ma.col(field)
             source_dtype = schema[field]
-            is_set = dim.match_strategy in (MatchStrategy.SET_MEMBERSHIP, MatchStrategy.SET_EXCLUSION)
-            if is_set:
-                marker, malformed, payload = set_state(rel, dim, field)
+            if dim.match_strategy in (MatchStrategy.SET_MEMBERSHIP, MatchStrategy.SET_EXCLUSION):
+                wildcard, _, payload = set_state(rel, dim, field)
             else:
                 markers = [dim.field.wildcard] if dim.field.wildcard_declared else []
-                marker = typed_marker_predicate(raw, source_dtype, markers)
-                malformed = raw.is_null()
-            wildcard = marker
-            invalid[f"{dim.dimension_name}:{field}:authoring"] = ~wildcard & malformed
-            if not is_set:
-                payload, failure = scalar_operand(dim, raw, source_dtype, wildcard)
-                invalid[f"{dim.dimension_name}:{field}"] = failure
-                if dim.match_strategy is MatchStrategy.REGEX:
-                    payload = ma.when(wildcard).then("").otherwise(payload)
+                wildcard = typed_marker_predicate(raw, source_dtype, markers)
+                if dim.match_strategy is MatchStrategy.PRESENCE:
+                    payload = raw
+                else:
+                    payload, _ = scalar_operand(dim, raw, source_dtype, wildcard)
+                    if dim.match_strategy is MatchStrategy.REGEX:
+                        payload = ma.when(wildcard).then("").otherwise(payload)
             value_name, state_name = rule_binding_names(dim, endpoint)
             columns.extend([payload.alias(value_name), wildcard.alias(state_name)])
-    return columns, invalid
+    return columns
 
 
 def normalize_rule_relation(rel: t.Any, dimensions: t.Sequence[Dimension]) -> t.Any:
-    """Filter admission around the shared binding expressions."""
-    columns, invalid = rule_binding_expressions(rel, dimensions)
-    reject_invalid(rel, invalid)
+    """Bind the rule operands of ``dimensions``; the rules are scored as given, never admitted."""
+    columns = rule_binding_expressions(rel, dimensions)
     return rel.with_columns(*columns) if columns else rel
 
 
@@ -240,12 +238,14 @@ class DimensionCompiler:
         context_name = f"__ctx_value_{dim.dimension_name}"
         context = ma.col(context_name)
         if dim.match_strategy is MatchStrategy.PRESENCE:
+            # Suppliedness and the original nullness, never the value-marker classification: an
+            # explicit null is a known null even when null is the field's declared wildcard.
             rule, wildcard = rule_binding_names(dim)
+            name = dim.dimension_name
             return (
-                ma.when(ma.col(wildcard)).then(0)
-                .when(ma.col(f"__ctx_origin_{dim.dimension_name}").eq("omitted"))
+                ma.when(ma.col(wildcard) | ~ma.col(f"__ctx_supplied_{name}"))
                 .then(0)
-                .when(ma.col(f"__ctx_origin_{dim.dimension_name}").eq("null"))
+                .when(ma.col(f"__ctx_null_{name}"))
                 .then(ma.when(ma.col(rule).eq("IS_NULL")).then(1).otherwise(-1))
                 .otherwise(ma.when(ma.col(rule).eq("IS_NOT_NULL")).then(1).otherwise(-1))
             )

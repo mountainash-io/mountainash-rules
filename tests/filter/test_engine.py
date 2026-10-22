@@ -256,7 +256,9 @@ class TestCustomExpressions:
             ExpressionRulesEngine(rules=rules)
 
 
-class TestFilterEngineRejectsInvalidSetRules:
+class TestFilterEngineDoesNotAdmitSetRules:
+    """A sentinel beside other values is prevalidation's concern; evaluation scores the list."""
+
     def _meta(self):
         from mountainash_rules import Dimension, DimensionsMetadata
         from mountainash_rules.core.constants import MatchStrategy, DataType
@@ -281,26 +283,22 @@ class TestFilterEngineRejectsInvalidSetRules:
             }
         )
 
-    def test_embedded_sentinel_rejected_on_evaluate(self):
-        import pytest
+    def test_embedded_sentinel_is_scored_on_evaluate(self):
         from mountainash_rules import ExpressionRulesEngine
 
         engine = ExpressionRulesEngine(
             rules=self._rules(), dimension_metadata=self._meta()
         )
-        with pytest.raises(ValueError, match="region"):
-            engine.evaluate({"region": "AU"})
+        survivors = relation(engine.evaluate({"region": "AU"}).survivors).to_polars()
+        assert survivors["rule_name"].to_list() == ["R1"]
 
-    def test_embedded_sentinel_rejected_on_evaluate_batch(self):
-        # evaluate_batch does NOT route through _scored_relation — this covers the
-        # batch path explicitly (a batch-first call must still validate).
+    def test_embedded_sentinel_is_scored_on_evaluate_batch(self):
         import polars as pl
-        import pytest
         from mountainash_rules import ExpressionRulesEngine
 
         engine = ExpressionRulesEngine(
             rules=self._rules(), dimension_metadata=self._meta()
         )
         contexts = pl.DataFrame({"region": ["AU"]})
-        with pytest.raises(ValueError, match="region"):
-            engine.evaluate_batch(contexts)
+        survivors = relation(engine.evaluate_batch(contexts).survivors).to_polars()
+        assert survivors["rule_name"].to_list() == ["R1"]
