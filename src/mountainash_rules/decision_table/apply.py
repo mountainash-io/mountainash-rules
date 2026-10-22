@@ -24,9 +24,9 @@ context field) or a list of protocol objects (``request_id`` plus attributes nam
 context fields, as pydantic models).  :func:`contexts_to_relation` converts the list form,
 keeping an unset field distinct from an explicit ``None`` through ``model_fields_set``.
 
-Backend execution counts the application issues are logged at the pattern-evaluation and
-matching stage boundaries on this module's logger; they are observability, not part of the
-result.
+Backend execution counts the application issues are logged at the scope-selection,
+pattern-evaluation and matching stage boundaries on this module's logger; they are
+observability, not part of the result.
 """
 
 from __future__ import annotations
@@ -161,6 +161,7 @@ class MatchOperation:
         executions = _Executions()
         scopes = select_scopes(table.source_metadata, self._scopes)
         selected = self._selected_entries(scopes)
+        executions.boundary("scope", f"{len(scopes)} scopes")  # a lazy filter: nothing executes yet
         try:
             matches = self._match(table, scopes, selected, executions)
         except Exception as error:

@@ -203,7 +203,7 @@ def test_the_rules_own_errors_are_not_rewrapped(fees_rates, monkeypatch):
 
 def stages(caplog) -> dict[str, int]:
     records = [r for r in caplog.records if r.name == LOGGER]
-    assert [r.match_stage for r in records] == ["pattern", "matching"]
+    assert [r.match_stage for r in records] == ["scope", "pattern", "matching"]
     assert all(r.executions_total >= r.executions for r in records)
     return {r.match_stage: r.executions for r in records}
 
@@ -214,15 +214,16 @@ def test_execution_counts_are_logged_at_each_query_stage(backend_name, caplog):
     with caplog.at_level(logging.INFO, logger=LOGGER):
         table.match([Code(request_id=1, code="EU-22")]).fetch()
 
-    # pattern evaluation reads which pattern columns the selected entries require and their
-    # definitions; matching materializes the result once
-    assert stages(caplog) == {"pattern": 2, "matching": 1}
+    # scope selection is a lazy filter that executes nothing; pattern evaluation reads which
+    # pattern columns the selected entries require and their definitions; matching
+    # materializes the result once
+    assert stages(caplog) == {"scope": 0, "pattern": 2, "matching": 1}
     totals = [r.executions_total for r in caplog.records if r.name == LOGGER]
-    assert totals == [2, 3]
+    assert totals == [0, 2, 3]
 
 
 def test_a_table_without_patterns_issues_nothing_in_the_pattern_stage(fees_rates, caplog):
     with caplog.at_level(logging.INFO, logger=LOGGER):
         fees_rates.match([Region(request_id=1, region="EU")]).fetch()
 
-    assert stages(caplog) == {"pattern": 0, "matching": 1}
+    assert stages(caplog) == {"scope": 0, "pattern": 0, "matching": 1}
