@@ -68,7 +68,6 @@ from mountainash_rules.decision_table.folds import fold_contributions
 from mountainash_rules.decision_table.helpers import check_sources
 from mountainash_rules.decision_table.masks import (
     ENTRY_SOURCES_ID,
-    WORD_DIGITS,
     bit_lookup,
     cell_entry_sources_ids,
     decode_entry_sources,
@@ -247,12 +246,10 @@ def _dimension_region(bound: Relation, dimension: Dimension):
 
 
 def _pattern_ordinals(bound: Relation, pattern: str, wildcard: t.Any, ordinal: str) -> Relation:
-    """Distinct non-wildcard patterns with their sorted ordinal (a backend-neutral rank from 0)."""
+    """Distinct non-wildcard patterns with their sorted 0-based ordinal."""
     patterns = bound.filter(~wildcard).select(ma.col(pattern)).unique()
-    ranked = patterns.with_columns(ma.col(pattern).row_number().over(order_by=pattern).alias("__rn"))
-    first = ranked.group_by().agg(ma.col("__rn").min().alias("__rn0"))
-    return ranked.cross_join(first).select(
-        ma.col(pattern), (ma.col("__rn") - ma.col("__rn0")).cast(int).alias(ordinal)
+    return patterns.with_columns(
+        (ma.col(pattern).row_number().over(order_by=pattern) - 1).cast(int).alias(ordinal)
     )
 
 
@@ -554,33 +551,21 @@ def stage_e_entry_sources(
 def entry_ids(cells: Relation, keys: t.Sequence[str]) -> Relation:
     """``cells`` with ``entry_id``: the 0-based position of each cell sorted by ``keys``.
 
-    A window honours only its first ``order_by`` key (mountainash backlog #364), so each key
-    column becomes the fixed-width text of its value's dense rank, and the cell is ranked by
-    the concatenation of those texts.  The windows are one plan over ``cells`` (no joins back
-    to it).  Dense ranks start at 0 or 1 and place nulls differently by backend (mountainash
-    backlog #368), so each rank is rebased on the column's minimum and nulls are read as 0 (they sort first on every
-    backend).  Cells are distinct on ``keys``, so the key is a strict order.
+    Null keys place differently by backend (mountainash backlog #368), so each key is
+    preceded by a presence flag that sorts nulls first on every backend.
     """
-    ranked = cells.with_columns(
-        *(
-            ma.col(column).dense_rank().over(order_by=column).alias(f"__rank_{index}")
-            for index, column in enumerate(keys)
-        )
-    )
-    parts = []
+    order: list[str] = []
+    flags = []
     for index, column in enumerate(keys):
-        rank = ma.col(f"__rank_{index}")
-        position = ma.when(ma.col(column).is_null()).then(0).otherwise(rank - rank.min().over() + 1)
-        parts.append(position.cast("string").str.zfill(WORD_DIGITS))
-    key = parts[0]
-    for part in parts[1:]:
-        key = key + part
-    numbered = ranked.with_columns(key.alias("__entry_key")).with_columns(
-        ma.col("__entry_key").row_number().over(order_by="__entry_key").alias("__rn")
+        flag = f"__present_{index}"
+        flags.append(ma.when(ma.col(column).is_null()).then(0).otherwise(1).alias(flag))
+        order += [flag, column]
+    numbered = cells.with_columns(*flags).with_columns(
+        ma.col(keys[0]).row_number().over(order_by=order).alias("__rn")
     )
     return numbered.select(
         *cells.columns,
-        (ma.col("__rn") - ma.col("__rn").min().over()).cast("int64").alias(ENTRY_ID),
+        (ma.col("__rn") - 1).cast("int64").alias(ENTRY_ID),
     )
 
 

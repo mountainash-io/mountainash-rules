@@ -32,9 +32,6 @@ ENTRY_SOURCES_ID = "entry_sources_id"
 WORD_INDEX = "__word_index"
 WORD_BIT = "__word_bit"
 WORD_VALUE = "__word_value"
-WORD_KEY = "__word_key"
-# Digits of the largest word (int64 maximum), so zero-padded decimal text sorts like the integer.
-WORD_DIGITS = 19
 
 
 def word_column(index: int) -> str:
@@ -55,19 +52,16 @@ def bit_lookup(like: Relation | None = None) -> Relation:
     values = [1 << index for index in range(BITS_PER_WORD)]
     if like is None:
         return relation([{BIT_INDEX: index, BIT_VALUE: value} for index, value in enumerate(values)])
-    ranked = (
+    # One list column is exploded because a two-column explode zips on Polars but cross-joins
+    # on Ibis (mountainash backlog #367); bit_index is recovered as the value's rank.
+    return (
         like.limit(1)
         .select(ma.lit(values).alias(BIT_VALUE))
         .explode(BIT_VALUE)
-        .with_columns(ma.col(BIT_VALUE).row_number().over(order_by=BIT_VALUE).alias("__rn"))
-    )
-    first = ranked.group_by().agg(ma.col("__rn").min().alias("__rn0"))
-    # One list column is exploded because a two-column explode zips on Polars but cross-joins
-    # on Ibis (mountainash backlog #367); bit_index is recovered as the value's rank.
-    # row_number starts at 0 or 1 by backend (mountainash backlog #365): subtract the minimum.
-    return ranked.cross_join(first).select(
-        (ma.col("__rn") - ma.col("__rn0")).cast("int64").alias(BIT_INDEX),
-        ma.col(BIT_VALUE).cast("int64").alias(BIT_VALUE),
+        .select(
+            (ma.col(BIT_VALUE).row_number().over(order_by=BIT_VALUE) - 1).cast("int64").alias(BIT_INDEX),
+            ma.col(BIT_VALUE).cast("int64").alias(BIT_VALUE),
+        )
     )
 
 
@@ -76,18 +70,15 @@ def rule_ordinals(sources: Relation) -> Relation:
 
     ``sources`` has distinct ``(scope, source_uuid)`` rows.  Returns ``(scope, source_uuid,
     __word_index, __word_bit)`` where the 0-based ordinal is ``word_index * 63 + word_bit``.
-    ``row_number`` starts at 0 or 1 depending on the backend (mountainash backlog #365), so
-    each scope's minimum is subtracted. Integer ``//``/``%`` are inexact on Ibis-DuckDB for
+    Integer ``//``/``%`` are inexact on Ibis-DuckDB for
     very large operands (backlog #366); exact here because ordinals stay far below 2^53.
     """
-    ranked = sources.unique().with_columns(
-        ma.col(SOURCE_UUID).row_number().over(SCOPE, order_by=SOURCE_UUID).alias("__rn")
-    )
-    first = ranked.group_by(SCOPE).agg(ma.col("__rn").min().alias("__rn0"))
-    ordinal = (ma.col("__rn") - ma.col("__rn0")).cast("int64")
+    ordinal = (
+        ma.col(SOURCE_UUID).row_number().over(SCOPE, order_by=SOURCE_UUID) - 1
+    ).cast("int64")
+    ranked = sources.unique().with_columns(ordinal.alias("__ordinal"))
     return (
-        ranked.join(first, on=SCOPE, how="inner")
-        .with_columns(ordinal.alias("__ordinal"))
+        ranked
         .select(
             SCOPE,
             SOURCE_UUID,
@@ -151,21 +142,11 @@ def word_tuple_ids(cell_words: Relation, words: int) -> Relation:
             SCOPE, ma.lit(0).cast("int64").alias(ENTRY_SOURCES_ID)
         )
     distinct = cell_words.select(SCOPE, *columns).unique()
-    # Workaround for mountainash backlog #364: a window honours only the first order_by key,
-    # so the tuple is ordered through one key: each word as fixed-width decimal text,
-    # concatenated. Words are non-negative, so the text order is the integer-tuple order.
-    key = ma.col(columns[0]).cast("string").str.zfill(WORD_DIGITS)
-    for column in columns[1:]:
-        key = key + ma.col(column).cast("string").str.zfill(WORD_DIGITS)
-    ranked = distinct.with_columns(key.alias(WORD_KEY)).with_columns(
-        ma.col(WORD_KEY).row_number().over(SCOPE, order_by=WORD_KEY).alias("__rn")
-    )
-    first = ranked.group_by(SCOPE).agg(ma.col("__rn").min().alias("__rn0"))
-    return (
-        ranked.join(first, on=SCOPE, how="inner")
-        .with_columns((ma.col("__rn") - ma.col("__rn0")).cast("int64").alias(ENTRY_SOURCES_ID))
-        .select(SCOPE, ENTRY_SOURCES_ID, *columns)
-    )
+    return distinct.with_columns(
+        (ma.col(columns[0]).row_number().over(SCOPE, order_by=list(columns)) - 1)
+        .cast("int64")
+        .alias(ENTRY_SOURCES_ID)
+    ).select(SCOPE, ENTRY_SOURCES_ID, *columns)
 
 
 def cell_entry_sources_ids(
