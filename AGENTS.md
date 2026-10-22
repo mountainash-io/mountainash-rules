@@ -43,16 +43,7 @@ not to a local `docs/superpowers/` directory.** (The superpowers skills default 
 
 Per-dimension match values use signed-integer ternary encoding: **1 = match, 0 = unknown/wildcard, −1 = non-match**. Defined in `constants.py`, produced by `compiler.py`, consumed by `engine.py`/`result.py`. A rule survives when its minimum ternary value is ≥ 0; specificity = count of 1s; UNKNOWN counts as wildcard (survives, ranks lower).
 
-Wildcards are in-band typed sentinels (see `constants.sentinels_for(data_type)`):
-
-| data_type | UNKNOWN | NOT_SET |
-|---|---|---|
-| str | `"<NA>"` | `"<NOT_SET>"` |
-| int/float | `-999999999` | `-999999998` |
-| date | `date(1,1,1)` | `date(1,1,2)` |
-| datetime | `datetime(1,1,1)` | `datetime(1,1,2)` |
-
-Set-dimension wildcards use the in-band `[sentinel]` list (not null), normalized at ingestion (reservation check in both engines; element-null check in the accumulator build).
+Each `ContextField` in `core/dimension.py` declares one typed wildcard marker. A concrete marker must match the field datatype; `wildcard=None` is a don't-care only when explicitly declared with `wildcard_declared=True`. Null is never an implicit rule wildcard. Missing context fields remain unknown.
 
 ### Filter engine pipeline (`engine.py`)
 
@@ -123,18 +114,17 @@ No module under `src/mountainash_rules/` may import polars/ibis/narwhals directl
 
 ## Match Strategies
 
-`MatchStrategy` is a lowercase `StrEnum` (12 members), compiled in `compiler.py`:
+`MatchStrategy` is a lowercase `StrEnum`, compiled in `compiler.py`:
 
 | Strategy | Rule column format | Notes |
 |---|---|---|
-| `exact` / `not_equal` | scalar | any data_type |
-| `exact_key` | scalar | rule-side wildcard only (UNKNOWN → 0; context sentinel vs specific → −1); powers partition routing |
-| `range` | two columns (`range_min_field`/`range_max_field`) | numeric/temporal; `range_min_inclusive`/`range_max_inclusive` flags |
-| `greater_than` / `less_than` | threshold | numeric/temporal |
+| `exact` / `not_equal` | scalar | any compatible field datatype |
+| `range` | two columns (`range_min_field`/`range_max_field`) | closed numeric/temporal interval |
+| `min` / `max` | threshold | inclusive numeric/temporal bound |
 | `prefix` / `suffix` / `contains` | string | |
-| `regex` | per-row pattern column | Public expression-valued `str.regex_contains`; qualified on Polars/Ibis-DuckDB |
-| `context_regex` | literal `regex_pattern` on the Dimension | global context validator |
-| `set_membership` / `set_exclusion` | list column | Filter via `t_is_in`/`t_is_not_in` (polars/ibis; narwhals list ops under `mountainash#89`). Accumulator-coalesceable (membership → list intersection, exclusion → list union). Wildcard = in-band `[unknown_sentinel_for(dtype)]` (never null; bool unsupported); see `null-is-not-a-portable-sentinel` principle. |
+| `regex` | per-row pattern column | Public expression-valued `str.regex_contains` |
+| `context_regex` | literal `regex_pattern` on the Dimension | |
+| `set_membership` / `set_exclusion` | list column | Typed element values; a field's declared wildcard applies consistently. |
 
 **Adding a strategy:** add enum value in `core/constants.py`, validation in `core/dimension.py`, `_compile_<strategy>` in `core/compiler.py`, test class in `tests/core/test_compiler.py`.
 
@@ -145,9 +135,9 @@ src/mountainash_rules/
 ├── __init__.py                  # Public API (see __all__) — the only public import surface
 ├── _native.pyi                  # Type stubs for the mountainash_rules._native Rust/PyO3 extension
 ├── core/                        # backend-agnostic building blocks (never imports from engines/)
-│   ├── constants.py             # MatchStrategy, DimensionRole, HitPolicy, DataType, sentinels
-│   ├── dimension.py             # Dimension / DimensionsMetadata (+ YAML round-trip)
-│   ├── context.py               # context extraction + sentinel fill
+│   ├── constants.py             # MatchStrategy, HitPolicy, DataType, sentinels
+│   ├── dimension.py             # ContextField, Dimension, DimensionsMetadata
+│   ├── metadata_tables.py       # five flat metadata relations and canonical markers
 │   ├── compiler.py              # DimensionCompiler (ternary expressions, filter engine)
 │   ├── result.py                # RuleResult (+ select())
 │   ├── hit_policy.py            # SelectionInfo, ordering, assertions, cardinality
@@ -187,7 +177,7 @@ pipeline, not a memoised filter engine. The pre-reorganisation top-level module 
 (and their deprecation shims) were removed 2026-07-16 — babel, the only downstream
 consumer, already imports from the package root only.
 
-`Dimension.data_type` is a `DataType` StrEnum (`str/int/float/bool/date/datetime`); passing a Python type still works but emits a `DeprecationWarning`. `DimensionsMetadata` serialises via `to_yaml/from_yaml/to_yaml_file/from_yaml_file`.
+`DimensionsMetadata.to_tables()/from_tables()` serialize metadata as five flat relations (`ruleset`, `fields`, `dimensions`, `outputs`, and `truthy`); there is no YAML metadata API.
 
 ## Build/Test/Lint Commands
 

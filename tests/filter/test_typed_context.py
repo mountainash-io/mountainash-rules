@@ -15,6 +15,7 @@ import mountainash.expressions as ma
 from mountainash.relations import relation
 from mountainash_rules import (
     BooleanCoercion,
+    ContextField,
     DataType,
     Dimension,
     DimensionCompiler,
@@ -38,7 +39,7 @@ def _scores(frame):
     )
 
 
-@pytest.mark.parametrize("strategy", ["exact", "not_equal", "exact_key"])
+@pytest.mark.parametrize("strategy", ["exact", "not_equal"])
 def test_boolean_truth_table_across_entry_points(backend_name, strategy):
     if backend_name == "ibis-polars":
         pytest.skip(
@@ -54,13 +55,10 @@ def test_boolean_truth_table_across_entry_points(backend_name, strategy):
     engine = ExpressionRulesEngine(
         rules,
         DimensionsMetadata(
+            fields=(ContextField(name="active", data_type=DataType.BOOL, wildcard=None, wildcard_declared=True),),
             dimensions=[
                 Dimension(
-                    dimension_name="value",
-                    rule_field="flag",
-                    context_field="active",
-                    data_type=DataType.BOOL,
-                    wildcard_values=[None],
+                    dimension_name="value", rule_field="flag", context_field="active",
                     match_strategy=strategy,
                 ),
             ]
@@ -81,9 +79,7 @@ def test_boolean_truth_table_across_entry_points(backend_name, strategy):
             context.active if isinstance(context, Context) else context.get("active")
         )
         ternaries = [
-            (0 if strategy != "exact_key" else -1)
-            if value is None
-            else (1 if (rule == value) == (strategy != "not_equal") else -1)
+            0 if value is None else (1 if (rule == value) == (strategy != "not_equal") else -1)
             for rule in (False, True)
         ] + [0]
         names = ["false", "true", "wildcard"]
@@ -106,7 +102,7 @@ def test_boolean_truth_table_across_entry_points(backend_name, strategy):
 
 @pytest.mark.parametrize(
     "strategy",
-    [MatchStrategy.EXACT, MatchStrategy.NOT_EQUAL, MatchStrategy.EXACT_KEY],
+    [MatchStrategy.EXACT, MatchStrategy.NOT_EQUAL],
 )
 @pytest.mark.parametrize("concrete", [2, -1])
 @pytest.mark.parametrize("entry_point", ["evaluate", "explain", "batch", "chunked"])
@@ -123,13 +119,10 @@ def test_boolean_invalid_concrete_rejected_across_entry_points(
     engine = ExpressionRulesEngine(
         rules,
         DimensionsMetadata(
+            fields=(ContextField(name="active", data_type=DataType.BOOL, wildcard=None, wildcard_declared=True),),
             dimensions=[
                 Dimension(
-                    dimension_name="value",
-                    rule_field="flag",
-                    context_field="active",
-                    data_type=DataType.BOOL,
-                    wildcard_values=[None],
+                    dimension_name="value", rule_field="flag", context_field="active",
                     match_strategy=strategy,
                 ),
             ]
@@ -159,9 +152,8 @@ def test_boolean_all_null_and_empty_batches_without_wildcards(backend_name):
     engine = ExpressionRulesEngine(
         rules,
         DimensionsMetadata(
-            dimensions=[
-                Dimension(dimension_name="value", data_type=DataType.BOOL),
-            ]
+            fields=(ContextField(name="value", data_type=DataType.BOOL, wildcard=None, wildcard_declared=True),),
+            dimensions=(Dimension(dimension_name="value", context_field="value"),),
         ),
     )
     contexts = pl.DataFrame({"cid": [0, 1], "value": [None, None]})
@@ -200,11 +192,11 @@ def test_ordinary_string_sentinels_never_earn_specificity(
             },
         ),
         DimensionsMetadata(
+            fields=(ContextField(name="value", data_type=DataType.STR, wildcard=UNKNOWN),),
             dimensions=[
                 Dimension(
-                    dimension_name="value",
+                    dimension_name="value", context_field="value",
                     match_strategy=MatchStrategy(strategy),
-                    wildcard_values=[None, "<NA>", "<NOT_SET>"],
                 ),
             ]
         ),
@@ -245,13 +237,11 @@ def test_ordinary_string_sentinels_never_earn_specificity(
         matching = ExpressionRulesEngine(
             pl.DataFrame({"rule_name": ["pattern"], "value": ["^A$"]}),
             DimensionsMetadata(
-                dimensions=[
-                    Dimension(
-                        dimension_name="value",
-                        match_strategy=MatchStrategy.REGEX,
-                        wildcard_values=[None, "<NA>", "<NOT_SET>"],
-                    ),
-                ]
+                fields=(ContextField(name="value", data_type=DataType.STR, wildcard=UNKNOWN),),
+                dimensions=(Dimension(
+                    dimension_name="value", context_field="value",
+                    match_strategy=MatchStrategy.REGEX,
+                ),),
             ),
         )
         assert _scores(matching.evaluate({"value": "A"}).survivors) == [
@@ -265,14 +255,12 @@ def test_context_regex_requires_concrete_input(backend_name, pattern):
     engine = ExpressionRulesEngine(
         build_backend_df(backend_name, {"rule_name": ["guard"]}),
         DimensionsMetadata(
-            dimensions=[
-                Dimension(
-                    dimension_name="value",
-                    match_strategy=MatchStrategy.CONTEXT_REGEX,
-                    regex_pattern=pattern,
-                    wildcard_values=[None, UNKNOWN, NOT_SET],
-                ),
-            ]
+            fields=(ContextField(name="value", data_type=DataType.STR, wildcard=UNKNOWN),),
+            dimensions=(Dimension(
+                dimension_name="value", context_field="value",
+                match_strategy=MatchStrategy.CONTEXT_REGEX,
+                regex_pattern=pattern,
+            ),),
         ),
     )
     contexts = [
@@ -301,42 +289,6 @@ def test_context_regex_requires_concrete_input(backend_name, pattern):
             )
 
 
-@pytest.mark.parametrize(
-    "dtype,concrete",
-    [
-        (DataType.STR, "A"),
-        (DataType.INT, 0),
-        (DataType.FLOAT, 0.0),
-        (DataType.DATE, date(2026, 9, 12)),
-        (DataType.DATETIME, datetime(2026, 9, 12)),
-    ],
-)
-def test_exact_key_missing_marker_equality_is_not_a_match(dtype, concrete):
-    unknown = unknown_sentinel_for(dtype)
-    unset = not_set_sentinel_for(dtype)
-    if dtype is DataType.FLOAT:
-        unknown, unset = float(unknown), float(unset)
-    dim = Dimension(
-        dimension_name="value",
-        data_type=dtype,
-        match_strategy=MatchStrategy.EXACT_KEY,
-        wildcard_values=[unknown, unset],
-    )
-    # Both declared spellings are rule wildcards; neither supplies a concrete key.
-    frame = pl.DataFrame(
-        {
-            "value": [concrete, unknown, unset, concrete],
-            "__ctx_value": [unset, unset, unset, concrete],
-        }
-    )
-    scored = (
-        bind_compiler_inputs(frame, [dim])
-        .with_columns(DimensionCompiler().compile_dimension(dim).alias("t"))
-        .to_polars()
-    )
-    assert scored["t"].to_list() == [-1, 0, 0, 1]
-
-
 def test_shared_aliases_and_unknown_do_not_rescue_mismatch():
     engine = ExpressionRulesEngine(
         pl.DataFrame(
@@ -347,26 +299,18 @@ def test_shared_aliases_and_unknown_do_not_rescue_mismatch():
             }
         ),
         DimensionsMetadata(
+            fields=(ContextField(name="active", data_type=DataType.BOOL, wildcard=None, wildcard_declared=True), ContextField(name="text", data_type=DataType.STR, wildcard=UNKNOWN)),
             dimensions=[
                 Dimension(
-                    dimension_name="left",
-                    rule_field="flag",
-                    context_field="active",
-                    data_type=DataType.BOOL,
-                    wildcard_values=[None],
+                    dimension_name="left", rule_field="flag", context_field="active",
                 ),
                 Dimension(
-                    dimension_name="right",
-                    rule_field="flag",
-                    context_field="active",
-                    data_type=DataType.BOOL,
-                    wildcard_values=[None],
+                    dimension_name="right", rule_field="flag", context_field="active",
                 ),
                 Dimension(
-                    dimension_name="text",
+                    dimension_name="text", context_field="text",
                     rule_field="pattern",
                     match_strategy=MatchStrategy.PREFIX,
-                    wildcard_values=[UNKNOWN, NOT_SET],
                 ),
             ]
         ),
@@ -422,13 +366,10 @@ def _boolean_engine(policy=BooleanCoercion.NONE, *, rules=None, metadata=None):
         ),
         dimension_metadata=(
             DimensionsMetadata(
+                fields=(ContextField(name="active", data_type=DataType.BOOL, wildcard=None, wildcard_declared=True),),
                 dimensions=[
                     Dimension(
-                        dimension_name="value",
-                        rule_field="flag",
-                        context_field="active",
-                        data_type=DataType.BOOL,
-                        wildcard_values=[None],
+                        dimension_name="value", rule_field="flag", context_field="active",
                     )
                 ]
             )
@@ -690,19 +631,13 @@ def test_boolean_alias_normalization_preserves_a_shared_nonboolean_binding():
         }
     )
     metadata = DimensionsMetadata(
+        fields=(ContextField(name="active", data_type=DataType.BOOL, wildcard=None, wildcard_declared=True), ContextField(name="region", data_type=DataType.STR, wildcard=UNKNOWN)),
         dimensions=[
             Dimension(
-                dimension_name="as_boolean",
-                rule_field="bool_flag",
-                context_field="active",
-                data_type=DataType.BOOL,
-                wildcard_values=[None],
+                dimension_name="as_boolean", rule_field="bool_flag", context_field="active",
             ),
             Dimension(
-                dimension_name="as_number",
-                rule_field="number_flag",
-                context_field="active",
-                data_type=DataType.INT,
+                dimension_name="as_number", rule_field="number_flag", context_field="active",
             ),
         ]
     )
@@ -720,16 +655,13 @@ def test_boolean_alias_normalization_preserves_a_shared_nonboolean_binding():
 def test_unselected_boolean_dimension_does_not_validate_its_source_field():
     rules = pl.DataFrame({"rule_name": ["region"], "flag": [True], "region": ["AU"]})
     metadata = DimensionsMetadata(
+        fields=(ContextField(name="active", data_type=DataType.BOOL, wildcard=None, wildcard_declared=True), ContextField(name="region", data_type=DataType.STR, wildcard=UNKNOWN)),
         dimensions=[
             Dimension(
-                dimension_name="boolean",
-                rule_field="flag",
-                context_field="active",
-                data_type=DataType.BOOL,
-                wildcard_values=[None],
+                dimension_name="boolean", rule_field="flag", context_field="active",
             ),
             Dimension(
-                dimension_name="region", wildcard_values=[None, "<NA>", "<NOT_SET>"]
+                dimension_name="region", context_field="region",
             ),
         ]
     )

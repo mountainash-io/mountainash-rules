@@ -26,10 +26,8 @@ def test_normalized_set_payload_is_canonical_without_rewriting_authored_values(
         build_backend_df(backend_name, {"rule": [0, 1, 2], "value": authored})
     )
     dim = Dimension(
-        dimension_name="value",
-        data_type=data_type,
+        dimension_name="value", context_field="value",
         match_strategy="set_membership",
-        wildcard_values=[None],
     )
     value_name, state_name = rule_binding_names(dim)
     rows = normalize_rule_relation(rules, [dim]).sort("rule").to_dicts()

@@ -188,7 +188,7 @@ class TestGenerateContext:
         col_dict, metadata = generate_rules(
             rule_count=20,
             dim_count=1,
-            strategy_mix={MatchStrategy.GREATER_THAN: 1.0},
+            strategy_mix={MatchStrategy.MIN: 1.0},
         )
         ctx = generate_context(metadata, col_dict)
         val = getattr(ctx, "DIM_0")

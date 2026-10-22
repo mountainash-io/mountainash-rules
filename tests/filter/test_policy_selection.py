@@ -6,6 +6,7 @@ import pytest
 import mountainash.expressions as ma
 from mountainash.relations import relation
 from mountainash_rules import (
+    ContextField,
     BatchRuleResult,
     DataType,
     Dimension,
@@ -40,9 +41,10 @@ def _engine(data=None, backend="polars", **metadata):
     return ExpressionRulesEngine(
         build_backend_df(backend, data),
         DimensionsMetadata(
+            fields=(ContextField(name="region", data_type="str", wildcard="<NA>"),),
             dimensions=[
                 Dimension(
-                    dimension_name="region", wildcard_values=[None, "<NA>", "<NOT_SET>"]
+                    dimension_name="region", context_field="region",
                 )
             ],
             **metadata,
@@ -305,9 +307,10 @@ def test_surviving_null_priority_rejected_before_filters(backend_name):
 @pytest.mark.parametrize("fields", [["price", "missing"], ["price", "price"], [""]])
 def test_declared_output_errors_are_not_hidden_by_empty_rules(fields):
     metadata = DimensionsMetadata(
+        fields=(ContextField(name="region", data_type="str", wildcard="<NA>"),),
         dimensions=[
             Dimension(
-                dimension_name="region", wildcard_values=[None, "<NA>", "<NOT_SET>"]
+                dimension_name="region", context_field="region",
             )
         ],
         output_fields=fields,
@@ -356,9 +359,10 @@ def test_expression_output_schema_is_explicit_and_constructor_only():
                 rules, dimension_expressions=expressions, output_fields=invalid
             )
     metadata_without_outputs = DimensionsMetadata(
+        fields=(ContextField(name="region", data_type="str", wildcard="<NA>"),),
         dimensions=[
             Dimension(
-                dimension_name="region", wildcard_values=[None, "<NA>", "<NOT_SET>"]
+                dimension_name="region", context_field="region",
             )
         ]
     )
@@ -468,21 +472,20 @@ def test_assertions_precede_every_output_reduction(policy, filters):
 
 def test_output_inference_uses_full_physical_metadata_not_active_projection():
     metadata = DimensionsMetadata(
+        fields=(ContextField(name="region", data_type="str", wildcard="<NA>"), ContextField(name="age", data_type="int"), ContextField(name="decision", data_type="str")),
         dimensions=[
             Dimension(
-                dimension_name="region",
+                dimension_name="region", context_field="region",
                 rule_field="country",
-                wildcard_values=[None, "<NA>", "<NOT_SET>"],
             ),
             Dimension(
-                dimension_name="age",
-                data_type=DataType.INT,
+                dimension_name="age", context_field="age",
                 match_strategy=MatchStrategy.RANGE,
                 range_min_field="lo",
                 range_max_field="hi",
             ),
             Dimension(
-                dimension_name="decision",
+                dimension_name="decision", context_field="decision",
                 match_strategy=MatchStrategy.CONTEXT_REGEX,
                 regex_pattern=".*",
             ),

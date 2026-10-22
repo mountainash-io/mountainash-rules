@@ -1,62 +1,54 @@
-"""Typed contribution and output declarations for the replacement accumulator."""
+"""Output contribution declarations used by DecisionTable metadata."""
 
 from __future__ import annotations
 
-import typing as t
 from enum import StrEnum
 
-from pydantic import BaseModel, ConfigDict, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, model_validator
+from mountainash import DecimalDtype
 
 from mountainash_rules.core.constants import DataType
 
 
 class AggregateOp(StrEnum):
-    """Native commutative folds over matching contributions."""
-
     SUM = "sum"
     MIN = "min"
     MAX = "max"
 
 
 class Aggregate(BaseModel):
-    """Authored contribution type and optional final decimal conversion."""
+    """Output fold declaration, keyed by scope and logical output name."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    column_name: str
+    scope: str | None = None
+    output_name: str
+    contribution_column: str
     operation: AggregateOp = AggregateOp.SUM
-    output_name: str | None = None
     data_type: DataType
-    timezone: t.Literal["naive", "utc"] | None = None
-
-    @field_validator("column_name", "output_name")
-    @classmethod
-    def _name(cls, value: str | None) -> str | None:
-        if value is not None:
-            if not value:
-                raise ValueError("Aggregate names must be nonempty")
-            try:
-                value.encode("utf-8")
-            except UnicodeEncodeError as exc:
-                raise ValueError(
-                    "Aggregate names must contain Unicode scalars"
-                ) from exc
-        return value
-
-    @property
-    def resolved_output_name(self) -> str:
-        return self.output_name or self.column_name
+    precision: int | None = None
+    scale: int | None = None
+    rounding: str | None = None
+    timezone: str | None = None
 
     @model_validator(mode="after")
-    def _declaration(self) -> Aggregate:
-        if self.data_type is DataType.FLOAT:
-            raise ValueError("Fractional aggregates require DECIMAL declarations")
-        if self.operation is AggregateOp.SUM and not self.data_type.is_numeric:
-            raise ValueError("sum requires INT or DECIMAL contributions")
+    def _validate_declaration(self):
+        if not self.output_name or not self.contribution_column:
+            raise ValueError("Output names and contribution columns must be nonempty")
+        if self.data_type is DataType.DECIMAL:
+            if self.precision is None or self.scale is None or not 0 <= self.scale <= self.precision <= 16:
+                raise ValueError("DECIMAL outputs require precision and scale")
+            if self.rounding not in {"half_to_even", "half_away_from_zero"}:
+                raise ValueError("DECIMAL outputs require supported rounding")
+        elif any(value is not None for value in (self.precision, self.scale, self.rounding)):
+            raise ValueError("Decimal declarations require DECIMAL outputs")
         if self.data_type is DataType.DATETIME:
-            if self.timezone is None:
-                raise ValueError("DATETIME aggregates require an explicit timezone")
+            if self.timezone not in {"naive", "utc"}:
+                raise ValueError("DATETIME outputs require timezone")
         elif self.timezone is not None:
-            raise ValueError("timezone requires a DATETIME aggregate")
+            raise ValueError("timezone requires DATETIME outputs")
         return self
 
+    @property
+    def decimal_dtype(self) -> DecimalDtype | None:
+        return DecimalDtype(self.precision, self.scale) if self.precision is not None else None

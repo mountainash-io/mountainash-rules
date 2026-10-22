@@ -7,6 +7,7 @@ import pytest
 from mountainash.core.types import BackendCapabilityError
 
 from mountainash_rules.core.compiler import DimensionCompiler
+from mountainash_rules import ContextField
 from mountainash_rules.core.constants import (
     CTX_PREFIX,
     NOT_SET,
@@ -28,16 +29,17 @@ def compiler():
 
 
 def _bound_relation(frame, dim):
+    if not hasattr(dim, "_field") or dim._field is None:
+        data_type = "int" if dim.dimension_name in {"amount", "tier", "num_col"} else "str"
+        object.__setattr__(dim, "_field", ContextField(name=dim.context_field, data_type=data_type))
     return bind_compiler_inputs(frame, [dim])
 
 
 class TestExactCompilation:
     def test_exact_match_produces_true(self, compiler):
         dim = Dimension(
-            dimension_name="region",
+            dimension_name="region", context_field="region",
             match_strategy=MatchStrategy.EXACT,
-            data_type=str,
-            wildcard_values=[None, "<NA>", "<NOT_SET>"],
         )
         expr = compiler.compile_dimension(dim)
 
@@ -57,10 +59,8 @@ class TestExactCompilation:
 
     def test_exact_unknown_rule_value_produces_unknown(self, compiler):
         dim = Dimension(
-            dimension_name="region",
+            dimension_name="region", context_field="region",
             match_strategy=MatchStrategy.EXACT,
-            data_type=str,
-            wildcard_values=[None, "<NA>", "<NOT_SET>"],
         )
         expr = compiler.compile_dimension(dim)
 
@@ -82,10 +82,8 @@ class TestExactCompilation:
 
     def test_exact_unknown_context_produces_unknown(self, compiler):
         dim = Dimension(
-            dimension_name="region",
+            dimension_name="region", context_field="region",
             match_strategy=MatchStrategy.EXACT,
-            data_type=str,
-            wildcard_values=[None, "<NA>", "<NOT_SET>"],
         )
         expr = compiler.compile_dimension(dim)
 
@@ -105,10 +103,8 @@ class TestExactCompilation:
 
     def test_exact_numeric(self, compiler):
         dim = Dimension(
-            dimension_name="tier",
+            dimension_name="tier", context_field="tier",
             match_strategy=MatchStrategy.EXACT,
-            data_type=int,
-            wildcard_values=[None, -999999999, -999999998],
         )
         expr = compiler.compile_dimension(dim)
 
@@ -132,10 +128,8 @@ class TestExactCompilation:
 class TestRangeCompilation:
     def test_range_within_bounds_produces_true(self, compiler):
         dim = Dimension(
-            dimension_name="amount",
+            dimension_name="amount", context_field="amount",
             match_strategy=MatchStrategy.RANGE,
-            data_type=int,
-            wildcard_values=[None, -999999999, -999999998],
             range_min_field="amount_min",
             range_max_field="amount_max",
         )
@@ -158,14 +152,10 @@ class TestRangeCompilation:
 
     def test_range_boundary_inclusive(self, compiler):
         dim = Dimension(
-            dimension_name="amount",
+            dimension_name="amount", context_field="amount",
             match_strategy=MatchStrategy.RANGE,
-            data_type=int,
-            wildcard_values=[None, -999999999, -999999998],
             range_min_field="amount_min",
             range_max_field="amount_max",
-            range_min_inclusive=True,
-            range_max_inclusive=True,
         )
         expr = compiler.compile_dimension(dim)
 
@@ -186,14 +176,10 @@ class TestRangeCompilation:
 
     def test_range_boundary_exclusive(self, compiler):
         dim = Dimension(
-            dimension_name="amount",
+            dimension_name="amount", context_field="amount",
             match_strategy=MatchStrategy.RANGE,
-            data_type=int,
-            wildcard_values=[None, -999999999, -999999998],
             range_min_field="amount_min",
             range_max_field="amount_max",
-            range_min_inclusive=False,
-            range_max_inclusive=False,
         )
         expr = compiler.compile_dimension(dim)
 
@@ -214,10 +200,8 @@ class TestRangeCompilation:
 
     def test_range_unknown_min_produces_unknown(self, compiler):
         dim = Dimension(
-            dimension_name="amount",
+            dimension_name="amount", context_field="amount",
             match_strategy=MatchStrategy.RANGE,
-            data_type=int,
-            wildcard_values=[None, -999999999, -999999998],
             range_min_field="amount_min",
             range_max_field="amount_max",
         )
@@ -249,10 +233,8 @@ class TestContextRegexCompilation:
 
     def test_regex_context_matches_pattern(self, compiler):
         dim = Dimension(
-            dimension_name="code",
+            dimension_name="code", context_field="code",
             match_strategy=MatchStrategy.CONTEXT_REGEX,
-            data_type=str,
-            wildcard_values=[None, "<NA>", "<NOT_SET>"],
             regex_pattern="^PRE.*",
         )
         expr = compiler.compile_dimension(dim)
@@ -272,10 +254,8 @@ class TestContextRegexCompilation:
     def test_regex_search_semantics(self, compiler):
         """regex_contains uses search semantics (match anywhere, not anchored)."""
         dim = Dimension(
-            dimension_name="code",
+            dimension_name="code", context_field="code",
             match_strategy=MatchStrategy.CONTEXT_REGEX,
-            data_type=str,
-            wildcard_values=[None, "<NA>", "<NOT_SET>"],
             regex_pattern="123",
         )
         expr = compiler.compile_dimension(dim)
@@ -295,10 +275,8 @@ class TestContextRegexCompilation:
     def test_regex_no_unknown_state(self, compiler):
         """CONTEXT_REGEX has no unknown/0 state — pattern is fixed at metadata time."""
         dim = Dimension(
-            dimension_name="code",
+            dimension_name="code", context_field="code",
             match_strategy=MatchStrategy.CONTEXT_REGEX,
-            data_type=str,
-            wildcard_values=[None, "<NA>", "<NOT_SET>"],
             regex_pattern="^AU.*",
         )
         expr = compiler.compile_dimension(dim)
@@ -320,10 +298,8 @@ class TestContextRegexCompilation:
 class TestNotEqualCompilation:
     def test_not_equal_mismatch_produces_true(self, compiler):
         dim = Dimension(
-            dimension_name="region",
+            dimension_name="region", context_field="region",
             match_strategy=MatchStrategy.NOT_EQUAL,
-            data_type=str,
-            wildcard_values=[None, "<NA>", "<NOT_SET>"],
         )
         expr = compiler.compile_dimension(dim)
 
@@ -343,10 +319,8 @@ class TestNotEqualCompilation:
 
     def test_not_equal_unknown_rule_produces_unknown(self, compiler):
         dim = Dimension(
-            dimension_name="region",
+            dimension_name="region", context_field="region",
             match_strategy=MatchStrategy.NOT_EQUAL,
-            data_type=str,
-            wildcard_values=[None, "<NA>", "<NOT_SET>"],
         )
         expr = compiler.compile_dimension(dim)
 
@@ -366,193 +340,11 @@ class TestNotEqualCompilation:
         assert values[1] == 1
 
 
-class TestGreaterThanCompilation:
-    def test_greater_than_true(self, compiler):
-        dim = Dimension(
-            dimension_name="amount",
-            match_strategy=MatchStrategy.GREATER_THAN,
-            data_type=int,
-            wildcard_values=[None, -999999999, -999999998],
-        )
-        expr = compiler.compile_dimension(dim)
-        df = pl.DataFrame(
-            {
-                "amount": [100, 500, 1000],
-                f"{CTX_PREFIX}amount": [1500, 1500, 1500],
-            }
-        )
-        result = (
-            _bound_relation(df, dim)
-            .with_columns(expr.name.alias("__t_amount"))
-            .to_polars()
-        )
-        values = result["__t_amount"].to_list()
-        assert values == [1, 1, 1]
-
-    def test_greater_than_false(self, compiler):
-        dim = Dimension(
-            dimension_name="amount",
-            match_strategy=MatchStrategy.GREATER_THAN,
-            data_type=int,
-            wildcard_values=[None, -999999999, -999999998],
-        )
-        expr = compiler.compile_dimension(dim)
-        df = pl.DataFrame(
-            {
-                "amount": [100, 500, 1000],
-                f"{CTX_PREFIX}amount": [50, 50, 50],
-            }
-        )
-        result = (
-            _bound_relation(df, dim)
-            .with_columns(expr.name.alias("__t_amount"))
-            .to_polars()
-        )
-        values = result["__t_amount"].to_list()
-        assert values == [-1, -1, -1]
-
-    def test_greater_than_equal_is_false(self, compiler):
-        dim = Dimension(
-            dimension_name="amount",
-            match_strategy=MatchStrategy.GREATER_THAN,
-            data_type=int,
-            wildcard_values=[None, -999999999, -999999998],
-        )
-        expr = compiler.compile_dimension(dim)
-        df = pl.DataFrame(
-            {
-                "amount": [100],
-                f"{CTX_PREFIX}amount": [100],
-            }
-        )
-        result = (
-            _bound_relation(df, dim)
-            .with_columns(expr.name.alias("__t_amount"))
-            .to_polars()
-        )
-        values = result["__t_amount"].to_list()
-        assert values == [-1]
-
-    def test_greater_than_unknown_rule(self, compiler):
-        dim = Dimension(
-            dimension_name="amount",
-            match_strategy=MatchStrategy.GREATER_THAN,
-            data_type=int,
-            wildcard_values=[None, -999999999, -999999998],
-        )
-        expr = compiler.compile_dimension(dim)
-        df = pl.DataFrame(
-            {
-                "amount": [UNKNOWN_NUMERIC],
-                f"{CTX_PREFIX}amount": [100],
-            }
-        )
-        result = (
-            _bound_relation(df, dim)
-            .with_columns(expr.name.alias("__t_amount"))
-            .to_polars()
-        )
-        values = result["__t_amount"].to_list()
-        assert values == [0]
-
-
-class TestLessThanCompilation:
-    def test_less_than_true(self, compiler):
-        dim = Dimension(
-            dimension_name="amount",
-            match_strategy=MatchStrategy.LESS_THAN,
-            data_type=int,
-            wildcard_values=[None, -999999999, -999999998],
-        )
-        expr = compiler.compile_dimension(dim)
-        df = pl.DataFrame(
-            {
-                "amount": [100, 500, 1000],
-                f"{CTX_PREFIX}amount": [50, 50, 50],
-            }
-        )
-        result = (
-            _bound_relation(df, dim)
-            .with_columns(expr.name.alias("__t_amount"))
-            .to_polars()
-        )
-        values = result["__t_amount"].to_list()
-        assert values == [1, 1, 1]
-
-    def test_less_than_false(self, compiler):
-        dim = Dimension(
-            dimension_name="amount",
-            match_strategy=MatchStrategy.LESS_THAN,
-            data_type=int,
-            wildcard_values=[None, -999999999, -999999998],
-        )
-        expr = compiler.compile_dimension(dim)
-        df = pl.DataFrame(
-            {
-                "amount": [100, 500],
-                f"{CTX_PREFIX}amount": [1500, 1500],
-            }
-        )
-        result = (
-            _bound_relation(df, dim)
-            .with_columns(expr.name.alias("__t_amount"))
-            .to_polars()
-        )
-        values = result["__t_amount"].to_list()
-        assert values == [-1, -1]
-
-    def test_less_than_equal_is_false(self, compiler):
-        dim = Dimension(
-            dimension_name="amount",
-            match_strategy=MatchStrategy.LESS_THAN,
-            data_type=int,
-            wildcard_values=[None, -999999999, -999999998],
-        )
-        expr = compiler.compile_dimension(dim)
-        df = pl.DataFrame(
-            {
-                "amount": [100],
-                f"{CTX_PREFIX}amount": [100],
-            }
-        )
-        result = (
-            _bound_relation(df, dim)
-            .with_columns(expr.name.alias("__t_amount"))
-            .to_polars()
-        )
-        values = result["__t_amount"].to_list()
-        assert values == [-1]
-
-    def test_less_than_unknown_rule(self, compiler):
-        dim = Dimension(
-            dimension_name="amount",
-            match_strategy=MatchStrategy.LESS_THAN,
-            data_type=int,
-            wildcard_values=[None, -999999999, -999999998],
-        )
-        expr = compiler.compile_dimension(dim)
-        df = pl.DataFrame(
-            {
-                "amount": [UNKNOWN_NUMERIC],
-                f"{CTX_PREFIX}amount": [100],
-            }
-        )
-        result = (
-            _bound_relation(df, dim)
-            .with_columns(expr.name.alias("__t_amount"))
-            .to_polars()
-        )
-        values = result["__t_amount"].to_list()
-        assert values == [0]
-
-
 class TestPrefixCompilation:
     def test_prefix_match(self, compiler):
         dim = Dimension(
-            dimension_name="code",
+            dimension_name="code", context_field="code",
             match_strategy=MatchStrategy.PREFIX,
-            data_type=str,
-            wildcard_values=[None, "<NA>", "<NOT_SET>"],
         )
         expr = compiler.compile_dimension(dim)
         df = pl.DataFrame(
@@ -571,10 +363,8 @@ class TestPrefixCompilation:
 
     def test_prefix_no_match(self, compiler):
         dim = Dimension(
-            dimension_name="code",
+            dimension_name="code", context_field="code",
             match_strategy=MatchStrategy.PREFIX,
-            data_type=str,
-            wildcard_values=[None, "<NA>", "<NOT_SET>"],
         )
         expr = compiler.compile_dimension(dim)
         df = pl.DataFrame(
@@ -592,10 +382,8 @@ class TestPrefixCompilation:
 
     def test_prefix_unknown_rule_produces_unknown(self, compiler):
         dim = Dimension(
-            dimension_name="code",
+            dimension_name="code", context_field="code",
             match_strategy=MatchStrategy.PREFIX,
-            data_type=str,
-            wildcard_values=[None, "<NA>", "<NOT_SET>"],
         )
         expr = compiler.compile_dimension(dim)
         df = pl.DataFrame(
@@ -615,10 +403,8 @@ class TestPrefixCompilation:
 
     def test_prefix_per_row_different_patterns(self, compiler):
         dim = Dimension(
-            dimension_name="code",
+            dimension_name="code", context_field="code",
             match_strategy=MatchStrategy.PREFIX,
-            data_type=str,
-            wildcard_values=[None, "<NA>", "<NOT_SET>"],
         )
         expr = compiler.compile_dimension(dim)
         df = pl.DataFrame(
@@ -638,10 +424,8 @@ class TestPrefixCompilation:
 class TestSuffixCompilation:
     def test_suffix_match(self, compiler):
         dim = Dimension(
-            dimension_name="code",
+            dimension_name="code", context_field="code",
             match_strategy=MatchStrategy.SUFFIX,
-            data_type=str,
-            wildcard_values=[None, "<NA>", "<NOT_SET>"],
         )
         expr = compiler.compile_dimension(dim)
         df = pl.DataFrame(
@@ -659,10 +443,8 @@ class TestSuffixCompilation:
 
     def test_suffix_no_match(self, compiler):
         dim = Dimension(
-            dimension_name="code",
+            dimension_name="code", context_field="code",
             match_strategy=MatchStrategy.SUFFIX,
-            data_type=str,
-            wildcard_values=[None, "<NA>", "<NOT_SET>"],
         )
         expr = compiler.compile_dimension(dim)
         df = pl.DataFrame(
@@ -680,10 +462,8 @@ class TestSuffixCompilation:
 
     def test_suffix_unknown_rule_produces_unknown(self, compiler):
         dim = Dimension(
-            dimension_name="code",
+            dimension_name="code", context_field="code",
             match_strategy=MatchStrategy.SUFFIX,
-            data_type=str,
-            wildcard_values=[None, "<NA>", "<NOT_SET>"],
         )
         expr = compiler.compile_dimension(dim)
         df = pl.DataFrame(
@@ -703,10 +483,8 @@ class TestSuffixCompilation:
 
     def test_suffix_per_row_different_patterns(self, compiler):
         dim = Dimension(
-            dimension_name="code",
+            dimension_name="code", context_field="code",
             match_strategy=MatchStrategy.SUFFIX,
-            data_type=str,
-            wildcard_values=[None, "<NA>", "<NOT_SET>"],
         )
         expr = compiler.compile_dimension(dim)
         df = pl.DataFrame(
@@ -726,10 +504,8 @@ class TestSuffixCompilation:
 class TestContainsCompilation:
     def test_contains_match(self, compiler):
         dim = Dimension(
-            dimension_name="tier",
+            dimension_name="tier", context_field="tier",
             match_strategy=MatchStrategy.CONTAINS,
-            data_type=str,
-            wildcard_values=[None, "<NA>", "<NOT_SET>"],
         )
         expr = compiler.compile_dimension(dim)
         df = pl.DataFrame(
@@ -747,10 +523,8 @@ class TestContainsCompilation:
 
     def test_contains_no_match(self, compiler):
         dim = Dimension(
-            dimension_name="tier",
+            dimension_name="tier", context_field="tier",
             match_strategy=MatchStrategy.CONTAINS,
-            data_type=str,
-            wildcard_values=[None, "<NA>", "<NOT_SET>"],
         )
         expr = compiler.compile_dimension(dim)
         df = pl.DataFrame(
@@ -768,10 +542,8 @@ class TestContainsCompilation:
 
     def test_contains_unknown_rule_produces_unknown(self, compiler):
         dim = Dimension(
-            dimension_name="tier",
+            dimension_name="tier", context_field="tier",
             match_strategy=MatchStrategy.CONTAINS,
-            data_type=str,
-            wildcard_values=[None, "<NA>", "<NOT_SET>"],
         )
         expr = compiler.compile_dimension(dim)
         df = pl.DataFrame(
@@ -791,10 +563,8 @@ class TestContainsCompilation:
 
     def test_contains_per_row_different_patterns(self, compiler):
         dim = Dimension(
-            dimension_name="tier",
+            dimension_name="tier", context_field="tier",
             match_strategy=MatchStrategy.CONTAINS,
-            data_type=str,
-            wildcard_values=[None, "<NA>", "<NOT_SET>"],
         )
         expr = compiler.compile_dimension(dim)
         df = pl.DataFrame(
@@ -814,10 +584,8 @@ class TestContainsCompilation:
 class TestSetMembershipCompilation:
     def test_set_membership_match(self, compiler):
         dim = Dimension(
-            dimension_name="region",
+            dimension_name="region", context_field="region",
             match_strategy=MatchStrategy.SET_MEMBERSHIP,
-            data_type=str,
-            wildcard_values=[None, "<NA>", "<NOT_SET>"],
         )
         expr = compiler.compile_dimension(dim)
 
@@ -842,10 +610,8 @@ class TestSetMembershipCompilation:
 
     def test_set_membership_unknown_context(self, compiler):
         dim = Dimension(
-            dimension_name="region",
+            dimension_name="region", context_field="region",
             match_strategy=MatchStrategy.SET_MEMBERSHIP,
-            data_type=str,
-            wildcard_values=[None, "<NA>", "<NOT_SET>"],
         )
         expr = compiler.compile_dimension(dim)
 
@@ -871,10 +637,8 @@ class TestSetMembershipCompilation:
 class TestSetExclusionCompilation:
     def test_set_exclusion_match(self, compiler):
         dim = Dimension(
-            dimension_name="region",
+            dimension_name="region", context_field="region",
             match_strategy=MatchStrategy.SET_EXCLUSION,
-            data_type=str,
-            wildcard_values=[None, "<NA>", "<NOT_SET>"],
         )
         expr = compiler.compile_dimension(dim)
 
@@ -899,10 +663,8 @@ class TestSetExclusionCompilation:
 
     def test_set_exclusion_unknown_context(self, compiler):
         dim = Dimension(
-            dimension_name="region",
+            dimension_name="region", context_field="region",
             match_strategy=MatchStrategy.SET_EXCLUSION,
-            data_type=str,
-            wildcard_values=[None, "<NA>", "<NOT_SET>"],
         )
         expr = compiler.compile_dimension(dim)
 
@@ -955,8 +717,6 @@ class TestBackendAgnosticism:
                 {"range_min_field": "min_col", "range_max_field": "max_col"},
                 [1, 1],
             ),
-            (MatchStrategy.GREATER_THAN, "num_col", int, {}, [1, -1]),
-            (MatchStrategy.LESS_THAN, "num_col", int, {}, [-1, 1]),
             (MatchStrategy.PREFIX, "str_col", str, {}, [1, -1]),
             (MatchStrategy.SUFFIX, "str_col", str, {}, [1, -1]),
             (MatchStrategy.CONTAINS, "str_col", str, {}, [1, -1]),
@@ -974,10 +734,11 @@ class TestBackendAgnosticism:
     ):
         dim = Dimension(
             dimension_name=field,
+            context_field=field,
             match_strategy=strategy,
-            data_type=data_type,
             **extras,
         )
+        object.__setattr__(dim, "_field", ContextField(name=field, data_type=data_type))
         expr = compiler.compile_dimension(dim)
         df = build_backend_df(backend_name, self._NON_LIST_DATA)
         if backend_name in {"pandas", "narwhals-pandas"} and strategy in {
@@ -1021,10 +782,8 @@ class TestBackendAgnosticism:
         if backend_name == "ibis-sqlite":
             pytest.skip("SQLite has no native array/list column type.")
         dim = Dimension(
-            dimension_name="list_col",
+            dimension_name="list_col", context_field="list_col",
             match_strategy=strategy,
-            data_type=str,
-            wildcard_values=[None, "<NA>", "<NOT_SET>"],
         )
         expr = compiler.compile_dimension(dim)
         df = build_backend_df(
@@ -1062,113 +821,3 @@ class TestBackendAgnosticism:
         assert result["__t"] == expected
 
 
-class TestExactKeyCompilation:
-    """EXACT_KEY: rule-side wildcard only — context sentinels are non-matches."""
-
-    def test_rule_unknown_is_wildcard(self, compiler):
-        dim = Dimension(
-            dimension_name="region",
-            match_strategy=MatchStrategy.EXACT_KEY,
-            data_type="str",
-            wildcard_values=[None, "<NA>", "<NOT_SET>"],
-        )
-        expr = compiler.compile_dimension(dim)
-        df = pl.DataFrame(
-            {
-                "region": ["AU", UNKNOWN, "UK"],
-                f"{CTX_PREFIX}region": ["AU", "AU", "AU"],
-            }
-        )
-        result = (
-            _bound_relation(df, dim)
-            .with_columns(expr.name.alias("__t_region"))
-            .to_polars()
-        )
-        assert result["__t_region"].to_list() == [1, 0, -1]
-
-    def test_context_not_set_never_matches_specific(self, compiler):
-        # The asymmetry that distinguishes EXACT_KEY from EXACT:
-        # a NOT_SET context is -1 against specific keys (EXACT gives 0).
-        dim = Dimension(
-            dimension_name="region",
-            match_strategy=MatchStrategy.EXACT_KEY,
-            data_type="str",
-            wildcard_values=[None, "<NA>", "<NOT_SET>"],
-        )
-        expr = compiler.compile_dimension(dim)
-        df = pl.DataFrame(
-            {
-                "region": ["AU", UNKNOWN],
-                f"{CTX_PREFIX}region": [NOT_SET, NOT_SET],
-            }
-        )
-        result = (
-            _bound_relation(df, dim)
-            .with_columns(expr.name.alias("__t_region"))
-            .to_polars()
-        )
-        assert result["__t_region"].to_list() == [-1, 0]
-
-    def test_context_unknown_never_matches_specific(self, compiler):
-        dim = Dimension(
-            dimension_name="region",
-            match_strategy=MatchStrategy.EXACT_KEY,
-            data_type="str",
-            wildcard_values=[None, "<NA>", "<NOT_SET>"],
-        )
-        expr = compiler.compile_dimension(dim)
-        df = pl.DataFrame(
-            {
-                "region": ["AU", UNKNOWN],
-                f"{CTX_PREFIX}region": [UNKNOWN, UNKNOWN],
-            }
-        )
-        result = (
-            _bound_relation(df, dim)
-            .with_columns(expr.name.alias("__t_region"))
-            .to_polars()
-        )
-        assert result["__t_region"].to_list() == [-1, 0]
-
-    def test_numeric_sentinels(self, compiler):
-        dim = Dimension(
-            dimension_name="product_id",
-            match_strategy=MatchStrategy.EXACT_KEY,
-            data_type="int",
-            wildcard_values=[None, -999999999, -999999998],
-        )
-        expr = compiler.compile_dimension(dim)
-        df = pl.DataFrame(
-            {
-                "product_id": [1, UNKNOWN_NUMERIC, 2],
-                f"{CTX_PREFIX}product_id": [1, 1, 1],
-            }
-        )
-        result = (
-            _bound_relation(df, dim)
-            .with_columns(expr.name.alias("__t_product_id"))
-            .to_polars()
-        )
-        assert result["__t_product_id"].to_list() == [1, 0, -1]
-
-    def test_bool_rule_null_is_wildcard_context_null_is_not(self, compiler):
-        dim = Dimension(
-            dimension_name="flag",
-            match_strategy=MatchStrategy.EXACT_KEY,
-            data_type="bool",
-            wildcard_values=[None],
-        )
-        expr = compiler.compile_dimension(dim)
-        df = pl.DataFrame(
-            {
-                "flag": [True, None, True, None],
-                f"{CTX_PREFIX}flag": [True, True, None, None],
-            }
-        )
-        result = (
-            _bound_relation(df, dim)
-            .with_columns(expr.name.alias("__t_flag"))
-            .to_polars()
-        )
-        # rule null -> 0 regardless of context; context null vs specific -> -1
-        assert result["__t_flag"].to_list() == [1, 0, -1, 0]

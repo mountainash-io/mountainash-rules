@@ -4,6 +4,7 @@ import polars as pl
 import pytest
 
 from mountainash_rules import (
+    ContextField,
     Dimension,
     DimensionsMetadata,
     ExpressionRulesEngine,
@@ -17,14 +18,16 @@ class TestMetadataFields:
     def test_priority_requires_field(self):
         with pytest.raises(ValueError, match="priority_field"):
             DimensionsMetadata(
-                dimensions=[Dimension(dimension_name="x")],
+                fields=(ContextField(name="x", data_type="str"),),
+                dimensions=(Dimension(dimension_name="x", context_field="x"),),
                 hit_policy=HitPolicy.PRIORITY,
             )
 
 
 def _region_md(**kwargs):
     return DimensionsMetadata(
-        dimensions=[Dimension(dimension_name="region", wildcard_values=["<NA>"])], **kwargs,
+        fields=(ContextField(name="region", data_type="str", wildcard="<NA>"),),
+        dimensions=(Dimension(dimension_name="region", context_field="region"),), **kwargs,
     )
 
 
@@ -168,11 +171,3 @@ class TestResultSelect:
 
 
 
-def test_hit_policy_yaml_round_trip():
-    md = DimensionsMetadata(
-        dimensions=[Dimension(dimension_name="x")],
-        hit_policy=HitPolicy.PRIORITY,
-        priority_field="salience",
-        output_fields=["price"],
-    )
-    assert DimensionsMetadata.from_yaml(md.to_yaml()) == md

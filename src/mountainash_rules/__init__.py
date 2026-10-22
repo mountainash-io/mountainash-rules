@@ -15,14 +15,13 @@ from mountainash_rules.core.constants import (
     UNKNOWN_NUMERIC,
     BooleanCoercion,
     DataType,
-    DimensionRole,
     HitPolicy,
     MatchStrategy,
     not_set_sentinel_for,
     sentinels_for,
     unknown_sentinel_for,
 )
-from mountainash_rules.core.dimension import Dimension, DimensionsMetadata
+from mountainash_rules.core.dimension import ContextField, Dimension, DimensionsMetadata
 from mountainash_rules.core.hit_policy import HitPolicyViolationError, SelectionInfo
 from mountainash_rules.core.result import ExplainResult, RuleResult
 from mountainash_rules.decision_table import DecisionTableError
@@ -30,6 +29,7 @@ from mountainash_rules.engines.filter.engine import ExpressionRulesEngine
 
 __all__ = (
     "Aggregate",
+    "ContextField",
     "AggregateOp",
     "BatchRuleResult",
     "BooleanCoercion",
@@ -37,7 +37,6 @@ __all__ = (
     "DecisionTableError",
     "Dimension",
     "DimensionCompiler",
-    "DimensionRole",
     "DimensionsMetadata",
     "ExplainResult",
     "ExpressionRulesEngine",

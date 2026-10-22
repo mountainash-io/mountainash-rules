@@ -366,14 +366,17 @@ merged the native consumer chain. That delivery remains valid evidence for the
 implemented interfaces, not proof of backend-resident construction, realistic
 pricing-domain capacity, or product release qualification.
 
-## Serialisable Metadata
+## Flat Metadata Tables
 
-`DimensionsMetadata` round-trips through YAML, so dimension definitions can live beside the rule data instead of in code:
+`DimensionsMetadata.to_tables()` exposes ruleset metadata as five Mountainash
+relations: `ruleset`, `fields`, `dimensions`, `outputs`, and `truthy`.
+`DimensionsMetadata.from_tables()` restores metadata from those relations.
+Typed wildcard markers are stored as canonical text in `fields`; parsing uses
+the declared context-field datatype. Metadata is not serialized through YAML.
 
-```python
-metadata.to_yaml_file("dimensions.yaml")
-metadata = DimensionsMetadata.from_yaml_file("dimensions.yaml")
-```
+Context-field declarations own datatype, decimal precision and scale, datetime
+resolution and timezone, one optional wildcard, and any truthy mappings.
+Dimensions refer to a context field by name.
 
 The [mountainash-rules-babel](https://github.com/mountainash-io/mountainash-rules-babel) package builds on this to import/export lattices as CSV (with a metadata manifest sidecar) and DMN.
 

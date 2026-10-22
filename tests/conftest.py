@@ -16,6 +16,7 @@ import polars as pl
 import pytest
 from pydantic import BaseModel
 
+from mountainash_rules import ContextField
 from mountainash_rules.core.constants import UNKNOWN, UNKNOWN_NUMERIC, MatchStrategy
 from mountainash_rules.core.dimension import Dimension, DimensionsMetadata
 from mountainash_rules.engines.filter.engine import ExpressionRulesEngine
@@ -274,28 +275,31 @@ def backend_rules_df(backend_name: str, rules_data: dict) -> Any:
 @pytest.fixture
 def basic_metadata() -> DimensionsMetadata:
     return DimensionsMetadata(
-        dimensions=[
+        fields=(
+            ContextField(name="region", data_type="str", wildcard=UNKNOWN),
+            ContextField(name="amount", data_type="int", wildcard=UNKNOWN_NUMERIC),
+            ContextField(name="code", data_type="str"),
+        ),
+        dimensions=(
             Dimension(
                 dimension_name="region",
+                context_field="region",
                 match_strategy=MatchStrategy.EXACT,
-                data_type=str,
-                wildcard_values=[UNKNOWN],
             ),
             Dimension(
                 dimension_name="amount",
+                context_field="amount",
                 match_strategy=MatchStrategy.RANGE,
-                data_type=int,
                 range_min_field="amount_min",
                 range_max_field="amount_max",
-                wildcard_values=[UNKNOWN_NUMERIC],
             ),
             Dimension(
                 dimension_name="code",
+                context_field="code",
                 match_strategy=MatchStrategy.CONTEXT_REGEX,
-                data_type=str,
                 regex_pattern="^PRE.*",
             ),
-        ]
+        ),
     )
 
 

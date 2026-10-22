@@ -5,8 +5,8 @@ import mountainash_rules as mr
 
 PUBLIC_NAMES = (
     "ExpressionRulesEngine", "RuleResult", "BatchRuleResult", "ExplainResult",
-    "Dimension", "DimensionsMetadata", "Aggregate", "AggregateOp",
-    "MatchStrategy", "DimensionRole", "HitPolicy", "DataType",
+    "Dimension", "DimensionsMetadata", "ContextField", "Aggregate", "AggregateOp",
+    "MatchStrategy", "HitPolicy", "DataType",
     "SelectionInfo", "HitPolicyViolationError", "DimensionCompiler",
     "DecisionTableError",
     "UNKNOWN", "NOT_SET", "UNKNOWN_NUMERIC", "NOT_SET_NUMERIC",

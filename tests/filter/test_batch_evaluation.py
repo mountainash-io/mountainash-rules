@@ -5,6 +5,7 @@ import pytest
 from mountainash.relations import relation
 
 from mountainash_rules import (
+    ContextField,
     Dimension,
     DimensionsMetadata,
     ExpressionRulesEngine,
@@ -16,23 +17,20 @@ from tests.conftest import ALL_BACKENDS, build_backend_df
 
 def _metadata():
     return DimensionsMetadata(
+        fields=(ContextField(name="region", data_type="str", wildcard="<NA>"), ContextField(name="amount", data_type="int", wildcard=-999999999), ContextField(name="product_code", data_type="str", wildcard="<NA>")),
         dimensions=[
             Dimension(
-                dimension_name="region", wildcard_values=[None, "<NA>", "<NOT_SET>"]
+                dimension_name="region", context_field="region",
             ),
             Dimension(
-                dimension_name="amount",
+                dimension_name="amount", context_field="amount",
                 match_strategy=MatchStrategy.RANGE,
-                data_type=int,
-                wildcard_values=[None, -999999999, -999999998],
                 range_min_field="amt_min",
                 range_max_field="amt_max",
             ),
             Dimension(
-                dimension_name="code",
+                dimension_name="code", context_field="product_code",
                 match_strategy=MatchStrategy.PREFIX,
-                context_field="product_code",
-                wildcard_values=[None, "<NA>", "<NOT_SET>"],
             ),
         ]
     )
@@ -217,16 +215,15 @@ class TestBatchBackendSweep:
 
     def _md(self):
         return DimensionsMetadata(
+            fields=(ContextField(name="region", data_type="str", wildcard="<NA>"), ContextField(name="amount", data_type="int", wildcard=-999999999)),
             dimensions=[
                 Dimension(
-                    dimension_name="region", wildcard_values=[None, "<NA>", "<NOT_SET>"]
+                    dimension_name="region", context_field="region",
                 ),
                 Dimension(
-                    dimension_name="amount",
+                    dimension_name="amount", context_field="amount",
                     match_strategy=MatchStrategy.RANGE,
-                    data_type=int,
-                    wildcard_values=[None, -999999999, -999999998],
-                    range_min_field="amt_min",
+                        range_min_field="amt_min",
                     range_max_field="amt_max",
                 ),
             ]

@@ -3,7 +3,7 @@
 import polars as pl
 import pytest
 
-from mountainash_rules import Dimension, DimensionsMetadata, ExpressionRulesEngine
+from mountainash_rules import ContextField, Dimension, DimensionsMetadata, ExpressionRulesEngine
 
 
 def _engine(rule_cid=False):
@@ -13,10 +13,9 @@ def _engine(rule_cid=False):
     return ExpressionRulesEngine(
         rules,
         dimension_metadata=DimensionsMetadata(
+            fields=(ContextField(name="region", data_type="str", wildcard="<NA>"),),
             dimensions=[
-                Dimension(
-                    dimension_name="region", wildcard_values=[None, "<NA>", "<NOT_SET>"]
-                )
+                Dimension(dimension_name="region", context_field="region")
             ]
         ),
     )

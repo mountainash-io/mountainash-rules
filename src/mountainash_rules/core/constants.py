@@ -18,11 +18,10 @@ class MatchStrategy(StrEnum):
     """How a dimension matches context values against rule values."""
 
     EXACT = "exact"
-    EXACT_KEY = "exact_key"
     NOT_EQUAL = "not_equal"
     RANGE = "range"
-    GREATER_THAN = "greater_than"
-    LESS_THAN = "less_than"
+    MIN = "min"
+    MAX = "max"
     PREFIX = "prefix"
     SUFFIX = "suffix"
     CONTAINS = "contains"
@@ -30,7 +29,6 @@ class MatchStrategy(StrEnum):
     CONTEXT_REGEX = "context_regex"
     SET_MEMBERSHIP = "set_membership"
     SET_EXCLUSION = "set_exclusion"
-
 
 class HitPolicy(StrEnum):
     """Selection semantics applied over surviving rules."""
@@ -42,12 +40,6 @@ class HitPolicy(StrEnum):
     ANY = "any"  # survivors must agree on outputs; return one
     RULE_ORDER = "rule_order"  # all survivors, rule order
 
-
-class DimensionRole(StrEnum):
-    """Whether a dimension partitions the lattice or participates in coalesce."""
-
-    CONSTRAINT = "constraint"
-    CONTEXT_KEY = "context_key"
 
 
 # Sentinel values for unknown/unset rule and context fields.

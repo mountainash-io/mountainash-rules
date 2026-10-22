@@ -7,6 +7,7 @@ import pytest
 from mountainash.relations import relation
 
 from mountainash_rules.core.constants import CTX_PREFIX, UNKNOWN, MatchStrategy
+from mountainash_rules import ContextField
 from mountainash_rules.core.dimension import Dimension, DimensionsMetadata
 from mountainash_rules.engines.filter.engine import ExpressionRulesEngine
 
@@ -104,12 +105,11 @@ class TestEmptyResult:
             table_name="empty_rules",
         )
         metadata = DimensionsMetadata(
+            fields=(ContextField(name="region", data_type="str", wildcard="<NA>"),),
             dimensions=[
                 Dimension(
-                    dimension_name="region",
+                    dimension_name="region", context_field="region",
                     match_strategy=MatchStrategy.EXACT,
-                    data_type=str,
-                    wildcard_values=[None, "<NA>", "<NOT_SET>"],
                 ),
             ]
         )
@@ -237,12 +237,11 @@ class TestCustomExpressions:
             ExpressionRulesEngine(
                 rules=rules,
                 dimension_metadata=DimensionsMetadata(
+                    fields=(ContextField(name="x", data_type="str", wildcard="<NA>"),),
                     dimensions=[
                         Dimension(
-                            dimension_name="x",
+                            dimension_name="x", context_field="x",
                             match_strategy=MatchStrategy.EXACT,
-                            data_type=str,
-                            wildcard_values=[None, "<NA>", "<NOT_SET>"],
                         ),
                     ]
                 ),
@@ -263,12 +262,11 @@ class TestFilterEngineRejectsInvalidSetRules:
         from mountainash_rules.core.constants import MatchStrategy, DataType
 
         return DimensionsMetadata(
+            fields=(ContextField(name="region", data_type="str", wildcard="<NA>"),),
             dimensions=[
                 Dimension(
-                    dimension_name="region",
+                    dimension_name="region", context_field="region",
                     match_strategy=MatchStrategy.SET_MEMBERSHIP,
-                    data_type=DataType.STR,
-                    wildcard_values=[None, "<NA>", "<NOT_SET>"],
                 ),
             ]
         )

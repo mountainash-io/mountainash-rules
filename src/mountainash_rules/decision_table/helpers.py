@@ -12,7 +12,7 @@ def select_scopes(
     metadata: DimensionsMetadata, scopes: t.Sequence[str] | None
 ) -> tuple[str, ...]:
     """Select declared output scopes, preserving the caller's order."""
-    declared = tuple(metadata.outcome_scopes) or ("default",)
+    declared = tuple(dict.fromkeys(output.scope for output in metadata.outputs if output.scope is not None)) or ("default",)
     if scopes is None:
         return declared
     if not isinstance(scopes, (list, tuple)) or any(

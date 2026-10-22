@@ -1,19 +1,15 @@
-"""Tests for serialisable dimension metadata: StrEnums, DataType, YAML."""
-
-import warnings
+"""Tests for dimension types, sentinels, and temporal matching."""
 
 import polars as pl
 import pytest
 
-from mountainash_rules.core.constants import DimensionRole, MatchStrategy
+from mountainash_rules import ContextField
+from mountainash_rules.core.constants import DataType, MatchStrategy
 
 
 class TestStrEnums:
     def test_match_strategy_constructs_from_string(self):
         assert MatchStrategy("range") is MatchStrategy.RANGE
-
-    def test_match_strategy_value_is_stable_string(self):
-        assert MatchStrategy.GREATER_THAN.value == "greater_than"
 
     def test_match_strategy_is_str(self):
         assert isinstance(MatchStrategy.EXACT, str)
@@ -21,14 +17,10 @@ class TestStrEnums:
     def test_context_regex_member_exists(self):
         assert MatchStrategy("context_regex") is MatchStrategy.CONTEXT_REGEX
 
-    def test_dimension_role_constructs_from_string(self):
-        assert DimensionRole("context_key") is DimensionRole.CONTEXT_KEY
-
 
 import datetime
 
 from mountainash_rules.core.constants import (
-    DataType,
     NOT_SET,
     NOT_SET_DATE,
     NOT_SET_NUMERIC,
@@ -81,84 +73,18 @@ class TestSentinelSelection:
 from mountainash_rules.core.dimension import Dimension, DimensionsMetadata
 
 
-class TestDataTypeMigration:
-    def test_enum_accepted_directly(self):
-        d = Dimension(dimension_name="x", data_type=DataType.INT)
-        assert d.data_type is DataType.INT
-
-    def test_string_value_accepted(self):
-        d = Dimension(dimension_name="x", data_type="float")
-        assert d.data_type is DataType.FLOAT
-
-    def test_python_type_accepted_with_deprecation_warning(self):
-        with pytest.warns(DeprecationWarning):
-            d = Dimension(dimension_name="x", data_type=int)
-        assert d.data_type is DataType.INT
-
-    def test_range_accepts_temporal(self):
-        d = Dimension(
-            dimension_name="eff", match_strategy=MatchStrategy.RANGE,
-            data_type=DataType.DATE,
-            range_min_field="eff_from", range_max_field="eff_to",
-        )
-        assert d.data_type is DataType.DATE
-
-    def test_range_rejects_bool(self):
-        with pytest.raises(ValueError, match="range"):
-            Dimension(
-                dimension_name="x", match_strategy=MatchStrategy.RANGE,
-                data_type=DataType.BOOL,
-                range_min_field="a", range_max_field="b",
-            )
-
-
-class TestYamlRoundTrip:
-    def _full_metadata(self):
-        return DimensionsMetadata(dimensions=[
-            Dimension(dimension_name="region", valid_values=["AU", "NZ"]),
-            Dimension(
-                dimension_name="amount", match_strategy=MatchStrategy.RANGE,
-                data_type=DataType.INT,
-                range_min_field="amt_min", range_max_field="amt_max",
-                range_max_inclusive=False,
-            ),
-            Dimension(
-                dimension_name="chan", context_field="channel",
-                rule_field="chan_rule", match_strategy=MatchStrategy.PREFIX,
-            ),
-            Dimension(
-                dimension_name="segment", role="context_key",
-            ),
-        ])
-
-    def test_round_trip_equality(self, tmp_path):
-        md = self._full_metadata()
-        assert DimensionsMetadata.from_yaml(md.to_yaml()) == md
-
-    def test_yaml_contains_string_values_not_ints(self):
-        text = self._full_metadata().to_yaml()
-        assert "range" in text
-        assert "context_key" in text
-
-    def test_file_round_trip(self, tmp_path):
-        md = self._full_metadata()
-        p = md.to_yaml_file(tmp_path / "md.yaml")
-        assert DimensionsMetadata.from_yaml_file(p) == md
-
-
 from mountainash_rules.core.constants import UNKNOWN_DATE
 from mountainash_rules.engines.filter.engine import ExpressionRulesEngine
 
 
 def _effective_dated_metadata():
-    return DimensionsMetadata(dimensions=[
-        Dimension(
-            dimension_name="asof", match_strategy=MatchStrategy.RANGE,
-            data_type=DataType.DATE,
+    return DimensionsMetadata(
+        fields=(ContextField(name="asof", data_type=DataType.DATE),),
+        dimensions=(Dimension(
+            dimension_name="asof", context_field="asof", match_strategy=MatchStrategy.RANGE,
             range_min_field="eff_from", range_max_field="eff_to",
-            wildcard_values=[UNKNOWN_DATE],
-        ),
-    ])
+        ),),
+    )
 
 
 class TestTemporalRange:
@@ -219,13 +145,13 @@ class TestRegexSplit:
     def test_regex_forbids_regex_pattern(self):
         with pytest.raises(ValueError, match="context_regex"):
             Dimension(
-                dimension_name="x", match_strategy=MatchStrategy.REGEX,
+                dimension_name="x", context_field="x", match_strategy=MatchStrategy.REGEX,
                 regex_pattern="^A.*",
             )
 
     def test_context_regex_requires_pattern(self):
         with pytest.raises(ValueError, match="regex_pattern"):
-            Dimension(dimension_name="x", match_strategy=MatchStrategy.CONTEXT_REGEX)
+            Dimension(dimension_name="x", context_field="x", match_strategy=MatchStrategy.CONTEXT_REGEX)
 
     def test_per_row_regex_matches_per_rule(self):
         from mountainash_rules.core.constants import UNKNOWN
@@ -233,10 +159,10 @@ class TestRegexSplit:
             "rule_name": ["au", "nz", "any"],
             "x": ["^AU-", "^NZ-", UNKNOWN],
         })
-        md = DimensionsMetadata(dimensions=[
-            Dimension(dimension_name="x", match_strategy=MatchStrategy.REGEX,
-                      wildcard_values=[UNKNOWN]),
-        ])
+        md = DimensionsMetadata(
+            fields=(ContextField(name="x", data_type=DataType.STR, wildcard=UNKNOWN),),
+            dimensions=(Dimension(dimension_name="x", context_field="x", match_strategy=MatchStrategy.REGEX),),
+        )
         engine = ExpressionRulesEngine(rules=rules, dimension_metadata=md)
         result = engine.evaluate({"x": "AU-1234"})
         assert result.count == 2  # au (match) + any (sentinel wildcard)
@@ -246,10 +172,10 @@ class TestRegexSplit:
 
 class TestBoolDimensions:
     def _md(self):
-        return DimensionsMetadata(dimensions=[
-            Dimension(dimension_name="active", data_type=DataType.BOOL,
-                      wildcard_values=[None]),
-        ])
+        return DimensionsMetadata(
+            fields=(ContextField(name="active", data_type=DataType.BOOL, wildcard=None, wildcard_declared=True),),
+            dimensions=(Dimension(dimension_name="active", context_field="active"),),
+        )
 
     def test_bool_exact_match(self):
         rules = pl.DataFrame({"rule_name": ["on", "off", "any"],
@@ -268,19 +194,3 @@ class TestBoolDimensions:
         assert result.explain("on") == {"active": 0}
 
 
-class TestValidValues:
-    def test_default_is_not_shared(self):
-        a = Dimension(dimension_name="a")
-        b = Dimension(dimension_name="b")
-        a.valid_values.append("X")
-        assert b.valid_values == []
-
-    def test_non_scalar_rejected(self):
-        with pytest.raises(ValueError):
-            Dimension(dimension_name="a", valid_values=[object()])
-
-    def test_serialises(self):
-        md = DimensionsMetadata(dimensions=[
-            Dimension(dimension_name="a", valid_values=["AU", "NZ"]),
-        ])
-        assert DimensionsMetadata.from_yaml(md.to_yaml()) == md

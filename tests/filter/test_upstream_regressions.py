@@ -20,6 +20,7 @@ from mountainash_rules.core.constants import (
     UNKNOWN_NUMERIC,
     MatchStrategy,
 )
+from mountainash_rules import ContextField
 from mountainash_rules.core.dimension import Dimension, DimensionsMetadata
 from tests.conftest import bind_compiler_inputs
 
@@ -37,18 +38,15 @@ class TestNarwhalsDuplicateLiteralInWithColumns:
         """Compiled EXACT + RANGE dim expressions batched in one with_columns."""
         compiler = DimensionCompiler()
         metadata = DimensionsMetadata(
+            fields=(ContextField(name="region", data_type="str", wildcard=UNKNOWN), ContextField(name="amount", data_type="int", wildcard=UNKNOWN_NUMERIC)),
             dimensions=[
                 Dimension(
-                    dimension_name="region",
+                    dimension_name="region", context_field="region",
                     match_strategy=MatchStrategy.EXACT,
-                    data_type=str,
-                    wildcard_values=[None, "<NA>", "<NOT_SET>"],
                 ),
                 Dimension(
-                    dimension_name="amount",
+                    dimension_name="amount", context_field="amount",
                     match_strategy=MatchStrategy.RANGE,
-                    data_type=int,
-                    wildcard_values=[None, -999999999, -999999998],
                     range_min_field="amount_min",
                     range_max_field="amount_max",
                 ),

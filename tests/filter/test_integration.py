@@ -6,6 +6,7 @@ import pytest
 from mountainash.relations import relation
 
 from mountainash_rules.core.constants import UNKNOWN, UNKNOWN_NUMERIC, MatchStrategy
+from mountainash_rules import ContextField
 from mountainash_rules.core.dimension import Dimension, DimensionsMetadata
 from mountainash_rules.engines.filter.engine import ExpressionRulesEngine
 
@@ -40,19 +41,16 @@ class TestPricingCarveOut:
             table_name="pricing",
         )
         metadata = DimensionsMetadata(
+            fields=(ContextField(name="client_region", data_type="str", wildcard=UNKNOWN), ContextField(name="product", data_type="str", wildcard=UNKNOWN)),
             dimensions=[
                 Dimension(
-                    dimension_name="client_region",
+                    dimension_name="client_region", context_field="client_region",
                     match_strategy=MatchStrategy.EXACT,
-                    data_type=str,
-                    wildcard_values=[None, "<NA>", "<NOT_SET>"],
-                ),
+                    ),
                 Dimension(
-                    dimension_name="product",
+                    dimension_name="product", context_field="product",
                     match_strategy=MatchStrategy.EXACT,
-                    data_type=str,
-                    wildcard_values=[None, "<NA>", "<NOT_SET>"],
-                ),
+                    ),
             ]
         )
         return ExpressionRulesEngine(rules=rules, dimension_metadata=metadata)
@@ -119,27 +117,22 @@ class TestEntityPool:
             table_name="pool",
         )
         metadata = DimensionsMetadata(
+            fields=(ContextField(name="region", data_type="str", wildcard=UNKNOWN), ContextField(name="value", data_type="int", wildcard=UNKNOWN_NUMERIC), ContextField(name="code_pattern", data_type="str")),
             dimensions=[
                 Dimension(
-                    dimension_name="region",
+                    dimension_name="region", context_field="region",
                     match_strategy=MatchStrategy.EXACT,
-                    data_type=str,
-                    wildcard_values=[None, "<NA>", "<NOT_SET>"],
-                ),
+                    ),
                 Dimension(
-                    dimension_name="value",
+                    dimension_name="value", context_field="value",
                     match_strategy=MatchStrategy.RANGE,
-                    data_type=int,
-                    wildcard_values=[None, -999999999, -999999998],
-                    range_min_field="value_min",
+                        range_min_field="value_min",
                     range_max_field="value_max",
                 ),
                 Dimension(
-                    dimension_name="code_pattern",
+                    dimension_name="code_pattern", context_field="code_pattern",
                     match_strategy=MatchStrategy.CONTEXT_REGEX,
-                    data_type=str,
-                    wildcard_values=[None, "<NA>", "<NOT_SET>"],
-                    regex_pattern="^T.*",
+                        regex_pattern="^T.*",
                 ),
             ]
         )
@@ -188,13 +181,12 @@ class TestNoMatch:
             table_name="no_match_rules",
         )
         metadata = DimensionsMetadata(
+            fields=(ContextField(name="region", data_type="str", wildcard=UNKNOWN)),
             dimensions=[
                 Dimension(
-                    dimension_name="region",
+                    dimension_name="region", context_field="region",
                     match_strategy=MatchStrategy.EXACT,
-                    data_type=str,
-                    wildcard_values=[None, "<NA>", "<NOT_SET>"],
-                ),
+                    ),
             ]
         )
         engine = ExpressionRulesEngine(rules=rules, dimension_metadata=metadata)
@@ -219,19 +211,16 @@ class TestTieHandling:
             table_name="tie_rules_a",
         )
         metadata = DimensionsMetadata(
+            fields=(ContextField(name="region", data_type="str", wildcard=UNKNOWN), ContextField(name="product", data_type="str", wildcard=UNKNOWN)),
             dimensions=[
                 Dimension(
-                    dimension_name="region",
+                    dimension_name="region", context_field="region",
                     match_strategy=MatchStrategy.EXACT,
-                    data_type=str,
-                    wildcard_values=[None, "<NA>", "<NOT_SET>"],
-                ),
+                    ),
                 Dimension(
-                    dimension_name="product",
+                    dimension_name="product", context_field="product",
                     match_strategy=MatchStrategy.EXACT,
-                    data_type=str,
-                    wildcard_values=[None, "<NA>", "<NOT_SET>"],
-                ),
+                    ),
             ]
         )
         engine = ExpressionRulesEngine(rules=rules, dimension_metadata=metadata)
@@ -249,13 +238,12 @@ class TestTieHandling:
             table_name="tie_rules_b",
         )
         metadata = DimensionsMetadata(
+            fields=(ContextField(name="region", data_type="str", wildcard=UNKNOWN)),
             dimensions=[
                 Dimension(
-                    dimension_name="region",
+                    dimension_name="region", context_field="region",
                     match_strategy=MatchStrategy.EXACT,
-                    data_type=str,
-                    wildcard_values=[None, "<NA>", "<NOT_SET>"],
-                ),
+                    ),
             ]
         )
         engine = ExpressionRulesEngine(rules=rules, dimension_metadata=metadata)
@@ -280,19 +268,16 @@ class TestExplainIntegration:
             table_name="explain_rules",
         )
         metadata = DimensionsMetadata(
+            fields=(ContextField(name="region", data_type="str", wildcard=UNKNOWN), ContextField(name="product", data_type="str", wildcard=UNKNOWN)),
             dimensions=[
                 Dimension(
-                    dimension_name="region",
+                    dimension_name="region", context_field="region",
                     match_strategy=MatchStrategy.EXACT,
-                    data_type=str,
-                    wildcard_values=[None, "<NA>", "<NOT_SET>"],
-                ),
+                    ),
                 Dimension(
-                    dimension_name="product",
+                    dimension_name="product", context_field="product",
                     match_strategy=MatchStrategy.EXACT,
-                    data_type=str,
-                    wildcard_values=[None, "<NA>", "<NOT_SET>"],
-                ),
+                    ),
             ]
         )
         engine = ExpressionRulesEngine(rules=rules, dimension_metadata=metadata)
@@ -325,36 +310,34 @@ def _fraud_rules_data() -> dict:
 
 def _fraud_metadata() -> DimensionsMetadata:
     return DimensionsMetadata(
+        fields=(
+            ContextField(name="merchant_type", data_type="str", wildcard=UNKNOWN),
+            ContextField(name="country", data_type="str", wildcard=UNKNOWN),
+            ContextField(name="amount", data_type="int", wildcard=UNKNOWN_NUMERIC),
+            ContextField(name="code", data_type="str", wildcard=UNKNOWN),
+        ),
         dimensions=[
             Dimension(
-                dimension_name="merchant_type",
+                dimension_name="merchant_type", context_field="merchant_type",
                 match_strategy=MatchStrategy.EXACT,
-                data_type=str,
-                wildcard_values=[None, "<NA>", "<NOT_SET>"],
             ),
             Dimension(
                 dimension_name="country",
                 context_field="country",
                 rule_field="allowed_countries",
                 match_strategy=MatchStrategy.SET_MEMBERSHIP,
-                data_type=str,
-                wildcard_values=[None, "<NA>", "<NOT_SET>"],
             ),
             Dimension(
                 dimension_name="amount",
                 context_field="amount",
                 rule_field="amount_threshold",
-                match_strategy=MatchStrategy.GREATER_THAN,
-                data_type=int,
-                wildcard_values=[None, -999999999, -999999998],
+                match_strategy=MatchStrategy.MIN,
             ),
             Dimension(
                 dimension_name="code",
                 context_field="code",
                 rule_field="code_prefix",
                 match_strategy=MatchStrategy.PREFIX,
-                data_type=str,
-                wildcard_values=[None, "<NA>", "<NOT_SET>"],
             ),
         ]
     )
@@ -362,7 +345,7 @@ def _fraud_metadata() -> DimensionsMetadata:
 
 @pytest.mark.parametrize("list_backend", LIST_CAPABLE_BACKENDS)
 class TestMixedStrategyFraudDetection:
-    """Exercises EXACT, SET_MEMBERSHIP, GREATER_THAN, and PREFIX together.
+    """Exercises EXACT, SET_MEMBERSHIP, MIN, and PREFIX together.
 
     SET_MEMBERSHIP uses mountainash.expressions ``list.t_contains`` with a
     sentinel-aware context needle; SET_EXCLUSION negates that ternary result.

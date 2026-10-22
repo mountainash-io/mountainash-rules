@@ -17,6 +17,7 @@ from mountainash import (
     text_value,
     value_kind,
 )
+from mountainash.core.dtypes import TimestampDtype
 from mountainash.expressions import BaseExpressionAPI
 
 from mountainash_rules.core.constants import BooleanCoercion, DataType
@@ -40,6 +41,7 @@ def context_absence_expression(
     absent = (
         raw.is_null()
         if source_dtype in (MountainashDtype.DATE, MountainashDtype.TIMESTAMP)
+        or isinstance(source_dtype, TimestampDtype)
         else raw.value_kind().eq(ValueKind.ABSENT.value)
     )
     if (
@@ -177,13 +179,15 @@ def context_binding_expressions(
     """Build reusable native payload/presence/provenance and invalid admission."""
     from mountainash_rules.core.compiler import scalar_operand, typed_marker_predicate
 
-    marker = supplied & typed_marker_predicate(raw, source_dtype, dim.wildcard_values)
+    markers = [dim.field.wildcard] if dim.field.wildcard_declared else []
+    marker = supplied & typed_marker_predicate(raw, source_dtype, markers)
     absent = (
         context_absence_expression(raw, source_dtype, dim.data_type)
         if strict_concrete
         else (
             raw.is_null()
             if source_dtype in (MountainashDtype.DATE, MountainashDtype.TIMESTAMP)
+            or isinstance(source_dtype, TimestampDtype)
             else raw.value_kind().eq(ValueKind.ABSENT.value)
         )
     )
@@ -192,7 +196,7 @@ def context_binding_expressions(
     if dim.data_type is DataType.DECIMAL:
         assert dim.rounding is not None
         operand = decimal_operand(
-            raw, source_dtype, dim.numeric_dtype, dim.rounding, inactive=~present
+            raw, source_dtype, dim.decimal_dtype, dim.rounding, inactive=~present
         )
         payload, invalid = operand.value, operand.invalid
     elif dim.data_type is DataType.BOOL:
@@ -224,6 +228,8 @@ def context_binding_expressions(
             .otherwise(raw)
             .cast(dim.data_type.python_type)
         )
+    if dim.data_type is DataType.DATETIME:
+        payload = payload.dt.truncate(f"1{dim.field.datetime_unit}")
     origin = (
         ma.when(~supplied)
         .then("omitted")
@@ -278,6 +284,7 @@ def bind_context_columns(
     boolean_coercion: BooleanCoercion = BooleanCoercion.NONE,
 ) -> t.Any:
     """Filter admission convenience around reusable context binding expressions."""
+    schema = rel.schema if values is None else {}
     columns = []
     invalid = {}
     for dim in dimensions:
@@ -285,7 +292,7 @@ def bind_context_columns(
             field = dim.resolved_context_field
             supplied = field in rel.columns
             raw = ma.col(field) if supplied else ma.lit(None)
-            dtype = rel.schema.get(field)
+            dtype = schema.get(field)
         else:
             supplied = dim.dimension_name in values
             value = values.get(dim.dimension_name)
@@ -296,11 +303,7 @@ def bind_context_columns(
             else:
                 raw, dtype = exact_literal(value), literal_dtype(value)
         bindings, failure = context_binding_expressions(
-            dim,
-            raw,
-            dtype,
-            ma.lit(supplied),
-            boolean_coercion,
+            dim, raw, dtype, ma.lit(supplied), boolean_coercion
         )
         columns.extend(bindings)
         invalid[dim.resolved_context_field + ":" + dim.dimension_name] = failure

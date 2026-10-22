@@ -6,6 +6,7 @@ import typing as t
 
 import mountainash.expressions as ma
 from mountainash import DecimalDtype, MountainashDtype
+from mountainash.core.dtypes import dtype_family
 from mountainash.expressions import BaseExpressionAPI
 
 from mountainash_rules.core.constants import DataType, MatchStrategy
@@ -97,7 +98,7 @@ def rule_flag_state(
     """Mapped flags are authoritative only when their authoring is consistent."""
     if field is None:
         return marker, ma.lit(False)
-    if field not in rel.columns or rel.schema[field] is not MountainashDtype.BOOL:
+    if field not in rel.columns or dtype_family(rel.schema[field]) is not MountainashDtype.BOOL:
         raise ValueError(f"Rule flag {field!r} must be an existing Boolean column")
     flag = ma.col(field)
     return flag.fill_null(False), flag.is_null() | ((~flag).fill_null(False) & marker)
@@ -110,15 +111,12 @@ def scalar_operand(
     inactive: BaseExpressionAPI,
 ) -> tuple[BaseExpressionAPI, BaseExpressionAPI]:
     """Admit the original scalar domain and provide an unused typed payload."""
+    source_dtype = dtype_family(source_dtype)
     if dim.data_type is DataType.DECIMAL:
-        assert dim.numeric_dtype is not None and dim.rounding is not None
-        operand = decimal_operand(
-            raw, source_dtype, dim.numeric_dtype, dim.rounding, inactive=inactive
-        )
+        assert dim.decimal_dtype is not None and dim.rounding is not None
+        operand = decimal_operand(raw, source_dtype, dim.decimal_dtype, dim.rounding, inactive=inactive)
         return operand.value, operand.invalid
     if source_dtype not in _SCALAR_DTYPES[dim.data_type]:
-        # Never ask the backend to compare or cast an unused incompatible value.
-        # Null here is physical storage only; explicit state controls semantics.
         return ma.lit(None).cast(dim.data_type.python_type), ~inactive
     invalid = ~inactive & raw.is_null()
     if dim.data_type is DataType.INT and source_dtype is MountainashDtype.U64:
@@ -138,36 +136,28 @@ def rule_binding_expressions(
     """Return native bindings/admission so callers can retain invalid source rows."""
     columns = []
     invalid = {}
-    schema = rel.schema
+    schema = rel.collect_schema(allow_execution=False)
     for dim in dimensions:
         if dim.match_strategy is MatchStrategy.CONTEXT_REGEX:
             continue
-        operands: list[tuple[str | None, str | None, str | None]]
         if dim.match_strategy is MatchStrategy.RANGE:
-            operands = [
-                ("min", dim.range_min_field, dim.range_min_unbounded_field),
-                ("max", dim.range_max_field, dim.range_max_unbounded_field),
-            ]
+            operands = [("min", dim.range_min_field), ("max", dim.range_max_field)]
         else:
-            operands = [(None, dim.resolved_rule_field, dim.rule_wildcard_field)]
-        for endpoint, field, flag_field in operands:
+            operands = [(None, dim.resolved_rule_field)]
+        for endpoint, field in operands:
             if field is None or field not in schema:
                 raise ValueError(f"Missing rule operand {field!r}")
             raw = ma.col(field)
             source_dtype = schema[field]
-            is_set = dim.match_strategy in (
-                MatchStrategy.SET_MEMBERSHIP,
-                MatchStrategy.SET_EXCLUSION,
-            )
+            is_set = dim.match_strategy in (MatchStrategy.SET_MEMBERSHIP, MatchStrategy.SET_EXCLUSION)
             if is_set:
                 marker, malformed, payload = set_state(rel, dim, field)
             else:
-                marker = typed_marker_predicate(raw, source_dtype, dim.wildcard_values)
+                markers = [dim.field.wildcard] if dim.field.wildcard_declared else []
+                marker = typed_marker_predicate(raw, source_dtype, markers)
                 malformed = raw.is_null()
-            wildcard, conflict = rule_flag_state(rel, flag_field, marker)
-            invalid[f"{dim.dimension_name}:{field}:authoring"] = conflict | (
-                ~wildcard & malformed
-            )
+            wildcard = marker
+            invalid[f"{dim.dimension_name}:{field}:authoring"] = ~wildcard & malformed
             if not is_set:
                 payload, failure = scalar_operand(dim, raw, source_dtype, wildcard)
                 invalid[f"{dim.dimension_name}:{field}"] = failure
@@ -202,16 +192,6 @@ class DimensionCompiler:
     ) -> BaseExpressionAPI:
         _, state_name = rule_binding_names(dim, endpoint)
         missing = ~ma.col(f"__ctx_present_{dim.dimension_name}")
-        if dim.match_strategy is MatchStrategy.EXACT_KEY:
-            return (
-                ma.when(ma.col(state_name))
-                .then(0)
-                .when(missing)
-                .then(-1)
-                .when(matched)
-                .then(1)
-                .otherwise(-1)
-            )
         return (
             ma.when(ma.col(state_name) | missing)
             .then(0)
@@ -241,28 +221,20 @@ class DimensionCompiler:
         if dim.match_strategy is MatchStrategy.RANGE:
             lower = ma.col(rule_binding_names(dim, "min")[0])
             upper = ma.col(rule_binding_names(dim, "max")[0])
-            lo = self._ternary(
-                dim,
-                lower.le(context) if dim.range_min_inclusive else lower.lt(context),
-                "min",
-            )
-            hi = self._ternary(
-                dim,
-                upper.ge(context) if dim.range_max_inclusive else upper.gt(context),
-                "max",
-            )
+            lo = self._ternary(dim, lower.le(context), "min")
+            hi = self._ternary(dim, upper.ge(context), "max")
             return ma.when(lo.le(hi)).then(lo).otherwise(hi)
         value_name, _ = rule_binding_names(dim)
         rule = ma.col(value_name)
         match dim.match_strategy:
-            case MatchStrategy.EXACT | MatchStrategy.EXACT_KEY:
+            case MatchStrategy.EXACT:
                 matched = rule.eq(context)
             case MatchStrategy.NOT_EQUAL:
                 matched = rule.ne(context)
-            case MatchStrategy.GREATER_THAN:
-                matched = context.gt(rule)
-            case MatchStrategy.LESS_THAN:
-                matched = context.lt(rule)
+            case MatchStrategy.MIN:
+                matched = context.ge(rule)
+            case MatchStrategy.MAX:
+                matched = context.le(rule)
             case MatchStrategy.PREFIX:
                 matched = context.str.starts_with(rule)
             case MatchStrategy.SUFFIX:

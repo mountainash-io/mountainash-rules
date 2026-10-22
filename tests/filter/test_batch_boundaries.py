@@ -6,7 +6,7 @@ import pytest
 import mountainash.expressions as ma
 
 from mountainash_rules import (
-    DataType,
+    ContextField,
     Dimension,
     DimensionsMetadata,
     ExpressionRulesEngine,
@@ -17,14 +17,14 @@ from mountainash_rules import (
 
 def _metadata():
     return DimensionsMetadata(
-        dimensions=[
-            Dimension(
-                dimension_name="region", wildcard_values=[None, "<NA>", "<NOT_SET>"]
-            ),
-            Dimension(
-                dimension_name="channel", wildcard_values=[None, "<NA>", "<NOT_SET>"]
-            ),
-        ],
+        fields=(
+            ContextField(name="region", data_type="str", wildcard="<NA>"),
+            ContextField(name="channel", data_type="str", wildcard="<NA>"),
+        ),
+        dimensions=(
+            Dimension(dimension_name="region", context_field="region"),
+            Dimension(dimension_name="channel", context_field="channel"),
+        ),
         priority_field="price",
         output_fields=["price"],
     )
@@ -184,8 +184,8 @@ def test_projection_order_and_omission_control_scoring(operation):
     assert subset.survivors["__specificity"].to_list() == [1, 1]
 
 
-def test_filter_rejects_empty_metadata_without_restricting_shared_serialization():
-    metadata = DimensionsMetadata.from_yaml(DimensionsMetadata(dimensions=[]).to_yaml())
+def test_filter_rejects_empty_metadata_without_restricting_metadata_tables():
+    metadata = DimensionsMetadata(fields=(), dimensions=())
     rules = _rules()
     with pytest.raises(ValueError, match="dimension"):
         ExpressionRulesEngine(rules, dimension_metadata=metadata)
@@ -227,15 +227,10 @@ def _boolean_boundary_engine(rules):
     return ExpressionRulesEngine(
         rules,
         dimension_metadata=DimensionsMetadata(
-            dimensions=[
-                Dimension(
-                    dimension_name="value",
-                    rule_field="flag",
-                    context_field="active",
-                    data_type=DataType.BOOL,
-                    wildcard_values=[None],
-                )
-            ]
+            fields=(ContextField(name="active", data_type=DataType.BOOL, wildcard=None, wildcard_declared=True),),
+            dimensions=(Dimension(
+                dimension_name="value", context_field="active", rule_field="flag"
+            ),),
         ),
         boolean_coercion=_boolean_coercion_none(),
     )

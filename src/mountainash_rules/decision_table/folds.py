@@ -36,5 +36,5 @@ def fold_contributions(
             folded = value.max()
         else:  # pragma: no cover - Aggregate validates its enum
             raise ValueError(f"Unsupported aggregate operation {aggregate.operation!r}")
-        expressions.append(folded.alias(aggregate.resolved_output_name))
+        expressions.append(folded.alias(aggregate.output_name))
     return relation.group_by(*keys).agg(*expressions)
