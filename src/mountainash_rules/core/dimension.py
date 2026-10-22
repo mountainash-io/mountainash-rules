@@ -10,7 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, field_validator,
 from mountainash import DecimalDtype
 
 from mountainash_rules.core.aggregate import Aggregate
-from mountainash_rules.core.constants import DataType, HitPolicy, MatchStrategy, PYTHON_TO_DATATYPE
+from mountainash_rules.core.constants import DataType, MatchStrategy, PYTHON_TO_DATATYPE
 
 
 class ContextField(BaseModel):
@@ -146,9 +146,6 @@ class DimensionsMetadata(BaseModel):
     uuid_column: str | None = None
     scope_column: str | None = None
     outputs: tuple[Aggregate, ...] = ()
-    hit_policy: t.Any = HitPolicy.COLLECT
-    priority_field: str | None = None
-    output_fields: tuple[str, ...] = ()
 
     @model_validator(mode="after")
     def _bind_fields(self):
