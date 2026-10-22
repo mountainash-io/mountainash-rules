@@ -62,6 +62,8 @@ def bit_lookup(like: Relation | None = None) -> Relation:
         .with_columns(ma.col(BIT_VALUE).row_number().over(order_by=BIT_VALUE).alias("__rn"))
     )
     first = ranked.group_by().agg(ma.col("__rn").min().alias("__rn0"))
+    # One list column is exploded because a two-column explode zips on Polars but cross-joins
+    # on Ibis (mountainash backlog #367); bit_index is recovered as the value's rank.
     # row_number starts at 0 or 1 by backend (mountainash backlog #365): subtract the minimum.
     return ranked.cross_join(first).select(
         (ma.col("__rn") - ma.col("__rn0")).cast("int64").alias(BIT_INDEX),

@@ -128,19 +128,10 @@ class FiniteCompletionOracle:
         key = (scope, tuple(sorted((k, _freeze(v)) for k, v in context.items())))
         if key not in self._survivors:
             found = relation(
-                self._engine(scope).evaluate(context=self._with_unknown_outcomes(context)).survivors
+                self._engine(scope).evaluate(context=context).survivors
             ).to_dicts()
             self._survivors[key] = frozenset(row[self.uuid_column] for row in found)
         return self._survivors[key]
-
-    def _with_unknown_outcomes(self, context: dict) -> dict:
-        """An omitted OUTCOME field is the unknown outcome 0 (the engine reads an unset one as a mismatch)."""
-        unknown = {
-            dimension.context_field: 0
-            for dimension in self.metadata.dimensions
-            if dimension.match_strategy is MatchStrategy.OUTCOME and dimension.context_field not in context
-        }
-        return {**context, **unknown}
 
     def completions(self, context: dict, grid: t.Mapping[str, t.Sequence] | None = None) -> list[dict]:
         """``context`` with every omitted field of ``grid`` supplied from it, in every way."""

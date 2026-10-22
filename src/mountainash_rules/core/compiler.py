@@ -264,7 +264,12 @@ class DimensionCompiler:
         value_name, state_name = rule_binding_names(dim)
         rule = ma.col(value_name)
         if dim.match_strategy is MatchStrategy.OUTCOME:
-            return self._outcome_ternary(rule, context)
+            # A context outcome that is omitted (or null) is unknown, never a mismatch.
+            return (
+                ma.when(~ma.col(f"__ctx_present_{dim.dimension_name}"))
+                .then(0)
+                .otherwise(self._outcome_ternary(rule, context))
+            )
         if dim.match_strategy is MatchStrategy.TRUTHY:
             rule_outcome = ma.when(ma.col(state_name)).then(0).otherwise(
                 self._truthy_outcome(dim, rule)

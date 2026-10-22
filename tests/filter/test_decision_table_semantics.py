@@ -69,6 +69,33 @@ def test_outcome_scores_every_rule_context_cell(backend_name, context_outcome):
 
 
 @pytest.mark.parametrize("backend_name", BACKENDS)
+@pytest.mark.parametrize("context", [{}, {"outcome": None}], ids=["omitted", "null"])
+def test_an_omitted_or_null_outcome_context_is_unknown_for_every_rule(backend_name, context):
+    engine = ExpressionRulesEngine(
+        build_backend_df(
+            backend_name,
+            {"rule_name": ["r-1", "r0", "r1"], "required": [-1, 0, 1]},
+            table_name="omitted_outcome_rules",
+        ),
+        DimensionsMetadata(
+            fields=(ContextField(name="outcome", data_type=DataType.INT),),
+            dimensions=(
+                Dimension(
+                    dimension_name="outcome",
+                    context_field="outcome",
+                    rule_field="required",
+                    match_strategy=MatchStrategy.OUTCOME,
+                ),
+            ),
+        ),
+    )
+
+    assert _scores(engine, context, "outcome") == [("r-1", 0, 0), ("r0", 0, 0), ("r1", 0, 0)]
+    survivors = _rows(engine.evaluate(context).survivors, "rule_name")
+    assert survivors == [("r-1",), ("r0",), ("r1",)]
+
+
+@pytest.mark.parametrize("backend_name", BACKENDS)
 @pytest.mark.parametrize(
     "context,expected",
     [

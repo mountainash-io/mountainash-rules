@@ -557,8 +557,8 @@ def entry_ids(cells: Relation, keys: t.Sequence[str]) -> Relation:
     A window honours only its first ``order_by`` key (mountainash backlog #364), so each key
     column becomes the fixed-width text of its value's dense rank, and the cell is ranked by
     the concatenation of those texts.  The windows are one plan over ``cells`` (no joins back
-    to it).  Dense ranks start at 0 or 1 and place nulls differently by backend, so each
-    rank is rebased on the column's minimum and nulls are read as 0 (they sort first on every
+    to it).  Dense ranks start at 0 or 1 and place nulls differently by backend (mountainash
+    backlog #368), so each rank is rebased on the column's minimum and nulls are read as 0 (they sort first on every
     backend).  Cells are distinct on ``keys``, so the key is a strict order.
     """
     ranked = cells.with_columns(
