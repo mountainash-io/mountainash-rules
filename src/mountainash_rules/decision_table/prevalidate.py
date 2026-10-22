@@ -363,6 +363,15 @@ def _signature_columns_available(schema: dict[str, Any], metadata: DimensionsMet
             dim,
         ):
             return False
+        if (
+            dim.match_strategy not in _SET | {MatchStrategy.PRESENCE, MatchStrategy.OUTCOME}
+            and any(
+                not _schema_type_compatible(schema[field], dim.field, False)
+                and "null" not in str(dtype_family(schema[field])).lower()
+                for field in fields
+            )
+        ):
+            return False
     return True
 
 
