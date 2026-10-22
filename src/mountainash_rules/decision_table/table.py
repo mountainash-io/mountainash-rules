@@ -22,6 +22,9 @@ from mountainash_rules.core.dimension import ContextField, Dimension, Dimensions
 from mountainash_rules.decision_table.fields import NEGATION_STRATEGIES, family_for
 from mountainash_rules.decision_table.stages import POSITIVE_STRATEGIES
 
+if t.TYPE_CHECKING:
+    from mountainash_rules.decision_table.apply import MatchOperation
+
 OUTCOME_STRATEGIES = frozenset({MatchStrategy.TRUTHY, MatchStrategy.PRESENCE, MatchStrategy.OUTCOME})
 OUTCOME_FIELD_PREFIX = "outcome__"
 
@@ -112,6 +115,18 @@ class DecisionTable:
     def entry_metadata(self) -> DimensionsMetadata:
         """How the engine reads ``entries``: ``derive_entry_metadata`` of the saved parts."""
         return derive_entry_metadata(self.source_metadata, self.pattern_conditions)
+
+    def match(
+        self, contexts: Relation | t.Sequence[t.Any], scopes: t.Sequence[str] | None = None
+    ) -> MatchOperation:
+        """Match ``contexts`` against the entries of ``scopes`` (all when omitted), deferred.
+
+        ``contexts`` is a list of protocol objects or a conforming Relation with a ``request_id``
+        column; neither is validated.  ``MatchOperation.fetch`` runs the match.
+        """
+        from mountainash_rules.decision_table.apply import MatchOperation
+
+        return MatchOperation(self, contexts, scopes)
 
 
 __all__: t.Sequence[str] = ("DecisionTable", "derive_entry_metadata", "outcome_field")

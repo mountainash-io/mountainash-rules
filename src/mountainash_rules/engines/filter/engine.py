@@ -172,7 +172,7 @@ class ExpressionRulesEngine:
         return policy, info
 
     def _normalized_rules(self, active_dims: list[str]) -> t.Any:
-        rel = relation(self._rules)
+        rel = self._rules if isinstance(self._rules, Relation) else relation(self._rules)
         self._check_reserved(rel, "Rules")
         if self._metadata is not None:
             rel = normalize_rule_relation(
