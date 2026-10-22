@@ -200,6 +200,40 @@ class DimensionCompiler:
             .otherwise(-1)
         )
 
+    @staticmethod
+    def _outcome_ternary(
+        rule: BaseExpressionAPI, context: BaseExpressionAPI
+    ) -> BaseExpressionAPI:
+        """Compare required and observed ternary outcomes."""
+        return (
+            ma.when(rule.eq(ma.lit(0)) | context.eq(ma.lit(0)))
+            .then(0)
+            .when(rule.eq(context))
+            .then(1)
+            .otherwise(-1)
+        )
+
+    @staticmethod
+    def _truthy_outcome(
+        dim: Dimension,
+        value: BaseExpressionAPI,
+        *,
+        context: bool = False,
+    ) -> BaseExpressionAPI:
+        """Map declared source values to their ternary truthy outcomes."""
+        outcome = ma.lit(0)
+        for mapped_value, mapped_outcome in dim.field.truthy.items():
+            if mapped_value is None:
+                if not context:
+                    continue
+                matches = ma.col(
+                    f"__ctx_origin_{dim.dimension_name}"
+                ).eq("null")
+            else:
+                matches = value.eq(exact_literal(mapped_value)).fill_null(False)
+            outcome = ma.when(matches).then(mapped_outcome).otherwise(outcome)
+        return outcome
+
     def compile_dimension(self, dim: Dimension) -> BaseExpressionAPI:
         context_name = f"__ctx_value_{dim.dimension_name}"
         context = ma.col(context_name)
@@ -227,15 +261,16 @@ class DimensionCompiler:
             lo = self._ternary(dim, lower.le(context), "min")
             hi = self._ternary(dim, upper.ge(context), "max")
             return ma.when(lo.le(hi)).then(lo).otherwise(hi)
-        value_name, _ = rule_binding_names(dim)
+        value_name, state_name = rule_binding_names(dim)
         rule = ma.col(value_name)
         if dim.match_strategy is MatchStrategy.OUTCOME:
-            return (
-                ma.when(rule.eq(ma.lit(0)) | context.eq(ma.lit(0)))
-                .then(0)
-                .when(rule.eq(context))
-                .then(1)
-                .otherwise(-1)
+            return self._outcome_ternary(rule, context)
+        if dim.match_strategy is MatchStrategy.TRUTHY:
+            rule_outcome = ma.when(ma.col(state_name)).then(0).otherwise(
+                self._truthy_outcome(dim, rule)
+            )
+            return self._outcome_ternary(
+                rule_outcome, self._truthy_outcome(dim, context, context=True)
             )
         match dim.match_strategy:
             case MatchStrategy.EXACT:

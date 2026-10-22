@@ -29,6 +29,7 @@ class MatchStrategy(StrEnum):
     CONTEXT_REGEX = "context_regex"
     SET_MEMBERSHIP = "set_membership"
     SET_EXCLUSION = "set_exclusion"
+    TRUTHY = "truthy"
     OUTCOME = "outcome"
     PRESENCE = "presence"
 
