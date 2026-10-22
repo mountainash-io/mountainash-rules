@@ -61,6 +61,11 @@ class TestStrategyIsolation:
                 "per-row REGEX patterns are not yet produced by the benchmark "
                 "rule generator (literal patterns are benchmarked as CONTEXT_REGEX)"
             )
+        if strategy in (MatchStrategy.PRESENCE, MatchStrategy.TRUTHY, MatchStrategy.OUTCOME):
+            pytest.skip(
+                f"{strategy.name} rule/context columns are not yet produced by the "
+                "benchmark rule generator"
+            )
 
         rules_dict, metadata = generate_rules(
             rule_count=STRATEGY_RULE_COUNT,
