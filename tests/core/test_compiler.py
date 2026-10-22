@@ -8,7 +8,6 @@ from mountainash_rules.core.compiler import DimensionCompiler
 from mountainash_rules import ContextField
 from mountainash_rules.core.constants import (
     CTX_PREFIX,
-    NOT_SET,
     UNKNOWN,
     UNKNOWN_NUMERIC,
     MatchStrategy,

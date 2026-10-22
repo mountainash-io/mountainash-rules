@@ -71,8 +71,6 @@ def selection_info_from_metadata(
     output_fields: tuple[str, ...] = (),
 ) -> SelectionInfo:
     fields: list[str] = []
-    md_priority: str | None = None
-    md_outputs: tuple[str, ...] = ()
     if metadata is not None:
         for d in metadata.dimensions:
             if d.match_strategy == MatchStrategy.RANGE:
@@ -84,14 +82,12 @@ def selection_info_from_metadata(
                 )
             elif d.match_strategy != MatchStrategy.CONTEXT_REGEX:
                 fields.append(d.resolved_rule_field)
-        md_priority = None
-        md_outputs = ()
     effective_priority = priority_field
     validate_priority_field(effective_priority)
     return SelectionInfo(
         dimension_rule_fields=tuple(fields),
         priority_field=effective_priority,
-        output_fields=tuple(output_fields) if output_fields is not None else md_outputs,
+        output_fields=tuple(output_fields or ()),
         truncated=False,
         observability=observability,
         metadata_backed=metadata is not None,

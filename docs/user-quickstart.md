@@ -1,9 +1,11 @@
 # User Quickstart: mountainash-rules
 
-This guide covers the two evaluation paths in `mountainash_rules`:
+`mountainash_rules` matches a context (a customer, a loan application, a transaction) against rules that are rows of a table. Everything is imported from the package root. It offers two engines:
 
-- **ExpressionRulesEngine** — direct context evaluation against a rules DataFrame.
-- **AccumulatorEngine** — the current source-gated exact-cell prototype; not yet the required backend-executed construction product.
+- **`ExpressionRulesEngine`** — the filter engine. It evaluates a context, or a batch of contexts, against a rules table in one vectorised pass and returns the surviving rules ranked by specificity.
+- **`DecisionTable`** — a rules table *physicalised* into non-overlapping entries so that matching is a lookup. `prevalidate` checks the authored rules, `build_decision_table` builds the table, `DecisionTable.match` returns every matching entry, and the table saves, loads and verifies. `check_context_schema` and `validate_contexts` check contexts before matching.
+
+Polars and Ibis-DuckDB are the supported and tested backends ([backend support](backend-support.md)).
 
 ---
 
@@ -15,89 +17,89 @@ cd mountainash-utils-rules
 hatch env create
 ```
 
-Resolve the configured `mountainash` dependency at delivered merge `b9c0ab4ab6380712c89f27c8d083f658278d4593` or a descendant, together with `mountainash-data` and `mountainash-settings` (see `hatch.toml`). This is a delivered dependency revision requirement, not an implied release version or checkout layout.
+Resolve the configured `mountainash` dependency at delivered merge `b9c0ab4ab6380712c89f27c8d083f658278d4593` or a descendant, together with `mountainash-files`, `mountainash-transport`, `mountainash-data` and `mountainash-settings` (see `hatch.toml`). This is a delivered dependency revision requirement, not an implied release version or checkout layout.
+
+---
+
+## The rule model
+
+A rules table has one row per rule. Three declarations describe how a row is read; together they are `DimensionsMetadata`:
+
+| Declaration | Purpose |
+|---|---|
+| `ContextField` | A typed value the context supplies: `name`, `data_type`, and for DECIMAL `precision`/`scale`/`rounding`, for DATETIME `datetime_unit`/`timezone`. It also declares the field's one **wildcard marker** and, optionally, a **truthy** mapping. |
+| `Dimension` | One way of comparing a context field with a rule column: `dimension_name`, `context_field`, `match_strategy`, and the rule column (`rule_field`, default the dimension name; `range_min_field`/`range_max_field` for RANGE; `regex_pattern` for CONTEXT_REGEX). Several dimensions can read one field. |
+| `DimensionsMetadata(fields=..., dimensions=...)` | The fields and dimensions. For a DecisionTable it also names `uuid_column`, `scope_column` and the `outputs`. |
+
+### Ternary matching
+
+Each dimension scores a rule **1** (match), **0** (unknown or don't-care) or **-1** (non-match). A rule survives when no dimension scores -1; its **specificity** is the number of dimensions that scored 1.
+
+### Wildcards and null
+
+- A rule cell that places no constraint holds the field's declared **wildcard marker**, for example `ContextField(name="region", data_type=DataType.STR, wildcard="*")`. A field has exactly one marker and every dimension on the field uses it. A wildcard scores 0.
+- **Null is never an implicit wildcard.** To make null the marker, declare it: `ContextField(name="spend", data_type=DataType.INT, wildcard_declared=True)` (`wildcard` stays `None`). An unconstrained cell is then null, and for RANGE a marker endpoint is unbounded on that side. Without that declaration a null in a rule cell is invalid data, which `prevalidate` reports.
+- A context value that is missing (an omitted key, an unset pydantic field, an absent column) or null scores 0 on a value dimension: the rule is possible, and earns no specificity.
+- `PRESENCE` is the dimension that asks "is this field null?". Rule cells hold `IS_NULL`, `IS_NOT_NULL` or the wildcard; a context scores 1 for an explicit null, -1 for a supplied value, 0 when the field is missing.
+- `UNKNOWN`, `UNKNOWN_NUMERIC`, `UNKNOWN_DATE`, `UNKNOWN_DATETIME` and `unknown_sentinel_for(data_type)` are conventional marker values you may declare as a field's `wildcard`. They have no meaning unless a field declares them.
 
 ---
 
 ## Part 1: ExpressionRulesEngine
 
-### Concepts
-
-Rules live in a DataFrame. Each row is a rule; each column is either a rule name, a dimension column, or metadata. The engine evaluates a **context** (a dict or Pydantic model) against every rule in one vectorised pass and returns surviving rules ranked by **specificity** — how many dimensions the rule constrains explicitly.
-
-Wildcards are explicitly declared per dimension with `wildcard_values`, or mapped
-from Boolean rule-state columns. There are no implicit sentinel values:
-`"<NA>"`, `"<NOT_SET>"`, `-999999999` and `-999999998` are concrete values unless
-that dimension declares them as markers. Marker comparison preserves the original
-type and occurs before numeric conversion.
-A wildcard dimension scores 0 (unknown) in ternary logic. The rule still survives, but ranks lower than a rule that explicitly matched that dimension.
-
----
-
-### Step 1 — Define your rules DataFrame
+### Step 1 — Define the rules
 
 ```python
 import polars as pl
 
 rules = pl.DataFrame({
-    "rule_name":  ["premium_au",  "standard_au", "global_fallback"],
-    "region":     ["AU",          "AU",           "<NA>"],
-    "tier":       ["premium",     "<NA>",         "<NA>"],
-    "spend_min":  [1000,          0,              -999999999],
-    "spend_max":  [9999,          9999,           -999999999],
+    "rule_name":  ["premium_au", "standard_au", "global_fallback"],
+    "region":     ["AU",         "AU",          "*"],
+    "tier":       ["premium",    "*",           "*"],
+    "spend_min":  pl.Series([1000, 0, None], dtype=pl.Int64),
+    "spend_max":  pl.Series([9999, 9999, None], dtype=pl.Int64),
+    "discount":   [15, 10, 0],
 })
 ```
 
-This example declares `"<NA>"` and `-999999999` as markers below. Without those declarations, they remain ordinary rule values.
+`"*"` is the wildcard of the two string fields and null is the wildcard of `spend`, as declared next. The rules may equally be a Mountainash `Relation` or an Ibis table on DuckDB.
 
----
-
-### Step 2 — Declare dimensions
+### Step 2 — Declare fields and dimensions
 
 ```python
-from mountainash_rules import Dimension, DimensionsMetadata, MatchStrategy
+from mountainash_rules import (
+    ContextField, DataType, Dimension, DimensionsMetadata, MatchStrategy,
+)
 
-metadata = DimensionsMetadata(dimensions=[
-    Dimension(
-        dimension_name="region",
-        match_strategy=MatchStrategy.EXACT,
-        data_type=str,
-        wildcard_values=["<NA>"],
+metadata = DimensionsMetadata(
+    fields=(
+        ContextField(name="region", data_type=DataType.STR, wildcard="*"),
+        ContextField(name="tier", data_type=DataType.STR, wildcard="*"),
+        ContextField(name="spend", data_type=DataType.INT, wildcard_declared=True),
     ),
-    Dimension(
-        dimension_name="tier",
-        match_strategy=MatchStrategy.EXACT,
-        data_type=str,
-        wildcard_values=["<NA>"],
+    dimensions=(
+        Dimension(dimension_name="region", context_field="region"),
+        Dimension(dimension_name="tier", context_field="tier"),
+        Dimension(
+            dimension_name="spend", context_field="spend",
+            match_strategy=MatchStrategy.RANGE,
+            range_min_field="spend_min", range_max_field="spend_max",
+        ),
     ),
-    Dimension(
-        dimension_name="spend",
-        match_strategy=MatchStrategy.RANGE,
-        data_type=int,
-        wildcard_values=[-999999999],
-        range_min_field="spend_min",
-        range_max_field="spend_max",
-    ),
-])
+)
 ```
 
-`dimension_name` is the field name on the context object. For RANGE, `range_min_field` and `range_max_field` are the column names in the rules DataFrame.
-
----
+`match_strategy` defaults to `EXACT`. `rule_field` defaults to the dimension name, so `region` reads the `region` column.
 
 ### Step 3 — Build the engine
 
 ```python
 from mountainash_rules import ExpressionRulesEngine
 
-engine = ExpressionRulesEngine(rules=rules, dimension_metadata=metadata)
+engine = ExpressionRulesEngine(rules, metadata)
 ```
 
-Expressions are compiled once here. Build the engine at startup and reuse it for every evaluation.
-
-Provide exactly one nonempty definition: `dimension_metadata` or `dimension_expressions`. Passing both is invalid even when the expressions dict is empty. Zero dimensions are rejected by the filter constructor, not by shared `DimensionsMetadata`; zero rules with a valid typed schema are supported.
-
----
+Expressions are compiled once, here; build the engine at startup and reuse it. Provide exactly one of `dimension_metadata` or `dimension_expressions` (hand-built Mountainash expressions, one per dimension). The engine does not validate the rules or the contexts: rules are evaluated as given and backend errors propagate as the backend's own errors. Run `prevalidate` (Part 2) on rules and `validate_contexts` on contexts when you want those checks.
 
 ### Step 4 — Evaluate a context
 
@@ -109,675 +111,437 @@ class CustomerContext(BaseModel):
     tier: str
     spend: int
 
-context = CustomerContext(region="AU", tier="premium", spend=1500)
-result = engine.evaluate(context)
+result = engine.evaluate(CustomerContext(region="AU", tier="premium", spend=1500))
+result = engine.evaluate({"region": "AU", "tier": "premium", "spend": 1500})  # a dict works too
 ```
 
-`evaluate()` also accepts a plain dict:
+For a pydantic model, only fields that were set are supplied; unset fields are missing (unknown).
+
+### Step 5 — Read the result
+
+`evaluate()` returns a `RuleResult`; its frames are in the backend of your rules.
 
 ```python
-result = engine.evaluate({"region": "AU", "tier": "premium", "spend": 1500})
+print(result.survivors.select("rule_name", "__specificity", "__rank"))
+# premium_au       3  1
+# standard_au      2  2
+# global_fallback  0  3
+
+result.best_match          # the top-ranked row: premium_au
+result.count               # 3
+result.explain("standard_au")   # {"region": 1, "tier": 0, "spend": 1}
+result.at_least(2)         # premium_au and standard_au
 ```
+
+`survivors` also carries the rule's own columns, `__rule_index`, and one `__t_<dimension>` ternary column per dimension (switch off with `include_observability=False`). The default `COLLECT` policy orders by specificity, highest first. `__rank` is 1-based and assigned before caller filters.
+
+To see why a rule did not survive, `engine.explain(context)` scores every rule without filtering:
+
+```python
+engine.explain({"region": "AU", "spend": 5}).frame.select(
+    "rule_name", "__t_region", "__t_tier", "__t_spend", "__survived", "__specificity"
+)
+# premium_au       1  0  -1  false  1
+# standard_au      1  0   1  true   2
+# global_fallback  0  0   0  true   0
+```
+
+### Missing and null context values
+
+```python
+result = engine.evaluate({"region": "AU", "spend": 1500})   # no tier
+result.survivors.select("rule_name", "__specificity").rows()
+# [("premium_au", 2), ("standard_au", 2), ("global_fallback", 0)]
+```
+
+`premium_au` stays possible because the missing `tier` scores 0, but it earns no specificity for that dimension. An explicit `None` behaves the same on a value dimension. A PRESENCE dimension tells the two apart (the worked example from the explicit don't-care principle, with its own rules and metadata):
+
+```python
+null_rules = pl.DataFrame({
+    "rule_name":       ["R1", "R2", "R3"],
+    "region":          ["EU", "*", "*"],
+    "region_presence": ["*", "IS_NULL", "IS_NOT_NULL"],
+    "vip":             [None, None, True],
+})
+null_metadata = DimensionsMetadata(
+    fields=(
+        ContextField(name="region", data_type=DataType.STR, wildcard="*"),
+        ContextField(name="vip", data_type=DataType.BOOL, wildcard_declared=True),
+    ),
+    dimensions=(
+        Dimension(dimension_name="region", context_field="region"),
+        Dimension(dimension_name="region_presence", context_field="region",
+                  match_strategy=MatchStrategy.PRESENCE),
+        Dimension(dimension_name="vip", context_field="vip"),
+    ),
+)
+null_engine = ExpressionRulesEngine(null_rules, null_metadata)
+
+for context in ({"region": "EU", "vip": True}, {"region": None, "vip": False}, {}):
+    print(context, null_engine.evaluate(context).survivors.select("rule_name", "__specificity").rows())
+# {'region': 'EU', 'vip': True}   [('R3', 2), ('R1', 1)]
+# {'region': None, 'vip': False}  [('R2', 1), ('R1', 0)]
+# {}                              [('R1', 0), ('R2', 0), ('R3', 0)]
+```
+
+An explicit null scores 1 for `IS_NULL` (R2) and 0 for the value dimension (R1 stays possible); an empty context leaves every dimension unknown.
+
+### Limits and projections
+
+```python
+context = {"region": "AU", "tier": "premium", "spend": 1500}   # with the Step 1-3 engine
+result = engine.evaluate(context, top_n=1)               # at most one row, after min_specificity
+result = engine.evaluate(context, min_specificity=2)     # rows with at least two hard matches
+result = engine.evaluate(context, dimensions=["region", "spend"])   # evaluate a subset
+```
+
+`top_n` and `min_specificity` must be non-negative integers or `None`. `dimensions=None` selects all dimensions in configured order; an unknown name raises `KeyError` and a malformed list `ValueError`.
+
+### Hit policies
+
+A hit policy chooses among the survivors. It is a **call-time** argument of `evaluate`, `evaluate_batch` and `RuleResult.select`, as are `priority_field` and `output_fields`:
+
+| Policy | Result |
+|---|---|
+| `collect` (default) | every survivor, in specificity order |
+| `rule_order` | every survivor, in rule order |
+| `first` | one survivor; rule order wins |
+| `priority` | one survivor; the highest `priority_field` wins |
+| `unique` | at most one survivor, else `HitPolicyViolationError` |
+| `any` | survivors must agree on `output_fields`, else `HitPolicyViolationError`; one is returned |
+
+```python
+engine.evaluate(context, hit_policy="first")
+engine.evaluate(context, hit_policy="priority", priority_field="discount")
+engine.evaluate(context, hit_policy="unique")        # raises HitPolicyViolationError: 3 survive
+engine.evaluate(context, hit_policy="any", output_fields=["discount"])   # raises: outputs disagree
+```
+
+`output_fields` names the rule columns that `any` compares; it is not a projection. Policies accept `HitPolicy` members or their lowercase string values.
+
+`result.select(policy, priority_field=None, output_fields=None)` re-applies a policy to an existing result, provided the result still holds its complete candidate basis: unfiltered `collect`, `rule_order` and successful `unique` results can be re-selected; a result created with `top_n`, `min_specificity`, `first`, `priority` or `any` cannot. Re-evaluate instead.
+
+### Batches
+
+```python
+contexts = pl.DataFrame({
+    "cid":    ["B", "A", "C"],
+    "region": ["AU", "NZ", "AU"],
+    "tier":   ["premium", "standard", None],
+    "spend":  [1500, 50, None],
+})
+batch = engine.evaluate_batch(contexts, context_id_field="cid", chunk_size=2)
+
+batch.survivors            # __context_id, rule columns, __rank, __specificity, ...
+batch.matched_context_ids  # ["A", "B", "C"]
+batch.unmatched_context_ids(contexts)   # []
+batch.best_matches         # top-ranked row per context
+batch.counts_per_context
+batch.for_context("B")     # a RuleResult for one context
+```
+
+`evaluate_batch(contexts, *, context_id_field=None, dimensions=None, hit_policy=None, priority_field=None, output_fields=None, top_n_per_context=None, min_specificity=None, include_observability=True, chunk_size=None)` scores every context against every rule in one pass and ranks per context. `chunk_size` bounds the cross-product per chunk. Without `context_id_field`, ids are the zero-based row positions. The engine does no identity checking: ids you supply must be non-null and unique, which `validate_contexts` checks for a `request_id` column. A one-row batch agrees with the single-context `evaluate`.
+
+### Rules as a Relation, and other backends
+
+`ExpressionRulesEngine` accepts a Mountainash `Relation`. Contexts in Polars, on the same connection, or on another connection are joined to Relation rules on the rules' side (`execute_on`), so the rules never leave their backend. See [backend support](backend-support.md).
 
 ---
 
-### Step 5 — Read results
+## Match strategies
 
-`evaluate()` returns a `RuleResult`. All accessors return a DataFrame in the same backend as your input `rules`.
+| Strategy | Rule value | Scores 1 when |
+|---|---|---|
+| `exact`, `not_equal` | a value of the field's type | the context equals / differs from it |
+| `range` | two columns, `range_min_field`, `range_max_field` | the context lies in the closed interval; a marker endpoint is unbounded |
+| `min`, `max` | a threshold | the context is `>=` / `<=` it (inclusive) |
+| `prefix`, `suffix`, `contains` | a string | the context string starts with, ends with or contains it |
+| `regex` | a per-rule pattern column | the context string matches the rule's pattern |
+| `context_regex` | `regex_pattern` on the Dimension | the context string matches that one pattern; 0 for a missing context value |
+| `set_membership`, `set_exclusion` | a list column | the context is in / not in the list; null elements in a list are invalid |
+| `truthy` | a value mapped through the field's `truthy` mapping | the rule's and the context's mapped outcomes are equal and non-zero |
+| `presence` | `IS_NULL`, `IS_NOT_NULL` or the wildcard | see the null model above |
+| `outcome` | an int8 ternary (-1, 0, 1) | the context supplies an already computed ternary and the two are equal and non-zero |
 
-#### `survivors` — retained matching rules in policy order
-
-```python
-print(result.survivors)
-# shape: (3, ...)
-# rule_name        region  tier       spend_min  spend_max  __specificity  __rank  __t_region  __t_tier  __t_spend
-# premium_au       AU      premium    1000       9999       3              1       1           1         1
-# standard_au      AU      <NA>       0          9999       2              2       1           0         1
-# global_fallback  <NA>    <NA>       -999999999 -999999999 0              3       0           0         0
-```
-
-The `__specificity` column counts dimensions that produced a hard match (ternary 1). The default COLLECT policy sorts by specificity descending; other policies can use source order or salience. `__rank` is 1-based and assigned before caller filters. Filtering does not rewrite it: rank 2 can be the first retained row.
-
-The `__t_<dimension>` columns show per-dimension ternary results: **1** = match, **0** = wildcard/unknown, **-1** = non-match. They are included by default (`include_observability=True`).
-
-#### `best_match` — the retained survivor with minimum policy rank
+`min`, `max` and `range` need a numeric or temporal field. FLOAT fields cannot be ordered; use DECIMAL. The string strategies need a STR field. Patterns use Mountainash `str.regex_contains`.
 
 ```python
-print(result.best_match)
-# Returns the top-1 row: premium_au
+# A truthy field: its mapping gives each value (including None) a ternary outcome.
+ContextField(name="vip", data_type=DataType.STR, truthy={"yes": 1, "no": -1, None: -1})
+Dimension(dimension_name="vip", context_field="vip", rule_field="required",
+          match_strategy=MatchStrategy.TRUTHY)
 ```
 
-#### `count` — how many rules survived
-
-```python
-print(result.count)  # 3
-```
-
-#### `explain(rule_name)` — per-dimension breakdown for one rule
-
-```python
-print(result.explain("premium_au"))
-# {"region": 1, "tier": 1, "spend": 1}
-
-print(result.explain("standard_au"))
-# {"region": 1, "tier": 0, "spend": 1}
-
-print(result.explain("global_fallback"))
-# {"region": 0, "tier": 0, "spend": 0}
-```
-
-Returns `{dimension_name: ternary_value}` where 1 = match, 0 = wildcard, -1 = non-match.
-
-#### `at_least(n)` — only rules that explicitly matched at least n dimensions
-
-```python
-print(result.at_least(2))
-# Returns premium_au (specificity 3) and standard_au (specificity 2)
-# global_fallback (specificity 0) is excluded
-```
-
----
-
-### Filtering to top results
-
-```python
-# Return only the top 1 survivor
-result = engine.evaluate(context, top_n=1)
-
-# Return only rules that matched at least 2 dimensions
-result = engine.evaluate(context, min_specificity=2)
-
-# Evaluate only a subset of dimensions
-result = engine.evaluate(context, dimensions=["region", "spend"])
-```
-
-Top-N selects positions among the rows remaining after `min_specificity`, not rows whose original rank is <= N. The same rule applies to batch `top_n_per_context`. Policy assertions run first, so a conflicting UNIQUE/ANY request still raises even with top-N zero or a threshold that would remove every match.
-
-Limits and `min_specificity` must be nonnegative Python integers or `None`; Booleans, floats, strings, and negative values raise `ValueError`. A threshold greater than the active dimension count is valid.
-
-Across `evaluate`, `evaluate_batch`, and `explain`, `dimensions=None` selects all dimensions in configured order. Explicit selections must be nonempty lists of distinct configured names. Empty lists, duplicate names, and malformed selections raise `ValueError`; a well-formed unknown name raises `KeyError`. Projection order is retained in `active_dimensions` and ternary presentation without adding a ranking tiebreak.
-
-### Policies, output schemas and re-selection
-
-Accepts `HitPolicy` members and exact lowercase strings (`collect`, `unique`, `first`, `priority`, `any`, `rule_order`). Evaluation `None` inherits metadata/default COLLECT; `select(None)` and invalid spellings/types raise `ValueError`. PRIORITY requires an existing priority field and rejects null priorities on survivors before limits; null priorities on nonmatching rules do not invalidate the request.
-
-For metadata-backed engines, configure `DimensionsMetadata.output_fields`. A nonempty declaration must contain unique, nonempty names present in the original rule schema, even when rules are empty or ANY is not the default policy. An empty metadata list infers outputs, excluding all physical condition columns (including inactive dimensions and both RANGE bounds), effective priority, rule name and internal columns. CONTEXT_REGEX has no physical condition column. Explicit declarations can intentionally include otherwise excluded rule fields.
-
-The expressions-only constructor has no metadata authority to infer outputs. Supply the keyword-only `output_fields` argument when constructing it to use ANY:
-
-```python
-engine = ExpressionRulesEngine(
-    rules,
-    dimension_expressions=expressions,
-    output_fields=["price"],
-)
-```
-
-Do not supply that argument together with metadata; configure metadata's field instead. Empty explicit constructor lists are invalid. There is no per-call output-schema override. Without an explicit expressions-only schema, ANY raises even on empty input. With metadata but no inferred outputs, zero/one survivor per context is accepted; multiple survivors require a nonempty output schema.
-
-ANY compares complete output tuples: `(None, "yes")` agrees with itself but differs from `(None, "no")` or `(10, "yes")`. Single violations expose full survivor rows through `HitPolicyViolationError.offending`; batch violations expose every offending `__context_id` and `__n` (survivor count for UNIQUE, distinct tuple count for ANY). Chunked violations aggregate all offending chunks. Messages contain bounded examples, not the full diagnostic payload.
-
-Re-selection requires a complete candidate basis:
-
-- Unfiltered COLLECT, RULE_ORDER and successful UNIQUE results can call `select()`.
-- Any supplied top-N/min-specificity, including a no-op limit or `min_specificity=0`, prevents later `select()`.
-- FIRST, PRIORITY and ANY also prevent later `select()`, even on empty/singleton results.
-- `select()` itself preserves this restriction across chains; batch `for_context()` inherits it, including after chunking. Re-evaluate to recover candidates rather than selecting from an incomplete result.
-
-This is the conservative meaning of exported `SelectionInfo.truncated`: possibly incomplete, not necessarily fewer rows. `SelectionInfo.metadata_backed` defaults to False; manual callers relying on inference must opt in with complete condition metadata. Engine-created results provide it automatically. Priority overrides are retained immutably and update inferred output exclusions; explicit output declarations remain unchanged.
-
-`include_observability=False` removes ternaries only; rank, specificity and source identity remain available for sound selection. Batch best-match accessors use minimum remaining rank and `for_context()` returns rank-ordered rows. Filter batch output is ordered by canonical context ID then rank, which need not be caller input order.
-
-### Batch identity and empty inputs
-
-```python
-contexts = pl.DataFrame({"cid": ["B", "A"], "region": ["AU", "NZ"]})
-batch = engine.evaluate_batch(contexts, context_id_field="cid", chunk_size=1)
-batch.survivors["__context_id"]  # correlation values from cid, sorted with rank
-batch.context_id_field         # "cid": source mapping, not an echoed column
-batch.unmatched_context_ids(contexts)
-```
-
-Supplied IDs must be non-null and globally unique in an existing input column. Validation precedes backend conversion, partition routing and chunking, so duplicates across partitions or chunks are still invalid. IDs are not coerced to strings. Result rows use canonical `__context_id`; a rules-side column named `cid` remains ordinary rule data, not an echo from contexts.
-
-With `context_id_field=None`, IDs are assigned once as original zero-based row positions. Unmatched rows leave gaps; partitioning and chunking do not restart or renumber IDs. Unordered database inputs have no portable replay order—provide explicit IDs for persistent correlation.
-
-`matched_context_ids` and `counts_per_context` describe retained rows, not all pre-filter candidates. Top-N zero can make every submitted ID unmatched by these accessors. `unmatched_context_ids(original_contexts)` returns absent IDs sorted; it validates the recorded custom source field rather than guessing positions if that field is missing. For generated IDs, preserve original row order and count. The result does not store the full request universe, so `for_context()` returns the same typed empty view for unmatched and never-submitted IDs, with unchanged re-selection restrictions. The original unmodified input works for unmatched access after partitioned evaluation as well.
-
-
-`chunk_size` must be `None` or a positive Python integer, excluding Boolean values. Typed empty contexts and typed empty rules produce the normal typed empty result, with requested observability, identity metadata, and conservative completeness state. Empty chunked input follows normal evaluation once; it does not fabricate a row or untyped schema. Empty input still validates policy configuration and reserved fields.
-
-Chunking bounds the cross-product work per chunk, not total memory: prepared input, result frames, and grouped violation diagnostics are still accumulated. All offending UNIQUE/ANY contexts are reported before an exception is raised; no partial successful result is returned.
-
-Boolean batch admission validates every submitted Boolean field before policy evaluation, chunk work, or accumulator index routing. An invalid concrete Boolean anywhere in the batch raises `ValueError` naming its field and active policy; it is not hidden by an earlier UNIQUE/ANY violation, no routing partition, empty rules, or a zero-result limit.
-
----
-
-### Excluding observability columns
-
-If you don't need the `__t_*` columns in the output:
-
-```python
-result = engine.evaluate(context, include_observability=False)
-# survivors will not contain __t_region, __t_tier, __t_spend
-```
-
----
-
-### Context with missing fields
-
-Metadata-backed evaluation keeps availability separate from the typed comparison value. An absent field, null or configured context marker is unavailable; it is not replaced by a NOT_SET sentinel. Original omission and supplied-null provenance remain distinct. Single, batch and chunked evaluation share these semantics. In a relation, a present column is supplied for every row, including its null cells.
-
-Boolean dimensions default to `BooleanCoercion.NONE` (`0`), admitting only semantic `True`/`False` plus absence. The standalone filter supports these additional input domains:
-
-| Flag | Value | Additional accepted values |
-|------|-------|----------------------------|
-| `BINARY_NUMBERS` | `1` | Finite numeric `0` and `1` only |
-| `BOOLEAN_TEXT` | `2` | ASCII-whitespace-trimmed, ASCII-case `true`/`false`, and text `1`/`0` |
-| `NUMERIC_TRUTHINESS` | `4` | Any finite number (`0` false; all other values true) |
-
-Pass actual `BooleanCoercion` members to the filter, combining flags with `|`; non-enum settings and unknown bits raise `ValueError`. The accumulator accepts only the actual `BooleanCoercion.NONE` member and rejects all other policies at construction:
-
-```python
-from mountainash_rules import (
-    AccumulatorEngine, BooleanCoercion, ExpressionRulesEngine,
-)
-
-boolean_inputs = (
-    BooleanCoercion.BOOLEAN_TEXT | BooleanCoercion.NUMERIC_TRUTHINESS
-)
-filter_engine = ExpressionRulesEngine(
-    rules=rules, dimension_metadata=metadata, boolean_coercion=boolean_inputs,
-)
-accumulator_engine = AccumulatorEngine(
-    dimension_metadata=metadata, boolean_coercion=BooleanCoercion.NONE,
-    limits=limits,  # application-owned ExactLimits
-)
-```
-
-Classification never chains through another domain: numeric `2` is true with `NUMERIC_TRUTHINESS`, but text `"2"` is invalid even when text and truthiness are combined. Missing/`None` is absence; concrete numeric `0` requires a numeric flag, and empty text is invalid under every policy. Any other invalid concrete value raises `ValueError` naming the context field and policy. Backend capability errors remain explicit rather than falling back to another backend.
-
-Semantic scalars include Python `bool` and NumPy `bool_`. Numeric flags admit Python/NumPy integers and floats, not Decimal, complex, bytes, or custom truthiness objects. Recognized backend nulls remain absent; concrete NaN/infinity is invalid. Rules sees values after Pydantic `model_dump` or dataframe ingestion and cannot recover types already changed by the caller.
-
-Ordinary comparisons and string predicates treat unavailable context as ternary 0: the rule may survive, but that dimension earns no specificity. A former sentinel spelling is concrete when it is not declared as a marker, so it can match an ordinary string predicate.
-
-Strict strategies differ: `CONTEXT_REGEX` rejects unavailable context with -1, even when its pattern would match `<NOT_SET>` or empty text. A concrete empty string is tested against the pattern normally. `EXACT_KEY` accepts only authored rule-side wildcards when context is unavailable; concrete partition keys do not match missing input. Unknown in another dimension never rescues a known non-match.
-
-The expressions-only constructor has no datatype metadata. It binds missing inputs as null under the existing `__ctx_<name>` column names; custom expressions own their interpretation.
-
-```python
-# Context missing 'tier' — this ordinary EXACT dimension cannot eliminate rules
-result = engine.evaluate({"region": "AU", "spend": 1500})
-# tier dimension scores 0 for all rules; premium_au and standard_au still survive
-# because their tier wildcard is also 0 — no rule is eliminated on this dimension
-```
-
----
-
-## Match Strategies
-
-### Numeric strategies
-
-```python
-# RANGE: context value within [min, max] (inclusive by default)
-Dimension(
-    dimension_name="age",
-    match_strategy=MatchStrategy.RANGE,
-    data_type=int,
-    range_min_field="age_min",
-    range_max_field="age_max",
-)
-
-# GREATER_THAN: context value > rule threshold
-Dimension(
-    dimension_name="score",
-    match_strategy=MatchStrategy.GREATER_THAN,
-    data_type=int,
-)
-
-# LESS_THAN: context value < rule threshold
-Dimension(
-    dimension_name="risk",
-    match_strategy=MatchStrategy.LESS_THAN,
-    data_type=int,
-)
-```
-
-#### Replacement authoring metadata
-
-Fractional ordered declarations use `data_type="decimal"`, a Mountainash
-`DecimalDtype(precision, scale)` and explicit `rounding="half_to_even"` or
-`"half_away_from_zero"`. Ordered precision is 1–16 digits; scale is 0–precision.
-FLOAT RANGE/GREATER_THAN/LESS_THAN declarations are no longer accepted.
-The replacement also rejects FLOAT intervals and ordered field comparisons
-(`lt`, `le`, `gt`, `ge`) in both source domains and provider domains, including
-inside inactive Boolean branches. FLOAT categorical exact/set matching and
-domain `eq`/`ne` comparisons remain supported. Integer and temporal ordering
-remain supported.
-
-Metadata JSON/YAML preserves `numeric_dtype` as the Mountainash numeric descriptor
-(`kind`, `precision`, `scale`). A dimension's `wildcard_values` retains original
-scalar types: no declarations (`[]`) differs from an explicit null marker
-(`[None]`), and decimal markers are not rounded during serialization. Optional
-rule mappings are `rule_wildcard_field`, `range_min_unbounded_field` and
-`range_max_unbounded_field`.
-
-Mapped Boolean flags are authoritative: `True` makes the associated payload
-unused, including an otherwise invalid payload. Flags must be nonnull Booleans;
-`False` combined with a declared marker is inconsistent authoring. RANGE endpoints
-have independent unbounded flags. With no flags, declared markers determine state.
-
-The filter converts admitted Decimal values once before comparing them. Native
-integers, finite Decimal values representable with at most 38 source digits, and
-plain ASCII decimal text are accepted; floating-point values, exponent notation,
-whitespace and overflow are rejected.
+### Field types
+
+| `DataType` | Notes |
+|---|---|
+| `STR`, `INT`, `FLOAT`, `BOOL` | FLOAT supports categorical matching, not ordering |
+| `DECIMAL` | requires `precision` (1–16), `scale` and `rounding` (`"half_to_even"` or `"half_away_from_zero"`); context values are reduced to the declared scale with that rounding when bound |
+| `DATE`, `DATETIME` | DATETIME requires `datetime_unit` (`"s"`, `"ms"`, `"us"`) and `timezone` (`"naive"`, `"utc"`); context values are truncated to the unit when bound |
 
 ```python
 from decimal import Decimal
-from mountainash import DecimalDtype
 
 decimal_rules = pl.DataFrame({
     "rule": ["singleton", "upper"],
-    "lo": ["0.004", "0.010"],
-    "hi": ["0.004", "0.020"],
+    "lo": [Decimal("0.004"), Decimal("0.010")],
+    "hi": [Decimal("0.004"), Decimal("0.020")],
 })
-decimal_metadata = DimensionsMetadata(dimensions=[Dimension(
-    dimension_name="amount", context_field="quoted",
-    match_strategy="range", data_type="decimal",
-    numeric_dtype=DecimalDtype(10, 3), rounding="half_to_even",
-    range_min_field="lo", range_max_field="hi",
-)])
+decimal_metadata = DimensionsMetadata(
+    fields=(ContextField(name="quoted", data_type=DataType.DECIMAL,
+                         precision=10, scale=3, rounding="half_to_even",
+                         wildcard_declared=True),),
+    dimensions=(Dimension(dimension_name="amount", context_field="quoted",
+                          match_strategy=MatchStrategy.RANGE,
+                          range_min_field="lo", range_max_field="hi"),),
+)
 decimal_engine = ExpressionRulesEngine(decimal_rules, decimal_metadata)
-decimal_engine.evaluate({"quoted": Decimal("0.00449")})  # singleton
-decimal_engine.evaluate({"quoted": Decimal("0.00451")})  # no survivor
-decimal_engine.evaluate({"quoted": Decimal("0.01950")})  # upper
+decimal_engine.evaluate({"quoted": Decimal("0.00449")})   # "singleton": rounds to 0.004
+decimal_engine.evaluate({"quoted": Decimal("0.00451")})   # rounds to 0.005: no survivor
 ```
 
-Replacement metadata also carries `uuid_field`, `partition_field`,
-`outcome_scope_field`/`outcome_scopes`, default-scope `aggregates`, source `domain`,
-`context_domains`, predicate-1 `domain_nodes`, retained `context_contracts` and
-optional `policy`. Declared scope names and resolved output names are dot-free
-for the `<scope>.<output>` wide view. The new aggregate model remains internal
-until the coordinated public cutover; existing public `Aggregate` is still the
-old accumulator model.
+### Boolean inputs
 
-For DECIMAL SUM/MIN/MAX, final `output_numeric_dtype`/`output_rounding` conversion
-is optional. Omitting it retains the native aggregate dtype and value; supplying
-it converts the final result once. PRODUCT requires an explicit final output
-dtype and rounding policy.
-
-The shared filter Decimal/state paths have executable Polars and Ibis-DuckDB
-coverage. The replacement accumulator remains internal; its public package-root
-cutover is separate. Per-row REGEX on the filter uses public expression-valued
-`str.regex_contains`, qualified on Polars and Ibis-DuckDB against Mountainash
-commit `4a4991253fb629a2b9ede26f6f1cef12755109ef` (including the #364 repair).
-There is no Rules-native backend escape.
-
-Internal replacement snapshots support ordinary unchecked publication and
-save/load of stored geometry, contributions and outputs. Saving requires a new
-directory; it does not replace an existing version. Native table attachment
-captures independent relations rather than rebuilding or refolding sources.
-Validation remains a separate, explicitly invoked operation. Attachment accepts
-optional existing evidence; omitted report contents remain unavailable historical
-references, not passing reports or a reason to reject ordinary attachment.
-Geometry tables use resolved physical context fields, including aliases; retained
-source-state tables use logical dimension names. Both full-source and
-contribution-only updates return a new artifact and leave the parent unchanged.
-
-Source checks report a missing configured identity column once, even on an empty
-source. Checks requiring that identity return `not_run`, not `passed`; independent
-checks still run. Findings do not invent subject identities. A missing configured
-scope also prevents scoped contribution checks. Strict publication requires
-complete reports and therefore rejects `not_run`; unchecked publication and
-save/load preserve the factual report.
-
-Internal direct and stored resolution share original-value admission, explicit
-profile selection and observation masks. Stored resolution reads retained outputs
-rather than refolding sources. Requested cell identities retain the original
-source-domain region, not its intersection with a provider query: two disconnected
-components can agree on outputs and contributors while cell identity is uncertain.
-The correlated-domain connected-component case recorded in the replacement backlog
-remains deferred; the replacement is not ready for public cutover.
-
-For incomplete direct requests, resolution branches on feasible source applicability
-under the selected provider and source domains. It retains no-match alternatives
-and avoids expanding independent wildcard-only dimensions. Cell provenance is a
-separate intersection against the full cells for the feasible contributor sets;
-one contributor-set witness does not prove a unique connected cell.
-Construction also removes regions infeasible under the joint source domain:
-with `D: x < y`, a rule restricted to `(x=2, y=1)` contributes no stored cell
-or output, while `(x=0, y=1)` remains eligible.
-
-Accumulator request admission preserves original scalar types: for example, text
-`"17"` is not an INT and `True` is not an INT. This does not change the standalone
-filter's existing non-Boolean, non-Decimal coercion behavior.
-INT concrete values must fit the signed 64-bit universe, including when supplied
-in an unsigned native column. FLOAT infinities are invalid. Native floating-point
-NaN is unavailable context for INT/FLOAT fields, but remains invalid for DECIMAL;
-it is not a concrete value that a mask can make valid.
-DATETIME admission distinguishes naive and aware values before matching: a concrete
-awareness mismatch is an invalid request, not an implicit timezone assumption.
-Aware scalar/range values normalize to UTC without stripping timezone information.
-UTC source-overlap witnesses now pass on both targets with the Mountainash #369
-timestamp precision repair at the qualified commit above. Automatic per-element
-timezone conversion for non-UTC aware DATETIME rule sets is deferred; supply
-UTC-normalized aware datetime lists instead. This niche requirement no longer
-gates Plan 1. Ordinary set matching and scalar/range datetime support remain in
-scope. No backend escape or timezone-stripping conversion is provided.
-
-
-### String strategies
+A BOOL field reads actual booleans. `BooleanCoercion` widens the original values the engine reads as true or false; combine flags with `|` and pass them to the constructor:
 
 ```python
-# PREFIX: context value starts with rule value
-Dimension(
-    dimension_name="product_code",
-    match_strategy=MatchStrategy.PREFIX,
-    data_type=str,
-)
+from mountainash_rules import BooleanCoercion
 
-# SUFFIX: context value ends with rule value
-Dimension(
-    dimension_name="email",
-    match_strategy=MatchStrategy.SUFFIX,
-    data_type=str,
-)
-
-# CONTAINS: rule value appears anywhere in context value
-Dimension(
-    dimension_name="description",
-    match_strategy=MatchStrategy.CONTAINS,
-    data_type=str,
-)
-
-# CONTEXT_REGEX: context value matches a fixed pattern defined on the dimension
-# The pattern is metadata-level — all rules share the same pattern.
-Dimension(
-    dimension_name="sku",
-    match_strategy=MatchStrategy.CONTEXT_REGEX,
-    data_type=str,
-    regex_pattern=r"^[A-Z]{3}-\d{4}$",
+engine = ExpressionRulesEngine(
+    rules, metadata,
+    boolean_coercion=BooleanCoercion.BOOLEAN_TEXT | BooleanCoercion.BINARY_NUMBERS,
 )
 ```
 
-`CONTEXT_REGEX` is a global context validator, not a per-rule pattern. `REGEX` instead reads each rule's pattern column and currently uses the documented Polars-native fallback.
+| Flag | Additional values read as Boolean |
+|---|---|
+| `BINARY_NUMBERS` | numeric `0` and `1` |
+| `BOOLEAN_TEXT` | `"true"`/`"false"` in any ASCII case, `"1"`, `"0"` |
+| `NUMERIC_TRUTHINESS` | any finite number (0 false, others true) |
 
-### NOT_EQUAL
-
-```python
-# Context value must differ from rule value
-Dimension(
-    dimension_name="status",
-    match_strategy=MatchStrategy.NOT_EQUAL,
-    data_type=str,
-)
-```
-
-A rule with `status = "blocked"` will match any context where `status != "blocked"`.
-
-### SET_MEMBERSHIP and SET_EXCLUSION
-
-Rules can declare a list column:
-
-```python
-rules = pl.DataFrame({
-    "rule_name":     ["allowed_regions", "blocked_countries"],
-    "region_list":   [["AU", "NZ", "SG"], ["US", "CN"]],
-})
-
-# SET_MEMBERSHIP: context value is in the rule's list
-Dimension(
-    dimension_name="region",
-    match_strategy=MatchStrategy.SET_MEMBERSHIP,
-    data_type=str,
-    rule_field="region_list",
-)
-
-# SET_EXCLUSION: context value is NOT in the rule's list
-Dimension(
-    dimension_name="country",
-    match_strategy=MatchStrategy.SET_EXCLUSION,
-    data_type=str,
-    rule_field="blocked_countries",
-)
-```
-
-An empty list is concrete: membership matches nothing and exclusion excludes
-nothing. A singleton declared marker represents a wildcard; a mixed marker/value
-list is invalid unless a mapped wildcard flag makes the payload unused.
-
-> **Backend note:** SET_MEMBERSHIP and SET_EXCLUSION use mountainash's native list membership expressions with separate availability state. Use Polars or Ibis-DuckDB for engine evaluation. Pandas/Narwhals reject column-valued needles, SQLite has no list column type, and Ibis-Polars cannot execute engine row indexing. See [backend support](../README.md#backend-support).
+A value that is not read as Boolean is unknown (0); the engine does not reject it. Use `validate_contexts` to check the data you pass in.
 
 ---
 
-## Column name remapping
+## Part 2: DecisionTable
 
-By default, `dimension_name` is used as both the context field name and the rule column name. Use `context_field` and `rule_field` to remap:
+A `DecisionTable` serves rules with five layers, each with its own input and output:
 
-```python
-# Context has 'customer_region'; rules have 'geo'
-Dimension(
-    dimension_name="region",
-    context_field="customer_region",
-    rule_field="geo",
-    match_strategy=MatchStrategy.EXACT,
-    data_type=str,
-)
-```
+| # | Layer | Entry point |
+|---|---|---|
+| 1 | Prevalidation | `prevalidate(rules, metadata) -> ValidatedRules` |
+| 2 | Construction | `build_decision_table(validated) -> DecisionTable` |
+| 3 | Post-validation | deferred; not provided |
+| 4 | Application | `DecisionTable.match(contexts, scopes=None).fetch() -> MatchResult` |
+| 5 | Business post-aggregation | your own code over `MatchResult.matches` |
 
----
+Context validation (`check_context_schema`, `validate_contexts`) runs before layer 4. Layers are separate calls; `match` does not validate.
 
-## Backend selection
+### Example: a home-loan rate
 
-For **ExpressionRulesEngine**, pass a supported DataFrame as `rules`; filter results retain that backend. This statement does not apply to exact accumulator construction in Part 2.
+Three **scopes** produce three outputs: `base_rate`, `advertised_margin`, `discretionary_margin`. Each rule belongs to one scope, has a UUID, and contributes a value to its scope's output.
 
 ```python
-# Polars (recommended)
-engine = ExpressionRulesEngine(rules=pl.DataFrame(...), dimension_metadata=metadata)
+from decimal import Decimal
 
-# Pandas via Narwhals
-import narwhals as nw
-import pandas as pd
-engine = ExpressionRulesEngine(rules=nw.from_native(pd.DataFrame(...)), dimension_metadata=metadata)
+import polars as pl
+from mountainash.relations import relation
 
-# Ibis (DuckDB)
-import ibis
-con = ibis.duckdb.connect()
-table = con.create_table("rules", pl.DataFrame(...).to_pandas())
-engine = ExpressionRulesEngine(rules=table, dimension_metadata=metadata)
-```
-
----
-
-## Part 2: Exact AccumulatorEngine
-
-Use `AccumulatorEngine` for an authorized, contract-bound exact-cell artifact.
-It is not the legacy combination/ranking API: source material is analyzed and
-gated before build, and an application resolves a named contract/profile
-against the resulting immutable lattice.
-
-**Architectural qualification (2026-09-19):** This documents the implemented
-prototype API, not an accepted product execution design. Exact build extracts
-dataframe inputs into Python rows, constructs geometry and folds locally, and
-replays/checks semantic evidence across several stages before wrapping results
-as relations. It does not execute construction on the input backend followed by
-an independent post-validation pass. See the
-[architectural review](https://github.com/mountainash-io/mountainash-central/blob/main/04.planning/mountainash-rules/superpowers/reviews/2026-09-19-backend-execution-architectural-review.md).
-Keep using the required current gates when exercising this prototype; no
-replacement API or weaker validation contract has been approved.
-
-### Inputs the application must own
-
-There are no default resource ceilings. Create and retain an `ExactLimits`
-instance appropriate to the application, then pass it to the engine and every
-analysis, approval-attachment, snapshot, or binding operation. The source
-workflow also needs the application's:
-
-- native source rows with a stable UUID in the declared `source_id_field`;
-- `DimensionsMetadata`, including its `ContextContract` declarations;
-- complete native `Aggregate` declarations (`output_name`, `data_type`, and
-  `numeric_semantics="numeric-1"` together);
-- `ruleset_id`, source-ID field, compilation domain, domains, predicate and
-  language envelopes, routing, and `ValidationPolicy`.
-
-`analyze_sources()` accepts those inputs explicitly. It returns a
-`ValidationBundle` containing findings and a complete source report; it does
-not make an approval decision.
-
-### Authorize the current source material
-
-The following is a runnable handoff once `source_inputs` is the application's
-complete dictionary of the inputs above, `rows` is its current native source
-material, and `limits` is its chosen `ExactLimits`. It deliberately does not
-invent records, limits, policy, reviewer identity, trust, or a successful
-analysis.
-
-```python
 from mountainash_rules import (
-    analyze_sources,
-    attach_warning_approvals,
-    validate_build_input,
+    Aggregate, ContextField, DataType, Dimension, DimensionsMetadata, MatchStrategy,
+    build_decision_table, prevalidate,
 )
 
-bundle = analyze_sources(rows, limits=limits, **source_inputs)
-source_report = bundle.validation["reports"][0]
+def margin(name):
+    return Aggregate(
+        scope=name, output_name=name, contribution_column=name,
+        data_type=DataType.DECIMAL, precision=8, scale=4, rounding="half_to_even",
+    )
 
-# The application obtains these only from its review process. Each approval is
-# scoped to findings in source_report and carries its authority and actor.
-approvals = reviewed_warning_approvals
-reviewed_bundle = attach_warning_approvals(
-    bundle,
-    approvals,
-    limits=limits,
+metadata = DimensionsMetadata(
+    uuid_column="rule_id",
+    scope_column="scope",
+    fields=(
+        ContextField(name="product", data_type=DataType.STR, wildcard="*"),
+        ContextField(name="credit_band", data_type=DataType.STR, wildcard="*"),
+        ContextField(name="loan_amount", data_type=DataType.INT, wildcard_declared=True),
+    ),
+    dimensions=(
+        Dimension(dimension_name="product", context_field="product"),
+        Dimension(dimension_name="credit_band", context_field="credit_band"),
+        Dimension(
+            dimension_name="loan_amount", context_field="loan_amount",
+            match_strategy=MatchStrategy.RANGE,
+            range_min_field="amount_min", range_max_field="amount_max",
+        ),
+    ),
+    outputs=(margin("base_rate"), margin("advertised_margin"), margin("discretionary_margin")),
 )
 
-validated_build = validate_build_input(
-    rows,
-    bundle=reviewed_bundle,
-    analysis_input_id=source_report.analysis_input_id,
-    source_report_id=source_report.id,
-    approvals=approvals,
-    limits=limits,
-    **source_inputs,
-)
+def amounts(*values):
+    return pl.Series(values, dtype=pl.Decimal(8, 4))
+
+rules = pl.DataFrame({
+    "rule_id":     ["B1", "A1", "A2", "D1", "D2"],
+    "scope":       ["base_rate", "advertised_margin", "advertised_margin",
+                    "discretionary_margin", "discretionary_margin"],
+    "product":     ["*", "variable", "variable", "*", "*"],
+    "credit_band": ["*", "*", "*", "A", "*"],
+    "amount_min":  pl.Series([None, None, 500_000, None, None], dtype=pl.Int64),
+    "amount_max":  pl.Series([None, 499_999, None, None, None], dtype=pl.Int64),
+    "base_rate":            amounts(Decimal("0.04"), None, None, None, None),
+    "advertised_margin":    amounts(None, Decimal("0.01"), Decimal("0.0075"), None, None),
+    "discretionary_margin": amounts(None, None, None, Decimal("0.0025"), Decimal("0")),
+})
 ```
 
-For a clean report, `reviewed_warning_approvals` is empty. For warnings, the
-application must create explicit scoped `WarningApproval` records before the
-gate can pass. Errors, incomplete checks, stale material, and missing or
-mis-scoped approvals do not produce `ValidatedBuildInput`.
-
-### Build, route, and resolve
+### Layer 1 — Prevalidate
 
 ```python
-from mountainash_rules import AccumulatorEngine
-
-engine = AccumulatorEngine(
-    dimension_metadata=source_inputs["metadata"],
-    aggregates=source_inputs["aggregates"],
-    limits=limits,
-)
-lattice = engine.build(rows, validation=validated_build)
-
-result = engine.apply(
-    lattice,
-    context,
-    contract_id=contract_id,
-    profile_id=profile_id,
-    dont_care=dont_care,
-)
+validated = prevalidate(relation(rules), metadata)   # ValidatedRules(rules, source_metadata, warnings)
 ```
 
-`contract_id` and `profile_id` must name a binding active on `lattice`;
-`dont_care` is accepted only for fields permitted by that profile. For
-context-key dimensions, use `build_all(rows, validation=validated_build)` or
-call `build(..., partition_key=...)` with exactly every declared key. Repeated
-routed requests use `engine.index(lattices)`, then:
+`prevalidate` captures the rules once and checks declared columns and types, UUID and scope identity, field interpretation, contribution data and strategy/type pairings. It collects every breach. Errors raise `DataContractError`:
 
 ```python
-result = index.apply(
-    context,
-    contract_id=contract_id,
-    profile_id=profile_id,
-    dont_care=dont_care,
-)
+from mountainash_rules import DataContractError
+
+conflicting = rules.with_columns(pl.lit("*").alias("credit_band"))   # D1 and D2 now differ only in output
+try:
+    prevalidate(relation(conflicting), metadata)
+except DataContractError as error:
+    error.breaches    # (Finding(kind='conflicting_rule', severity='error',
+                      #          detail="Conflicting normalized rules in scope 'discretionary_margin'",
+                      #          rule_uuids=('D1', 'D2')),)
+    error.warnings    # non-blocking findings found at the same time
 ```
 
-`index.apply_batch()` takes the same named contract/profile and optionally
-`context_id_field`, `dont_care_field`, and `chunk_size`. `batch.for_context()`
-raises `KeyError` for an unknown context ID; it does not fabricate an outcome.
+Rules with the same normalized conditions are duplicates (same outputs) or conflicts (different outputs); both block construction, as do duplicate UUIDs within a scope, invalid contributions, and incompatible interpretations of one field. A rule that can never match, or that combines `IS_NULL` with a concrete value on one field, is a warning in `validated.warnings`; construction continues. A `Finding` has `kind`, `severity`, `detail` and `rule_uuids`.
 
-### Read certainty and evidence
+### Layer 2 — Build
 
-`AccumulatorResult` exposes one normalized outcome:
+```python
+table = build_decision_table(validated)
+```
 
-| Accessor | Meaning |
+Construction receives no context. It cuts each scope's rules into **entries**: one row per covered cell, with the cell's condition columns and the folded outputs. Where several rules cover a cell, their contributions to the same output are folded (`SUM`, `MIN` or `MAX`, per `Aggregate.operation`, default `SUM`), once per contributing rule.
+
+| Attribute | Content |
 |---|---|
-| `status`, `reason` | The resolution state and its defined reason |
-| `values` | Established output values for a `decision`; otherwise `None` |
-| `may_have_no_match` | Whether supplied facts leave an uncovered possibility |
-| `binding_id`, `contract_id`, `profile_id` | The permission and request labels used |
-| `cell_id`, `contributor_ids` | Definite identity/provenance, available only for a decision when established |
-| `issues`, `observations` | Admission diagnostics and normalized request observations |
-| `candidate_cells`, `candidate_contributors` | Possible cells/contributor edges; never a promoted decision |
-| `lineage` | Definite requested-output lineage only |
+| `table.entries` | one row per entry: `entry_id`, `scope`, `entry_sources_id`, condition columns, outputs |
+| `table.entry_sources` | `(scope, entry_sources_id, source_uuid)`: which source rules built each entry |
+| `table.pattern_conditions` | what each derived pattern column means |
+| `table.source_metadata` | the metadata of the authored rules |
+| `table.build_id` | a hash of the rules and metadata |
 
-Candidate-mode profiles report `status="candidates"` and make the candidate
-relations available. For an inspected candidate, use
-`candidate_lineage(cell_id)`; it remains candidate evidence rather than
-definite lineage. `raise_for_status()` returns normal outcomes but raises the
-typed request error for `invalid_context` or a profile that rejected unresolved
-input.
+`entries` and `entry_sources` are Mountainash relations on the backend that built them. Join `entry_sources` when you need the source-rule identities of a match.
 
-### Bind, save, load, and inspect
+### Check the contexts
 
-Binding is additive and immutable:
+A context is a pydantic object with `request_id` and attributes named after the context fields (no base class is needed), or a Relation with a `request_id` column and a column per field.
 
 ```python
-bound_view = lattice.with_binding(
-    binding,
-    evidence=binding_evidence,
-    limits=limits,
-)
+from pydantic import BaseModel
+
+from mountainash_rules import check_context_schema, validate_contexts
+
+class LoanApplication(BaseModel):
+    request_id: str
+    product: str | None = None
+    credit_band: str | None = None
+    loan_amount: int | None = None
+
+check_context_schema(LoanApplication, metadata)       # compares types with the field declarations
+
+applications = [
+    LoanApplication(request_id="r1", product="variable", credit_band="A", loan_amount=300_000),
+]
+validate_contexts(applications, metadata)             # returns its input, or raises ValueError
 ```
 
-The original lattice remains unchanged. `binding_evidence` must be the complete
-portable evidence for that supplied binding; loading it alone grants no
-permission.
+`check_context_schema(schema_or_class, metadata)` compares a pydantic class, a Relation schema or a mapping with the metadata without reading any row. A type mismatch is an error and raises one `ValueError` listing them all; a declared field absent from the schema, or a DECIMAL scale finer than declared, is a warning (`warnings.warn`).
 
-Save or load a native artifact with explicit limits:
+`validate_contexts(contexts, metadata)` checks a batch relationally: null or duplicate `request_id`, non-finite numbers, values no truthy mapping covers, a wildcard marker embedded among other list elements or also mapped by a truthy mapping, and null elements inside lists. One `ValueError` lists every invalid value. A context null is *not* an error: it is unknown. The caller's own pydantic model remains the place for business constraints.
+
+### Layer 4 — Match
 
 ```python
-from mountainash_rules import Lattice
+operation = table.match(applications)           # deferred; scopes=None means every scope
+result = operation.fetch()                      # MatchResult(matches=<Relation>)
 
-snapshot = bound_view.save(snapshot_directory, limits=limits)
-loaded = Lattice.load(snapshot, limits=limits)
-compatible_engine = AccumulatorEngine(
-    loaded.metadata,
-    loaded.aggregates,
-    limits=limits,
-)
+for row in result.matches.to_dicts():
+    print(row["scope"], row["entry_id"], row["specificity"],
+          row["base_rate"], row["advertised_margin"], row["discretionary_margin"])
+# (row order is not guaranteed)
+# advertised_margin     0  2  None  Decimal('0.0100')  None
+# discretionary_margin  4  2  None  None               Decimal('0.0025')
+# base_rate             2  1  Decimal('0.0400')  None  None
+# discretionary_margin  3  1  None  None               Decimal('0.0000')
 ```
 
-The compatible engine must have dimensions and aggregate declarations matching
-the compiled artifact. A native snapshot has 11 files: `manifest.yaml`; eight
-Parquet relations—`lattice`, `sources`, `contributors`, `scopes`, `scope_keys`,
-`source_maps`, `vectors`, and `words`; and `predicates.json` plus
-`validation.json`. Inspect native artifacts via `artifact_kind` and typed
-`partition_identity`, not legacy `is_composed`. Flat legacy/imported lattices
-are inspection-only: their rows can be read, but they cannot serve exact build,
-binding, routing, or application.
+`table.match(contexts, scopes=["base_rate"])` restricts the match to the named scopes. `matches` has one record per matching entry per request: `request_id`, `scope`, `entry_id`, `entry_sources_id`, `specificity`, the entry's condition columns and its logical outputs (columns of other scopes are null). A request with no matching entry has no record. Matching does not fold, rank-filter or choose among entries; entries in one scope can overlap on some dimensions, and choosing among them is layer 5. Specificity is the engine's count of dimensions that scored 1, so an ordered dimension counts whenever the context falls inside the entry's interval.
+
+`fetch()` raises `DecisionTableError` for backend failures. Contexts built from Python objects are a small in-process relation; the join with the entries runs on the entries' backend, which the contexts are copied to, and the entries never move. `match` does not check that `request_id` values are unique; `validate_contexts` does. Backend executions are logged at stage boundaries by the `mountainash_rules.decision_table.build` and `.apply` loggers.
+
+### Save, load and verify
+
+```python
+table.save("/data/rates/home_loans")                    # a directory; replaces an earlier save
+loaded = DecisionTable.load("/data/rates/home_loans")   # entries load into in-process Polars
+
+import ibis
+connection = ibis.duckdb.connect("rates.duckdb")
+on_duckdb = DecisionTable.load("/data/rates/home_loans", connection=connection)
+
+from mountainash_rules import verify_saved_table
+report = verify_saved_table("/data/rates/home_loans")   # VerificationReport
+report.ok, report.build_id, report.mismatched, report.missing
+```
+
+A saved table is eight Parquet files (`entries`, `entry_sources`, `pattern_conditions` and the five flat metadata tables `ruleset`, `fields`, `dimensions`, `outputs`, `truthy`) and a `manifest.json` recording the `build_id` and each file's size and SHA-256. The manifest is written last. Paths may be local or anything `mountainash-transport` resolves (for example `s3://bucket/tables/home_loans`); pass `storage_profile` (a profile name or object) for remote storage. `load` reads without checking; `verify_saved_table` compares each listed file's bytes with the manifest and reports every mismatched or missing file, and a missing manifest raises. With a `connection`, keep it open while the table is in use.
+
+`DimensionsMetadata.to_tables()` and `DimensionsMetadata.from_tables(tables)` convert metadata to and from those five relations.
+
+### Layer 5 — Business post-aggregation
+
+The application layer returns matching entries; interpreting several of them is the business domain's job. A home-loan rate combines three outputs, each chosen from its own scope. The records below stand in for `MatchResult.matches` rows (trimmed to the columns used) so the example is self-contained. **Choosing the highest-specificity entry of each scope, and adding the three values, is this example's rule — not DecisionTable behaviour.**
+
+```python
+from decimal import Decimal
+
+# Illustrative MatchResult.matches records for one application: every matching entry,
+# with its entry_id, scope, specificity and the scope's output value.
+matches = [
+    {"entry_id": 2, "scope": "base_rate",            "specificity": 1, "value": Decimal("0.04")},
+    {"entry_id": 0, "scope": "advertised_margin",    "specificity": 2, "value": Decimal("0.01")},
+    {"entry_id": 3, "scope": "discretionary_margin", "specificity": 1, "value": Decimal("0.0000")},
+    {"entry_id": 4, "scope": "discretionary_margin", "specificity": 2, "value": Decimal("0.0025")},
+]
+
+# Illustrative downstream step: per output scope, keep the highest-specificity entry.
+chosen = {}
+for entry in matches:
+    best = chosen.get(entry["scope"])
+    if best is None or entry["specificity"] > best["specificity"]:
+        chosen[entry["scope"]] = entry
+
+# Domain formula: the application rate is the sum of the three selected values.
+rate = (
+    chosen["base_rate"]["value"]
+    + chosen["advertised_margin"]["value"]
+    + chosen["discretionary_margin"]["value"]
+)
+assert rate == Decimal("0.0525")   # 0.04 + 0.01 + 0.0025 = 5.25%
+```
+
+With the Part 2 table, `result.matches.to_dicts()` gives the same four entries: each output column of a record is non-null only for the record's own scope, so `value` above is `row[row["scope"]]`. A different business might pick the lowest margin, require a single entry, or take the entry with the greatest discount; none of that changes what `match` returns.
 
 ---
 
-## Summary
+## Troubleshooting
 
-| You want to… | Use |
-|---|---|
-| Find all rules that match a context, ranked | `ExpressionRulesEngine.evaluate()` |
-| Get the single best-matching rule | `result.best_match` |
-| Explain why a rule matched | `result.explain(rule_name)` |
-| Filter by minimum match specificity | `result.at_least(n)` or `evaluate(min_specificity=n)` |
-| Analyze and authorize native source material | `analyze_sources()` → scoped review → `validate_build_input()` |
-| Build an exact artifact | `AccumulatorEngine.build(..., validation=validated_build)` |
-| Resolve a contract-bound context | `engine.apply(..., contract_id=..., profile_id=..., dont_care=...)` |
+- **A rule never wins.** Check `engine.explain(context)` for a `-1` in one `__t_<dimension>` column.
+- **`DataContractError`.** Read `error.breaches`: each `Finding` names the kind and the rule UUIDs.
+- **A field is ignored.** A context field absent from the context is unknown; `check_context_schema` warns when a declared field is missing from the context schema.
+- **`HitPolicyViolationError`.** `unique` and `any` raise when the survivors do not satisfy them; `error.offending` holds the survivor rows.

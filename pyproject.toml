@@ -9,7 +9,7 @@ description = 'Mountain Ash - Utils - Rules'
 readme = "README.md"
 requires-python = ">=3.10"
 license = "Apache-2.0"
-license-files = ["LICENSE", "NOTICE", "THIRD_PARTY_LICENSES"]
+license-files = ["LICENSE", "NOTICE"]
 keywords = []
 authors = [
     { name = "Nathaniel Ramm", email = "nathaniel.ramm@discretedatascience.com" },
@@ -29,7 +29,6 @@ dependencies = [
     # ibis 12 emits deprecated `->` list lambdas that DuckDB 2.0 rejects (central backlog #363).
     "duckdb<2.0",
     "narwhals>=1.0.0",
-    "pyyaml>=6.0",
     # mountainash, mountainash-files and mountainash-transport are required at runtime but not
     # yet published to PyPI. Test environments install them via path in hatch.toml.
 ]

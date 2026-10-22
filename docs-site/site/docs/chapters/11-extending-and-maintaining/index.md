@@ -1,133 +1,84 @@
 ---
-title: "Chapter 11: Extending and Maintaining Both Engines"
-description: "Preserve the public boundary, filter contracts, and the exact accumulator's source-to-restoration lifecycle."
+title: "Chapter 11: Extending and Maintaining the Package"
+description: "Public boundaries, the change map for the expression engine and DecisionTable, tests, and a review checklist."
 ---
 
-# Chapter 11: Extending and Maintaining Both Engines
+# Chapter 11: Extending and Maintaining the Package
 
-Mountainash Rules has two deliberately different execution models. The Expression Rules Engine remains a ternary matching and selection engine. The Accumulator Engine is an exact-artifact compiler and contract-bound resolver. A shared `Dimension` or `Aggregate` declaration does not imply a shared implementation path.
-
-This chapter is for maintainers. It describes the current boundaries and the evidence an extension must preserve; it does not promise that an unfinished analysis, warning review, build, snapshot, or request will succeed.
-
-Architectural acceptance is separate from these prototype contracts. The accumulator constructs geometry and outputs locally after extracting source rows. Input compatibility and import-purity tests do not demonstrate backend execution. The product objective remains construction through Mountainash expressions followed by independent result validation. Faster local solving, higher budgets, or successful transport does not satisfy that objective.
+The package has one public import surface (the package root), two engines that share one rule model, and a handful of invariants that keep them honest. This chapter says what may change where, and what must change together.
 
 ## Keep the public boundary small
 
-Applications import public types and functions from `mountainash_rules`. That root exports the engines, exact models (`ExactLimits`, `ValidatedBuildInput`, `ValidationBundle`, `WarningApproval`, contracts and profiles), source-analysis functions, lattices, results, aggregate declarations, and public error classes.
+- Import public names from the package root only: `from mountainash_rules import DecisionTable`. Module paths under `mountainash_rules.core`, `mountainash_rules.engines` and `mountainash_rules.decision_table` are private and may move.
+- `tests/test_public_api.py` asserts the **exact** export set. Adding or removing a root export is a deliberate change to that test, to the user documentation and to the AGENTS guidance.
+- `core` never imports from `engines` or `decision_table`; `decision_table` evaluates through `engines/filter`.
+- **Backend purity** is enforced: no module under `src/mountainash_rules/` imports `polars`, `ibis`, `narwhals` or `pyarrow`. Use `mountainash.relations` and `mountainash.expressions`. `tests/test_backend_purity.py` parametrises every non-dunder module with no exemptions; an unavoidable native escape needs a `# allow: <reason>` tag on the import line, and there are none today.
+- Context identity and the three validation capabilities are the caller's to run. The engines do not validate rules or contexts.
 
-Do not make private module paths a second API. In particular, `_native`, source normalization, predicate compilation, narrow-layout relations, state materialization, persistence internals, and codec helpers are implementation boundaries. The native bridge accepts bounded data and exposes typed native failures; it is not an application extension surface.
+## What changes where
 
-A public API addition needs all of the following considered together:
-
-1. root export and `__all__` membership where callers need it;
-2. immutable model validation and canonical identifiers for persisted or evidence-bearing data;
-3. explicit limits and typed errors at every operation that can allocate, decode, or reason; and
-4. documentation that names the required arguments without inventing defaults or success outcomes.
-
-Renaming serialized IDs, enum values, output names, or canonical fields is a compatibility change, not a cosmetic edit.
-
-## Shared filter-engine maintenance
-
-A change limited to filter matching stays in the filter path. Define its `Dimension` validation, ternary truth table, context representation, sentinel behavior, selection-field classification, scalar evaluation behavior, and batch behavior. Test observable outcomes—match, unknown, contradiction, invalid configuration, and per-context selection—rather than compiler wiring.
-
-Do not add accumulator behavior merely because a filter strategy exists. The exact accumulator consumes normalized predicates rather than filter survivors. A strategy becomes accumulator-capable only after it has a precise authored-source interpretation, a normalized predicate representation, and proof-preserving lifecycle support described below.
-
-Keep the two models distinct in documentation as well: ternary specificity and hit-policy ranking belong to the filter engine; exact cell IDs, contributor UUIDs, contracts, profiles, and outcomes belong to the accumulator.
-
-## The exact accumulator change map
-
-| Change | Required exact work | Evidence that must remain valid |
+| Change | Where | Evidence that must stay valid |
 |---|---|---|
-| Source field or dimension meaning | Normalize and validate source values; define predicates, domains, routing, and source origins. | Source report, findings, scoped policy checks, and replayed witnesses. |
-| Predicate language or domain feature | Update predicate construction, reasoning, canonical serialization, and native codec support. | Cell non-emptiness, disjointness, source union/membership, profile consistency, and restoration replay. |
-| Aggregate or output type | Supply a complete native declaration and exact `numeric-1` fold/storage behavior. | Output-fold proof, numeric-bit accounting, lineage, snapshot save/load, and runtime decoding. |
-| Scope or segmentation feature | Preserve source-UUID mapping and scoped narrow-word allocation. | Word, scope, source-scope, contributor-edge, and live-memory limits. |
-| Contract/profile behavior | Preserve contract bindings, profile authorization, context admission, and typed outcomes. | Bound-source and compiled evidence; `contract_id`/`profile_id` resolution. |
-| Persistence format | Update canonical records and native relation restoration together. | Strict load validation and revalidation of semantic evidence. |
+| A new match strategy | enum value in `core/constants.py`; validation in `core/dimension.py`; its `match` arm in `core/compiler.py`; a strategy class in `decision_table/strategies.py` (and a field-family interpretation if it needs a new region); tests in `tests/core` and `tests/decision_table` | Engine scoring, prevalidation, construction and the finite-completion oracle all agree on both backends. |
+| A field type or `ContextField` attribute | `core/dimension.py`, `core/constants.py` (`DataType`), `core/metadata_tables.py` (flat-table round trip), context binding in `core/context.py`, a field family in `decision_table/fields.py` | Metadata survives `to_tables` / `from_tables`; saved tables reload equal; binding converts and reduces as declared. |
+| A hit policy or selection rule | `core/constants.py`, `core/hit_policy.py`, `core/result.py` | Single and batch evaluation agree; re-selection restrictions remain correct; policies stay call-time arguments. |
+| An aggregate operation | `core/aggregate.py` (`AggregateOp`), `decision_table/folds.py`, `core/metadata_tables.py` | Folded outputs, persistence and `build_id` of the metadata. |
+| Persistence format | `decision_table/persistence.py` and `DecisionTable.load` together | `verify_saved_table` and `load` agree on the file list; `build_id` and metadata round trip. |
+| Context validation | `context_validation.py` | `check_context_schema` and `validate_contexts` see what `match` will see (`contexts_to_relation`). |
+| Result accessors | `core/result.py`, `core/batch_result.py`, `decision_table/apply.py` | `MatchResult.matches` columns stay documented. |
 
-The table is intentionally end-to-end. Updating only a row representation, a relation schema, or a resolver branch leaves an exact artifact incomplete.
+### Adding a strategy, step by step
 
-## Source gate before compilation
+1. Add the member to `MatchStrategy` and any type rules to `DimensionsMetadata` validation.
+2. Add its comparison to `DimensionCompiler.compile_dimension` so the engine scores it. Wildcard and missing-context handling come from the shared `_ternary` wrapper; keep them.
+3. Add a strategy class in `decision_table/strategies.py` that lowers a rule cell into a region, so `prevalidate` and `build_decision_table` can interpret it. If the comparison is not a region the existing families can cut, make it an int8 outcome column the way patterns are.
+4. Test the strategy on Polars and Ibis-DuckDB: every rule-by-context cell of its scoring table in `tests/core/test_compiler.py`, and the equivalence of the built table with the engine in `tests/decision_table`.
+5. Update the user quickstart, the book's strategy tables (Chapter 3) and `AGENTS.md`.
 
-The source gate is required by the current prototype contract and must not be bypassed. Its lifecycle is under architectural reconciliation: source analysis already performs semantic construction, and later replay and compiled validation repeat some work. This gate does not establish delivery of the intended construction/post-validation architecture.
+## Null and wildcard invariants
 
-1. Call `analyze_sources(...)` with the current rows, metadata, aggregates, source identity fields, domain and predicate material, routing, contracts, validation policy, and `ExactLimits`. Its `ValidationBundle` records source diagnostics.
-2. Review only actual warning findings. If a warning is accepted, create a `WarningApproval` with the selected analysis input, source report, warning IDs, and a scope that covers those findings. Attach it with `attach_warning_approvals(..., limits=limits)`.
-3. Call `validate_build_input(...)` with the same current material and selected IDs. It rechecks material identity and policy, replays retained witnesses, checks approval links and scope, and invokes the source permission gate.
-4. Pass the returned `ValidatedBuildInput` as `validation=` to `AccumulatorEngine.build()` or `build_all()`.
+Changes to matching must preserve these:
 
-This sequence separates a source report from build permission. Never manufacture approvals, widen an approval's scope, retain a report after its source material has changed, or treat source diagnostics as compiled-cell proof.
+- A field declares exactly one wildcard marker; every dimension on the field uses it, and the marker round-trips through the `fields` table as canonical text.
+- Null is never an implicit wildcard. A rule-side null is a don't-care only where the field declares null as its wildcard.
+- A context null or missing value is unknown (0) on a value dimension unless a truthy mapping maps null. On `PRESENCE`, an explicit null is a known fact; an omitted field is unknown.
+- A −1 in any dimension eliminates a rule; unknowns never rescue it.
 
-## Building exact cells
+The worked null example of [Chapter 3](../03-matching-concepts/index.md) is a regression suite in `tests/filter/test_decision_table_semantics.py`.
 
-`AccumulatorEngine` requires `dimension_metadata` and `limits`; aggregate declarations and segmentation dimensions are explicit. `boolean_coercion` must be `BooleanCoercion.NONE`.
+## `execute_on`
 
-`build(rules, *, validation, partition_key=None)` produces the declared partition only after validation. Where context-key dimensions exist, `partition_key` must name every one and match a source-validated partition. `build_all(rules, *, validation)` prepares once and produces the declared partitions. Both paths create immutable exact artifacts; neither accepts a source report or raw approval list in place of `ValidatedBuildInput`.
+Every join between contexts and rules or entries states `execute_on` on the rules or entries side. Contexts are small and often host-originated; the join runs where the rules live and Mountainash copies the contexts there. Do not re-host rules onto the contexts' backend.
 
-A maintainer changing construction must preserve these invariants:
+## Tests
 
-- every admitted source has a stable source UUID and normalized predicate;
-- cells are nonempty and disjoint in the declared scope;
-- contributor sets are represented by source UUIDs and scoped dense 63-bit words, not global ordinal or arithmetic identities;
-- aggregate outputs are exact-native `numeric-1` folds, with declared types and bounded numeric workspace;
-- every allocation and proof step reserves through the operation budget before retaining state; and
-- compiled evidence is produced only after the complete set of compiled checks succeeds.
+The release gate:
 
-`ExactLimits` is the compatibility boundary for capacity. Add a new retained structure only with a corresponding counter or an explicit, conservative accounting rule. Do not bypass a limit with a lazy relation, a Python collection, a native buffer, or a fallback result.
-
-## Runtime, bindings, and outcomes
-
-Resolution requires an exact lattice whose dimensions and aggregate declarations agree with the engine:
-
-```python
-engine.apply(
-    lattice,
-    context,
-    contract_id=contract_id,
-    profile_id=profile_id,
-    dont_care=None,
-)
+```bash
+POLARS_MAX_THREADS=2 hatch run test:test-target tests/core tests/filter tests/decision_table \
+    tests/context_validation tests/test_public_api.py tests/test_backend_purity.py -q --no-cov
 ```
 
-`contract_id` and `profile_id` are required named arguments. `dont_care` remains optional. The resolver admits context values against the selected contract/profile, uses their binding and domain permissions, and returns an `AccumulatorResult` carrying one typed outcome. It must preserve invalid and unresolved outcomes as typed errors when `raise_for_status()` is requested; it must not turn them into a default cell or an empty success.
+Backend-dependent tests run on `polars` and `ibis-duckdb` by default; choose with `--backends`. Persistence tests against remote storage run only when `MOUNTAINASH_RULES_SCRATCH_PROFILE` and `MOUNTAINASH_RULES_SCRATCH_PATH` are set. Built tables are shared across tests through `tests/decision_table/table_fixtures.py`; a test that spies on, mutates or tests the build builds its own.
 
-For partition routing, maintain the coherent-lattice checks in `LatticeIndex`. Exact-key routing, fallback routing, and tie detection are distinct states. `AmbiguousPartitionError` and a missing route are meaningful errors, not conditions to resolve by arbitrary input order.
+The finite-completion oracle (`tests/decision_table/oracles/`) is the reference for construction. It never touches construction code: for each context on a finite grid it asks the expression engine which authored rules survive, asks the same engine which entries match, and checks that the matched entries' sources are exactly those survivors (soundness and completeness) and that each entry's outputs are the fold of its sources' contributions.
 
-Candidate inspection must remain non-promoting: `candidate_cells`, `candidate_contributors`, and `candidate_lineage()` describe possible cells; only definite outcome contributors support result lineage.
+## Known upstream workarounds
 
-## Numeric-1 aggregate maintenance
-
-`Aggregate` declarations are immutable. Exact declarations require `output_name`, `data_type`, and `numeric_semantics="numeric-1"` together; output names are namespaced. `SUM` and `PRODUCT` are numeric only. A datetime aggregate requires an explicit `naive` or `utc` timezone.
-
-When adding a fold or a storage type, define all of these before writing implementation code:
-
-- accepted scalar domain and normalization;
-- deterministic fold semantics and float rounding, if applicable;
-- output encoding, decoding, lineage projection, and native storage type;
-- numeric-bit and live-workspace reservation; and
-- error behavior for unsupported, non-finite, malformed, or over-limit input.
-
-A backend reduction, a host-language numeric fallback, or a silently rounded value is not an implementation of an exact fold.
-
-## Strict native restoration
-
-`Lattice.save(dir_path, *, limits)`, `Lattice.load(dir_path, *, limits)`, and `lattice.with_binding(binding, *, evidence, limits)` all require explicit limits. Save publishes the artifact's typed native relations and evidence. Load restores an executable lattice only by validating the manifest, restoring typed relations, checking source/cell/layout integrity, and replaying the evidence required for exact state. `with_binding` validates complete portable evidence and returns a new immutable view.
-
-A `Lattice` created from flat data may be inspected, but it is legacy/flat data and is not executable. It must continue to fail exact-only operations such as application, binding, routing, and lineage rather than acquiring permissive behavior during load or migration work.
-
-Changes to snapshot layout require an actual lifecycle proof: construct a validated artifact, save it with limits, load it with limits, bind complete evidence if the scenario requires it, and resolve a normalized context with explicit `contract_id` and `profile_id`. Inspect the outcome, cell identity, contributors, and outputs appropriate to that scenario. Do not replace this with a schema-only assertion or a claim about an unexercised backend.
+Three Mountainash behaviours are worked around in code, each commented at its call site: #366 (integer division on DuckDB; `masks.py`), #367 (multi-column `explode`; `masks.py`) and #368 (null ordering in windows; `stages.py`). `duckdb` is pinned `<2.0` (backlog #363). Remove each workaround when the upstream item closes.
 
 ## Review checklist
 
-Before accepting an exact-accumulator extension, review the source-to-runtime chain:
+- Is every new public name exported from the package root and covered by the exact-export test?
+- Does package code import only Mountainash relations and expressions?
+- Are rule cells interpreted only through declared wildcards, never inferred from null?
+- Do context joins state `execute_on` on the rules or entries side?
+- Do the engine and the built table agree for the new behaviour, on both backends?
+- Do `to_tables` / `from_tables` and `save` / `load` round-trip any new metadata?
+- Are the user quickstart, this book and `AGENTS.md` updated for the change?
 
-- Is the authored source representation validated before any compilation?
-- Does source analysis emit diagnostics independently from the build gate?
-- Are each approval and binding tied to actual IDs and a covering scope?
-- Are cells proved nonempty and disjoint, and is contributor provenance source-UUID based?
-- Are all resources bounded, including codec buffers, native state, words, numeric workspace, and proof work?
-- Does the snapshot restore the native artifact strictly and reject malformed or flat data for execution?
-- Does runtime require the declared contract/profile identifiers and preserve error outcomes?
-- Are all supported imports rooted at `mountainash_rules`?
+## Source references
 
-These obligations complement, rather than replace, the filter engine's ternary and selection contracts. Keep each engine's documentation and tests focused on its own observable behavior.
+- `AGENTS.md` — repository guidance, the architecture summary and commands.
+- `tests/test_public_api.py`, `tests/test_backend_purity.py` — the two structural gates.
+- `docs/backend-support.md` — the backend matrix and upstream items.

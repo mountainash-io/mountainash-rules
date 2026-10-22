@@ -52,10 +52,10 @@ class ExpressionRulesEngine:
     then evaluates contexts against the rules DataFrame in a single-pass
     vectorized operation.
 
-    The engine is backend-agnostic. The DataFrame backend (Polars, Ibis,
-    Narwhals-wrapped Pandas/PyArrow) is determined by the type of `rules`
-    passed to the constructor. The `RuleResult.survivors` accessor returns
-    a DataFrame in the same backend as the input.
+    The engine is backend-agnostic: the backend (Polars or Ibis-DuckDB, the supported
+    and tested ones) is determined by the type of `rules` passed to the constructor,
+    which may be a native table or a Mountainash `Relation`. The `RuleResult.survivors`
+    accessor returns a DataFrame in the same backend as the input.
 
     Two construction paths:
     - Convenience: provide dimension_metadata (auto-compiled to expressions)

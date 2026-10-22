@@ -21,10 +21,9 @@ from mountainash_rules import (
     DimensionsMetadata,
     ExpressionRulesEngine,
     MatchStrategy,
-    NOT_SET,
     UNKNOWN,
 )
-from mountainash_rules.core.constants import not_set_sentinel_for, unknown_sentinel_for
+from mountainash_rules.core.constants import unknown_sentinel_for
 from tests.conftest import build_backend_df, bind_compiler_inputs
 
 

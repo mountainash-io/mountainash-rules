@@ -137,7 +137,7 @@ class Dimension(BaseModel):
 
 
 class DimensionsMetadata(BaseModel):
-    """Ruleset metadata, flat-table serializable without YAML."""
+    """Ruleset metadata, serializable as five flat relational tables."""
 
     model_config = ConfigDict(extra="forbid")
 

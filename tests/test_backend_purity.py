@@ -45,3 +45,17 @@ def test_no_direct_backend_imports(filename: str):
     assert not violations, (
         f"Backend-impure imports in {filename}:\n" + "\n".join(violations)
     )
+
+
+def test_every_source_module_is_checked():
+    on_disk = {
+        str(path.relative_to(SRC_ROOT))
+        for path in SRC_ROOT.rglob("*.py")
+        if not path.name.startswith("__")
+    }
+    assert on_disk == set(_pure_files())
+    assert {"decision_table/build.py", "decision_table/apply.py", "context_validation.py"} <= on_disk
+
+
+def test_pyarrow_is_prohibited():
+    assert "pyarrow" in PROHIBITED_PACKAGES

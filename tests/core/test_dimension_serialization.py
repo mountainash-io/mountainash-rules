@@ -21,16 +21,10 @@ class TestStrEnums:
 import datetime
 
 from mountainash_rules.core.constants import (
-    NOT_SET,
-    NOT_SET_DATE,
-    NOT_SET_NUMERIC,
-    NUMERIC_SENTINELS,
-    STRING_SENTINELS,
-    TEMPORAL_DATE_SENTINELS,
+    UNKNOWN,
     UNKNOWN_DATE,
     UNKNOWN_DATETIME,
-    not_set_sentinel_for,
-    sentinels_for,
+    UNKNOWN_NUMERIC,
     unknown_sentinel_for,
 )
 
@@ -53,21 +47,16 @@ class TestDataType:
         assert DataType.BOOL.python_type is bool
 
 
-class TestSentinelSelection:
-    def test_temporal_sentinels_are_proleptic_floor(self):
+class TestConventionalMarkers:
+    def test_temporal_markers_are_proleptic_floor(self):
         assert UNKNOWN_DATE == datetime.date(1, 1, 1)
-        assert NOT_SET_DATE == datetime.date(1, 1, 2)
         assert UNKNOWN_DATETIME == datetime.datetime(1, 1, 1)
 
-    def test_sentinels_for(self):
-        assert sentinels_for(DataType.INT) == NUMERIC_SENTINELS
-        assert sentinels_for(DataType.STR) == STRING_SENTINELS
-        assert sentinels_for(DataType.DATE) == TEMPORAL_DATE_SENTINELS
-
-    def test_scalar_lookups(self):
-        assert not_set_sentinel_for(DataType.FLOAT) == NOT_SET_NUMERIC
-        assert not_set_sentinel_for(DataType.STR) == NOT_SET
+    def test_marker_for_each_data_type(self):
+        assert unknown_sentinel_for(DataType.FLOAT) == UNKNOWN_NUMERIC
+        assert unknown_sentinel_for(DataType.STR) == UNKNOWN
         assert unknown_sentinel_for(DataType.DATE) == UNKNOWN_DATE
+        assert unknown_sentinel_for(DataType.DATETIME) == UNKNOWN_DATETIME
 
 
 from mountainash_rules.core.dimension import Dimension, DimensionsMetadata
