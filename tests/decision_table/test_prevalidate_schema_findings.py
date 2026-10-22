@@ -198,3 +198,60 @@ def test_a_reversed_range_still_warns_beside_another_dimensions_missing_or_misty
         prevalidate(rules_relation(backend_name, mistyped), range_metadata(missing))
     assert breaches(error) == {"incompatible_rule_dtype"}
     assert warning_ids(error) == [("unsatisfiable_rule", ("bad",))]
+
+
+# -- empty set rules are authoring slips: warnings, never blocking ---------------------------
+
+SET_FIELDS = {
+    "str": (REGION, [["EU"], []], "list_str"),
+    "int": (LEVEL, [[1, 2], []], "list_int"),
+}
+
+
+def set_metadata(field, strategy, **kwargs):
+    return DimensionsMetadata(
+        uuid_column="rule_id", fields=(field,), dimensions=(dimension("d", field, strategy),), **kwargs
+    )
+
+
+def set_data(kind, **extra):
+    field, values, _ = SET_FIELDS[kind]
+    dtype = pl.List(pl.String if kind == "str" else pl.Int64)
+    return pl.DataFrame({"rule_id": ["ok", "empty"], "value": pl.Series(values, dtype=dtype), **extra})
+
+
+EMPTY_SET_KINDS = [(M.SET_MEMBERSHIP, "empty_membership_set"), (M.SET_EXCLUSION, "empty_exclusion_set")]
+
+
+@pytest.mark.parametrize(("strategy", "kind"), EMPTY_SET_KINDS)
+@pytest.mark.parametrize("data_kind", ["str", "int"])
+def test_an_empty_set_warns_once_with_its_own_kind(backend_name, strategy, kind, data_kind):
+    metadata = set_metadata(SET_FIELDS[data_kind][0], strategy)
+    validated = prevalidate(rules_relation(backend_name, set_data(data_kind)), metadata)
+    assert [(w.kind, w.severity, w.rule_uuids) for w in validated.warnings] == [(kind, "warning", ("empty",))]
+    assert validated.rules.count_rows() == 2
+
+
+@pytest.mark.parametrize(("strategy", "kind"), EMPTY_SET_KINDS)
+def test_non_empty_sets_and_the_wildcard_produce_no_empty_set_warning(backend_name, strategy, kind):
+    data = pl.DataFrame({"rule_id": ["a", "b"], "value": pl.Series([["EU"], ["*"]], dtype=pl.List(pl.String))})
+    assert prevalidate(rules_relation(backend_name, data), set_metadata(REGION, strategy)).warnings == ()
+
+
+@pytest.mark.parametrize(("strategy", "kind"), EMPTY_SET_KINDS)
+def test_an_empty_set_warning_survives_an_unrelated_blocking_breach(backend_name, strategy, kind):
+    fee = Aggregate(output_name="fee", contribution_column="fee", data_type=DataType.INT)
+    metadata = set_metadata(REGION, strategy, outputs=(fee,))
+    data = set_data("str")
+    with pytest.raises(DataContractError) as error:
+        prevalidate(rules_relation(backend_name, data), metadata)
+    assert breaches(error) == {"missing_contribution_column"}
+    assert [(w.kind, w.rule_uuids) for w in error.value.warnings] == [(kind, ("empty",))]
+
+
+def test_a_set_with_the_wrong_element_type_stays_blocking(backend_name):
+    data = pl.DataFrame({"rule_id": ["a"], "value": pl.Series([[]], dtype=pl.List(pl.Int64))})
+    with pytest.raises(DataContractError) as error:
+        prevalidate(rules_relation(backend_name, data), set_metadata(REGION, M.SET_MEMBERSHIP))
+    assert breaches(error) == {"incompatible_list_element"}
+    assert error.value.warnings == ()

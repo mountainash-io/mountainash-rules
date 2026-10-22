@@ -540,12 +540,43 @@ _CELL_BREACHES = frozenset({
 })
 
 
+_EMPTY_SET_WARNINGS = {
+    MatchStrategy.SET_MEMBERSHIP: ("empty_membership_set", "is an empty membership set and can never match"),
+    MatchStrategy.SET_EXCLUSION: ("empty_exclusion_set", "is an empty exclusion set and excludes nothing"),
+}
+
+
+def _empty_set_findings(
+    relation: Any, metadata: DimensionsMetadata, dimensions: list[Dimension]
+) -> tuple[list[Finding], dict[str, set[Any]]]:
+    """Warnings for empty set rules, and the rules each context field already explains."""
+    uuid_column = metadata.uuid_column
+    findings: list[Finding] = []
+    covered: dict[str, set[Any]] = {}
+    for dim in dimensions:
+        if dim.match_strategy not in _EMPTY_SET_WARNINGS:
+            continue
+        kind, detail = _EMPTY_SET_WARNINGS[dim.match_strategy]
+        field = dim.resolved_rule_field
+        empty = relation.filter(ma.col(field).list.len().eq(0).fill_null(False))
+        uuids = _uuids([row[uuid_column] for row in empty.select(uuid_column).to_dicts()])
+        if uuids:
+            findings.append(Finding(kind, "warning", f"{field!r} {detail}", uuids))
+            covered.setdefault(dim.context_field, set()).update(uuids)
+    return findings, covered
+
+
 def _unsatisfiable_findings(
-    relation: Any, metadata: DimensionsMetadata, dimensions: list[Dimension], blocked: set[Any]
+    relation: Any,
+    metadata: DimensionsMetadata,
+    dimensions: list[Dimension],
+    blocked: set[Any],
+    covered: dict[str, set[Any]],
 ) -> list[Finding]:
     """Warnings for rules whose conditions cannot all hold, from the shared family coverage.
 
     Rules with a malformed rule cell cannot be bound; they are reported as breaches instead.
+    A rule already reported as an empty set on the same field is not reported twice.
     """
     uuid_column = metadata.uuid_column
     scope = ma.lit("default") if metadata.scope_column is None else ma.col(metadata.scope_column)
@@ -555,7 +586,7 @@ def _unsatisfiable_findings(
     findings: list[Finding] = []
     for field_name, reason, rules in unsatisfiable_rules(bound, dimensions):
         uuids = _uuids([row[SOURCE_UUID] for row in rules.select(SOURCE_UUID).to_dicts()])
-        uuids = tuple(uuid for uuid in uuids if uuid not in blocked)
+        uuids = tuple(uuid for uuid in uuids if uuid not in blocked and uuid not in covered.get(field_name, ()))
         if uuids:
             findings.append(Finding("unsatisfiable_rule", "warning", f"{field_name!r}: {reason}", uuids))
     return findings
@@ -597,7 +628,8 @@ def prevalidate(rules: Any, metadata: DimensionsMetadata) -> ValidatedRules:
         # skipped while the others still report.
         sound = [dim for dim in copied_metadata.dimensions if not _dimension_findings(dim, schema)]
         blocked = {uuid for finding in errors if finding.kind in _CELL_BREACHES for uuid in finding.rule_uuids}
-        warnings = _unsatisfiable_findings(captured, copied_metadata, sound, blocked)
+        empty, covered = _empty_set_findings(captured, copied_metadata, sound)
+        warnings = empty + _unsatisfiable_findings(captured, copied_metadata, sound, blocked, covered)
     breaches, found_warnings = _sorted_findings(errors), _sorted_findings(warnings)
     if breaches:
         raise DataContractError(breaches, found_warnings)

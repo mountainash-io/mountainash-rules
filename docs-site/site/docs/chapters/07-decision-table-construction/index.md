@@ -93,7 +93,7 @@ null_rule_cell error 'region' is null without a null wildcard ('F1',)
 
 Two rules with the same normalised conditions are **duplicates** if their outputs are equal and **conflicts** if they differ. Both are errors, because the table could not say what the entry's value should be. `DataContractError.breaches` lists the errors; `DataContractError.warnings` lists warnings discovered at the same time.
 
-A rule that can never match, such as an empty interval or one that requires a field to be both null and equal to a value, is a *warning*: it appears in `validated.warnings`.
+A rule that can never match, such as an empty interval or one that requires a field to be both null and equal to a value, is a *warning*: it appears in `validated.warnings`. So are two set-rule slips: an empty `SET_MEMBERSHIP` list (`empty_membership_set`, which can never match) and an empty `SET_EXCLUSION` list (`empty_exclusion_set`, which excludes nothing and so matches every concrete value). Wrong element types remain errors.
 
 Prevalidation is separate from the expression engine on purpose. The engine evaluates what it is given; prevalidation is where the rules table is held to account.
 
