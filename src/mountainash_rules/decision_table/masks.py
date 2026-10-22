@@ -42,10 +42,30 @@ def word_column(index: int) -> str:
     return f"__word_{index}"
 
 
-def bit_lookup() -> Relation:
-    """The 63-row ``(bit_index, bit_value)`` lookup; ``bit_value`` has exactly bit ``bit_index`` set."""
-    return relation(
-        [{BIT_INDEX: index, BIT_VALUE: 1 << index} for index in range(BITS_PER_WORD)]
+def bit_lookup(like: Relation | None = None) -> Relation:
+    """The 63-row ``(bit_index, bit_value)`` lookup; ``bit_value`` has exactly bit ``bit_index`` set.
+
+    With ``like``, the lookup is built on that relation's own backend: the exact integer
+    literals are one list exploded from one row of ``like`` (which must not be empty), and
+    ``bit_index`` is each literal's rank.  A relation built from host literals lives on
+    another backend, and a plan joining it cannot be snapshotted without executing it
+    (Mountainash refuses: "use a phase-safe plan"), so construction passes the relation the
+    lookup will be joined to.
+    """
+    values = [1 << index for index in range(BITS_PER_WORD)]
+    if like is None:
+        return relation([{BIT_INDEX: index, BIT_VALUE: value} for index, value in enumerate(values)])
+    ranked = (
+        like.limit(1)
+        .select(ma.lit(values).alias(BIT_VALUE))
+        .explode(BIT_VALUE)
+        .with_columns(ma.col(BIT_VALUE).row_number().over(order_by=BIT_VALUE).alias("__rn"))
+    )
+    first = ranked.group_by().agg(ma.col("__rn").min().alias("__rn0"))
+    # row_number starts at 0 or 1 by backend (mountainash backlog #365): subtract the minimum.
+    return ranked.cross_join(first).select(
+        (ma.col("__rn") - ma.col("__rn0")).cast("int64").alias(BIT_INDEX),
+        ma.col(BIT_VALUE).cast("int64").alias(BIT_VALUE),
     )
 
 
@@ -75,24 +95,35 @@ def rule_ordinals(sources: Relation) -> Relation:
     )
 
 
-def word_count(ordinals: Relation) -> int:
+def word_count(
+    ordinals: Relation, count_rows: t.Callable[[Relation], int] | None = None
+) -> int:
     """Number of word columns the widest scope needs (0 when there are no contributors)."""
     # A scope with an ordinal in word k holds ordinals in every word below k, so the distinct
     # word indexes are exactly 0..W-1.  Counting them is the one scalar construction reads.
-    return ordinals.select(WORD_INDEX).unique().count_rows()
+    distinct = ordinals.select(WORD_INDEX).unique()
+    return distinct.count_rows() if count_rows is None else count_rows(distinct)
 
 
 def membership_words(
-    membership: Relation, ordinals: Relation, words: int, keys: t.Sequence[str]
+    membership: Relation,
+    ordinals: Relation,
+    words: int,
+    keys: t.Sequence[str],
+    lookup: Relation | None = None,
 ) -> Relation:
     """One row per cell ``keys`` with its ``words`` int64 mask words.
 
     ``membership`` holds distinct ``(keys..., source_uuid)`` rows: each rule once per cell.
+    ``lookup`` is the ``bit_lookup`` to join (default: one built on ``membership``'s backend).
     """
     if not words:
         return membership.filter(ma.lit(False)).select(*keys)
     joined = membership.join(ordinals, on=[SCOPE, SOURCE_UUID], how="inner").join(
-        bit_lookup(), left_on=WORD_BIT, right_on=BIT_INDEX, how="inner"
+        bit_lookup(membership) if lookup is None else lookup,
+        left_on=WORD_BIT,
+        right_on=BIT_INDEX,
+        how="inner",
     )
     return joined.group_by(*keys).agg(
         *(
@@ -107,20 +138,15 @@ def membership_words(
     )
 
 
-def entry_sources_ids(
-    cell_words: Relation, keys: t.Sequence[str], words: int
-) -> tuple[Relation, Relation]:
+def word_tuple_ids(cell_words: Relation, words: int) -> Relation:
     """Assign ``entry_sources_id`` by sorted natural word tuple within each scope.
 
-    Returns ``(word_ids, cells)``: ``word_ids`` is ``(scope, entry_sources_id, words...)``,
-    one row per distinct word tuple; ``cells`` is ``(keys..., entry_sources_id)``.
+    Returns ``(scope, entry_sources_id, words...)``, one row per distinct word tuple.
     """
     columns = [word_column(index) for index in range(words)]
     if not columns:
-        empty = cell_words.filter(ma.lit(False))
-        return (
-            empty.select(SCOPE, ma.lit(0).cast("int64").alias(ENTRY_SOURCES_ID)),
-            empty.select(*keys, ma.lit(0).cast("int64").alias(ENTRY_SOURCES_ID)),
+        return cell_words.filter(ma.lit(False)).select(
+            SCOPE, ma.lit(0).cast("int64").alias(ENTRY_SOURCES_ID)
         )
     distinct = cell_words.select(SCOPE, *columns).unique()
     # Workaround for mountainash backlog #364: a window honours only the first order_by key,
@@ -133,19 +159,42 @@ def entry_sources_ids(
         ma.col(WORD_KEY).row_number().over(SCOPE, order_by=WORD_KEY).alias("__rn")
     )
     first = ranked.group_by(SCOPE).agg(ma.col("__rn").min().alias("__rn0"))
-    word_ids = (
+    return (
         ranked.join(first, on=SCOPE, how="inner")
         .with_columns((ma.col("__rn") - ma.col("__rn0")).cast("int64").alias(ENTRY_SOURCES_ID))
         .select(SCOPE, ENTRY_SOURCES_ID, *columns)
     )
-    cells = cell_words.join(word_ids, on=[SCOPE, *columns], how="inner").select(
+
+
+def cell_entry_sources_ids(
+    cell_words: Relation, word_ids: Relation, keys: t.Sequence[str], words: int
+) -> Relation:
+    """``(keys..., entry_sources_id)``: each cell with the id of its word tuple."""
+    if not words:
+        return cell_words.filter(ma.lit(False)).select(
+            *keys, ma.lit(0).cast("int64").alias(ENTRY_SOURCES_ID)
+        )
+    columns = [word_column(index) for index in range(words)]
+    return cell_words.join(word_ids, on=[SCOPE, *columns], how="inner").select(
         *keys, ENTRY_SOURCES_ID
     )
-    return word_ids, cells
 
 
-def decode_entry_sources(word_ids: Relation, ordinals: Relation, words: int) -> Relation:
-    """``entry_sources(scope, entry_sources_id, source_uuid)`` from the words' set bits."""
+def entry_sources_ids(
+    cell_words: Relation, keys: t.Sequence[str], words: int
+) -> tuple[Relation, Relation]:
+    """``(word_ids, cells)``: ``word_tuple_ids`` and ``cell_entry_sources_ids`` together."""
+    word_ids = word_tuple_ids(cell_words, words)
+    return word_ids, cell_entry_sources_ids(cell_words, word_ids, keys, words)
+
+
+def decode_entry_sources(
+    word_ids: Relation, ordinals: Relation, words: int, lookup: Relation | None = None
+) -> Relation:
+    """``entry_sources(scope, entry_sources_id, source_uuid)`` from the words' set bits.
+
+    ``lookup`` is the ``bit_lookup`` to join (default: one built on ``word_ids``' backend).
+    """
     if not words:
         return ordinals.filter(ma.lit(False)).select(
             SCOPE, ma.lit(0).cast("int64").alias(ENTRY_SOURCES_ID), SOURCE_UUID
@@ -163,7 +212,12 @@ def decode_entry_sources(word_ids: Relation, ordinals: Relation, words: int) -> 
     )
     return (
         unpacked.join(ordinals, on=[SCOPE, WORD_INDEX], how="inner")
-        .join(bit_lookup(), left_on=WORD_BIT, right_on=BIT_INDEX, how="inner")
+        .join(
+            bit_lookup(word_ids) if lookup is None else lookup,
+            left_on=WORD_BIT,
+            right_on=BIT_INDEX,
+            how="inner",
+        )
         .filter(ma.col(WORD_VALUE).bitwise_and(ma.col(BIT_VALUE)).ne(0))
         .select(SCOPE, ENTRY_SOURCES_ID, SOURCE_UUID)
     )

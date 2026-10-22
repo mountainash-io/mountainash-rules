@@ -16,9 +16,13 @@ d. ``stage_d_membership`` turns the covered rows into each cell's contributor
 e. ``stage_e_entry_sources`` decodes the words into
    ``entry_sources(scope, entry_sources_id, source_uuid)`` and folds each
    declared output once per contributing rule per contributor set.
+f. ``stage_f_entries`` emits ``entries`` (one row per covered cell with ``entry_id``, its
+   ``entry_sources_id`` and folded outputs) beside ``entry_sources`` and
+   ``pattern_conditions``.
 
 Natural keys are scope, plan, sorted cut/value and rule UUID, never row order;
-``stage_key`` names them.
+``stage_key`` names them.  ``entry_id`` numbers the entries by sorted ``(scope, cell
+columns)``.
 
 Column plans (one table column group each):
 
@@ -64,12 +68,15 @@ from mountainash_rules.decision_table.folds import fold_contributions
 from mountainash_rules.decision_table.helpers import check_sources
 from mountainash_rules.decision_table.masks import (
     ENTRY_SOURCES_ID,
+    WORD_DIGITS,
+    bit_lookup,
+    cell_entry_sources_ids,
     decode_entry_sources,
-    entry_sources_ids,
     membership_words,
     rule_ordinals,
     word_column,
     word_count,
+    word_tuple_ids,
 )
 from mountainash_rules.decision_table.prevalidate import ValidatedRules
 from mountainash_rules.decision_table.strategies import strategy_for
@@ -83,8 +90,29 @@ POSITIVE_STRATEGIES = frozenset(
         MatchStrategy.MAX,
     }
 )
-RESERVED_COLUMNS = frozenset({SCOPE, SOURCE_UUID})
+ENTRY_ID = "entry_id"
+RESERVED_COLUMNS = frozenset({SCOPE, SOURCE_UUID, ENTRY_ID, ENTRY_SOURCES_ID})
 PATTERN_CONDITION_COLUMNS = ("column", "context_field", "strategy", "pattern")
+
+
+class Materializer:
+    """How stages reach the backend: scalar reads and reuse boundaries.
+
+    The default does the work in place: ``checkpoint`` returns the relation unchanged and
+    ``count_rows`` executes it.  The build orchestrator supplies a materialization scope's
+    checkpoints and counts the backend executions it issues.
+    """
+
+    def checkpoint(self, relation: Relation, *, replaces: Relation | None = None) -> Relation:
+        """A reusable boundary: ``relation`` itself, or a snapshot that replaces ``replaces``."""
+        return relation
+
+    def count_rows(self, relation: Relation) -> int:
+        """A scalar read (one backend execution)."""
+        return relation.count_rows()
+
+
+DIRECT = Materializer()
 
 
 @dataclass(frozen=True)
@@ -132,6 +160,7 @@ class Coverage:
     by_plan: dict[str, Relation]
     cell_coverage: Relation
     cell_columns: tuple[str, ...]
+    sources: Relation | None = None
 
 
 @dataclass(frozen=True)
@@ -141,7 +170,8 @@ class Membership:
     ``cell_words`` is ``(scope, cell columns..., word columns...)`` with one row per covered
     cell; ``word_ids`` is ``(scope, entry_sources_id, word columns...)`` with one row per
     distinct word tuple in a scope; ``cells`` is ``(scope, cell columns..., entry_sources_id)``;
-    ``ordinals`` is ``(scope, source_uuid, __word_index, __word_bit)`` for the contributors.
+    ``ordinals`` is ``(scope, source_uuid, __word_index, __word_bit)`` for the contributors;
+    ``lookup`` is the 63-row bit lookup, built on the rules' own backend, that stage e decodes with.
     """
 
     ordinals: Relation
@@ -151,6 +181,7 @@ class Membership:
     cell_words: Relation
     word_ids: Relation
     cells: Relation
+    lookup: Relation | None = None
 
 
 @dataclass(frozen=True)
@@ -164,6 +195,21 @@ class EntrySourcesAndFolds:
     entry_sources: Relation
     outputs: Relation
     output_names: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class Emitted:
+    """Stage f: the table's relations.
+
+    ``entries`` is ``(entry_id, scope, cell columns..., entry_sources_id, output names...)``;
+    ``entry_sources`` is ``(scope, entry_sources_id, source_uuid)``; ``pattern_conditions`` is
+    ``(column, context_field, strategy, pattern)``.
+    """
+
+    entries: Relation
+    entry_sources: Relation
+    pattern_conditions: Relation
+
 
 
 def stage_key(stage: str, plan: ColumnPlan) -> tuple[str, ...]:
@@ -225,8 +271,12 @@ def _validate_columns(plans: t.Sequence[ColumnPlan]) -> None:
             seen.add(column)
 
 
-def stage_a_boundaries(validated: ValidatedRules) -> Boundaries:
-    """Stage a: ordered cut values and each scope's named values, per column plan."""
+def stage_a_boundaries(validated: ValidatedRules, reuse: Materializer = DIRECT) -> Boundaries:
+    """Stage a: ordered cut values and each scope's named values, per column plan.
+
+    Each plan's regions are read by its cuts and again by its coverage, so they are reuse
+    boundaries.
+    """
     metadata = validated.source_metadata
     bound = _bound_rules(validated)
 
@@ -248,7 +298,9 @@ def stage_a_boundaries(validated: ValidatedRules) -> Boundaries:
 
     def add(plan: ColumnPlan, relations: t.Sequence[Relation]) -> None:
         plans.append(plan)
-        regions[plan.name] = relations[0] if len(relations) == 1 else concat(list(relations))
+        regions[plan.name] = reuse.checkpoint(
+            relations[0] if len(relations) == 1 else concat(list(relations))
+        )
 
     for kind, payload in layout:
         if kind == "positive":
@@ -295,7 +347,7 @@ def stage_a_boundaries(validated: ValidatedRules) -> Boundaries:
             pattern, ordinal = f"__pat_{index}", f"__ord_{index}"
             bound = bound.with_columns(condition.pattern.alias(pattern))
             ordinals = _pattern_ordinals(bound, pattern, condition.wildcard, ordinal)
-            count = ordinals.count_rows()
+            count = reuse.count_rows(ordinals)
             bound = bound.join(ordinals, on=pattern, how="left")
             prefix = f"{dimension.dimension_name}__pattern_"
             for k in range(count):
@@ -404,7 +456,12 @@ def stage_c_coverage(boundaries: Boundaries, pieces: Pieces) -> Coverage:
             cells = cells.join(coverage, on=[SCOPE, SOURCE_UUID], how="inner")
     else:
         cells = boundaries.sources
-    return Coverage(by_plan=by_plan, cell_coverage=cells, cell_columns=cell_columns)
+    return Coverage(
+        by_plan=by_plan,
+        cell_coverage=cells,
+        cell_columns=cell_columns,
+        sources=boundaries.sources,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -412,19 +469,28 @@ def stage_c_coverage(boundaries: Boundaries, pieces: Pieces) -> Coverage:
 # ---------------------------------------------------------------------------
 
 
-def stage_d_membership(coverage: Coverage) -> Membership:
+def stage_d_membership(coverage: Coverage, reuse: Materializer = DIRECT) -> Membership:
     """Stage d: contributor words per covered cell, ``entry_sources_id`` per distinct tuple.
 
     A rule contributes once per covered cell however many derivations reach the cell, so the
     covered rows are made distinct on ``(scope, cell columns, source_uuid)`` first.
+    ``covered``, the ordinals, the words and the word-tuple ids are each read more than once
+    and so are reuse boundaries; the first retires the stage-a regions it was derived from.
     """
     cell_columns = coverage.cell_columns
     keys = (SCOPE, *cell_columns)
-    covered = coverage.cell_coverage.select(*keys, SOURCE_UUID).unique()
-    ordinals = rule_ordinals(covered.select(SCOPE, SOURCE_UUID).unique())
-    words = word_count(ordinals)
-    cell_words = membership_words(covered, ordinals, words, keys)
-    word_ids, cells = entry_sources_ids(cell_words, keys, words)
+    covered = reuse.checkpoint(
+        coverage.cell_coverage.select(*keys, SOURCE_UUID).unique(),
+        replaces=coverage.cell_coverage,
+    )
+    ordinals = reuse.checkpoint(rule_ordinals(covered.select(SCOPE, SOURCE_UUID).unique()))
+    words = word_count(ordinals, reuse.count_rows)
+    # The lookup reads only the rules (a cheap leaf), never the covered plan, so plans that
+    # reach it do not repeat that plan; it is empty exactly when there are no contributors.
+    lookup = bit_lookup(coverage.sources if coverage.sources is not None else covered)
+    cell_words = reuse.checkpoint(membership_words(covered, ordinals, words, keys, lookup))
+    word_ids = reuse.checkpoint(word_tuple_ids(cell_words, words))
+    cells = reuse.checkpoint(cell_entry_sources_ids(cell_words, word_ids, keys, words))
     return Membership(
         ordinals=ordinals,
         words=words,
@@ -433,6 +499,7 @@ def stage_d_membership(coverage: Coverage) -> Membership:
         cell_words=cell_words,
         word_ids=word_ids,
         cells=cells,
+        lookup=lookup,
     )
 
 
@@ -442,14 +509,18 @@ def stage_d_membership(coverage: Coverage) -> Membership:
 
 
 def stage_e_entry_sources(
-    validated: ValidatedRules, membership: Membership
+    validated: ValidatedRules, membership: Membership, reuse: Materializer = DIRECT
 ) -> EntrySourcesAndFolds:
     """Stage e: ``entry_sources`` from the words' bits, and each output folded per contributor set.
 
     Every contributor set holds each source rule once, so a rule contributes once to every
     cell sharing the set; no output exists for a cell no rule covers.
     """
-    entry_sources = decode_entry_sources(membership.word_ids, membership.ordinals, membership.words)
+    entry_sources = reuse.checkpoint(
+        decode_entry_sources(
+            membership.word_ids, membership.ordinals, membership.words, membership.lookup
+        )
+    )
     bound = _bound_rules(validated)
     folds: dict[str, list[Relation]] = {}
     for output in validated.source_metadata.outputs:
@@ -473,3 +544,64 @@ def stage_e_entry_sources(
             how="left",
         )
     return EntrySourcesAndFolds(entry_sources, outputs, tuple(folds))
+
+
+# ---------------------------------------------------------------------------
+# Stage f
+# ---------------------------------------------------------------------------
+
+
+def entry_ids(cells: Relation, keys: t.Sequence[str]) -> Relation:
+    """``cells`` with ``entry_id``: the 0-based position of each cell sorted by ``keys``.
+
+    A window honours only its first ``order_by`` key (mountainash backlog #364), so each key
+    column becomes the fixed-width text of its value's dense rank, and the cell is ranked by
+    the concatenation of those texts.  The windows are one plan over ``cells`` (no joins back
+    to it).  Dense ranks start at 0 or 1 and place nulls differently by backend, so each
+    rank is rebased on the column's minimum and nulls are read as 0 (they sort first on every
+    backend).  Cells are distinct on ``keys``, so the key is a strict order.
+    """
+    ranked = cells.with_columns(
+        *(
+            ma.col(column).dense_rank().over(order_by=column).alias(f"__rank_{index}")
+            for index, column in enumerate(keys)
+        )
+    )
+    parts = []
+    for index, column in enumerate(keys):
+        rank = ma.col(f"__rank_{index}")
+        position = ma.when(ma.col(column).is_null()).then(0).otherwise(rank - rank.min().over() + 1)
+        parts.append(position.cast("string").str.zfill(WORD_DIGITS))
+    key = parts[0]
+    for part in parts[1:]:
+        key = key + part
+    numbered = ranked.with_columns(key.alias("__entry_key")).with_columns(
+        ma.col("__entry_key").row_number().over(order_by="__entry_key").alias("__rn")
+    )
+    return numbered.select(
+        *cells.columns,
+        (ma.col("__rn") - ma.col("__rn").min().over()).cast("int64").alias(ENTRY_ID),
+    )
+
+
+def stage_f_entries(
+    boundaries: Boundaries,
+    membership: Membership,
+    folded: EntrySourcesAndFolds,
+) -> Emitted:
+    """Stage f: ``entries``, ``entry_sources`` and ``pattern_conditions`` as emitted.
+
+    ``entries`` is ``(entry_id, scope, cell columns..., entry_sources_id, output names...)``
+    with one row per covered cell, numbered by sorted ``(scope, cell columns)``.
+    """
+    clash = sorted(set(folded.output_names) & {*RESERVED_COLUMNS, *membership.cell_columns})
+    if clash:
+        raise DecisionTableError(f"Output name {clash[0]!r} is also a table column or reserved")
+    keys = (SCOPE, *membership.cell_columns)
+    numbered = entry_ids(membership.cells, keys).join(
+        folded.outputs, on=[SCOPE, ENTRY_SOURCES_ID], how="left"
+    )
+    entries = numbered.select(
+        ENTRY_ID, *keys, ENTRY_SOURCES_ID, *folded.output_names
+    ).sort(ENTRY_ID)
+    return Emitted(entries, folded.entry_sources, boundaries.pattern_conditions)
