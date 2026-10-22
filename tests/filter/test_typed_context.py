@@ -40,10 +40,6 @@ def _scores(frame):
 
 @pytest.mark.parametrize("strategy", ["exact", "not_equal"])
 def test_boolean_truth_table_across_entry_points(backend_name, strategy):
-    if backend_name == "ibis-polars":
-        pytest.skip(
-            "mountainash#78: engine with_row_index lacks WindowFunction translation"
-        )
     rules = build_backend_df(
         backend_name,
         {
@@ -101,10 +97,6 @@ def test_boolean_truth_table_across_entry_points(backend_name, strategy):
 
 
 def test_boolean_all_null_and_empty_batches_without_wildcards(backend_name):
-    if backend_name == "ibis-polars":
-        pytest.skip(
-            "mountainash#78: engine with_row_index lacks WindowFunction translation"
-        )
     rules = build_backend_df(
         backend_name, {"rule_name": ["false", "true"], "value": [False, True]}
     )
@@ -129,7 +121,7 @@ def test_boolean_all_null_and_empty_batches_without_wildcards(backend_name):
     assert empty.schema["value"] == pl.Boolean
 
 
-@pytest.mark.parametrize("backend_name", ["polars", "ibis-duckdb", "ibis-sqlite"])
+@pytest.mark.parametrize("backend_name", ["polars", "ibis-duckdb"])
 @pytest.mark.parametrize(
     "strategy,pattern,concrete",
     [
@@ -205,7 +197,7 @@ def test_ordinary_string_sentinels_never_earn_specificity(
         ]
 
 
-@pytest.mark.parametrize("backend_name", ["polars", "ibis-duckdb", "ibis-sqlite"])
+@pytest.mark.parametrize("backend_name", ["polars", "ibis-duckdb"])
 @pytest.mark.parametrize("pattern", ["^.+$", "^.*$"])
 def test_context_regex_requires_concrete_input(backend_name, pattern):
     engine = ExpressionRulesEngine(
@@ -434,11 +426,7 @@ def test_semantic_python_and_numpy_booleans_are_admitted_without_conversion():
     "context_backend",
     [
         "polars",
-        "pandas",
-        "narwhals-polars",
-        "narwhals-pandas",
         "ibis-duckdb",
-        "ibis-sqlite",
     ],
 )
 def test_native_boolean_and_null_context_columns_retain_ternaries(context_backend):

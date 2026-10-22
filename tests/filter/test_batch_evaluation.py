@@ -202,8 +202,7 @@ class TestChunking:
 
 class TestBatchBackendSweep:
     """Task 2's agreement oracle across backends (EXACT + RANGE dims only;
-    per-row string-match strategies are broken on pandas/narwhals upstream,
-    mountainash-io/mountainash#89, and are swept in test_compiler instead)."""
+    per-row string-match strategies are swept in test_compiler instead)."""
 
     _RULE_DATA = {
         "rule_name": ["au_low", "au_high", "nz_any"],

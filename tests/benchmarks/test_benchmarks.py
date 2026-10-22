@@ -12,22 +12,11 @@ import pytest
 
 pytestmark = pytest.mark.benchmark
 
-from tests.conftest import ALL_BACKENDS, LIST_CAPABLE_BACKENDS
+from tests.conftest import ALL_BACKENDS
 from tests.benchmarks.benchmark_data import build_engine, generate_context, generate_rules
 from mountainash_rules.core.constants import MatchStrategy
 
-# ibis-polars excluded: upstream bug mountainash-io/mountainash#78
-# breaks with_row_index in the engine pipeline.
-BENCH_BACKENDS = [b for b in ALL_BACKENDS if b != "ibis-polars"]
-
-_SET_STRATEGIES = {MatchStrategy.SET_MEMBERSHIP, MatchStrategy.SET_EXCLUSION}
-
-# String-match strategies broken on pandas/narwhals backends (upstream).
-# pandas: PREFIX, SUFFIX, CONTAINS fail — str accessor receives Expr not str.
-# narwhals-polars: PREFIX, SUFFIX fail — cannot create literal for Expr.
-# Tracked as mountainash-io/mountainash#89.
-_STRING_MATCH_STRATEGIES = {MatchStrategy.PREFIX, MatchStrategy.SUFFIX, MatchStrategy.CONTAINS}
-_STRING_MATCH_BROKEN_BACKENDS = {"pandas", "narwhals-pandas", "narwhals-polars"}
+BENCH_BACKENDS = list(ALL_BACKENDS)
 
 RULE_COUNTS = [10, 100, 1000]
 DIM_COUNTS = [3, 5, 7]
@@ -49,18 +38,6 @@ class TestScalingMatrix:
             seed=42,
         )
 
-        has_set_strategy = any(
-            d.match_strategy in _SET_STRATEGIES for d in metadata.dimensions
-        )
-        if has_set_strategy and backend_name not in LIST_CAPABLE_BACKENDS:
-            pytest.skip(f"{backend_name} does not support list columns")
-
-        has_string_match = any(
-            d.match_strategy in _STRING_MATCH_STRATEGIES for d in metadata.dimensions
-        )
-        if has_string_match and backend_name in _STRING_MATCH_BROKEN_BACKENDS:
-            pytest.skip(f"{backend_name} does not support per-row string match strategies")
-
         engine = build_engine(rules_dict, metadata, backend_name)
         ctx = generate_context(metadata, rules_dict, seed=42)
 
@@ -79,18 +56,6 @@ class TestStrategyIsolation:
     @pytest.mark.parametrize("strategy", list(MatchStrategy), ids=lambda s: s.name)
     @pytest.mark.parametrize("backend_name", BENCH_BACKENDS)
     def test_strategy(self, benchmark, strategy, backend_name):
-        if (
-            strategy in _SET_STRATEGIES
-            and backend_name not in LIST_CAPABLE_BACKENDS
-        ):
-            pytest.skip(f"{backend_name} does not support list columns")
-
-        if (
-            strategy in _STRING_MATCH_STRATEGIES
-            and backend_name in _STRING_MATCH_BROKEN_BACKENDS
-        ):
-            pytest.skip(f"{backend_name} does not support per-row string match strategies")
-
         if strategy is MatchStrategy.REGEX:
             pytest.skip(
                 "per-row REGEX patterns are not yet produced by the benchmark "

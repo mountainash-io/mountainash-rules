@@ -1,8 +1,8 @@
 """Shared fixtures for expression-based rules engine tests.
 
-Mirrors the mountainash exemplar: data-as-dict fixtures + a
-`backend_name` param fixture + per-backend DataFrame factory fixtures that
-auto-parametrize across 7 supported backends, selected by `--backends`.
+Data-as-dict fixtures + a `backend_name` param fixture + per-backend
+DataFrame factory fixtures that auto-parametrize across the two supported
+backends (polars, ibis-duckdb), selected by `--backends`.
 """
 
 from __future__ import annotations
@@ -10,8 +10,6 @@ from __future__ import annotations
 from typing import Any
 
 import ibis
-import narwhals as nw
-import pandas as pd
 import polars as pl
 import pytest
 from pydantic import BaseModel
@@ -28,83 +26,8 @@ from mountainash_rules.engines.filter.engine import ExpressionRulesEngine
 # Backend constants
 # ---------------------------------------------------------------------------
 
-ALL_BACKENDS = [
-    "polars",
-    "pandas",
-    "narwhals-polars",
-    "narwhals-pandas",
-    "ibis-duckdb",
-    "ibis-polars",
-    "ibis-sqlite",
-]
-
-LIST_CAPABLE_BACKENDS = [
-    "polars",
-    "ibis-duckdb",
-    "ibis-polars",
-]
-
-# Narwhals rejects a column-valued needle for list.t_contains on both its
-# Polars and Pandas paths. The compiler backend matrix asserts that capability
-# error; engine list tests run only on the backends above.
-
-# ---------------------------------------------------------------------------
-# Per-test upstream xfails
-# ---------------------------------------------------------------------------
-# Surgical xfail markers for specific test × backend combinations that fail
-# due to known upstream bugs.  strict=True so CI flags when upstream fixes land.
-# Remove entries as upstream bugs are fixed.
-
-_ISSUE_78_REASON = (
-    "ibis-polars: missing WindowFunction translation for with_row_index "
-    "— mountainash-io/mountainash#78"
-)
-
-# (backends, reason, test node substrings)
-_UPSTREAM_XFAILS: list[tuple[set[str], str, list[str]]] = [
-    # #78 — hits any test that reaches with_row_index in the engine pipeline.
-    (
-        {"ibis-polars"},
-        _ISSUE_78_REASON,
-        [
-            # test_engine.py
-            "TestSurvival::test_non_matching_rules_eliminated",
-            "TestSurvival::test_matching_rules_survive",
-            "TestSpecificity::test_specific_rule_ranks_first",
-            "TestSpecificity::test_specificity_values",
-            "TestRanking::test_rank_order",
-            "TestEmptyResult::test_no_survivors",
-            "TestTopN::test_top_n_limits_results",
-            "TestTopN::test_top_n_larger_than_survivors",
-            "TestMinSpecificity::test_min_specificity_filters",
-            "TestDimensionsSubset::test_subset_dimensions",
-            "TestObservability::test_observability_columns_present_by_default",
-            "TestObservability::test_observability_columns_absent_when_disabled",
-            "TestCustomExpressions::test_custom_expression_exact",
-            # test_integration.py
-            "TestPricingCarveOut::test_specific_override_wins",
-            "TestPricingCarveOut::test_fallback_to_client_rate",
-            "TestPricingCarveOut::test_fallback_to_base_rate",
-            "TestPricingCarveOut::test_hierarchy_preserved_in_ranking",
-            "TestEntityPool::test_most_specific_wins",
-            "TestEntityPool::test_mid_tier_fallback",
-            "TestEntityPool::test_no_match_when_regex_fails",
-            "TestNoMatch::test_all_rules_eliminated",
-            "TestTieHandling::test_same_specificity_both_survive",
-            "TestTieHandling::test_equal_specificity_both_returned",
-            "TestExplainIntegration::test_explain_shows_dimension_breakdown",
-            "TestMixedStrategyFraudDetection::test_high_value_review",
-            "TestMixedStrategyFraudDetection::test_blacklist_merchant_blocks",
-            "TestMixedStrategyFraudDetection::test_specific_txn_most_specific",
-            # test_batch_evaluation.py
-            "TestBatchBackendSweep::test_batch_agrees_with_single_context_evaluation",
-            # test_accumulator_backends.py
-            "TestApplyCrossBackend::test_apply_correct_count",
-            "TestApplyCrossBackend::test_apply_accumulated_margin",
-            "TestApplyCrossBackend::test_apply_partial_match",
-        ],
-    ),
-]
+ALL_BACKENDS = ["polars", "ibis-duckdb"]
+LIST_CAPABLE_BACKENDS = ["polars", "ibis-duckdb"]
 
 
 def pytest_addoption(parser):
@@ -116,7 +39,7 @@ def pytest_addoption(parser):
 
 
 def pytest_collection_modifyitems(config, items):
-    """Deselect unused backend variants and mark known upstream failures."""
+    """Deselect unused backend variants."""
     requested = config.getoption("--backends")
     selected = (
         set(ALL_BACKENDS)
@@ -151,28 +74,6 @@ def pytest_collection_modifyitems(config, items):
         config.hook.pytest_deselected(items=deselected)
         items[:] = retained
 
-    for item in items:
-        callspec = getattr(item, "callspec", None)
-        if callspec is None:
-            continue
-        backend = None
-        for param_name in (
-            "backend_name",
-            "list_backend_name",
-            "list_backend",
-            "apply_backend",
-        ):
-            backend = callspec.params.get(param_name)
-            if backend is not None:
-                break
-        if backend is None:
-            continue
-        for backends, reason, patterns in _UPSTREAM_XFAILS:
-            if backend not in backends:
-                continue
-            if any(p in item.nodeid for p in patterns):
-                item.add_marker(pytest.mark.xfail(strict=True, reason=reason))
-                break
 
 
 # ---------------------------------------------------------------------------
@@ -184,20 +85,8 @@ def build_backend_df(backend: str, data: dict, table_name: str = "t") -> Any:
     """Dispatch a data dict into the requested backend's DataFrame type."""
     if backend == "polars":
         return pl.DataFrame(data)
-    if backend == "pandas":
-        return pd.DataFrame(data)
-    if backend == "narwhals-polars":
-        return nw.from_native(pl.DataFrame(data))
-    if backend == "narwhals-pandas":
-        return nw.from_native(pd.DataFrame(data), eager_only=True)
     if backend == "ibis-duckdb":
         conn = ibis.duckdb.connect()
-        return conn.create_table(table_name, data, overwrite=True)
-    if backend == "ibis-polars":
-        conn = ibis.polars.connect()
-        return conn.create_table(table_name, pl.DataFrame(data), overwrite=True)
-    if backend == "ibis-sqlite":
-        conn = ibis.sqlite.connect(":memory:")
         return conn.create_table(table_name, data, overwrite=True)
     raise ValueError(f"Unknown backend: {backend}")
 

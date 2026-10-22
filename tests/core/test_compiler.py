@@ -1,10 +1,8 @@
 """Tests for DimensionCompiler."""
 
-import ibis
 import polars as pl
 import pytest
 
-from mountainash.core.types import BackendCapabilityError
 
 from mountainash_rules.core.compiler import DimensionCompiler
 from mountainash_rules import ContextField
@@ -726,27 +724,6 @@ class TestBackendAgnosticism:
         object.__setattr__(dim, "_field", ContextField(name=field, data_type=data_type))
         expr = compiler.compile_dimension(dim)
         df = build_backend_df(backend_name, self._NON_LIST_DATA)
-        if backend_name in {"pandas", "narwhals-pandas"} and strategy in {
-            MatchStrategy.PREFIX,
-            MatchStrategy.SUFFIX,
-            MatchStrategy.CONTAINS,
-        }:
-            # Column-valued string predicates are not supported on pandas.
-            rel = _bound_relation(df, dim).with_columns(expr.alias("__t"))
-            with pytest.raises(BackendCapabilityError) as error:
-                rel.to_dict()
-            assert error.value.backend == "narwhals"
-            return
-        if backend_name == "ibis-polars" and strategy in {
-            MatchStrategy.PREFIX,
-            MatchStrategy.SUFFIX,
-            MatchStrategy.CONTAINS,
-        }:
-            # Ibis accepts the expression but its Polars translator rejects it.
-            rel = _bound_relation(df, dim).with_columns(expr.alias("__t"))
-            with pytest.raises(ibis.common.exceptions.UnsupportedArgumentError):
-                rel.to_dict()
-            return
         result = (
             _bound_relation(df, dim)
             .with_columns(expr.alias("__t"))
@@ -764,8 +741,6 @@ class TestBackendAgnosticism:
         ],
     )
     def test_set_strategy_evaluates_on_backend(self, compiler, backend_name, strategy):
-        if backend_name == "ibis-sqlite":
-            pytest.skip("SQLite has no native array/list column type.")
         dim = Dimension(
             dimension_name="list_col", context_field="list_col",
             match_strategy=strategy,
@@ -787,13 +762,6 @@ class TestBackendAgnosticism:
                 f"{CTX_PREFIX}list_col": ["A", "A", "A", UNKNOWN, None, "A", "A"],
             },
         )
-        if backend_name in {"pandas", "narwhals-polars", "narwhals-pandas"}:
-            # List-column membership needs a column-valued needle.
-            rel = _bound_relation(df, dim).with_columns(expr.alias("__t"))
-            with pytest.raises(BackendCapabilityError) as error:
-                rel.to_dict()
-            assert error.value.backend == "narwhals"
-            return
         result = (
             _bound_relation(df, dim)
             .with_columns(expr.alias("__t"))

@@ -27,10 +27,6 @@ def _frame(frame):
 
 
 def _engine(data=None, backend="polars", **metadata):
-    if backend == "ibis-polars":
-        pytest.skip(
-            "mountainash#78: engine row indexing lacks WindowFunction translation"
-        )
     if data is None:
         data = {
             "rule_name": ["generic", "specific"],
