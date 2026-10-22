@@ -791,6 +791,44 @@ class TruthyField(Field):
             .otherwise(0)
         )
 
+    @staticmethod
+    def pattern_match(strategy: t.Any, value: BaseExpressionAPI, pattern: t.Any) -> BaseExpressionAPI:
+        """Whether ``value`` satisfies a pattern: the one operation used for context patterns.
+
+        ``strategy`` is a ``MatchStrategy`` or, for per-row conditions, an expression of
+        strategy names (``pattern_conditions.strategy``).
+        """
+        if is_expression(strategy):
+            return (
+                ma.when(strategy.eq(MatchStrategy.PREFIX.value))
+                .then(value.str.starts_with(pattern))
+                .when(strategy.eq(MatchStrategy.SUFFIX.value))
+                .then(value.str.ends_with(pattern))
+                .when(strategy.eq(MatchStrategy.CONTAINS.value))
+                .then(value.str.contains(pattern))
+                .otherwise(value.str.regex_contains(pattern))
+            )
+        if strategy is MatchStrategy.PREFIX:
+            return value.str.starts_with(pattern)
+        if strategy is MatchStrategy.SUFFIX:
+            return value.str.ends_with(pattern)
+        if strategy is MatchStrategy.CONTAINS:
+            return value.str.contains(pattern)
+        if strategy in (MatchStrategy.REGEX, MatchStrategy.CONTEXT_REGEX):
+            return value.str.regex_contains(pattern)
+        raise DecisionTableError(f"{strategy!r} is not a pattern strategy")
+
+    @classmethod
+    def classify(cls, strategy: t.Any, value: BaseExpressionAPI, pattern: t.Any) -> BaseExpressionAPI:
+        """Ternary outcome of a concrete value: 1 on a match, -1 otherwise, 0 when missing."""
+        return (
+            ma.when(value.is_null())
+            .then(0)
+            .when(cls.pattern_match(strategy, value, pattern))
+            .then(1)
+            .otherwise(-1)
+        )
+
     def scalar_cell(self, raw: BaseExpressionAPI, source_dtype: t.Any) -> tuple[t.Any, t.Any]:
         return raw, self.wildcard_flag(raw, source_dtype)
 

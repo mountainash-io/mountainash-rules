@@ -154,6 +154,20 @@ def test_families_report_structurally_empty_regions_through_the_shared_interface
     assert truthy.intersect(outcome(1), outcome(1)) == outcome(1)
 
 
+def test_families_reject_data_types_they_do_not_interpret():
+    floating = ContextField(name="ratio", data_type=DataType.FLOAT)
+
+    for family_class, field in (
+        (OrderedField, floating),  # FLOAT ordered dimensions are rejected
+        (OrderedField, REGION),  # STR/BOOL use the unordered family
+        (OrderedField, VIP),
+        (UnorderedField, TERM),
+        (UnorderedField, floating),
+    ):
+        with pytest.raises(DecisionTableError):
+            family_class(field)
+
+
 def test_family_selection_follows_strategy_and_data_type():
     cases = [
         (MatchStrategy.EXACT, TERM, OrderedField),

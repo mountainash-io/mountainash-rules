@@ -50,6 +50,7 @@ from mountainash_rules.decision_table.fields import (
     Field,
     OrderedField,
     Outcome,
+    TruthyField,
     Unsatisfiable,
     is_expression,
 )
@@ -286,6 +287,29 @@ def stage_a_boundaries(validated: ValidatedRules) -> Boundaries:
         cuts=cuts,
         named_values=named,
         pattern_conditions=concat(conditions) if conditions else _empty_conditions(bound),
+    )
+
+
+def classify_named_values(
+    named_values: Relation, conditions: Relation, context_field: str
+) -> Relation:
+    """Classify a field's named values against its pattern conditions.
+
+    Uses the one pattern operation that scores context values (``TruthyField.classify``):
+    ``(scope, value, column, outcome)`` with outcome 1 on a match, -1 otherwise, and 0 for the
+    wildcard piece (unknown).  ``named_values`` is a stage-a ``(scope, value, wildcard)``
+    relation; ``conditions`` is ``pattern_conditions``.
+    """
+    field_conditions = conditions.filter(ma.col("context_field").eq(context_field)).select(
+        "column", "strategy", "pattern"
+    )
+    outcome = (
+        ma.when(ma.col(WILDCARD))
+        .then(0)
+        .otherwise(TruthyField.classify(ma.col("strategy"), ma.col(VALUE), ma.col("pattern")))
+    )
+    return named_values.cross_join(field_conditions).select(
+        SCOPE, VALUE, "column", outcome.cast("int8").alias("outcome")
     )
 
 

@@ -16,7 +16,6 @@ from mountainash_rules.core.dimension import ContextField, Dimension, Dimensions
 from mountainash_rules.decision_table.fields import OrderedField
 
 from tests.decision_table.construction_support import (
-    captured_rules,
     cell_sources,
     engine_matches,
     folded_outputs,
