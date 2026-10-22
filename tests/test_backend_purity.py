@@ -12,7 +12,7 @@ from pathlib import Path
 import pytest
 
 SRC_ROOT = Path(__file__).parent.parent / "src" / "mountainash_rules"
-PROHIBITED_PACKAGES = ("polars", "ibis", "narwhals")
+PROHIBITED_PACKAGES = ("polars", "ibis", "narwhals", "pyarrow")
 ALLOW_PATTERN = re.compile(r"#\s*allow:\s*\w+")
 
 

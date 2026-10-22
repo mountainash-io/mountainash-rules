@@ -199,30 +199,6 @@ class TestTemporalRange:
         result = engine.evaluate({})
         assert result.count == 3  # unavailable context leaves every rule unconstrained
 
-    def test_accumulator_retains_joint_temporal_source_membership(self):
-        import mountainash as ma
-
-        from mountainash_rules.core.aggregate import Aggregate
-        from mountainash_rules.engines.accumulate.build import build
-
-        source_rows = pl.DataFrame({
-            "id": ["A", "B"],
-            "eff_from": [datetime.date(2026, 1, 1), datetime.date(2026, 6, 1)],
-            "eff_to": [datetime.date(2026, 12, 31), UNKNOWN_DATE],
-            "amount": [1, 2],
-        })
-        metadata = DimensionsMetadata(
-            uuid_field="id", dimensions=_effective_dated_metadata().dimensions,
-            aggregates=[Aggregate(column_name="amount", output_name="total", data_type="int")],
-        )
-        lattice = build(ma.relation(source_rows), metadata)
-        memberships = lattice.cells.join(
-            lattice.contributors, on=["partition", "scope", "contributor_set_id"],
-        ).select("cell_id", "source_uuid").to_dicts()
-        assert {"A", "B"} in [
-            {row["source_uuid"] for row in memberships if row["cell_id"] == cell["cell_id"]}
-            for cell in lattice.cells.to_dicts()
-        ]
 
 class TestTemporalBackendRegression:
     def test_duckdb_backend_stores_and_compares_sentinel_dates(self):

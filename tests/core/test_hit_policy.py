@@ -1,6 +1,5 @@
 """Tests for hit policies, priority, and deterministic tie-breaking."""
 
-import mountainash_rules as rules
 import polars as pl
 import pytest
 
@@ -11,7 +10,6 @@ from mountainash_rules import (
     HitPolicy,
     HitPolicyViolationError,
 )
-from tests.accumulator.exact_runtime_fixtures import build, declarations, uuid
 
 
 
@@ -168,55 +166,6 @@ class TestResultSelect:
         with pytest.raises(ValueError, match="truncated"):
             result.select(HitPolicy.UNIQUE)
 
-
-class TestAccumulatorCollectPin:
-    def test_apply_keeps_all_exact_candidates_despite_filter_first_metadata(self):
-        dimension = Dimension(dimension_name="x")
-        aggregate = rules.Aggregate(
-            column_name="amount",
-            output_name="pricing.total",
-            data_type="int",
-            numeric_semantics="numeric-1",
-        )
-        profile = rules.ResolutionProfile(
-            profile_id="quote",
-            mode="candidates",
-            output_fields=("pricing.total",),
-            provenance="none",
-            dimensions=("x",),
-            allow_dont_care=(),
-            promise="candidate_only",
-        )
-        contract = rules.ContextContract(
-            schema_version=1,
-            contract_id="client",
-            domain_ref="D",
-            fields=(
-                rules.ContextField(name="x", data_type="str", required=False),
-            ),
-            profiles=(profile,),
-        )
-        kwargs = declarations((dimension,), (aggregate,), contracts=(contract,))
-        kwargs["metadata"] = DimensionsMetadata(
-            dimensions=(dimension,),
-            context_contracts=(contract,),
-            hit_policy=HitPolicy.FIRST,
-        )
-        engine, lattice = build(
-            [
-                {"id": uuid(1), "rule_name": "au", "x": "AU", "amount": 1},
-                {"id": uuid(2), "rule_name": "nz", "x": "NZ", "amount": 2},
-            ],
-            kwargs,
-        )
-
-        result = engine.apply(lattice, {}, contract_id="client", profile_id="quote")
-
-        assert result.status == "candidates"
-        assert {row["source_id"] for row in result.candidate_contributors.to_dicts()} == {
-            uuid(1),
-            uuid(2),
-        }
 
 
 def test_hit_policy_yaml_round_trip():

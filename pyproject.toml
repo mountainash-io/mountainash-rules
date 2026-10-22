@@ -38,23 +38,6 @@ Documentation = "https://github.com/mountainash-io/mountainash-rules#readme"
 Issues = "https://github.com/mountainash-io/mountainash-rules/issues"
 Source = "https://github.com/mountainash-io/mountainash-rules"
 
-#================
-# Tool: cibuildwheel
-#================
-# Builds the mountainash_rules._native PyO3 extension for every supported
-# CPython/PyPy version. There is no pure-Python fallback, so every wheel
-# built here is interpreter- and platform-specific (see hatch_build.py).
-[tool.cibuildwheel]
-build = "cp310-* cp311-* cp312-* cp313-* cp314-* pp310-* pp311-*"
-skip = ["*-musllinux*", "*-win32"]
-enable = ["pypy", "pypy-eol"]
-archs = ["auto64"]
-build-verbosity = 1
-
-[tool.cibuildwheel.linux]
-# The manylinux build containers do not ship a Rust toolchain.
-before-all = "curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable --profile minimal"
-environment = { PATH = "$HOME/.cargo/bin:$PATH" }
 
 #================
 # Tool: Coverage

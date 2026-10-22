@@ -21,12 +21,6 @@ from mountainash_rules.core.dimension import Dimension, DimensionsMetadata
 from mountainash_rules.engines.filter.engine import ExpressionRulesEngine
 
 
-# Retired engine suites are not release gates during the clean replacement.
-# Keep their fixtures importable for shared tests until the old source is removed.
-collect_ignore = [
-    "accumulator",
-    "benchmarks/test_accumulator_benchmarks.py",
-]
 
 
 # ---------------------------------------------------------------------------

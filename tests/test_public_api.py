@@ -4,23 +4,14 @@ import mountainash_rules as mr
 
 
 PUBLIC_NAMES = (
-    # engines & results
-    "ExpressionRulesEngine", "AccumulatorEngine", "RuleResult",
-    "AccumulatorResult", "BatchRuleResult", "ExplainResult",
-    # metadata
-    "Dimension", "DimensionsMetadata", "Aggregate",
+    "ExpressionRulesEngine", "RuleResult", "BatchRuleResult", "ExplainResult",
+    "Dimension", "DimensionsMetadata", "Aggregate", "AggregateOp",
     "MatchStrategy", "DimensionRole", "HitPolicy", "DataType",
-    # lattice
-    "Lattice", "LatticeIndex",
-    # selection
-    "SelectionInfo", "HitPolicyViolationError",
-    # compiler
-    "DimensionCompiler",
-    # sentinels & helpers (promoted by this task)
+    "SelectionInfo", "HitPolicyViolationError", "DimensionCompiler",
+    "DecisionTableError",
     "UNKNOWN", "NOT_SET", "UNKNOWN_NUMERIC", "NOT_SET_NUMERIC",
     "UNKNOWN_DATE", "NOT_SET_DATE", "UNKNOWN_DATETIME", "NOT_SET_DATETIME",
     "sentinels_for", "unknown_sentinel_for", "not_set_sentinel_for",
-    # metadata
     "__version__",
 )
 
