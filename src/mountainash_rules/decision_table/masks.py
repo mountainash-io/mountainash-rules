@@ -55,8 +55,8 @@ def rule_ordinals(sources: Relation) -> Relation:
     ``sources`` has distinct ``(scope, source_uuid)`` rows.  Returns ``(scope, source_uuid,
     __word_index, __word_bit)`` where the 0-based ordinal is ``word_index * 63 + word_bit``.
     ``row_number`` starts at 0 or 1 depending on the backend (mountainash backlog #365), so
-    each scope's minimum is subtracted. ``//``/``%`` run through float on Ibis-DuckDB
-    (backlog #366); exact here because ordinals stay far below 2**53.
+    each scope's minimum is subtracted. Integer ``//``/``%`` are inexact on Ibis-DuckDB for
+    very large operands (backlog #366); exact here because ordinals stay far below 2^53.
     """
     ranked = sources.unique().with_columns(
         ma.col(SOURCE_UUID).row_number().over(SCOPE, order_by=SOURCE_UUID).alias("__rn")
