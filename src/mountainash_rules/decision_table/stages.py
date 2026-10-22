@@ -20,8 +20,7 @@ f. ``stage_f_entries`` emits ``entries`` (one row per covered cell with ``entry_
    ``entry_sources_id`` and folded outputs) beside ``entry_sources`` and
    ``pattern_conditions``.
 
-Natural keys are scope, plan, sorted cut/value and rule UUID, never row order;
-``stage_key`` names them.  ``entry_id`` numbers the entries by sorted ``(scope, cell
+Natural keys are scope, plan, sorted cut/value and rule UUID, never row order.  ``entry_id`` numbers the entries by sorted ``(scope, cell
 columns)``.
 
 Column plans (one table column group each):
@@ -208,18 +207,6 @@ class Emitted:
     entries: Relation
     entry_sources: Relation
     pattern_conditions: Relation
-
-
-
-def stage_key(stage: str, plan: ColumnPlan) -> tuple[str, ...]:
-    """Natural-key columns of ``plan``'s relation at ``stage`` (a, b or c)."""
-    if stage == "a":
-        return (SCOPE, "__cut") if plan.kind == "interval" else (SCOPE, VALUE, WILDCARD)
-    if stage == "b":
-        return (SCOPE, plan.columns[0]) if plan.kind == "interval" else (SCOPE, VALUE, WILDCARD)
-    if stage == "c":
-        return (SCOPE, SOURCE_UUID, *plan.columns)
-    raise DecisionTableError(f"No natural key is defined for stage {stage!r}")
 
 
 # ---------------------------------------------------------------------------

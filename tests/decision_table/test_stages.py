@@ -20,7 +20,6 @@ from mountainash_rules.decision_table.stages import (
     stage_a_boundaries,
     stage_b_pieces,
     stage_c_coverage,
-    stage_key,
 )
 
 from tests.decision_table.construction_support import (
@@ -31,6 +30,17 @@ from tests.decision_table.construction_support import (
 )
 
 INT_MIN, INT_MAX = -2147483648, 2147483647
+
+
+def stage_key(stage: str, plan) -> tuple[str, ...]:
+    """The natural key the test holds a stage's relation to: scope, sorted cut/value, rule UUID."""
+    if stage == "a":
+        return ("scope", "__cut") if plan.kind == "interval" else ("scope", "value", "wildcard")
+    if stage == "b":
+        return ("scope", plan.columns[0]) if plan.kind == "interval" else ("scope", "value", "wildcard")
+    if stage == "c":
+        return ("scope", "source_uuid", *plan.columns)
+    raise DecisionTableError(f"No natural key is defined for stage {stage!r}")
 
 TERM = ContextField(name="term", data_type=DataType.INT, wildcard=None, wildcard_declared=True)
 REGION = ContextField(name="region", data_type=DataType.STR, wildcard="*")

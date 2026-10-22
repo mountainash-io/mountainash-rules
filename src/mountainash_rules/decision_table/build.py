@@ -104,7 +104,9 @@ def compute_build_id(validated: ValidatedRules) -> str:
     values = tuple(column for column in declared if column not in keys) or keys
     fingerprint = validated.rules.fingerprint(keys=keys, columns=values).to_dicts()
     tables = metadata_to_tables(metadata, relation_factory=list)
-    tables["truthy"] = sorted(tables["truthy"], key=lambda row: (row["context_field"], row["value"]))
+    tables["truthy"] = sorted(
+        tables["truthy"], key=lambda row: (row["context_field"], row["value"] is None, row["value"] or "")
+    )
     canonical = json.dumps(
         {"rules": fingerprint, "metadata": tables},
         sort_keys=True,

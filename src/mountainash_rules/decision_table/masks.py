@@ -163,14 +163,6 @@ def cell_entry_sources_ids(
     )
 
 
-def entry_sources_ids(
-    cell_words: Relation, keys: t.Sequence[str], words: int
-) -> tuple[Relation, Relation]:
-    """``(word_ids, cells)``: ``word_tuple_ids`` and ``cell_entry_sources_ids`` together."""
-    word_ids = word_tuple_ids(cell_words, words)
-    return word_ids, cell_entry_sources_ids(cell_words, word_ids, keys, words)
-
-
 def decode_entry_sources(
     word_ids: Relation, ordinals: Relation, words: int, lookup: Relation | None = None
 ) -> Relation:

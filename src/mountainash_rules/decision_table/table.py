@@ -45,7 +45,7 @@ def _natural(column: str) -> tuple:
     return tuple(int(part) if part.isdigit() else part for part in re.split(r"(\d+)", column))
 
 
-def _outcome(column: str, context_field: str) -> tuple[ContextField, Dimension]:
+def _outcome(column: str) -> tuple[ContextField, Dimension]:
     field = ContextField(name=outcome_field(column), data_type=DataType.INT)
     dimension = Dimension(
         dimension_name=column,
@@ -87,15 +87,12 @@ def derive_entry_metadata(
                 )
             )
         elif strategy in OUTCOME_STRATEGIES:
-            field, outcome = _outcome(dimension.dimension_name, dimension.context_field)
+            field, outcome = _outcome(dimension.dimension_name)
             fields.append(field)
             dimensions.append(outcome)
-    columns = [
-        (row["column"], row["context_field"])
-        for row in pattern_conditions.select("column", "context_field").to_dicts()
-    ]
-    for column, context_field in sorted(columns, key=lambda pair: _natural(pair[0])):
-        field, outcome = _outcome(column, context_field)
+    columns = pattern_conditions.select("column").to_dicts()
+    for column in sorted((row["column"] for row in columns), key=_natural):
+        field, outcome = _outcome(column)
         fields.append(field)
         dimensions.append(outcome)
     return DimensionsMetadata(fields=tuple(fields), dimensions=tuple(dimensions))
