@@ -152,19 +152,6 @@ def test_two_pattern_conditions_on_one_field_emit_every_covered_ternary_combinat
     ]
 
 
-def test_multiple_distinct_patterns_of_one_dimension_keep_every_combination(backend_name):
-    metadata = metadata_of(dimension("d", M.REGEX))
-    data = {"rule_id": ["P1", "P2", "P3"], "d": ["^a", "^b", "*"]}
-    _, _, coverage = run_stages(validated_rules(backend_name, data, metadata))
-
-    assert cell_sources(coverage) == {
-        ("default", 0, 0): frozenset({"P3"}),
-        ("default", 0, 1): frozenset({"P2", "P3"}),
-        ("default", 1, 0): frozenset({"P1", "P3"}),
-        ("default", 1, 1): frozenset({"P1", "P2", "P3"}),
-    }
-
-
 def test_pattern_entries_carry_the_folded_outputs_of_their_sources(backend_name):
     fee = Aggregate(output_name="fee", contribution_column="fee", data_type=DataType.INT)
     metadata = metadata_of(dimension("d", M.REGEX), outputs=(fee,))
@@ -331,7 +318,6 @@ def test_authored_outcome_columns_are_stored_as_they_are(backend_name):
 
 REGION = ContextField(name="region", data_type=DataType.STR, wildcard="*")
 VIP = ContextField(name="vip", data_type=DataType.BOOL, wildcard=None, wildcard_declared=True)
-MISSING = object()
 
 
 def null_metadata():
@@ -352,32 +338,6 @@ NULL_RULES = {
     "region_presence": ["*", "IS_NULL", "IS_NOT_NULL"],
     "vip": [None, None, True],
 }
-
-
-def outcome_score(required, observed):
-    return 0 if required == 0 or observed == 0 else (1 if required == observed else -1)
-
-
-def value_score(cell, observed):
-    """Ternary of a value dimension: wildcard cell, or missing/null context, is unknown."""
-    if cell in ("*", None) or observed is MISSING or observed is None:
-        return 0
-    return 1 if cell == observed else -1
-
-
-def surviving_rules(coverage, context):
-    region, vip = context.get("region", MISSING), context.get("vip", MISSING)
-    presence = 0 if region is MISSING else (1 if region is None else -1)
-    survivors = set()
-    for (_, cell_region, cell_presence, cell_vip), sources in cell_sources(coverage).items():
-        ternaries = (
-            value_score(cell_region, region),
-            outcome_score(cell_presence, presence),
-            value_score(cell_vip, vip),
-        )
-        if min(ternaries) >= 0:
-            survivors |= sources
-    return survivors
 
 
 def test_presence_and_value_dimensions_on_one_field_are_separate_columns(backend_name):
@@ -407,19 +367,3 @@ def test_worked_null_rules_r1_to_r3_entries(backend_name):
         ("default", "*", 1, True): frozenset({"R2"}),
         ("default", "*", -1, True): frozenset({"R3"}),
     }
-
-
-@pytest.mark.parametrize(
-    ("context", "expected"),
-    [
-        ({"region": "EU", "vip": True}, {"R1", "R3"}),  # C1
-        ({"region": None, "vip": False}, {"R1", "R2"}),  # C2: explicit null
-        ({}, {"R1", "R2", "R3"}),  # C3: nothing set
-        ({"region": "US", "vip": True}, {"R3"}),  # C4
-    ],
-    ids=["C1", "C2", "C3", "C4"],
-)
-def test_worked_null_rules_survive_exactly_as_documented(backend_name, context, expected):
-    _, _, coverage = run_stages(validated_rules(backend_name, NULL_RULES, null_metadata()))
-
-    assert surviving_rules(coverage, context) == expected

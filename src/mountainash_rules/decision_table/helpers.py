@@ -29,7 +29,7 @@ def check_sources(rules: Relation, metadata: DimensionsMetadata) -> Relation:
     """Check that the rules relation provides its declared stable identity."""
     if not isinstance(rules, Relation):
         raise DecisionTableError("rules must be a Mountainash Relation")
-    identity = getattr(metadata, "uuid_column", None) or getattr(metadata, "uuid_field", None)
+    identity = metadata.uuid_column
     if identity is None or identity not in rules.columns:
         raise DecisionTableError("Rules are missing the declared source identity column")
     return rules

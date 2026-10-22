@@ -11,7 +11,7 @@ from mountainash_rules.core.dimension import DimensionsMetadata
 from mountainash_rules.decision_table.build import build_decision_table
 from mountainash_rules.decision_table.table import DecisionTable, derive_entry_metadata, outcome_field
 
-from tests.decision_table.construction_support import rows, validated_rules
+from tests.decision_table.construction_support import rules_relation, validated_rules
 from tests.decision_table.table_fixtures import (
     CODE,
     FIXTURES,
@@ -288,13 +288,17 @@ def test_entry_metadata_is_derived_from_the_saved_parts_alone(backend_name):
 
 
 def test_pattern_columns_sort_by_ordinal_not_text(backend_name):
-    patterns_ = [f"p{i:02d}" for i in range(11)]
     metadata = DimensionsMetadata(
         uuid_column="rule_id", fields=(CODE,), dimensions=(dimension("pre", M.PREFIX, "code"),)
     )
-    data = {"rule_id": [f"r{i:02d}" for i in range(11)], "pre": patterns_}
-    table = build_decision_table(validated_rules(backend_name, data, metadata))
+    columns = [f"pre__pattern_{k}" for k in range(11)]
+    conditions = rules_relation(
+        backend_name, {"column": columns[::-1], "pattern": [f"p{k:02d}" for k in range(10, -1, -1)]}
+    )
 
-    names = [d.dimension_name for d in table.entry_metadata.dimensions]
-    assert names == [f"pre__pattern_{k}" for k in range(11)]
-    assert rows(table.pattern_conditions, "column", "pattern")[0] == ("pre__pattern_0", "p00")
+    derived = derive_entry_metadata(metadata, conditions)
+
+    assert [d.dimension_name for d in derived.dimensions] == columns
+    assert [f.name for f in derived.fields if f.name.startswith("outcome__")] == [
+        outcome_field(column) for column in columns
+    ]

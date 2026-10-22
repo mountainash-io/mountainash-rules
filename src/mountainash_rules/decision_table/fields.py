@@ -316,10 +316,6 @@ class Field(abc.ABC):
         """Interpret ``region`` for this family (resolving wildcards and bounds)."""
 
     @abc.abstractmethod
-    def intersect(self, left: Region, right: Region) -> Region:
-        """Conjoin two interpreted Python-valued regions, or report ``Unsatisfiable``."""
-
-    @abc.abstractmethod
     def unsatisfiable_rules(
         self, bound: Relation, entries: t.Sequence[tuple[int, Dimension, Region]]
     ) -> Relation:
@@ -601,25 +597,6 @@ class OrderedField(Field):
             return region
         raise self.not_applicable(region)
 
-    def intersect(self, left: Region, right: Region) -> Region:
-        if isinstance(left, Unsatisfiable):
-            return left
-        if isinstance(right, Unsatisfiable):
-            return right
-        a, b = self._closed(left), self._closed(right)
-        low, high = max(a[0], b[0]), min(a[1], b[1])
-        if low > high:
-            return self.unsatisfiable(f"disjoint intervals [{a[0]!r}, {a[1]!r}] and [{b[0]!r}, {b[1]!r}]")
-        return Interval(low, high)
-
-    def _closed(self, region: Region) -> tuple[t.Any, t.Any]:
-        interpreted = self.interpret(region)
-        if not isinstance(interpreted, Interval):
-            raise self.not_applicable(region)
-        low = self.minimum if interpreted.low is None or interpreted.low_wildcard is True else interpreted.low
-        high = self.maximum if interpreted.high is None or interpreted.high_wildcard is True else interpreted.high
-        return low, high
-
     def unsatisfiable_rules(
         self, bound: Relation, entries: t.Sequence[tuple[int, Dimension, Region]]
     ) -> Relation:
@@ -794,29 +771,6 @@ class UnorderedField(Field):
             return region
         raise self.not_applicable(region)
 
-    def intersect(self, left: Region, right: Region) -> Region:
-        for region in (left, right):
-            if isinstance(region, Unsatisfiable):
-                return region
-        left, right = self.interpret(left), self.interpret(right)
-        if isinstance(left, Everything):
-            return right
-        if isinstance(right, Everything):
-            return left
-        a, b = self._named(left), self._named(right)
-        common = a & b
-        if not common:
-            return self.unsatisfiable(f"disjoint values {sorted(a, key=repr)!r} and {sorted(b, key=repr)!r}")
-        values = tuple(sorted(common, key=repr))
-        return Point(values[0]) if len(values) == 1 else Members(values)
-
-    def _named(self, region: Region) -> frozenset:
-        if isinstance(region, Point):
-            return frozenset({region.value})
-        if isinstance(region, Members) and _static(region.values):
-            return frozenset(region.values)
-        raise self.not_applicable(region)
-
     def unsatisfiable_rules(
         self, bound: Relation, entries: t.Sequence[tuple[int, Dimension, Region]]
     ) -> Relation:
@@ -873,21 +827,6 @@ class TruthyField(Field):
         if isinstance(region, Everything):
             return Outcome(0)
         raise self.not_applicable(region)
-
-    def intersect(self, left: Region, right: Region) -> Region:
-        for region in (left, right):
-            if isinstance(region, Unsatisfiable):
-                return region
-        a, b = self.interpret(left), self.interpret(right)
-        if not (isinstance(a, Outcome) and isinstance(b, Outcome) and _static(a.value, b.value)):
-            raise DecisionTableError("only static outcomes can be intersected")
-        x = 0 if _definitely(a.wildcard, True) else a.value
-        y = 0 if _definitely(b.wildcard, True) else b.value
-        if x == 0:
-            return Outcome(y)
-        if y == 0 or x == y:
-            return Outcome(x)
-        return self.unsatisfiable(f"conflicting required outcomes {x} and {y}")
 
     def unsatisfiable_rules(
         self, bound: Relation, entries: t.Sequence[tuple[int, Dimension, Region]]

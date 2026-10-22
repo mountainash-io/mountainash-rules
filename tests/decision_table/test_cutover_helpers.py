@@ -4,9 +4,9 @@ import mountainash as ma
 import mountainash.expressions as ma_expr
 import pytest
 
+from mountainash_rules import DecisionTableError
 from mountainash_rules.core.aggregate import Aggregate, AggregateOp
 from mountainash_rules.core.dimension import DimensionsMetadata
-from mountainash_rules.decision_table import DecisionTableError
 from mountainash_rules.decision_table.folds import fold_contributions
 from mountainash_rules.decision_table.helpers import check_sources, select_scopes
 

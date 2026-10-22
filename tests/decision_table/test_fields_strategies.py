@@ -140,18 +140,10 @@ def test_truthy_family_interprets_patterns_and_outcomes_as_required_ternaries():
 
 
 def test_families_report_structurally_empty_regions_through_the_shared_interface():
-    ordered, unordered, truthy = OrderedField(TERM), UnorderedField(REGION), TruthyField(CODE)
+    ordered = OrderedField(TERM)
 
     assert isinstance(ordered.interpret(interval(5, 1)), Unsatisfiable)
     assert isinstance(ordered.interpret(members([])), Unsatisfiable)
-    assert isinstance(ordered.intersect(interval(1, 5), interval(6, 9)), Unsatisfiable)
-    assert ordered.intersect(interval(1, 5), point(3)) == Interval(3, 3)
-    assert isinstance(unordered.intersect(point("EU"), point("US")), Unsatisfiable)
-    assert unordered.intersect(point("EU"), members(["EU", "US"])) == point("EU")
-    assert unordered.intersect(everything(), point("EU")) == point("EU")
-    assert isinstance(truthy.intersect(outcome(1), outcome(-1)), Unsatisfiable)
-    assert truthy.intersect(outcome(1), everything()) == outcome(1)
-    assert truthy.intersect(outcome(1), outcome(1)) == outcome(1)
 
 
 def test_families_reject_data_types_they_do_not_interpret():
