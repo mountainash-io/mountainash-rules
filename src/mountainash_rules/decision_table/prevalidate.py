@@ -4,15 +4,18 @@ from __future__ import annotations
 
 import datetime as dt
 from dataclasses import dataclass
-from decimal import Decimal, ROUND_HALF_EVEN, ROUND_HALF_UP
+from decimal import Decimal
 from typing import Any, Literal
 
 import mountainash.expressions as ma
 from mountainash import DecimalDtype, MountainashDtype
-from mountainash.core.dtypes import dtype_family
+from mountainash.core.dtypes import ListDtype, TimestampDtype, dtype_family
 
+from mountainash_rules.core.compiler import _SCALAR_DTYPES, typed_marker_predicate
 from mountainash_rules.core.constants import DataType, MatchStrategy
 from mountainash_rules.core.dimension import ContextField, Dimension, DimensionsMetadata
+from mountainash_rules.core.numeric import exact_literal
+from mountainash_rules.core.set_wildcard import canonicalize_set_expr
 
 
 @dataclass(frozen=True, order=True)
@@ -91,23 +94,6 @@ def _is_wildcard(value: Any, field: ContextField) -> bool:
     return field.wildcard_declared and value == field.wildcard and _is_dtype(value, field)
 
 
-def _decimal(value: Decimal, field: ContextField) -> Decimal:
-    rounding = ROUND_HALF_EVEN if field.rounding == "half_to_even" else ROUND_HALF_UP
-    return value.quantize(Decimal(1).scaleb(-field.scale), rounding=rounding)
-
-
-def _atom(value: Any, field: ContextField) -> Any:
-    if field.data_type is DataType.DECIMAL and isinstance(value, Decimal):
-        return _decimal(value, field)
-    return value
-
-
-def _normal(value: Any, field: ContextField, is_set: bool) -> Any:
-    if is_set:
-        if any(_is_wildcard(item, field) for item in value):
-            return ("wildcard",)
-        return tuple(sorted({_atom(item, field) for item in value}, key=repr))
-    return ("wildcard",) if _is_wildcard(value, field) else _atom(value, field)
 
 
 def _strategy_allowed(dim: Dimension) -> bool:
@@ -124,6 +110,8 @@ def _strategy_allowed(dim: Dimension) -> bool:
 def _schema_type_compatible(dtype: Any, field: ContextField, is_set: bool) -> bool:
     """Cheap schema admission for empty relations; values receive full checking."""
     family = dtype_family(dtype)
+    if field.wildcard_declared and field.wildcard is None and "null" in str(family).lower():
+        return True
     if is_set:
         # List descriptors differ among supported backends but expose a stable
         # family name; values are still inspected below when rows exist.
@@ -138,6 +126,17 @@ def _schema_type_compatible(dtype: Any, field: ContextField, is_set: bool) -> bo
         DataType.DATETIME: MountainashDtype.TIMESTAMP,
     }.get(field.data_type)
     return family in expected if isinstance(expected, set) else family is expected
+
+def _list_element_schema_compatible(dtype: Any, field: ContextField) -> bool:
+    """Check a concrete list element descriptor without materializing rows."""
+    if not isinstance(dtype, ListDtype):
+        return False
+    element = dtype.element
+    return (
+        element in _SCALAR_DTYPES.get(field.data_type, frozenset())
+        or (field.data_type is DataType.DECIMAL and isinstance(element, DecimalDtype))
+        or (field.data_type is DataType.DATETIME and isinstance(element, TimestampDtype))
+    )
 
 
 def _add_schema_findings(metadata: DimensionsMetadata, schema: dict[str, Any], errors: list[Finding]) -> None:
@@ -156,11 +155,31 @@ def _add_schema_findings(metadata: DimensionsMetadata, schema: dict[str, Any], e
         for column, is_set in columns:
             if column not in schema:
                 errors.append(Finding("missing_rule_column", "error", f"Missing rule column {column!r}", ()))
-            elif not _schema_type_compatible(schema[column], dim.field, is_set):
+            elif is_set and not _schema_type_compatible(schema[column], dim.field, True):
+                errors.append(Finding("incompatible_list_dtype", "error", f"{column!r} must be a list", ()))
+            elif is_set and not _list_element_schema_compatible(schema[column], dim.field):
+                errors.append(Finding("incompatible_list_element", "error", f"{column!r} has incompatible element type", ()))
+            elif dim.match_strategy not in {MatchStrategy.PRESENCE, MatchStrategy.OUTCOME} and not _schema_type_compatible(schema[column], dim.field, is_set):
                 errors.append(Finding("incompatible_rule_dtype", "error", f"Rule column {column!r} is incompatible with {dim.data_type.value}", ()))
     for output in metadata.outputs:
         if output.contribution_column not in schema:
             errors.append(Finding("missing_contribution_column", "error", f"Missing contribution column {output.contribution_column!r}", ()))
+            continue
+        field = ContextField(
+            name=output.output_name,
+            data_type=output.data_type,
+            precision=output.precision,
+            scale=output.scale,
+            rounding=output.rounding,
+            timezone=output.timezone,
+        )
+        if not _schema_type_compatible(schema[output.contribution_column], field, False):
+            errors.append(Finding(
+                "incompatible_contribution_dtype",
+                "error",
+                f"Contribution column {output.contribution_column!r} is incompatible with {output.data_type.value}",
+                (),
+            ))
     types: dict[str, set[DataType]] = {}
     scopes: dict[str, set[str]] = {}
     for output in metadata.outputs:
@@ -220,33 +239,256 @@ def _value_findings(row: dict[str, Any], uuid: Any, metadata: DimensionsMetadata
             errors.append(Finding("incompatible_contribution_dtype", "error", f"{output.contribution_column!r} has incompatible type", _uuids([uuid])))
 
 
-def _signatures(rows: list[dict[str, Any]], metadata: DimensionsMetadata, errors: list[Finding]) -> None:
-    by_conditions: dict[Any, list[tuple[Any, Any]]] = {}
-    for row in rows:
-        uuid = row.get(metadata.uuid_column) if metadata.uuid_column else None
-        scope = _scope(row, metadata)
-        conditions = []
-        for dim in metadata.dimensions:
-            if dim.match_strategy is MatchStrategy.CONTEXT_REGEX:
-                conditions.append((dim.dimension_name, dim.match_strategy.value, dim.regex_pattern))
-                continue
-            if dim.match_strategy is MatchStrategy.RANGE:
-                value = (_normal(row.get(dim.range_min_field), dim.field, False), _normal(row.get(dim.range_max_field), dim.field, False))
-            else:
-                value = _normal(row.get(dim.resolved_rule_field), dim.field, dim.match_strategy in _SET)
-            conditions.append((dim.dimension_name, dim.match_strategy.value, value))
-        outputs = tuple((output.output_name, row.get(output.contribution_column)) for output in metadata.outputs if (output.scope or "default") == scope)
-        by_conditions.setdefault((scope, tuple(conditions)), []).append((uuid, outputs))
-    for (scope, _), group in by_conditions.items():
-        output_groups: dict[Any, list[Any]] = {}
-        for uuid, output in group:
-            output_groups.setdefault(output, []).append(uuid)
-        for uuids in output_groups.values():
-            if len(uuids) > 1:
-                errors.append(Finding("duplicate_rule", "error", f"Duplicate normalized rule in scope {scope!r}", _uuids(uuids)))
-        if len(output_groups) > 1:
-            errors.append(Finding("conflicting_rule", "error", f"Conflicting normalized rules in scope {scope!r}", _uuids([uuid for uuid, _ in group])))
+def _signature_placeholder(
+    data_type: DataType,
+    decimal_dtype: DecimalDtype | None = None,
+    timezone: str | None = None,
+) -> Any:
+    values = {
+        DataType.STR: "",
+        DataType.BOOL: False,
+        DataType.INT: 0,
+        DataType.FLOAT: 0.0,
+        DataType.DATE: dt.date(1970, 1, 1),
+        DataType.DATETIME: dt.datetime(
+            1970,
+            1,
+            1,
+            tzinfo=dt.timezone.utc if timezone == "utc" else None,
+        ),
+        DataType.DECIMAL: Decimal(0),
+    }
+    return ma.lit(values[data_type], dtype=decimal_dtype) if decimal_dtype else ma.lit(values[data_type])
 
+
+def _signature_scalar_payload(
+    dim: Dimension,
+    field: str,
+    schema: dict[str, Any],
+) -> tuple[Any, Any, Any]:
+    raw = ma.col(field)
+    wildcard = typed_marker_predicate(
+        raw,
+        schema[field],
+        [dim.field.wildcard] if dim.field.wildcard_declared else [],
+    )
+    missing = raw.is_null() & ~wildcard
+    payload = (
+        raw.cast(dim.decimal_dtype, rounding=dim.rounding)
+        if dim.data_type is DataType.DECIMAL
+        else raw
+    )
+    return wildcard, missing, ma.when(wildcard | missing).then(
+        _signature_placeholder(dim.data_type, dim.decimal_dtype, dim.field.timezone)
+    ).otherwise(payload)
+
+
+def _signature_set_payload(dim: Dimension, field: str) -> tuple[Any, Any]:
+    raw = ma.col(field)
+    marker = dim.field.wildcard
+    wildcard = (
+        raw.is_null()
+        if dim.field.wildcard_declared and marker is None
+        else raw.list.contains(exact_literal(marker)).fill_null(False)
+        if dim.field.wildcard_declared
+        else ma.lit(False)
+    )
+    payload = ma.when(wildcard).then(
+        raw.list.filter(ma.lit(False))
+    ).otherwise(raw)
+    if dim.data_type is DataType.DECIMAL:
+        payload = payload.list.agg(
+            ma.element().cast(dim.decimal_dtype, rounding=dim.rounding)
+        )
+    return wildcard, canonicalize_set_expr(payload)
+
+
+def _signature_output_payload(output: Any) -> Any:
+    raw = ma.col(output.contribution_column)
+    if output.data_type is DataType.DECIMAL:
+        return raw.cast(output.decimal_dtype, rounding=output.rounding)
+    return raw
+
+
+def _signature_set_schema_compatible(dtype: Any, dim: Dimension) -> bool:
+    if not isinstance(dtype, ListDtype):
+        return False
+    element = dtype.element
+    return (
+        element in _SCALAR_DTYPES.get(dim.data_type, frozenset())
+        or (dim.data_type is DataType.DECIMAL and isinstance(element, DecimalDtype))
+        or (dim.data_type is DataType.DATETIME and isinstance(element, TimestampDtype))
+    )
+
+
+def _signature_columns_available(schema: dict[str, Any], metadata: DimensionsMetadata) -> bool:
+    if metadata.uuid_column is None or metadata.uuid_column not in schema:
+        return False
+    if metadata.scope_column is not None and metadata.scope_column not in schema:
+        return False
+    output_types: dict[str, set[DataType]] = {}
+    for output in metadata.outputs:
+        output_types.setdefault(output.output_name, set()).add(output.data_type)
+        field = ContextField(
+            name=output.output_name,
+            data_type=output.data_type,
+            precision=output.precision,
+            scale=output.scale,
+            rounding=output.rounding,
+            timezone=output.timezone,
+        )
+        if (
+            output.contribution_column not in schema
+            or not _schema_type_compatible(
+                schema[output.contribution_column],
+                field,
+                False,
+            )
+        ):
+            return False
+    if any(len(types) > 1 for types in output_types.values()):
+        return False
+    for dim in metadata.dimensions:
+        if dim.match_strategy is MatchStrategy.CONTEXT_REGEX:
+            continue
+        fields = (
+            (dim.range_min_field, dim.range_max_field)
+            if dim.match_strategy is MatchStrategy.RANGE
+            else (dim.resolved_rule_field,)
+        )
+        if any(field is None or field not in schema for field in fields):
+            return False
+        if dim.match_strategy in _SET and not _signature_set_schema_compatible(
+            schema[dim.resolved_rule_field],
+            dim,
+        ):
+            return False
+    return True
+
+
+def _signature_findings(
+    evidence: Any,
+    keys: list[str],
+    uuid_column: str,
+    kind: str,
+    detail: str,
+    errors: list[Finding],
+) -> None:
+    def freeze(value: Any) -> Any:
+        if isinstance(value, list):
+            return tuple(freeze(item) for item in value)
+        if isinstance(value, dict):
+            return tuple(sorted((key, freeze(item)) for key, item in value.items()))
+        return value
+
+    grouped: dict[tuple[Any, ...], list[Any]] = {}
+    for row in evidence.select(*keys, uuid_column).to_dicts():
+        grouped.setdefault(tuple(freeze(row[key]) for key in keys), []).append(row[uuid_column])
+    for group, uuids in grouped.items():
+        errors.append(Finding(kind, "error", detail.format(scope=group[0]), _uuids(uuids)))
+
+
+def _signatures(relation: Any, metadata: DimensionsMetadata, errors: list[Finding]) -> None:
+    """Diagnose duplicate and conflicting signatures without materializing authored rows."""
+    schema = relation.collect_schema(allow_execution=False)
+    if not _signature_columns_available(schema, metadata):
+        return
+
+    scope_name = "__pv_signature_scope"
+    uuid_name = "__pv_signature_uuid"
+    scope = ma.lit("default") if metadata.scope_column is None else ma.col(metadata.scope_column)
+    columns = [scope.alias(scope_name), ma.col(metadata.uuid_column).alias(uuid_name)]
+    condition_keys = [scope_name]
+    for index, dim in enumerate(metadata.dimensions):
+        if dim.match_strategy is MatchStrategy.CONTEXT_REGEX:
+            name = f"__pv_condition_{index}"
+            columns.append(ma.lit(dim.regex_pattern).alias(name))
+            condition_keys.append(name)
+            continue
+        fields = (
+            (dim.range_min_field, dim.range_max_field)
+            if dim.match_strategy is MatchStrategy.RANGE
+            else (dim.resolved_rule_field,)
+        )
+        for endpoint, field in enumerate(fields):
+            if dim.match_strategy in _SET:
+                wildcard, payload = _signature_set_payload(dim, field)
+                missing = ma.lit(False)
+            else:
+                wildcard, missing, payload = _signature_scalar_payload(dim, field, schema)
+            wildcard_name = f"__pv_condition_{index}_{endpoint}_wildcard"
+            missing_name = f"__pv_condition_{index}_{endpoint}_missing"
+            payload_name = f"__pv_condition_{index}_{endpoint}"
+            columns.extend(
+                [
+                    wildcard.alias(wildcard_name),
+                    missing.alias(missing_name),
+                    payload.alias(payload_name),
+                ]
+            )
+            condition_keys.extend([wildcard_name, missing_name, payload_name])
+
+    output_keys = []
+    for index, output in enumerate(metadata.outputs):
+        name = f"__pv_output_{index}"
+        output_keys.append(name)
+        active = scope.eq(output.scope or "default").fill_null(False)
+        columns.append(
+            ma.when(active)
+            .then(_signature_output_payload(output))
+            .otherwise(
+                _signature_placeholder(
+                    output.data_type,
+                    output.decimal_dtype,
+                    output.timezone,
+                )
+            )
+            .alias(name)
+        )
+    signatures = relation.select(*columns)
+    duplicate_keys = [*condition_keys, *output_keys]
+    duplicate_groups = (
+        signatures.group_by(*duplicate_keys)
+        .agg(ma.count_records().alias("__pv_count"))
+        .filter(ma.col("__pv_count").gt(1))
+    )
+    duplicate_rows = signatures.join(
+        duplicate_groups.select(*duplicate_keys),
+        on=duplicate_keys,
+        how="inner",
+    )
+    _signature_findings(
+        duplicate_rows,
+        duplicate_keys,
+        uuid_name,
+        "duplicate_rule",
+        "Duplicate normalized rule in scope {scope!r}",
+        errors,
+    )
+    if not output_keys:
+        return
+
+    output_groups = signatures.group_by(*duplicate_keys).agg(
+        ma.count_records().alias("__pv_count")
+    )
+    conflict_groups = (
+        output_groups.group_by(*condition_keys)
+        .agg(ma.count_records().alias("__pv_output_count"))
+        .filter(ma.col("__pv_output_count").gt(1))
+    )
+    conflict_rows = signatures.join(
+        conflict_groups.select(*condition_keys),
+        on=condition_keys,
+        how="inner",
+    )
+    _signature_findings(
+        conflict_rows,
+        condition_keys,
+        uuid_name,
+        "conflicting_rule",
+        "Conflicting normalized rules in scope {scope!r}",
+        errors,
+    )
 
 def _relation_finding(
     relation: Any,
@@ -292,6 +534,23 @@ def _relation_value_findings(
             finding = _relation_finding(relation, predicate.fill_null(False), kind, detail, uuid_column)
             if finding:
                 errors.append(finding)
+    for output in metadata.outputs:
+        column = output.contribution_column
+        if column not in relation.columns:
+            continue
+        scope = output.scope or "default"
+        predicate = ma.col(column).is_null()
+        if metadata.scope_column is not None and metadata.scope_column in relation.columns:
+            predicate = predicate & ma.col(metadata.scope_column).eq(scope)
+        finding = _relation_finding(
+            relation,
+            predicate.fill_null(False),
+            "null_contribution",
+            f"{column!r} is null",
+            uuid_column,
+        )
+        if finding:
+            errors.append(finding)
     for dim in metadata.dimensions:
         if dim.match_strategy is MatchStrategy.CONTEXT_REGEX:
             continue
@@ -306,7 +565,9 @@ def _relation_value_findings(
         field = dim.resolved_rule_field
         if field not in relation.columns:
             continue
-        if dim.match_strategy in _SET:
+        if dim.match_strategy in _SET and _schema_type_compatible(
+            relation.collect_schema(allow_execution=False)[field], dim.field, True
+        ):
             ordered = ma.col(field).list.sort()
             null_element = ma.col(field).list.len().gt(0) & (
                 ordered.list.first().is_null() | ordered.list.last().is_null()
@@ -377,31 +638,7 @@ def prevalidate(rules: Any, metadata: DimensionsMetadata) -> ValidatedRules:
                 f"Duplicate UUID in scope {row['__pv_scope']!r}",
                 (row[copied_metadata.uuid_column],),
             ))
-    signature_columns = {
-        column
-        for dim in copied_metadata.dimensions
-        for column in (
-            () if dim.match_strategy is MatchStrategy.CONTEXT_REGEX
-            else (dim.range_min_field, dim.range_max_field)
-            if dim.match_strategy is MatchStrategy.RANGE
-            else (dim.resolved_rule_field,)
-        )
-        if column is not None and column in schema
-    }
-    signature_columns.update(
-        output.contribution_column
-        for output in copied_metadata.outputs
-        if output.contribution_column in schema
-    )
-    if copied_metadata.uuid_column in schema:
-        signature_columns.add(copied_metadata.uuid_column)
-    if copied_metadata.scope_column in schema:
-        signature_columns.add(copied_metadata.scope_column)
-    _signatures(
-        captured.select(*sorted(signature_columns)).to_dicts(),
-        copied_metadata,
-        errors,
-    )
+    _signatures(captured, copied_metadata, errors)
     breaches, found_warnings = _sorted_findings(errors), _sorted_findings(warnings)
     if breaches:
         raise DataContractError(breaches, found_warnings)
