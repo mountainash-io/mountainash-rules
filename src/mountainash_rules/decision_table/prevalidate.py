@@ -77,6 +77,29 @@ def _strategy_allowed(dim: Dimension) -> bool:
     return strategy in {MatchStrategy.RANGE, MatchStrategy.MIN, MatchStrategy.MAX} and data_type in _ORDERED
 
 
+def _timezone_matches(dtype: Any, timezone: str | None) -> bool:
+    """A timestamp descriptor whose awareness is known must agree with the declared interpretation."""
+    aware = dtype.timezone_aware
+    return not isinstance(aware, bool) or aware == (timezone == "utc")
+
+
+def _scalar_dtype_compatible(dtype: Any, data_type: DataType, timezone: str | None) -> bool:
+    """Whether a scalar descriptor can carry ``data_type`` (and, for DATETIME, its interpretation)."""
+    if data_type is DataType.DECIMAL:
+        return isinstance(dtype, DecimalDtype)
+    expected = {
+        DataType.STR: MountainashDtype.STRING,
+        DataType.BOOL: MountainashDtype.BOOL,
+        DataType.INT: {MountainashDtype.I8, MountainashDtype.I16, MountainashDtype.I32, MountainashDtype.I64, MountainashDtype.U8, MountainashDtype.U16, MountainashDtype.U32, MountainashDtype.U64},
+        DataType.DATE: MountainashDtype.DATE,
+        DataType.DATETIME: MountainashDtype.TIMESTAMP,
+    }.get(data_type)
+    family = dtype_family(dtype)
+    if not (family in expected if isinstance(expected, set) else family is expected):
+        return False
+    return data_type is not DataType.DATETIME or not isinstance(dtype, TimestampDtype) or _timezone_matches(dtype, timezone)
+
+
 def _schema_type_compatible(dtype: Any, field: ContextField, is_set: bool) -> bool:
     """Cheap schema admission for empty relations; values receive full checking."""
     family = dtype_family(dtype)
@@ -86,27 +109,40 @@ def _schema_type_compatible(dtype: Any, field: ContextField, is_set: bool) -> bo
         # List descriptors differ among supported backends but expose a stable
         # family name; values are still inspected below when rows exist.
         return "list" in str(family).lower() or "array" in str(family).lower()
-    if field.data_type is DataType.DECIMAL:
-        return isinstance(dtype, DecimalDtype)
-    expected = {
-        DataType.STR: MountainashDtype.STRING,
-        DataType.BOOL: MountainashDtype.BOOL,
-        DataType.INT: {MountainashDtype.I8, MountainashDtype.I16, MountainashDtype.I32, MountainashDtype.I64, MountainashDtype.U8, MountainashDtype.U16, MountainashDtype.U32, MountainashDtype.U64},
-        DataType.DATE: MountainashDtype.DATE,
-        DataType.DATETIME: MountainashDtype.TIMESTAMP,
-    }.get(field.data_type)
-    return family in expected if isinstance(expected, set) else family is expected
+    return _scalar_dtype_compatible(dtype, field.data_type, field.timezone)
+
 
 def _list_element_schema_compatible(dtype: Any, field: ContextField) -> bool:
     """Check a concrete list element descriptor without materializing rows."""
     if not isinstance(dtype, ListDtype):
         return False
     element = dtype.element
+    if field.data_type is DataType.DATETIME and isinstance(element, TimestampDtype):
+        return _timezone_matches(element, field.timezone)
     return (
         element in _SCALAR_DTYPES.get(field.data_type, frozenset())
         or (field.data_type is DataType.DECIMAL and isinstance(element, DecimalDtype))
-        or (field.data_type is DataType.DATETIME and isinstance(element, TimestampDtype))
     )
+
+
+def _dimension_findings(dim: Dimension, schema: dict[str, Any]) -> list[Finding]:
+    """Schema-level breaches of one dimension's strategy, rule columns and rule dtypes."""
+    errors: list[Finding] = []
+    if not _strategy_allowed(dim):
+        errors.append(Finding("unsupported_strategy_type", "error", f"{dim.dimension_name}: {dim.match_strategy.value} is incompatible with {dim.data_type.value}", ()))
+    if dim.match_strategy is MatchStrategy.CONTEXT_REGEX:
+        return errors
+    columns = ((dim.range_min_field, False), (dim.range_max_field, False)) if dim.match_strategy is MatchStrategy.RANGE else ((dim.resolved_rule_field, dim.match_strategy in _SET),)
+    for column, is_set in columns:
+        if column not in schema:
+            errors.append(Finding("missing_rule_column", "error", f"Missing rule column {column!r}", ()))
+        elif is_set and not _schema_type_compatible(schema[column], dim.field, True):
+            errors.append(Finding("incompatible_list_dtype", "error", f"{column!r} must be a list", ()))
+        elif is_set and not _list_element_schema_compatible(schema[column], dim.field):
+            errors.append(Finding("incompatible_list_element", "error", f"{column!r} has incompatible element type", ()))
+        elif dim.match_strategy not in {MatchStrategy.PRESENCE, MatchStrategy.OUTCOME} and not _schema_type_compatible(schema[column], dim.field, is_set):
+            errors.append(Finding("incompatible_rule_dtype", "error", f"Rule column {column!r} is incompatible with {dim.data_type.value}", ()))
+    return errors
 
 
 def _add_schema_findings(metadata: DimensionsMetadata, schema: dict[str, Any], errors: list[Finding]) -> None:
@@ -117,33 +153,11 @@ def _add_schema_findings(metadata: DimensionsMetadata, schema: dict[str, Any], e
     if metadata.scope_column is not None and metadata.scope_column not in schema:
         errors.append(Finding("missing_scope_column", "error", f"Missing scope column {metadata.scope_column!r}", ()))
     for dim in metadata.dimensions:
-        if not _strategy_allowed(dim):
-            errors.append(Finding("unsupported_strategy_type", "error", f"{dim.dimension_name}: {dim.match_strategy.value} is incompatible with {dim.data_type.value}", ()))
-        if dim.match_strategy is MatchStrategy.CONTEXT_REGEX:
-            continue
-        columns = ((dim.range_min_field, False), (dim.range_max_field, False)) if dim.match_strategy is MatchStrategy.RANGE else ((dim.resolved_rule_field, dim.match_strategy in _SET),)
-        for column, is_set in columns:
-            if column not in schema:
-                errors.append(Finding("missing_rule_column", "error", f"Missing rule column {column!r}", ()))
-            elif is_set and not _schema_type_compatible(schema[column], dim.field, True):
-                errors.append(Finding("incompatible_list_dtype", "error", f"{column!r} must be a list", ()))
-            elif is_set and not _list_element_schema_compatible(schema[column], dim.field):
-                errors.append(Finding("incompatible_list_element", "error", f"{column!r} has incompatible element type", ()))
-            elif dim.match_strategy not in {MatchStrategy.PRESENCE, MatchStrategy.OUTCOME} and not _schema_type_compatible(schema[column], dim.field, is_set):
-                errors.append(Finding("incompatible_rule_dtype", "error", f"Rule column {column!r} is incompatible with {dim.data_type.value}", ()))
+        errors.extend(_dimension_findings(dim, schema))
     for output in metadata.outputs:
         if output.contribution_column not in schema:
             errors.append(Finding("missing_contribution_column", "error", f"Missing contribution column {output.contribution_column!r}", ()))
-            continue
-        field = ContextField(
-            name=output.output_name,
-            data_type=output.data_type,
-            precision=output.precision,
-            scale=output.scale,
-            rounding=output.rounding,
-            timezone=output.timezone,
-        )
-        if not _schema_type_compatible(schema[output.contribution_column], field, False):
+        elif not _scalar_dtype_compatible(schema[output.contribution_column], output.data_type, output.timezone):
             errors.append(Finding(
                 "incompatible_contribution_dtype",
                 "error",
@@ -237,17 +251,6 @@ def _signature_output_payload(output: Any) -> Any:
     return raw
 
 
-def _signature_set_schema_compatible(dtype: Any, dim: Dimension) -> bool:
-    if not isinstance(dtype, ListDtype):
-        return False
-    element = dtype.element
-    return (
-        element in _SCALAR_DTYPES.get(dim.data_type, frozenset())
-        or (dim.data_type is DataType.DECIMAL and isinstance(element, DecimalDtype))
-        or (dim.data_type is DataType.DATETIME and isinstance(element, TimestampDtype))
-    )
-
-
 def _signature_columns_available(schema: dict[str, Any], metadata: DimensionsMetadata) -> bool:
     if metadata.uuid_column is None or metadata.uuid_column not in schema:
         return False
@@ -256,20 +259,12 @@ def _signature_columns_available(schema: dict[str, Any], metadata: DimensionsMet
     output_types: dict[str, set[DataType]] = {}
     for output in metadata.outputs:
         output_types.setdefault(output.output_name, set()).add(output.data_type)
-        field = ContextField(
-            name=output.output_name,
-            data_type=output.data_type,
-            precision=output.precision,
-            scale=output.scale,
-            rounding=output.rounding,
-            timezone=output.timezone,
-        )
         if (
             output.contribution_column not in schema
-            or not _schema_type_compatible(
+            or not _scalar_dtype_compatible(
                 schema[output.contribution_column],
-                field,
-                False,
+                output.data_type,
+                output.timezone,
             )
         ):
             return False
@@ -285,9 +280,9 @@ def _signature_columns_available(schema: dict[str, Any], metadata: DimensionsMet
         )
         if any(field is None or field not in schema for field in fields):
             return False
-        if dim.match_strategy in _SET and not _signature_set_schema_compatible(
+        if dim.match_strategy in _SET and not _list_element_schema_compatible(
             schema[dim.resolved_rule_field],
-            dim,
+            dim.field,
         ):
             return False
         if (
@@ -546,7 +541,7 @@ _CELL_BREACHES = frozenset({
 
 
 def _unsatisfiable_findings(
-    relation: Any, metadata: DimensionsMetadata, blocked: set[Any]
+    relation: Any, metadata: DimensionsMetadata, dimensions: list[Dimension], blocked: set[Any]
 ) -> list[Finding]:
     """Warnings for rules whose conditions cannot all hold, from the shared family coverage.
 
@@ -558,12 +553,13 @@ def _unsatisfiable_findings(
         scope.alias(BOUND_SCOPE), ma.col(uuid_column).alias(BOUND_UUID)
     )
     findings: list[Finding] = []
-    for field_name, reason, rules in unsatisfiable_rules(bound, metadata.dimensions):
+    for field_name, reason, rules in unsatisfiable_rules(bound, dimensions):
         uuids = _uuids([row[SOURCE_UUID] for row in rules.select(SOURCE_UUID).to_dicts()])
         uuids = tuple(uuid for uuid in uuids if uuid not in blocked)
         if uuids:
             findings.append(Finding("unsatisfiable_rule", "warning", f"{field_name!r}: {reason}", uuids))
     return findings
+
 
 def prevalidate(rules: Any, metadata: DimensionsMetadata) -> ValidatedRules:
     """Capture ``rules`` once, aggregate all breaches, or return owned validation."""
@@ -572,9 +568,12 @@ def prevalidate(rules: Any, metadata: DimensionsMetadata) -> ValidatedRules:
     schema = captured.collect_schema(allow_execution=False)
     errors: list[Finding] = []
     _add_schema_findings(copied_metadata, schema, errors)
-    structural = bool(errors)
     _relation_value_findings(captured, copied_metadata, errors)
-    if copied_metadata.uuid_column in schema:
+    # Scope-dependent checks need the declared scope column; a missing one is already a finding.
+    identified = copied_metadata.uuid_column in schema and (
+        copied_metadata.scope_column is None or copied_metadata.scope_column in schema
+    )
+    if identified:
         scoped = (
             captured.with_columns(ma.lit("default").alias("__pv_scope"))
             if copied_metadata.scope_column is None
@@ -593,9 +592,12 @@ def prevalidate(rules: Any, metadata: DimensionsMetadata) -> ValidatedRules:
             ))
     _signatures(captured, copied_metadata, errors)
     warnings: list[Finding] = []
-    if not structural and copied_metadata.uuid_column in schema:
+    if identified:
+        # A warning needs only its own condition columns, so dimensions with schema breaches are
+        # skipped while the others still report.
+        sound = [dim for dim in copied_metadata.dimensions if not _dimension_findings(dim, schema)]
         blocked = {uuid for finding in errors if finding.kind in _CELL_BREACHES for uuid in finding.rule_uuids}
-        warnings = _unsatisfiable_findings(captured, copied_metadata, blocked)
+        warnings = _unsatisfiable_findings(captured, copied_metadata, sound, blocked)
     breaches, found_warnings = _sorted_findings(errors), _sorted_findings(warnings)
     if breaches:
         raise DataContractError(breaches, found_warnings)
