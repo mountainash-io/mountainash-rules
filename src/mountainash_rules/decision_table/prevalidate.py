@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from decimal import Decimal, ROUND_HALF_EVEN, ROUND_HALF_UP
 from typing import Any, Literal
 
+import mountainash.expressions as ma
 from mountainash import DecimalDtype, MountainashDtype
 from mountainash.core.dtypes import dtype_family
 
@@ -247,33 +248,145 @@ def _signatures(rows: list[dict[str, Any]], metadata: DimensionsMetadata, errors
             errors.append(Finding("conflicting_rule", "error", f"Conflicting normalized rules in scope {scope!r}", _uuids([uuid for uuid, _ in group])))
 
 
+def _relation_finding(
+    relation: Any,
+    predicate: Any,
+    kind: str,
+    detail: str,
+    uuid_column: str | None,
+) -> Finding | None:
+    """Materialize only UUID evidence for one backend-native invalidity predicate."""
+    selected = relation.filter(predicate)
+    if selected.count_rows() == 0:
+        return None
+    if uuid_column is None or uuid_column not in selected.columns:
+        return Finding(kind, "error", detail, ())
+    return Finding(
+        kind,
+        "error",
+        detail,
+        _uuids([row[uuid_column] for row in selected.select(uuid_column).to_dicts()]),
+    )
+
+
+def _relation_value_findings(
+    relation: Any,
+    metadata: DimensionsMetadata,
+    errors: list[Finding],
+    warnings: list[Finding],
+) -> None:
+    """Extract scalar invalidity through relation predicates, never source rows."""
+    uuid_column = metadata.uuid_column
+    if uuid_column is not None and uuid_column in relation.columns:
+        finding = _relation_finding(
+            relation, ma.col(uuid_column).is_null(), "missing_uuid", "Rule UUID is absent or null", uuid_column
+        )
+        if finding:
+            errors.append(finding)
+    if metadata.scope_column is not None and metadata.scope_column in relation.columns:
+        scope = ma.col(metadata.scope_column)
+        for kind, predicate, detail in (
+            ("null_scope", scope.is_null(), "Rule scope is null"),
+            ("undeclared_scope", ~scope.is_in(list(_declared_scopes(metadata))), "Rule scope is undeclared"),
+        ):
+            finding = _relation_finding(relation, predicate.fill_null(False), kind, detail, uuid_column)
+            if finding:
+                errors.append(finding)
+    for dim in metadata.dimensions:
+        if dim.match_strategy is MatchStrategy.CONTEXT_REGEX:
+            continue
+        fields = (dim.range_min_field, dim.range_max_field) if dim.match_strategy is MatchStrategy.RANGE else (dim.resolved_rule_field,)
+        for field in fields:
+            if field not in relation.columns:
+                continue
+            if not (dim.field.wildcard_declared and dim.field.wildcard is None):
+                finding = _relation_finding(relation, ma.col(field).is_null(), "null_rule_cell", f"{field!r} is null without a null wildcard", uuid_column)
+                if finding:
+                    errors.append(finding)
+        field = dim.resolved_rule_field
+        if field not in relation.columns:
+            continue
+        if dim.match_strategy in _SET:
+            ordered = ma.col(field).list.sort()
+            null_element = ma.col(field).list.len().gt(0) & (
+                ordered.list.first().is_null() | ordered.list.last().is_null()
+            )
+            finding = _relation_finding(relation, null_element.fill_null(False), "null_list_element", f"{field!r} contains null", uuid_column)
+            if finding:
+                errors.append(finding)
+        if dim.match_strategy is MatchStrategy.PRESENCE:
+            value = ma.col(field)
+            invalid = value.ne("IS_NULL") & value.ne("IS_NOT_NULL")
+            finding = _relation_finding(relation, invalid.fill_null(False), "invalid_presence_value", f"{field!r} must be IS_NULL or IS_NOT_NULL", uuid_column)
+            if finding:
+                errors.append(finding)
+        elif dim.match_strategy is MatchStrategy.OUTCOME:
+            value = ma.col(field)
+            invalid = value.ne(-1) & value.ne(0) & value.ne(1)
+            finding = _relation_finding(relation, invalid.fill_null(False), "invalid_outcome_value", f"{field!r} must be -1, 0, or 1", uuid_column)
+            if finding:
+                errors.append(finding)
+    for field_name in {dim.context_field for dim in metadata.dimensions}:
+        null_dimensions = [
+            dim for dim in metadata.dimensions
+            if dim.context_field == field_name and dim.match_strategy is MatchStrategy.PRESENCE
+        ]
+        concrete_dimensions = [
+            dim for dim in metadata.dimensions
+            if dim.context_field == field_name
+            and dim.match_strategy in {MatchStrategy.EXACT, MatchStrategy.NOT_EQUAL, MatchStrategy.MIN, MatchStrategy.MAX}
+        ]
+        if not null_dimensions or not concrete_dimensions:
+            continue
+        null_condition = ma.lit(False)
+        for dim in null_dimensions:
+            null_condition = null_condition | ma.col(dim.resolved_rule_field).eq("IS_NULL")
+        concrete_condition = ma.lit(False)
+        for dim in concrete_dimensions:
+            concrete_condition = concrete_condition | ma.col(dim.resolved_rule_field).ne(dim.field.wildcard)
+        selected = relation.filter((null_condition & concrete_condition).fill_null(False))
+        if selected.count_rows():
+            warnings.append(Finding(
+                "unsatisfiable_rule", "warning", f"{field_name!r} is both null and concrete",
+                _uuids([row[uuid_column] for row in selected.select(uuid_column).to_dicts()]),
+            ))
 def prevalidate(rules: Any, metadata: DimensionsMetadata) -> ValidatedRules:
     """Capture ``rules`` once, aggregate all breaches, or return owned validation."""
     captured = rules.snapshot()
     copied_metadata = metadata.model_copy(deep=True)
     schema = captured.collect_schema(allow_execution=False)
-    rows = captured.to_dicts()
     errors: list[Finding] = []
     warnings: list[Finding] = []
     _add_schema_findings(copied_metadata, schema, errors)
-    scopes = _declared_scopes(copied_metadata)
+    _relation_value_findings(captured, copied_metadata, errors, warnings)
+    signature_columns = {
+        column
+        for dim in copied_metadata.dimensions
+        for column in (
+            () if dim.match_strategy is MatchStrategy.CONTEXT_REGEX
+            else (dim.range_min_field, dim.range_max_field)
+            if dim.match_strategy is MatchStrategy.RANGE
+            else (dim.resolved_rule_field,)
+        )
+        if column is not None
+    }
+    signature_columns.update(
+        output.contribution_column for output in copied_metadata.outputs
+    )
+    if copied_metadata.uuid_column is not None:
+        signature_columns.add(copied_metadata.uuid_column)
+    if copied_metadata.scope_column is not None:
+        signature_columns.add(copied_metadata.scope_column)
+    signature_rows = captured.select(*sorted(signature_columns)).to_dicts()
     seen: dict[tuple[Any, Any], list[Any]] = {}
-    for row in rows:
+    for row in signature_rows:
         uuid = row.get(copied_metadata.uuid_column) if copied_metadata.uuid_column else None
         scope = _scope(row, copied_metadata)
-        if uuid is None:
-            errors.append(Finding("missing_uuid", "error", "Rule UUID is absent or null", ()))
-        if copied_metadata.scope_column is not None:
-            if scope is None:
-                errors.append(Finding("null_scope", "error", "Rule scope is null", _uuids([uuid])))
-            elif scope not in scopes:
-                errors.append(Finding("undeclared_scope", "error", f"Undeclared scope {scope!r}", _uuids([uuid])))
         seen.setdefault((scope, uuid), []).append(uuid)
-        _value_findings(row, uuid, copied_metadata, errors, warnings)
     for (scope, uuid), values in seen.items():
         if uuid is not None and len(values) > 1:
             errors.append(Finding("duplicate_uuid", "error", f"Duplicate UUID in scope {scope!r}", _uuids(values)))
-    _signatures(rows, copied_metadata, errors)
+    _signatures(signature_rows, copied_metadata, errors)
     breaches, found_warnings = _sorted_findings(errors), _sorted_findings(warnings)
     if breaches:
         raise DataContractError(breaches, found_warnings)
