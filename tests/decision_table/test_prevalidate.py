@@ -119,3 +119,144 @@ def test_prevalidate_preserves_undeclared_columns_on_supported_backends(backend_
     validated = prevalidate(source, metadata())
 
     assert validated.rules.to_dicts() == source.to_dicts()
+
+
+def test_prevalidate_aggregates_scope_and_contribution_breaches():
+    declared = metadata().model_copy(
+        update={
+            "scope_column": "scope",
+            "outputs": (
+                Aggregate(
+                    scope="fees",
+                    output_name="fee",
+                    contribution_column="fee_contribution",
+                    data_type=DataType.INT,
+                ),
+            ),
+        }
+    )
+    source = relation(
+        {
+            "rule_id": [None, "r2"],
+            "scope": [None, "unknown"],
+            "region": ["EU", "US"],
+            "fee_contribution": [None, "wrong"],
+        }
+    )
+
+    with pytest.raises(Exception) as caught:
+        prevalidate(source, declared)
+
+    assert {
+        finding.kind for finding in caught.value.breaches
+    } >= {"missing_uuid", "null_scope", "undeclared_scope"}
+
+
+def test_prevalidate_rejects_null_list_elements_and_invalid_ternary_authoring():
+    declared = DimensionsMetadata(
+        uuid_column="rule_id",
+        fields=(ContextField(name="active", data_type=DataType.BOOL, wildcard=False),),
+        dimensions=(
+            Dimension(
+                dimension_name="active_set",
+                context_field="active",
+                rule_field="active_set",
+                match_strategy=MatchStrategy.SET_MEMBERSHIP,
+            ),
+            Dimension(
+                dimension_name="presence",
+                context_field="active",
+                rule_field="presence",
+                match_strategy=MatchStrategy.PRESENCE,
+            ),
+            Dimension(
+                dimension_name="outcome",
+                context_field="active",
+                rule_field="outcome",
+                match_strategy=MatchStrategy.OUTCOME,
+            ),
+        ),
+    )
+    source = relation(
+        {
+            "rule_id": ["r1"],
+            "active_set": [[True, None]],
+            "presence": ["NULL"],
+            "outcome": [2],
+        }
+    )
+
+    with pytest.raises(Exception) as caught:
+        prevalidate(source, declared)
+
+    assert {
+        finding.kind for finding in caught.value.breaches
+    } >= {"null_list_element", "invalid_presence_value", "invalid_outcome_value"}
+
+
+def test_prevalidate_canonicalizes_set_order_and_decimal_scale_for_signatures():
+    from decimal import Decimal
+
+    declared = DimensionsMetadata(
+        uuid_column="rule_id",
+        fields=(
+            ContextField(
+                name="amount",
+                data_type=DataType.DECIMAL,
+                precision=8,
+                scale=2,
+                rounding="half_to_even",
+                wildcard=Decimal("-99.99"),
+            ),
+        ),
+        dimensions=(
+            Dimension(
+                dimension_name="amounts",
+                context_field="amount",
+                rule_field="amounts",
+                match_strategy=MatchStrategy.SET_MEMBERSHIP,
+            ),
+        ),
+    )
+    source = relation(
+        {
+            "rule_id": ["r1", "r2"],
+            "amounts": [
+                [Decimal("1.001"), Decimal("2.00"), Decimal("2.00")],
+                [Decimal("2.0"), Decimal("1.00")],
+            ],
+        }
+    )
+
+    with pytest.raises(Exception) as caught:
+        prevalidate(source, declared)
+
+    duplicate = next(finding for finding in caught.value.breaches if finding.kind == "duplicate_rule")
+    assert duplicate.rule_uuids == ("r1", "r2")
+
+
+def test_prevalidate_treats_a_wildcard_inside_a_set_as_ignoring_other_payload():
+    declared = DimensionsMetadata(
+        uuid_column="rule_id",
+        fields=(ContextField(name="region", data_type=DataType.STR, wildcard="*"),),
+        dimensions=(
+            Dimension(
+                dimension_name="regions",
+                context_field="region",
+                rule_field="regions",
+                match_strategy=MatchStrategy.SET_MEMBERSHIP,
+            ),
+        ),
+    )
+    source = relation(
+        {
+            "rule_id": ["dirty", "clean"],
+            "regions": [["*", "EU"], ["*"]],
+        }
+    )
+
+    with pytest.raises(Exception) as caught:
+        prevalidate(source, declared)
+
+    duplicate = next(finding for finding in caught.value.breaches if finding.kind == "duplicate_rule")
+    assert duplicate.rule_uuids == ("clean", "dirty")

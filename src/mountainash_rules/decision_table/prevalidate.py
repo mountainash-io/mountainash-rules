@@ -124,9 +124,9 @@ def _schema_type_compatible(dtype: Any, field: ContextField, is_set: bool) -> bo
     """Cheap schema admission for empty relations; values receive full checking."""
     family = dtype_family(dtype)
     if is_set:
-        # Mountainash list descriptors are backend-specific; a list family is enough
-        # here, and element values are checked below whenever rows exist.
-        return family in {MountainashDtype.LIST, MountainashDtype.ARRAY}
+        # List descriptors differ among supported backends but expose a stable
+        # family name; values are still inspected below when rows exist.
+        return "list" in str(family).lower() or "array" in str(family).lower()
     if field.data_type is DataType.DECIMAL:
         return isinstance(dtype, DecimalDtype)
     expected = {
