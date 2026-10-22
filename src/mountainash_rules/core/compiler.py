@@ -159,7 +159,11 @@ def rule_binding_expressions(
                 if dim.match_strategy is MatchStrategy.PRESENCE:
                     payload = raw
                 else:
-                    payload, _ = scalar_operand(dim, raw, source_dtype, wildcard)
+                    payload, failure = scalar_operand(dim, raw, source_dtype, wildcard)
+                    if dim.data_type is DataType.DECIMAL:
+                        # decimal_operand substitutes a placeholder zero for an operand it
+                        # cannot convert; an unconvertible rule value is no value at all.
+                        payload = ma.when(failure).then(None).otherwise(payload)
                     if dim.match_strategy is MatchStrategy.REGEX:
                         payload = ma.when(wildcard).then("").otherwise(payload)
             value_name, state_name = rule_binding_names(dim, endpoint)
