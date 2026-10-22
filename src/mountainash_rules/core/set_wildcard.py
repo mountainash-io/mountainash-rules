@@ -5,7 +5,7 @@ from __future__ import annotations
 import typing as t
 
 import mountainash.expressions as ma
-from mountainash import MountainashDtype
+from mountainash import DecimalDtype, MountainashDtype
 from mountainash.core.dtypes import ListDtype, TimestampDtype
 from mountainash.expressions import BaseExpressionAPI
 
@@ -61,8 +61,16 @@ def set_state(
     null_element = col.list.len().gt(0) & (
         ordered.list.first().is_null() | ordered.list.last().is_null()
     )
-    if element_dtype not in _SCALAR_DTYPES[dim.data_type] and not (
-        dim.data_type is DataType.DATETIME and isinstance(element_dtype, TimestampDtype)
+    if (
+        element_dtype not in _SCALAR_DTYPES.get(dim.data_type, frozenset())
+        and not (
+            dim.data_type is DataType.DECIMAL
+            and isinstance(element_dtype, DecimalDtype)
+        )
+        and not (
+            dim.data_type is DataType.DATETIME
+            and isinstance(element_dtype, TimestampDtype)
+        )
     ):
         return wildcard.fill_null(False), ma.lit(True), _empty_set_expr(dim)
     payload = canonicalize_set_expr(col)

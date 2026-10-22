@@ -1,5 +1,7 @@
 """Decision-table ternary, presence, and null-binding semantics."""
 
+from decimal import Decimal
+
 import polars as pl
 import pytest
 
@@ -256,3 +258,125 @@ def test_context_regex_missing_and_wildcard_are_unknown(backend_name):
 
     assert _scores(engine, {}, "code") == [("guard", 0, 0)]
     assert _scores(engine, {"code": "*"}, "code") == [("guard", 0, 0)]
+
+
+@pytest.mark.parametrize("backend_name", BACKENDS)
+@pytest.mark.parametrize(
+    "strategy, expected",
+    [
+        (MatchStrategy.SET_MEMBERSHIP, [("included", 1, 1), ("other", -1, 0), ("wildcard", 0, 0)]),
+        (MatchStrategy.SET_EXCLUSION, [("included", -1, 0), ("other", 1, 1), ("wildcard", 0, 0)]),
+    ],
+)
+def test_decimal_set_values_match_at_declared_scale(backend_name, strategy, expected):
+    """Membership compares declared-scale decimal values, not Decimal exponents."""
+    engine = ExpressionRulesEngine(
+        build_backend_df(
+            backend_name,
+            {
+                "rule_name": ["included", "other", "wildcard"],
+                "accepted": [
+                    [Decimal("1.50")],
+                    [Decimal("2.25")],
+                    None,
+                ],
+            },
+            table_name="decimal_set_rules",
+        ),
+        DimensionsMetadata(
+            fields=(
+                ContextField(
+                    name="amount",
+                    data_type=DataType.DECIMAL,
+                    precision=4,
+                    scale=2,
+                    rounding="half_to_even",
+                    wildcard=None,
+                    wildcard_declared=True,
+                ),
+            ),
+            dimensions=(
+                Dimension(
+                    dimension_name="amount",
+                    context_field="amount",
+                    rule_field="accepted",
+                    match_strategy=strategy,
+                ),
+            ),
+        ),
+    )
+
+    assert _scores(engine, {"amount": Decimal("1.5")}, "amount") == expected
+
+
+
+
+@pytest.mark.parametrize("backend_name", BACKENDS)
+def test_decimal_exact_match_uses_declared_scale_without_ordering(backend_name):
+    engine = ExpressionRulesEngine(
+        build_backend_df(
+            backend_name,
+            {
+                "rule_name": ["included", "other"],
+                "amount": [Decimal("1.50"), Decimal("2.25")],
+            },
+            table_name="decimal_exact_rules",
+        ),
+        DimensionsMetadata(
+            fields=(
+                ContextField(
+                    name="amount",
+                    data_type=DataType.DECIMAL,
+                    precision=4,
+                    scale=2,
+                    rounding="half_to_even",
+                ),
+            ),
+            dimensions=(Dimension(dimension_name="amount", context_field="amount"),),
+        ),
+    )
+
+    assert _scores(engine, {"amount": Decimal("1.5")}, "amount") == [
+        ("included", 1, 1),
+        ("other", -1, 0),
+    ]
+@pytest.mark.parametrize("backend_name", BACKENDS)
+@pytest.mark.parametrize(
+    "strategy, expected",
+    [
+        (MatchStrategy.SET_MEMBERSHIP, [("false", -1, 0), ("true", 1, 1), ("wildcard", 0, 0)]),
+        (MatchStrategy.SET_EXCLUSION, [("false", 1, 1), ("true", -1, 0), ("wildcard", 0, 0)]),
+    ],
+)
+def test_bool_set_declared_null_wildcard(backend_name, strategy, expected):
+    """A declared null set wildcard remains distinct from concrete Boolean sets."""
+    engine = ExpressionRulesEngine(
+        build_backend_df(
+            backend_name,
+            {
+                "rule_name": ["true", "false", "wildcard"],
+                "accepted": [[True], [False], None],
+            },
+            table_name="bool_set_rules",
+        ),
+        DimensionsMetadata(
+            fields=(
+                ContextField(
+                    name="enabled",
+                    data_type=DataType.BOOL,
+                    wildcard=None,
+                    wildcard_declared=True,
+                ),
+            ),
+            dimensions=(
+                Dimension(
+                    dimension_name="enabled",
+                    context_field="enabled",
+                    rule_field="accepted",
+                    match_strategy=strategy,
+                ),
+            ),
+        ),
+    )
+
+    assert _scores(engine, {"enabled": True}, "enabled") == expected

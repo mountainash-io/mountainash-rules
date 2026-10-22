@@ -60,6 +60,11 @@ _ISSUE_78_REASON = (
     "— mountainash-io/mountainash#78"
 )
 
+_IBIS_DUCKDB_LAMBDA_ARROW_REASON = (
+    "ibis-duckdb: ibis 12.0.0 emits deprecated lambda arrows that "
+    "DuckDB 2.0.0 rejects"
+)
+
 # (backends, reason, test node substrings)
 _UPSTREAM_XFAILS: list[tuple[set[str], str, list[str]]] = [
     # #78 — hits any test that reaches with_row_index in the engine pipeline.
@@ -102,6 +107,26 @@ _UPSTREAM_XFAILS: list[tuple[set[str], str, list[str]]] = [
             "TestApplyCrossBackend::test_apply_correct_count",
             "TestApplyCrossBackend::test_apply_accumulated_margin",
             "TestApplyCrossBackend::test_apply_partial_match",
+        ],
+    ),
+    # ibis 12.0.0 renders list lambdas with the arrow syntax rejected by
+    # DuckDB 2.0.0. Every affected test executes an ibis-duckdb list expression.
+    (
+        {"ibis-duckdb"},
+        _IBIS_DUCKDB_LAMBDA_ARROW_REASON,
+        [
+            # test_compiler.py
+            "TestBackendAgnosticism::test_set_strategy_evaluates_on_backend",
+            # test_set_wildcard.py
+            "test_normalized_set_payload_is_canonical_without_rewriting_authored_values",
+            # test_integration.py
+            "TestMixedStrategyFraudDetection::test_high_value_review",
+            "TestMixedStrategyFraudDetection::test_blacklist_merchant_blocks",
+            "TestMixedStrategyFraudDetection::test_specific_txn_most_specific",
+            # test_decision_table_semantics.py
+            "test_decimal_set_values_match_at_declared_scale",
+            "test_decimal_exact_match_uses_declared_scale_without_ordering",
+            "test_bool_set_declared_null_wildcard",
         ],
     ),
 ]
