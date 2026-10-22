@@ -4,38 +4,24 @@ from __future__ import annotations
 
 from decimal import Decimal
 
-import polars as pl
 import pytest
 
-from mountainash_rules.core.aggregate import Aggregate
-from mountainash_rules.core.constants import DataType, MatchStrategy
-from mountainash_rules.core.dimension import ContextField, Dimension, DimensionsMetadata
+from mountainash_rules.core.constants import DataType
+from mountainash_rules.core.dimension import DimensionsMetadata
 from mountainash_rules.decision_table.build import build_decision_table
 from mountainash_rules.decision_table.table import DecisionTable, derive_entry_metadata, outcome_field
 
 from tests.decision_table.construction_support import rows, validated_rules
-from tests.decision_table.oracles.finite_completion import (
-    FiniteCompletionOracle,
+from tests.decision_table.table_fixtures import (
+    CODE,
+    FIXTURES,
+    REGION,
+    M,
+    built,
+    built_oracle,
+    dimension,
 )
-from tests.decision_table.test_ordered_and_categorical_fields import (
-    INT_MAX,
-    fees_rates_metadata,
-    fees_rates_rules,
-    term_metadata,
-    term_rules,
-)
-
-M = MatchStrategy
-REGION = ContextField(name="region", data_type=DataType.STR, wildcard="*")
-TERM = ContextField(name="term", data_type=DataType.INT, wildcard=None, wildcard_declared=True)
-
-
-def dimension(name, strategy, field, **kwargs):
-    return Dimension(dimension_name=name, context_field=field, match_strategy=strategy, **kwargs)
-
-
-def score(scope="s"):
-    return Aggregate(scope=scope, output_name="score", contribution_column="score", data_type=DataType.INT)
+from tests.decision_table.test_ordered_and_categorical_fields import INT_MAX
 
 
 def sources_by_entry(table: DecisionTable) -> dict:
@@ -60,198 +46,14 @@ def _freeze(value):
 
 
 # ---------------------------------------------------------------------------
-# Fixtures: (data, metadata, grid, exact grid)
-# ---------------------------------------------------------------------------
-
-
-def categorical():
-    grid = {"region": ["EU", "US", "APAC"]}
-    return fees_rates_rules(), fees_rates_metadata(), grid, grid
-
-
-def categorical_negation():
-    grid = {"region": ["EU", "US", "APAC"]}
-    return fees_rates_rules(negation=True), fees_rates_metadata(negation=True), grid, grid
-
-
-def ordered():
-    rate = Aggregate(
-        scope="rates", output_name="rate", contribution_column="rate",
-        data_type=DataType.DECIMAL, precision=16, scale=2, rounding="half_to_even",
-    )
-    data = term_rules(T1={"range": (1, 5)}, T2={"exact": 3}, T3={"min": 10})
-    data["rate"] = [Decimal("2.00"), Decimal("-0.25"), Decimal("3.00")]
-    grid = {"term": [0, 1, 2, 3, 4, 5, 6, 9, 10, 11, 12]}
-    return data, term_metadata(outputs=(rate,)), grid, grid
-
-
-def ordered_negation():
-    metadata = DimensionsMetadata(
-        uuid_column="rule_id",
-        scope_column="scope",
-        fields=(TERM,),
-        dimensions=(
-            dimension("t_range", M.RANGE, "term", range_min_field="lo", range_max_field="hi"),
-            dimension("t_ne", M.NOT_EQUAL, "term"),
-        ),
-        outputs=(score("s"),),
-    )
-    data = {
-        "rule_id": ["T1", "N1"],
-        "scope": ["s", "s"],
-        "lo": [1, 1],
-        "hi": [10, 10],
-        "t_ne": pl.Series([None, 5], dtype=pl.Int64),
-        "score": [1, 10],
-    }
-    grid = {"term": [0, 1, 3, 5, 7, 10, 11]}
-    return data, metadata, grid, grid
-
-
-def conjunction():
-    """Two fields, overlapping rules, a wildcard rule: conjunction and overlapping entries."""
-    metadata = DimensionsMetadata(
-        uuid_column="rule_id",
-        scope_column="scope",
-        fields=(REGION, TERM),
-        dimensions=(
-            dimension("region", M.EXACT, "region"),
-            dimension("term_range", M.RANGE, "term", range_min_field="lo", range_max_field="hi"),
-            dimension("term_min", M.MIN, "term"),
-        ),
-        outputs=(score("s"),),
-    )
-    data = {
-        "rule_id": ["A", "B", "C", "D"],
-        "scope": ["s"] * 4,
-        "region": ["EU", "*", "US", "EU"],
-        "lo": pl.Series([1, None, None, None], dtype=pl.Int64),
-        "hi": pl.Series([5, None, None, None], dtype=pl.Int64),
-        "term_min": pl.Series([None, 3, None, 4], dtype=pl.Int64),
-        "score": [1, 2, 4, 8],
-    }
-    grid = {"region": ["EU", "US", "APAC"], "term": [0, 1, 3, 4, 5, 6]}
-    return data, metadata, grid, grid
-
-
-CODE = ContextField(
-    name="code", data_type=DataType.STR, wildcard="*", truthy={"yes": 1, "no": -1, "maybe": 0}
-)
-
-
-def patterns():
-    metadata = DimensionsMetadata(
-        uuid_column="rule_id",
-        scope_column="scope",
-        fields=(CODE,),
-        dimensions=(
-            dimension("code", M.EXACT, "code"),
-            dimension("pre", M.PREFIX, "code"),
-            dimension("rx", M.REGEX, "code"),
-            dimension("anywhere", M.CONTAINS, "code"),
-            dimension("upper", M.CONTEXT_REGEX, "code", regex_pattern="^[A-Z]"),
-        ),
-        outputs=(score("s"),),
-    )
-    data = {
-        "rule_id": ["P1", "P2", "P3", "P4", "P5"],
-        "scope": ["s"] * 5,
-        "code": ["*", "*", "*", "US-1", "*"],
-        "pre": ["EU", "*", "EU", "*", "*"],
-        "rx": ["*", "-1$", "-22$", "*", "*"],
-        "anywhere": ["*", "*", "*", "*", "U"],
-        "score": [1, 2, 4, 8, 16],
-    }
-    grid = {"code": ["EU-1", "EU-22", "US-1", "xx", "UK-2", None]}
-    return data, metadata, grid, {"code": ["EU-1", "EU-22", "US-1", "xx", "UK-2"]}
-
-
-def truthy():
-    metadata = DimensionsMetadata(
-        uuid_column="rule_id",
-        scope_column="scope",
-        fields=(CODE,),
-        dimensions=(dimension("agree", M.TRUTHY, "code"),),
-        outputs=(score("s"),),
-    )
-    data = {
-        "rule_id": ["Y", "N", "M", "ANY"],
-        "scope": ["s"] * 4,
-        "agree": ["yes", "no", "maybe", "*"],
-        "score": [1, 2, 4, 8],
-    }
-    return data, metadata, {"code": ["yes", "no", "maybe", "other", None]}, {"code": ["yes", "no"]}
-
-
-VIP = ContextField(name="vip", data_type=DataType.BOOL, wildcard=None, wildcard_declared=True)
-
-
-def null_rules():
-    """The worked null rules R1-R3 (explicit-dont-care-sentinels.md)."""
-    metadata = DimensionsMetadata(
-        uuid_column="rule_id",
-        scope_column="scope",
-        fields=(REGION, VIP),
-        dimensions=(
-            dimension("region", M.EXACT, "region"),
-            dimension("region_presence", M.PRESENCE, "region"),
-            dimension("vip", M.EXACT, "vip"),
-        ),
-        outputs=(score("s"),),
-    )
-    data = {
-        "rule_id": ["R1", "R2", "R3"],
-        "scope": ["s"] * 3,
-        "region": ["EU", "*", "*"],
-        "region_presence": ["*", "IS_NULL", "IS_NOT_NULL"],
-        "vip": [None, None, True],
-        "score": [1, 2, 4],
-    }
-    grid = {"region": ["EU", "US", None], "vip": [True, False]}
-    return data, metadata, grid, grid
-
-
-def outcome_rules():
-    flag = ContextField(name="flag", data_type=DataType.INT, wildcard=None, wildcard_declared=True)
-    metadata = DimensionsMetadata(
-        uuid_column="rule_id",
-        scope_column="scope",
-        fields=(flag,),
-        dimensions=(dimension("flag_outcome", M.OUTCOME, "flag"),),
-        outputs=(score("s"),),
-    )
-    data = {"rule_id": ["neg", "zero", "pos"], "scope": ["s"] * 3, "flag_outcome": [-1, 0, 1], "score": [1, 2, 4]}
-    return data, metadata, {"flag": [-1, 0, 1]}, {"flag": [-1, 1]}
-
-
-FIXTURES = {
-    "categorical": categorical,
-    "categorical_negation": categorical_negation,
-    "ordered": ordered,
-    "ordered_negation": ordered_negation,
-    "conjunction": conjunction,
-    "patterns": patterns,
-    "truthy": truthy,
-    "null_rules": null_rules,
-    "outcome": outcome_rules,
-}
-
-
-def built(backend_name, name):
-    data, metadata, grid, exact_grid = FIXTURES[name]()
-    validated = validated_rules(backend_name, data, metadata)
-    return validated, build_decision_table(validated), grid, exact_grid
-
-
-# ---------------------------------------------------------------------------
 # Equivalence with the authored rules, over every complete and omitted context
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.parametrize("name", sorted(FIXTURES))
 def test_built_table_agrees_with_the_authored_rules_on_every_context(backend_name, name):
-    validated, table, grid, exact_grid = built(backend_name, name)
-    oracle = FiniteCompletionOracle(validated, grid, exact_grid)
+    _, table, grid, _ = built(backend_name, name)
+    oracle = built_oracle(backend_name, name)
 
     checked = oracle.check_equivalence(table)
 
@@ -264,8 +66,8 @@ def test_built_table_agrees_with_the_authored_rules_on_every_context(backend_nam
 
 @pytest.mark.parametrize("name", ["conjunction", "categorical_negation"])
 def test_overlapping_entries_are_all_returned_with_distinct_source_sets(backend_name, name):
-    validated, table, grid, _ = built(backend_name, name)
-    oracle = FiniteCompletionOracle(validated, grid)
+    _, table, _, _ = built(backend_name, name)
+    oracle = built_oracle(backend_name, name)
     context = {"region": "EU", "term": 4} if name == "conjunction" else {"region": "EU"}
 
     matches = oracle.table_matches(table, "s" if name == "conjunction" else "fees", context)
@@ -279,8 +81,8 @@ def test_overlapping_entries_are_all_returned_with_distinct_source_sets(backend_
 
 
 def test_a_context_no_rule_covers_matches_no_entry(backend_name):
-    validated, table, grid, _ = built(backend_name, "ordered")
-    oracle = FiniteCompletionOracle(validated, grid)
+    _, table, _, _ = built(backend_name, "ordered")
+    oracle = built_oracle(backend_name, "ordered")
 
     assert oracle.survivors("rates", {"term": 7}) == frozenset()
     assert oracle.table_matches(table, "rates", {"term": 7}) == []
@@ -308,14 +110,14 @@ def test_conjunction_entries_hold_only_cells_a_rule_covers(backend_name):
 
 
 def test_categorical_worked_example_entries_sources_and_outputs(backend_name):
-    validated, table, grid, _ = built(backend_name, "categorical")
+    _, table, _, _ = built(backend_name, "categorical")
 
     assert entry_summary(table, "scope", "region", "fee", "rate") == {
         ("fees", "EU", 11, None, frozenset({"F1", "F2"})),
         ("fees", "*", 1, None, frozenset({"F2"})),
         ("rates", "US", None, Decimal("-0.10"), frozenset({"R1"})),
     }
-    oracle = FiniteCompletionOracle(validated, grid)
+    oracle = built_oracle(backend_name, "categorical")
     eu = {(m.sources, m.specificity) for m in oracle.table_matches(table, "fees", {"region": "EU"})}
     assert eu == {(frozenset({"F1", "F2"}), 1), (frozenset({"F2"}), 0)}
     assert {m.sources for m in oracle.table_matches(table, "fees", {"region": "APAC"})} == {frozenset({"F2"})}
@@ -323,7 +125,7 @@ def test_categorical_worked_example_entries_sources_and_outputs(backend_name):
 
 
 def test_categorical_negation_worked_example(backend_name):
-    validated, table, grid, _ = built(backend_name, "categorical_negation")
+    _, table, _, _ = built(backend_name, "categorical_negation")
 
     assert entry_summary(table, "scope", "region", "region_ne", "fee") == {
         ("fees", "EU", "*", 11, frozenset({"F1", "F2"})),
@@ -332,7 +134,7 @@ def test_categorical_negation_worked_example(backend_name):
         ("fees", "*", "US", 6, frozenset({"F2", "N1"})),
         ("rates", "US", "*", None, frozenset({"R1"})),
     }
-    oracle = FiniteCompletionOracle(validated, grid)
+    oracle = built_oracle(backend_name, "categorical_negation")
     found = {
         region: {m.sources for m in oracle.table_matches(table, "fees", {"region": region})}
         for region in ("EU", "US", "APAC")
@@ -343,7 +145,7 @@ def test_categorical_negation_worked_example(backend_name):
 
 
 def test_ordered_worked_example_entries_sources_and_outputs(backend_name):
-    validated, table, grid, _ = built(backend_name, "ordered")
+    _, table, _, _ = built(backend_name, "ordered")
 
     assert entry_summary(table, "term__lo", "term__hi", "rate") == {
         (1, 2, Decimal("2.00"), frozenset({"T1"})),
@@ -351,7 +153,7 @@ def test_ordered_worked_example_entries_sources_and_outputs(backend_name):
         (4, 5, Decimal("2.00"), frozenset({"T1"})),
         (10, INT_MAX, Decimal("3.00"), frozenset({"T3"})),
     }
-    oracle = FiniteCompletionOracle(validated, grid)
+    oracle = built_oracle(backend_name, "ordered")
     expectations = {
         3: {(frozenset({"T1", "T2"}), Decimal("1.75"))},
         5: {(frozenset({"T1"}), Decimal("2.00"))},
@@ -366,8 +168,8 @@ def test_ordered_worked_example_entries_sources_and_outputs(backend_name):
 
 
 def test_ordered_negation_worked_example(backend_name):
-    validated, table, grid, _ = built(backend_name, "ordered_negation")
-    oracle = FiniteCompletionOracle(validated, grid)
+    _, table, _, _ = built(backend_name, "ordered_negation")
+    oracle = built_oracle(backend_name, "ordered_negation")
 
     assert entry_summary(table, "term__lo", "term__hi", "t_ne", "score") == {
         (1, 10, None, 1, frozenset({"T1"})),
@@ -381,8 +183,8 @@ def test_ordered_negation_worked_example(backend_name):
 
 
 def test_pattern_worked_example_entries_and_matches(backend_name):
-    validated, table, grid, _ = built(backend_name, "patterns")
-    oracle = FiniteCompletionOracle(validated, grid)
+    _, table, _, _ = built(backend_name, "patterns")
+    oracle = built_oracle(backend_name, "patterns")
 
     patterns = {row["column"]: (row["strategy"], row["pattern"]) for row in table.pattern_conditions.to_dicts()}
     assert patterns == {
@@ -405,8 +207,8 @@ def test_pattern_worked_example_entries_and_matches(backend_name):
 
 
 def test_zero_specificity_matches_survive_an_omitted_context(backend_name):
-    validated, table, grid, _ = built(backend_name, "null_rules")
-    oracle = FiniteCompletionOracle(validated, grid)
+    _, table, _, _ = built(backend_name, "null_rules")
+    oracle = built_oracle(backend_name, "null_rules")
 
     # C3: nothing set -> every rule possible at specificity 0
     matches = oracle.table_matches(table, "s", {})

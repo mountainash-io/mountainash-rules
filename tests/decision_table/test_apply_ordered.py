@@ -14,6 +14,7 @@ from mountainash_rules.core.dimension import ContextField
 from tests.decision_table.apply_support import (
     all_contexts,
     build,
+    build_once,
     check_application,
     context_model,
     fetch,
@@ -22,8 +23,7 @@ from tests.decision_table.apply_support import (
     request_contexts,
     sources_by_entry,
 )
-from tests.decision_table.oracles.finite_completion import FiniteCompletionOracle
-from tests.decision_table.test_build_equivalence import built
+from tests.decision_table.table_fixtures import built, built_oracle
 from tests.decision_table.test_ordered_and_categorical_fields import (
     datetime_field,
     decimal_field,
@@ -45,10 +45,14 @@ def union(found, request):
 # ---------------------------------------------------------------------------
 
 
+def term_rules_and_metadata():
+    data = term_rules(T1={"range": (1, 5)}, T2={"exact": 3}, T3={"min": 10})
+    return data, term_metadata()
+
+
 @pytest.fixture
 def term_table(backend_name):
-    data = term_rules(T1={"range": (1, 5)}, T2={"exact": 3}, T3={"min": 10})
-    return build(backend_name, data, term_metadata())
+    return build_once(backend_name, term_rules_and_metadata)
 
 
 @pytest.mark.parametrize(
@@ -201,8 +205,8 @@ MODELS = {
 
 @pytest.mark.parametrize("name", sorted(MODELS))
 def test_every_completion_of_every_context_agrees_with_the_authored_rules_for_objects(backend_name, name):
-    validated, table, grid, exact_grid = built(backend_name, name)
-    oracle = FiniteCompletionOracle(validated, grid, exact_grid)
+    _, table, _, _ = built(backend_name, name)
+    oracle = built_oracle(backend_name, name)
     model, _ = MODELS[name]
     contexts = all_contexts(oracle)
 
@@ -213,8 +217,8 @@ def test_every_completion_of_every_context_agrees_with_the_authored_rules_for_ob
 
 @pytest.mark.parametrize("name", sorted(MODELS))
 def test_every_completion_of_every_context_agrees_with_the_authored_rules_for_relations(backend_name, name):
-    validated, table, grid, exact_grid = built(backend_name, name)
-    oracle = FiniteCompletionOracle(validated, grid, exact_grid)
+    _, table, _, _ = built(backend_name, name)
+    oracle = built_oracle(backend_name, name)
     _, dtypes = MODELS[name]
     contexts = all_contexts(oracle)
 
@@ -227,12 +231,12 @@ def test_every_completion_of_every_context_agrees_with_the_authored_rules_for_re
 
 def test_alternatives_are_retained_not_summed(backend_name):
     """An omitted term keeps every entry with its own output; no row folds the alternatives together."""
-    validated, table, grid, _ = built(backend_name, "ordered")
+    _, table, _, _ = built(backend_name, "ordered")
 
     rows = fetch(table, [Term(request_id=1)])
 
     assert sorted(row["rate"] for row in rows) == [D("1.75"), D("2.00"), D("2.00"), D("3.00")]
     assert len({row["entry_id"] for row in rows}) == len(rows) == 4
-    oracle = FiniteCompletionOracle(validated, grid, grid)
+    oracle = built_oracle(backend_name, "ordered")
     expected = {m.entry_id for m in oracle.table_matches(table, "rates", {})}
     assert {row["entry_id"] for row in rows} == expected

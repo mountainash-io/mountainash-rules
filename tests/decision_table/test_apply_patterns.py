@@ -12,6 +12,7 @@ from mountainash_rules.decision_table.table import outcome_field
 from tests.decision_table.apply_support import (
     all_contexts,
     build,
+    build_once,
     check_application,
     context_model,
     context_relation,
@@ -21,8 +22,7 @@ from tests.decision_table.apply_support import (
     request_contexts,
     spy_on_engine,
 )
-from tests.decision_table.oracles.finite_completion import FiniteCompletionOracle
-from tests.decision_table.test_build_equivalence import built, null_rules
+from tests.decision_table.table_fixtures import built, built_oracle
 
 M = MatchStrategy
 CODE = ContextField(name="code", data_type=DataType.STR, wildcard="*")
@@ -44,8 +44,7 @@ def score(scope):
 # ---------------------------------------------------------------------------
 
 
-@pytest.fixture
-def prefix_contains(backend_name):
+def prefix_contains_rules():
     metadata = DimensionsMetadata(
         uuid_column="rule_id",
         fields=(CODE,),
@@ -56,7 +55,12 @@ def prefix_contains(backend_name):
         outputs=(Aggregate(output_name="score", contribution_column="score", data_type=DataType.INT),),
     )
     data = {"rule_id": ["A", "B"], "p1": ["EU-", "*"], "p2": ["*", "-X"], "score": [1, 2]}
-    return build(backend_name, data, metadata)
+    return data, metadata
+
+
+@pytest.fixture
+def prefix_contains(backend_name):
+    return build_once(backend_name, prefix_contains_rules)
 
 
 def union(found, request):
@@ -171,7 +175,7 @@ def test_pattern_requirements_are_stored_as_int8_ternaries_including_context_reg
 
 
 def test_context_regex_filters_values_that_fail_it_and_ignores_missing_ones(backend_name):
-    validated, table, grid, _ = built(backend_name, "patterns")
+    _, table, _, _ = built(backend_name, "patterns")
     model = context_model(code=str)
 
     found = matched_sources(
@@ -236,8 +240,7 @@ SURVIVORS = {
 
 @pytest.fixture
 def null_table(backend_name):
-    data, metadata, _, _ = null_rules()
-    return build(backend_name, data, metadata)
+    return built(backend_name, "null_rules")[1]
 
 
 def test_worked_null_example_survivors_for_protocol_objects(null_table):
@@ -279,8 +282,7 @@ def test_worked_null_example_specificity(null_table):
 # ---------------------------------------------------------------------------
 
 
-@pytest.fixture
-def scoped_patterns(backend_name):
+def scoped_patterns_rules():
     metadata = DimensionsMetadata(
         uuid_column="rule_id",
         scope_column="scope",
@@ -295,7 +297,12 @@ def scoped_patterns(backend_name):
         "tier": ["*", "*"],
         "score": [1, 2],
     }
-    return build(backend_name, data, metadata)
+    return data, metadata
+
+
+@pytest.fixture
+def scoped_patterns(backend_name):
+    return build_once(backend_name, scoped_patterns_rules)
 
 
 @pytest.mark.parametrize(
@@ -345,8 +352,8 @@ MODELS = {
 
 @pytest.mark.parametrize("name", sorted(MODELS))
 def test_every_context_agrees_with_the_authored_rules_for_protocol_objects(backend_name, name):
-    validated, table, grid, exact_grid = built(backend_name, name)
-    oracle = FiniteCompletionOracle(validated, grid, exact_grid)
+    _, table, _, _ = built(backend_name, name)
+    oracle = built_oracle(backend_name, name)
     model, _ = MODELS[name]
     contexts = all_contexts(oracle)
 
@@ -357,8 +364,8 @@ def test_every_context_agrees_with_the_authored_rules_for_protocol_objects(backe
 
 @pytest.mark.parametrize("name", sorted(MODELS))
 def test_every_context_agrees_with_the_authored_rules_for_relations(backend_name, name):
-    validated, table, grid, exact_grid = built(backend_name, name)
-    oracle = FiniteCompletionOracle(validated, grid, exact_grid)
+    _, table, _, _ = built(backend_name, name)
+    oracle = built_oracle(backend_name, name)
     _, dtypes = MODELS[name]
     contexts = all_contexts(oracle)
 

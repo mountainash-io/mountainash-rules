@@ -18,7 +18,7 @@ from mountainash_rules.decision_table.apply import (
 from mountainash_rules.decision_table.errors import DecisionTableError
 
 from tests.decision_table.apply_support import (
-    build,
+    build_once,
     context_model,
     context_relation,
     fetch,
@@ -27,11 +27,7 @@ from tests.decision_table.apply_support import (
     sources_of,
     spy_on_engine,
 )
-from tests.decision_table.test_build_equivalence import null_rules
-from tests.decision_table.test_ordered_and_categorical_fields import (
-    fees_rates_metadata,
-    fees_rates_rules,
-)
+from tests.decision_table.table_fixtures import built, fees_rates_pair
 
 prevalidate_module = importlib.import_module("mountainash_rules.decision_table.prevalidate")
 
@@ -43,13 +39,12 @@ F1, F2, R1 = frozenset({"F1", "F2"}), frozenset({"F2"}), frozenset({"R1"})
 
 @pytest.fixture
 def fees_rates(backend_name):
-    return build(backend_name, fees_rates_rules(), fees_rates_metadata())
+    return build_once(backend_name, fees_rates_pair)
 
 
 @pytest.fixture
 def null_table(backend_name):
-    data, metadata, _, _ = null_rules()
-    return build(backend_name, data, metadata)
+    return built(backend_name, "null_rules")[1]
 
 
 # ---------------------------------------------------------------------------

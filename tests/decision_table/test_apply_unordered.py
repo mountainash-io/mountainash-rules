@@ -5,17 +5,12 @@ from __future__ import annotations
 import pytest
 
 from tests.decision_table.apply_support import (
-    build,
     context_model,
     fetch,
     matched_sources,
     sources_by_entry,
 )
-from tests.decision_table.test_build_equivalence import ordered_negation
-from tests.decision_table.test_ordered_and_categorical_fields import (
-    fees_rates_metadata,
-    fees_rates_rules,
-)
+from tests.decision_table.table_fixtures import built
 
 Region = context_model(region=str)
 Term = context_model(term=int)
@@ -46,7 +41,7 @@ def specificity_by_sources(table, contexts) -> dict:
 
 
 def test_categorical_fees_and_rates_entries_per_region(backend_name):
-    table = build(backend_name, fees_rates_rules(), fees_rates_metadata())
+    table = built(backend_name, "categorical")[1]
     contexts = [
         Region(request_id="EU", region="EU"),
         Region(request_id="US", region="US"),
@@ -64,7 +59,7 @@ def test_categorical_fees_and_rates_entries_per_region(backend_name):
 
 
 def test_categorical_outputs_travel_with_each_entry(backend_name):
-    table = build(backend_name, fees_rates_rules(), fees_rates_metadata())
+    table = built(backend_name, "categorical")[1]
 
     rows = fetch(table, [Region(request_id=1, region="EU")], ["fees"])
 
@@ -73,7 +68,7 @@ def test_categorical_outputs_travel_with_each_entry(backend_name):
 
 
 def test_negated_categorical_entries_are_each_returned_when_their_condition_holds(backend_name):
-    table = build(backend_name, fees_rates_rules(negation=True), fees_rates_metadata(negation=True))
+    table = built(backend_name, "categorical_negation")[1]
     contexts = [Region(request_id=region, region=region) for region in ("EU", "US", "APAC")]
 
     found = matched_sources(table, contexts, ["fees"])
@@ -91,8 +86,7 @@ def test_negated_categorical_entries_are_each_returned_when_their_condition_hold
 
 @pytest.fixture
 def term_table(backend_name):
-    data, metadata, _, _ = ordered_negation()
-    return build(backend_name, data, metadata)
+    return built(backend_name, "ordered_negation")[1]
 
 
 def test_overlapping_negation_entries_both_match_and_stay_distinct(term_table):

@@ -28,7 +28,7 @@ from mountainash_rules.decision_table.table import DecisionTable
 
 from tests.decision_table.construction_support import rows, validated_rules
 from tests.decision_table.oracles.finite_completion import FiniteCompletionOracle
-from tests.decision_table.test_build_equivalence import FIXTURES, built, dimension, score
+from tests.decision_table.table_fixtures import FIXTURES, built, dimension, score
 from tests.decision_table.test_ordered_and_categorical_fields import (
     fees_rates_metadata,
     fees_rates_rules,

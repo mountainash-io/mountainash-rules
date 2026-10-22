@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import functools
 import typing as t
 from dataclasses import dataclass
 
@@ -24,6 +25,16 @@ def context_model(**fields: type) -> type[BaseModel]:
 
 def build(backend_name: str, data: dict, metadata) -> DecisionTable:
     return build_decision_table(validated_rules(backend_name, data, metadata))
+
+
+@functools.cache
+def build_once(backend_name: str, rules: t.Callable[[], tuple[dict, t.Any]]) -> DecisionTable:
+    """``build`` of ``rules()`` (a ``(data, metadata)`` pair), built once per session and backend.
+
+    For tests that only read the table; one that spies on, mutates or tests the build builds its own.
+    """
+    data, metadata = rules()
+    return build(backend_name, data, metadata)
 
 
 def context_relation(backend_name: str, data: dict):

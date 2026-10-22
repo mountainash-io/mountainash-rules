@@ -9,6 +9,7 @@ profile name (resolved through ``MOUNTAINASH_PROFILES_CONFIG`` as usual) and
 from __future__ import annotations
 
 import datetime as dt
+import functools
 import hashlib
 import json
 import os
@@ -38,8 +39,8 @@ from mountainash_rules.decision_table.table import DecisionTable
 
 from tests.decision_table.apply_support import context_model, fetch
 from tests.decision_table.construction_support import validated_rules
-from tests.decision_table.oracles.finite_completion import FiniteCompletionOracle, contexts_over
-from tests.decision_table.test_build_equivalence import built
+from tests.decision_table.oracles.finite_completion import contexts_over
+from tests.decision_table.table_fixtures import built, built_oracle
 from tests.decision_table.test_ordered_and_categorical_fields import fees_rates_metadata, fees_rates_rules
 
 M = MatchStrategy
@@ -63,6 +64,7 @@ def dimension(name: str, strategy: MatchStrategy, field: str, **kwargs) -> Dimen
     return Dimension(dimension_name=name, context_field=field, match_strategy=strategy, **kwargs)
 
 
+@functools.cache
 def every_kind(backend_name: str) -> DecisionTable:
     """A table with every column kind the entries can hold, and truthy values in its metadata."""
     fields = (
@@ -120,6 +122,7 @@ def every_kind(backend_name: str) -> DecisionTable:
     return build_decision_table(validated_rules(backend_name, data, metadata))
 
 
+@functools.cache
 def empty_table(backend_name: str) -> DecisionTable:
     """The fees/rates rules with no rules: a table with no entries and its typed schema."""
     data = fees_rates_rules()
@@ -270,13 +273,13 @@ def match_rows(table: DecisionTable, grid: dict) -> list[tuple]:
 
 @pytest.mark.parametrize("name", PARITY)
 def test_matching_a_loaded_table_equals_matching_the_built_table(backend_name, target, name):
-    validated, table, grid, exact_grid = built(backend_name, name)
+    _, table, grid, _ = built(backend_name, name)
     table.save(target)
 
     loaded = DecisionTable.load(target, connection=connection_for(backend_name))
 
     assert match_rows(loaded, grid) == match_rows(table, grid)
-    assert FiniteCompletionOracle(validated, grid, exact_grid).check_equivalence(loaded) > 0
+    assert built_oracle(backend_name, name).check_equivalence(loaded) > 0
 
 
 # ---------------------------------------------------------------------------

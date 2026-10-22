@@ -95,6 +95,11 @@ class FiniteCompletionOracle:
         self._engines: dict[str, ExpressionRulesEngine | None] = {}
         self._survivors: dict[tuple, frozenset] = {}
         self._validated = validated
+        # Everything read from a built table is a function of that (immutable) table: read it once.
+        # Entries hold their table so an ``id`` is never reused while cached.
+        self._table_scopes: dict[tuple[int, str], tuple[DecisionTable, _ScopeEntries]] = {}
+        self._pattern_rows: dict[int, tuple[DecisionTable, list[dict]]] = {}
+        self._matches: dict[tuple, list[Match]] = {}
 
     # -- source rules ------------------------------------------------------
 
@@ -119,7 +124,7 @@ class FiniteCompletionOracle:
             if self.metadata.scope_column is not None:
                 rules = rules.filter(ma.col(self.metadata.scope_column).eq(scope))
             self._engines[scope] = ExpressionRulesEngine(
-                rules=rules.collect(), dimension_metadata=self.metadata
+                rules=rules.to_polars(), dimension_metadata=self.metadata
             )
         return self._engines[scope]
 
@@ -178,24 +183,45 @@ class FiniteCompletionOracle:
 
     def table_matches(self, table: DecisionTable, scope: str, context: dict) -> list[Match]:
         """Every entry of ``scope`` the engine keeps for ``context``, with sources and outputs."""
-        entries = table.entries.filter(ma.col("scope").eq(scope))
-        if entries.count_rows() == 0:
+        key = (id(table), scope, tuple(sorted((k, _freeze(v)) for k, v in context.items())))
+        if key not in self._matches:
+            self._matches[key] = self._read_matches(table, scope, context)
+        return list(self._matches[key])
+
+    def _scope_entries(self, table: DecisionTable, scope: str) -> _ScopeEntries:
+        """The scope's entries, their sources and the engine over them, read once per table."""
+        key = (id(table), scope)
+        if key not in self._table_scopes:
+            entries = table.entries.filter(ma.col("scope").eq(scope))
+            if entries.count_rows() == 0:
+                held = _ScopeEntries([], {}, None)
+            else:
+                sources: dict[int, set] = {}
+                for row in table.entry_sources.filter(ma.col("scope").eq(scope)).to_dicts():
+                    sources.setdefault(row["entry_sources_id"], set()).add(row["source_uuid"])
+                metadata = table.entry_metadata
+                if not metadata.dimensions:
+                    held = _ScopeEntries(entries.to_dicts(), sources, None)
+                else:
+                    engine = ExpressionRulesEngine(rules=entries.to_polars(), dimension_metadata=metadata)
+                    held = _ScopeEntries(None, sources, engine)
+            self._table_scopes[key] = (table, held)
+        return self._table_scopes[key][1]
+
+    def _read_matches(self, table: DecisionTable, scope: str, context: dict) -> list[Match]:
+        held = self._scope_entries(table, scope)
+        if held.engine is None and not held.undimensioned:
             return []
-        sources: dict[int, set] = {}
-        for row in table.entry_sources.filter(ma.col("scope").eq(scope)).to_dicts():
-            sources.setdefault(row["entry_sources_id"], set()).add(row["source_uuid"])
         names = [o.output_name for o in self.metadata.outputs if (o.scope or "default") == scope]
-        metadata = table.entry_metadata
-        if not metadata.dimensions:
-            kept = [dict(row, __specificity=0) for row in entries.to_dicts()]
+        if held.engine is None:
+            kept = [dict(row, __specificity=0) for row in held.undimensioned]
         else:
-            engine = ExpressionRulesEngine(rules=entries.collect(), dimension_metadata=metadata)
-            result = engine.evaluate(context={**context, **self.context_outcomes(table, context)})
+            result = held.engine.evaluate(context={**context, **self.context_outcomes(table, context)})
             kept = relation(result.survivors).to_dicts()
         return [
             Match(
                 row["entry_id"],
-                frozenset(sources[row["entry_sources_id"]]),
+                frozenset(held.sources[row["entry_sources_id"]]),
                 tuple((name, row[name]) for name in names),
                 row["__specificity"],
             )
@@ -221,7 +247,7 @@ class FiniteCompletionOracle:
                 outcomes[column] = 0 if value is OMITTED else (1 if value is None else -1)
             elif dimension.match_strategy is MatchStrategy.OUTCOME:
                 outcomes[column] = 0 if value is OMITTED else value
-        for row in table.pattern_conditions.to_dicts():
+        for row in self._patterns_of(table):
             value = context.get(row["context_field"], OMITTED)
             outcomes[outcome_field(row["column"])] = (
                 0
@@ -229,6 +255,12 @@ class FiniteCompletionOracle:
                 else (1 if self._pattern_holds(row["strategy"], row["pattern"], value) else -1)
             )
         return outcomes
+
+    def _patterns_of(self, table: DecisionTable) -> list[dict]:
+        key = id(table)
+        if key not in self._pattern_rows:
+            self._pattern_rows[key] = (table, table.pattern_conditions.to_dicts())
+        return self._pattern_rows[key][1]
 
     @staticmethod
     def _pattern_holds(strategy: str, pattern: str, value: str) -> bool:
@@ -280,3 +312,16 @@ def _equal(left: t.Any, right: t.Any) -> bool:
     if isinstance(left, Decimal) or isinstance(right, Decimal):
         return left is not None and right is not None and Decimal(left) == Decimal(right)
     return left == right
+
+
+@dataclass(frozen=True)
+class _ScopeEntries:
+    """One scope of a built table as the oracle reads it: its entry sources and the engine over its entries.
+
+    ``undimensioned`` holds the entry rows of a table whose entries have no dimension (no engine
+    can run over them); it is ``[]`` for a scope without entries.
+    """
+
+    undimensioned: list[dict] | None
+    sources: dict[int, set]
+    engine: ExpressionRulesEngine | None

@@ -16,12 +16,8 @@ from mountainash_rules.core.dimension import ContextField, Dimension, Dimensions
 from mountainash_rules.decision_table.errors import DecisionTableError
 from mountainash_rules.engines.filter.engine import ExpressionRulesEngine
 
-from tests.decision_table.apply_support import build, context_model, spy_on_engine
-from tests.decision_table.test_build_equivalence import built
-from tests.decision_table.test_ordered_and_categorical_fields import (
-    fees_rates_metadata,
-    fees_rates_rules,
-)
+from tests.decision_table.apply_support import build_once, context_model, spy_on_engine
+from tests.decision_table.table_fixtures import built, fees_rates_pair
 
 Region = context_model(region=str)
 Code = context_model(code=str)
@@ -31,7 +27,7 @@ LOGGER = "mountainash_rules.decision_table.apply"
 
 @pytest.fixture
 def fees_rates(backend_name):
-    return build(backend_name, fees_rates_rules(), fees_rates_metadata())
+    return build_once(backend_name, fees_rates_pair)
 
 
 # ---------------------------------------------------------------------------
@@ -65,8 +61,7 @@ def test_every_match_call_is_one_engine_call_whatever_the_number_of_requests(fee
     assert len(spy.constructed) == len(spy.batches) == 1
 
 
-@pytest.fixture
-def pattern_only_scopes(backend_name):
+def pattern_only_scopes_rules():
     """Scope s2's entries require no pattern, and the pattern is the table's only dimension."""
     field = ContextField(name="code", data_type=DataType.STR, wildcard="*")
     metadata = DimensionsMetadata(
@@ -80,7 +75,13 @@ def pattern_only_scopes(backend_name):
         ),
     )
     data = {"rule_id": ["P", "Q"], "scope": ["s1", "s2"], "pre": ["EU", "*"], "score": [1, 2]}
-    return build(backend_name, data, metadata)
+    return data, metadata
+
+
+@pytest.fixture
+def pattern_only_scopes(backend_name):
+    """Scope s2's entries require no pattern, and the pattern is the table's only dimension."""
+    return build_once(backend_name, pattern_only_scopes_rules)
 
 
 def test_with_nothing_left_to_score_every_selected_entry_matches_at_specificity_zero(
