@@ -26,9 +26,10 @@ def _empty_set_expr(dim: Dimension) -> BaseExpressionAPI:
         DataType.DATE: "date",
         DataType.DATETIME: "datetime",
         DataType.BOOL: "boolean",
-    }[dim.data_type]
+    }.get(dim.data_type)
     return ma.lit([]).list.cast_items(
-        item_type=item_type, field_name=dim.resolved_rule_field
+        item_type=dim.decimal_dtype if dim.data_type is DataType.DECIMAL else item_type,
+        field_name=dim.resolved_rule_field,
     )
 
 
