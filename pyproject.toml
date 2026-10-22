@@ -26,6 +26,8 @@ classifiers = [
 dependencies = [
     "polars>=1.35.1",
     "ibis-framework[polars,duckdb]>=11.0.0",
+    # ibis 12 emits deprecated `->` list lambdas that DuckDB 2.0 rejects (central backlog #363).
+    "duckdb<2.0",
     "narwhals>=1.0.0",
     "pyyaml>=6.0",
     # mountainash is required at runtime but not
