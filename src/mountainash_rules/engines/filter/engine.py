@@ -504,7 +504,9 @@ class ExpressionRulesEngine:
             name="__rule_index"
         )
 
-        joined = rules_rel.join(prepared, how="cross")
+        # Contexts are small and often host-originated; the join runs where the rules live and
+        # Mountainash copies the contexts there, never the rules to the contexts' backend.
+        joined = rules_rel.join(prepared, how="cross", execute_on="left")
 
         # Ternary, survival, specificity — same expressions as _evaluate
         dim_columns = [self._expressions[d].name.alias(f"__t_{d}") for d in active_dims]

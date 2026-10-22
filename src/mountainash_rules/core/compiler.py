@@ -175,6 +175,29 @@ def normalize_rule_relation(rel: t.Any, dimensions: t.Sequence[Dimension]) -> t.
     return rel.with_columns(*columns) if columns else rel
 
 
+def truthy_outcome(
+    dim: Dimension,
+    value: BaseExpressionAPI,
+    *,
+    context: bool = False,
+) -> BaseExpressionAPI:
+    """Map declared source values to their ternary truthy outcomes.
+
+    A rule value maps through the field's ``truthy`` table.  A context value additionally maps
+    ``None`` when the table declares it, read from the bound ``__ctx_origin_<dimension>`` column.
+    """
+    outcome = ma.lit(0)
+    for mapped_value, mapped_outcome in dim.field.truthy.items():
+        if mapped_value is None:
+            if not context:
+                continue
+            matches = ma.col(f"__ctx_origin_{dim.dimension_name}").eq("null")
+        else:
+            matches = value.eq(exact_literal(mapped_value)).fill_null(False)
+        outcome = ma.when(matches).then(mapped_outcome).otherwise(outcome)
+    return outcome
+
+
 class DimensionCompiler:
     """Compile normalized state/payload bindings, independent of authoring form."""
 
@@ -212,27 +235,6 @@ class DimensionCompiler:
             .then(1)
             .otherwise(-1)
         )
-
-    @staticmethod
-    def _truthy_outcome(
-        dim: Dimension,
-        value: BaseExpressionAPI,
-        *,
-        context: bool = False,
-    ) -> BaseExpressionAPI:
-        """Map declared source values to their ternary truthy outcomes."""
-        outcome = ma.lit(0)
-        for mapped_value, mapped_outcome in dim.field.truthy.items():
-            if mapped_value is None:
-                if not context:
-                    continue
-                matches = ma.col(
-                    f"__ctx_origin_{dim.dimension_name}"
-                ).eq("null")
-            else:
-                matches = value.eq(exact_literal(mapped_value)).fill_null(False)
-            outcome = ma.when(matches).then(mapped_outcome).otherwise(outcome)
-        return outcome
 
     def compile_dimension(self, dim: Dimension) -> BaseExpressionAPI:
         context_name = f"__ctx_value_{dim.dimension_name}"
@@ -272,10 +274,10 @@ class DimensionCompiler:
             )
         if dim.match_strategy is MatchStrategy.TRUTHY:
             rule_outcome = ma.when(ma.col(state_name)).then(0).otherwise(
-                self._truthy_outcome(dim, rule)
+                truthy_outcome(dim, rule)
             )
             return self._outcome_ternary(
-                rule_outcome, self._truthy_outcome(dim, context, context=True)
+                rule_outcome, truthy_outcome(dim, context, context=True)
             )
         match dim.match_strategy:
             case MatchStrategy.EXACT:

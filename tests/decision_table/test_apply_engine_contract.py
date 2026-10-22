@@ -8,7 +8,7 @@ import logging
 import duckdb
 import polars as pl
 import pytest
-from mountainash.relations import relation
+from mountainash.relations import Relation, relation
 
 from mountainash_rules.core.aggregate import Aggregate
 from mountainash_rules.core.constants import DataType, HitPolicy, MatchStrategy
@@ -97,6 +97,52 @@ def test_with_nothing_left_to_score_every_selected_entry_matches_at_specificity_
 
 
 # ---------------------------------------------------------------------------
+# Joins run on the entries' backend; the small context relation is copied to it
+# ---------------------------------------------------------------------------
+
+
+def record_cross_joins(monkeypatch) -> list[Relation]:
+    """Every cross join built while matching, to be explained after the fact."""
+    joined: list[Relation] = []
+    original = Relation.join
+
+    def join(self, other, **kwargs):
+        result = original(self, other, **kwargs)
+        if kwargs.get("how") == "cross":
+            joined.append(result)
+        return result
+
+    monkeypatch.setattr(Relation, "join", join)
+    return joined
+
+
+def assert_contexts_move_to_the_entries(backend_name, joined) -> None:
+    (join,) = joined
+    placement = join.explain()
+    assert "ibis_to_polars" not in placement, placement  # the entries are never pulled to the host
+    if backend_name == "ibis-duckdb":  # the check bites: the context batch is what is transferred
+        assert "polars_to_ibis" in placement, placement
+
+
+def test_the_engine_join_runs_where_the_entries_live(backend_name, monkeypatch):
+    _, table, _, _ = built(backend_name, "patterns")
+    joined = record_cross_joins(monkeypatch)
+
+    table.match([Code(request_id=1, code="EU-22")]).fetch()
+
+    assert_contexts_move_to_the_entries(backend_name, joined)
+
+
+@pytest.mark.parametrize("scopes", [["s2"], []])
+def test_the_no_engine_join_runs_where_the_entries_live(backend_name, pattern_only_scopes, monkeypatch, scopes):
+    joined = record_cross_joins(monkeypatch)
+
+    pattern_only_scopes.match([Code(request_id="x", code="US-1")], scopes).fetch()
+
+    assert_contexts_move_to_the_entries(backend_name, joined)
+
+
+# ---------------------------------------------------------------------------
 # Error translation
 # ---------------------------------------------------------------------------
 
@@ -156,7 +202,7 @@ def test_the_rules_own_errors_are_not_rewrapped(fees_rates, monkeypatch):
 
 def stages(caplog) -> dict[str, int]:
     records = [r for r in caplog.records if r.name == LOGGER]
-    assert [r.match_stage for r in records] == ["scope", "pattern", "matching"]
+    assert [r.match_stage for r in records] == ["pattern", "matching"]
     assert all(r.executions_total >= r.executions for r in records)
     return {r.match_stage: r.executions for r in records}
 
@@ -167,15 +213,15 @@ def test_execution_counts_are_logged_at_each_query_stage(backend_name, caplog):
     with caplog.at_level(logging.INFO, logger=LOGGER):
         table.match([Code(request_id=1, code="EU-22")]).fetch()
 
-    # scope selection issues nothing; pattern evaluation reads which pattern columns the selected
-    # entries require and their definitions; matching materializes the result once
-    assert stages(caplog) == {"scope": 0, "pattern": 2, "matching": 1}
+    # pattern evaluation reads which pattern columns the selected entries require and their
+    # definitions; matching materializes the result once
+    assert stages(caplog) == {"pattern": 2, "matching": 1}
     totals = [r.executions_total for r in caplog.records if r.name == LOGGER]
-    assert totals == [0, 2, 3]
+    assert totals == [2, 3]
 
 
 def test_a_table_without_patterns_issues_nothing_in_the_pattern_stage(fees_rates, caplog):
     with caplog.at_level(logging.INFO, logger=LOGGER):
         fees_rates.match([Region(request_id=1, region="EU")]).fetch()
 
-    assert stages(caplog) == {"scope": 0, "pattern": 0, "matching": 1}
+    assert stages(caplog) == {"pattern": 0, "matching": 1}

@@ -12,13 +12,21 @@ PRESENCE dimensions) through ``MatchStrategy.OUTCOME`` against a context outcome
 under ``outcome_field(column)``, and handles every other dimension itself.  Every matching
 entry is returned with its specificity; no rank filtering happens here.
 
+Where things execute.  A list of protocol objects becomes a small host-originated (in-process
+Polars) relation, and its outcome columns are computed there.  Every join between contexts and
+entries states ``execute_on="left"`` with the entries/rules on the left, so the join runs on the
+entries' own backend and Mountainash copies the small context relation to it (a temporary
+table); the entries are never transferred to the contexts' backend.  The engine's cross join and
+this module's no-engine path (nothing selected, or nothing left to score) follow that pattern.
+
 Contexts are a conforming :class:`Relation` (a ``request_id`` column plus a column per
 context field) or a list of protocol objects (``request_id`` plus attributes named after
 context fields, as pydantic models).  :func:`contexts_to_relation` converts the list form,
 keeping an unset field distinct from an explicit ``None`` through ``model_fields_set``.
 
-Backend execution counts the application issues are logged at each stage boundary on this
-module's logger; they are observability, not part of the result.
+Backend execution counts the application issues are logged at the pattern-evaluation and
+matching stage boundaries on this module's logger; they are observability, not part of the
+result.
 """
 
 from __future__ import annotations
@@ -31,7 +39,7 @@ import mountainash.expressions as ma
 from mountainash.expressions import BaseExpressionAPI
 from mountainash.relations import Relation, relation
 
-from mountainash_rules.core.compiler import DimensionCompiler
+from mountainash_rules.core.compiler import truthy_outcome
 from mountainash_rules.core.constants import HitPolicy, MatchStrategy
 from mountainash_rules.core.context import bind_context_columns
 from mountainash_rules.core.dimension import Dimension, DimensionsMetadata
@@ -142,12 +150,17 @@ class MatchOperation:
         self._scopes = scopes
 
     def fetch(self) -> MatchResult:
-        """Run the match: scope filter, pattern filter, context outcomes, one engine call."""
+        """Run the match: scope filter, pattern filter, context outcomes, one engine call.
+
+        Performs no validation: the caller must have validated the contexts first, in particular
+        that ``request_id`` is non-null and unique (``validate_contexts``).  A null ``request_id``
+        is dropped from the result by the engine's per-request ranking, and duplicates are
+        matched as given.
+        """
         table = self._table
         executions = _Executions()
         scopes = select_scopes(table.source_metadata, self._scopes)
         selected = self._selected_entries(scopes)
-        executions.boundary("scope", f"scopes {list(scopes)}")
         try:
             matches = self._match(table, scopes, selected, executions)
         except Exception as error:
@@ -174,15 +187,14 @@ class MatchOperation:
         if not isinstance(contexts, Relation):
             contexts = contexts_to_relation(contexts, (field.name for field in table.source_metadata.fields))
         columns = _result_columns(table)
-        if not scopes:
-            executions.boundary("pattern")
-            return _materialize(_without_engine(contexts, selected, columns), executions)
-
-        metadata = table.entry_metadata
-        active, outcomes = _active_dimensions(table, metadata, selected, executions)
+        if scopes:
+            active, outcomes = _active_dimensions(table, selected, executions)
+        else:  # no entries selected: nothing to read pattern requirements from or to score
+            active, outcomes = [], {}
         executions.boundary("pattern", f"{len(outcomes)} outcome columns")
         if not active:  # nothing to score: every selected entry is possible for every request
             return _materialize(_without_engine(contexts, selected, columns), executions)
+        metadata = table.entry_metadata
         prepared = _prepared_contexts(contexts, table.source_metadata, metadata, active, outcomes)
 
         from mountainash_rules.engines.filter.engine import ExpressionRulesEngine
@@ -222,9 +234,14 @@ def _materialize(matches: Relation, executions: _Executions) -> Relation:
 
 
 def _without_engine(contexts: Relation, selected: Relation, columns: list[str]) -> Relation:
-    """Every selected entry for every request at specificity 0, for an empty or unscored selection."""
-    crossed = contexts.select(REQUEST_ID).cross_join(selected).with_columns(ma.lit(0).alias("specificity"))
-    return crossed.select(*columns)
+    """Every selected entry for every request at specificity 0, for an empty or unscored selection.
+
+    The join runs where the entries live (``execute_on="left"``); the request ids are copied to
+    it, which executes, so the join is collected here as the engine path collects its result.
+    """
+    ids = contexts.select(REQUEST_ID)
+    crossed = selected.cross_join(ids, execute_on="left").with_columns(ma.lit(0).alias("specificity"))
+    return relation(crossed.select(*columns).collect())
 
 
 @dataclass(frozen=True)
@@ -237,7 +254,6 @@ class _OutcomeSource:
 
 def _active_dimensions(
     table: DecisionTable,
-    metadata: DimensionsMetadata,
     selected: Relation,
     executions: _Executions,
 ) -> tuple[list[str], dict[str, _OutcomeSource]]:
@@ -246,6 +262,7 @@ def _active_dimensions(
     A derived pattern column no selected entry requires (all zero) scores 0 on every entry, so
     it is dropped from both the engine's dimensions and the outcome computation.
     """
+    metadata = table.entry_metadata
     sources = {
         dimension.dimension_name: _OutcomeSource(dimension)
         for dimension in table.source_metadata.dimensions
@@ -350,7 +367,7 @@ def _outcome_expression(source: _OutcomeSource, present: set[str]) -> BaseExpres
             return ma.col(companion)
         return ma.when(ma.col(field).is_null()).then(1).otherwise(-1)
     if strategy is MatchStrategy.TRUTHY:
-        mapped = DimensionCompiler._truthy_outcome(dimension, ma.col(f"__ctx_value_{name}"), context=True)
+        mapped = truthy_outcome(dimension, ma.col(f"__ctx_value_{name}"), context=True)
         if companion in present:
             return ma.when(ma.col(companion).eq(ma.lit(0))).then(0).otherwise(mapped)
         return mapped
