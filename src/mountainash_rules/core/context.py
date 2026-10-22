@@ -25,7 +25,6 @@ from mountainash_rules.core.numeric import (
     decimal_operand,
     exact_literal,
     literal_dtype,
-    reject_invalid,
 )
 
 if t.TYPE_CHECKING:
@@ -307,12 +306,6 @@ def bind_context_columns(
         )
         columns.extend(bindings)
         invalid[dim.resolved_context_field + ":" + dim.dimension_name] = failure
-    admission = (
-        rel
-        if values is None
-        else rel.group_by().agg(ma.count_records().alias("__context_anchor"))
-    )
-    reject_invalid(admission, invalid)
     return rel.with_columns(*columns)
 
 

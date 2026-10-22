@@ -201,15 +201,18 @@ class DimensionCompiler:
         )
 
     def compile_dimension(self, dim: Dimension) -> BaseExpressionAPI:
-        if dim._field is not None and dim.data_type is DataType.BOOL and dim.match_strategy in (
-            MatchStrategy.SET_MEMBERSHIP,
-            MatchStrategy.SET_EXCLUSION,
-        ):
-            raise ValueError(
-                "Boolean set strategies are not supported by the ternary filter"
-            )
         context_name = f"__ctx_value_{dim.dimension_name}"
         context = ma.col(context_name)
+        if dim.match_strategy is MatchStrategy.PRESENCE:
+            rule, wildcard = rule_binding_names(dim)
+            return (
+                ma.when(ma.col(wildcard)).then(0)
+                .when(ma.col(f"__ctx_origin_{dim.dimension_name}").eq("omitted"))
+                .then(0)
+                .when(ma.col(f"__ctx_origin_{dim.dimension_name}").eq("null"))
+                .then(ma.when(ma.col(rule).eq("IS_NULL")).then(1).otherwise(-1))
+                .otherwise(ma.when(ma.col(rule).eq("IS_NOT_NULL")).then(1).otherwise(-1))
+            )
         if dim.match_strategy is MatchStrategy.CONTEXT_REGEX:
             return (
                 ma.when(~ma.col(f"__ctx_present_{dim.dimension_name}"))
@@ -226,6 +229,14 @@ class DimensionCompiler:
             return ma.when(lo.le(hi)).then(lo).otherwise(hi)
         value_name, _ = rule_binding_names(dim)
         rule = ma.col(value_name)
+        if dim.match_strategy is MatchStrategy.OUTCOME:
+            return (
+                ma.when(rule.eq(ma.lit(0)) | context.eq(ma.lit(0)))
+                .then(0)
+                .when(rule.eq(context))
+                .then(1)
+                .otherwise(-1)
+            )
         match dim.match_strategy:
             case MatchStrategy.EXACT:
                 matched = rule.eq(context)
