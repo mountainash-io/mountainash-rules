@@ -586,7 +586,11 @@ def _relation_value_findings(
                 errors.append(finding)
         if dim.match_strategy is MatchStrategy.PRESENCE:
             value = ma.col(field)
-            invalid = value.ne("IS_NULL") & value.ne("IS_NOT_NULL")
+            markers = [dim.field.wildcard] if dim.field.wildcard_declared else []
+            declared_wildcard = typed_marker_predicate(
+                value, relation.collect_schema(allow_execution=False)[field], markers
+            )
+            invalid = value.ne("IS_NULL") & value.ne("IS_NOT_NULL") & ~declared_wildcard
             finding = _relation_finding(relation, invalid.fill_null(False), "invalid_presence_value", f"{field!r} must be IS_NULL or IS_NOT_NULL", uuid_column)
             if finding:
                 errors.append(finding)

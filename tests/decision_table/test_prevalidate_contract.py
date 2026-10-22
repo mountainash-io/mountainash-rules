@@ -159,6 +159,27 @@ def test_truthy_presence_outcome_and_context_regex_contracts():
     assert prevalidate(relation({"rule_id": ["r1"]}), context_regex).warnings == ()
 
 
+@pytest.mark.parametrize("backend_name", BACKENDS)
+def test_presence_accepts_the_fields_declared_wildcard_and_rejects_other_text(backend_name):
+    presence = declared(
+        ContextField(name="region", data_type=DataType.STR, wildcard="*"), MatchStrategy.PRESENCE
+    )
+    accepted = {"rule_id": ["null", "present", "any"], "value": ["IS_NULL", "IS_NOT_NULL", "*"]}
+    assert prevalidate(rules(backend_name, accepted), presence).warnings == ()
+
+    with pytest.raises(DataContractError) as error:
+        prevalidate(rules(backend_name, {"rule_id": ["bad", "any"], "value": ["MAYBE", "*"]}), presence)
+    findings = [f for f in error.value.breaches if f.kind == "invalid_presence_value"]
+    assert [f.rule_uuids for f in findings] == [("bad",)]
+
+    null_wildcard = declared(
+        ContextField(name="region", data_type=DataType.STR, wildcard=None, wildcard_declared=True),
+        MatchStrategy.PRESENCE,
+    )
+    data = {"rule_id": ["null", "any"], "value": ["IS_NULL", None]}
+    assert prevalidate(rules(backend_name, data), null_wildcard).warnings == ()
+
+
 @pytest.mark.parametrize(
     "field,strategy",
     [

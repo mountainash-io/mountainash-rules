@@ -14,7 +14,6 @@ from mountainash_rules.decision_table.stages import classify_named_values
 from mountainash_rules.engines.filter.engine import ExpressionRulesEngine
 
 from tests.decision_table.construction_support import (
-    captured_rules,
     cell_sources,
     folded_outputs,
     rows,
@@ -76,10 +75,10 @@ def test_each_pattern_strategy_stores_required_outcomes_per_distinct_pattern(bac
 
 def test_context_regex_is_a_static_condition_every_rule_requires(backend_name):
     metadata = metadata_of(dimension("digits", M.CONTEXT_REGEX, regex_pattern="[0-9]+"))
-    data = {"rule_id": ["a", "b"]}
-    boundaries, _, coverage = run_stages(captured_rules(backend_name, data, metadata))
+    data = {"rule_id": ["a"]}
+    boundaries, _, coverage = run_stages(validated_rules(backend_name, data, metadata))
 
-    assert cell_sources(coverage) == {("default", 1): frozenset({"a", "b"})}
+    assert cell_sources(coverage) == {("default", 1): frozenset({"a"})}
     assert rows(boundaries.pattern_conditions) == [("digits", "code", "context_regex", "[0-9]+")]
     assert arrow_types(coverage.cell_coverage, "digits") == {"digits": "int8"}
 
@@ -303,7 +302,7 @@ def test_authored_truthy_values_lower_to_their_declared_outcomes(backend_name):
 def test_presence_lowers_is_null_to_1_is_not_null_to_minus_1_and_wildcard_to_0(backend_name):
     metadata = metadata_of(dimension("code_presence", M.PRESENCE))
     data = {"rule_id": ["null", "present", "any"], "code_presence": ["IS_NULL", "IS_NOT_NULL", "*"]}
-    boundaries, _, coverage = run_stages(captured_rules(backend_name, data, metadata))
+    boundaries, _, coverage = run_stages(validated_rules(backend_name, data, metadata))
 
     assert cell_sources(coverage) == {
         ("default", 1): frozenset({"null", "any"}),
@@ -382,7 +381,7 @@ def surviving_rules(coverage, context):
 
 
 def test_presence_and_value_dimensions_on_one_field_are_separate_columns(backend_name):
-    boundaries, _, coverage = run_stages(captured_rules(backend_name, NULL_RULES, null_metadata()))
+    boundaries, _, coverage = run_stages(validated_rules(backend_name, NULL_RULES, null_metadata()))
 
     assert coverage.cell_columns == ("region", "region_presence", "vip")
     assert [(p.name, type(p.family).__name__) for p in boundaries.plans] == [
@@ -394,7 +393,7 @@ def test_presence_and_value_dimensions_on_one_field_are_separate_columns(backend
 
 
 def test_worked_null_rules_r1_to_r3_entries(backend_name):
-    _, _, coverage = run_stages(captured_rules(backend_name, NULL_RULES, null_metadata()))
+    _, _, coverage = run_stages(validated_rules(backend_name, NULL_RULES, null_metadata()))
 
     # R1 EU / presence 0 / vip wildcard; R2 any / IS_NULL=1 / wildcard; R3 any / IS_NOT_NULL=-1 / true.
     assert cell_sources(coverage) == {
@@ -421,6 +420,6 @@ def test_worked_null_rules_r1_to_r3_entries(backend_name):
     ids=["C1", "C2", "C3", "C4"],
 )
 def test_worked_null_rules_survive_exactly_as_documented(backend_name, context, expected):
-    _, _, coverage = run_stages(captured_rules(backend_name, NULL_RULES, null_metadata()))
+    _, _, coverage = run_stages(validated_rules(backend_name, NULL_RULES, null_metadata()))
 
     assert surviving_rules(coverage, context) == expected
