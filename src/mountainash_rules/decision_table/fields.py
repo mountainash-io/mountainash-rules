@@ -209,6 +209,61 @@ def _static(*values: t.Any) -> bool:
     return not any(is_expression(value) for value in values)
 
 
+def _union(parts: t.Sequence[Relation]) -> Relation:
+    return parts[0] if len(parts) == 1 else concat(list(parts))
+
+
+def _split_entries(
+    entries: t.Sequence[tuple[int, Dimension, Region]], positive: tuple[type, ...]
+) -> tuple[list[tuple[int, Region]], list[Region]]:
+    """Positive ``(index, region)`` pairs and the regions negated in their own columns."""
+    included: list[tuple[int, Region]] = []
+    negated: list[Region] = []
+    for index, _, region in entries:
+        if isinstance(region, Negation):
+            negated.append(region.region)
+        elif isinstance(region, positive):
+            included.append((index, region))
+    return included, negated
+
+
+def _excluded_values(bound: Relation, inner: Region, column: str) -> Relation | None:
+    """``(scope, source_uuid, column)`` values a negated region excludes (wildcards exclude none)."""
+    scope, uuid = ma.col(BOUND_SCOPE).alias(SCOPE), ma.col(BOUND_UUID).alias(SOURCE_UUID)
+    if isinstance(inner, Point):
+        value = inner.value if is_expression(inner.value) else ma.lit(inner.value)
+        return bound.filter(~_flag(inner.wildcard)).select(scope, uuid, value.alias(column))
+    if isinstance(inner, Members):
+        return (
+            bound.filter(~_flag(inner.wildcard))
+            .select(scope, uuid, inner.values.alias(column))
+            .explode(column)
+            .filter(ma.col(column).is_not_null())
+        )
+    return None
+
+
+def required_outcome(region: Region) -> BaseExpressionAPI:
+    """Required ternary outcome of an interpreted truthy region (0 when unconstrained)."""
+    if isinstance(region, Outcome):
+        value = region.value if is_expression(region.value) else ma.lit(region.value)
+        return ma.when(_flag(region.wildcard)).then(0).otherwise(value)
+    return ma.lit(0)
+
+
+def concrete_flag(region: Region) -> BaseExpressionAPI:
+    """True where an interpreted region constrains the field (is not the field's wildcard)."""
+    if isinstance(region, Negation):
+        return concrete_flag(region.region)
+    if isinstance(region, Interval):
+        low = ma.lit(False) if region.low is None else ~_flag(region.low_wildcard)
+        high = ma.lit(False) if region.high is None else ~_flag(region.high_wildcard)
+        return low | high
+    if isinstance(region, (Point, Members, Matches, Outcome)):
+        return ~_flag(region.wildcard)
+    return ma.lit(False)
+
+
 class Field(abc.ABC):
     """Shared behaviour of the three field families."""
 
@@ -263,6 +318,31 @@ class Field(abc.ABC):
     @abc.abstractmethod
     def intersect(self, left: Region, right: Region) -> Region:
         """Conjoin two interpreted Python-valued regions, or report ``Unsatisfiable``."""
+
+    @abc.abstractmethod
+    def unsatisfiable_rules(
+        self, bound: Relation, entries: t.Sequence[tuple[int, Dimension, Region]]
+    ) -> Relation:
+        """``(scope, source_uuid)`` of bound rules whose conditions on this field cannot all hold.
+
+        ``entries`` are ``(dimension index, dimension, interpreted region)`` of one field; the
+        coverage uses the same regions, cuts and pieces as construction.
+        """
+
+    def _rule_keys(self, rules: Relation) -> Relation:
+        return rules.select(ma.col(BOUND_SCOPE).alias(SCOPE), ma.col(BOUND_UUID).alias(SOURCE_UUID))
+
+    def _no_rules(self, bound: Relation) -> Relation:
+        return self._rule_keys(bound.filter(ma.lit(False)))
+
+    def _rules(self, rules: Relation) -> Relation:
+        return self._rule_keys(rules).unique()
+
+    def _empty_rules(self, bound: Relation, coverage: Relation) -> Relation:
+        """Rules of ``bound`` absent from ``coverage`` ``(scope, source_uuid, ...)``."""
+        return self._rule_keys(bound).unique().join(
+            coverage.select(SCOPE, SOURCE_UUID).unique(), on=[SCOPE, SOURCE_UUID], how="anti"
+        )
 
     # -- rule cells ------------------------------------------------------
 
@@ -540,6 +620,39 @@ class OrderedField(Field):
         high = self.maximum if interpreted.high is None or interpreted.high_wildcard is True else interpreted.high
         return low, high
 
+    def unsatisfiable_rules(
+        self, bound: Relation, entries: t.Sequence[tuple[int, Dimension, Region]]
+    ) -> Relation:
+        """Rules whose interval coverage is empty once negated values are removed."""
+        positive, negated = _split_entries(entries, (Interval, Members))
+        if not positive:
+            return self._no_rules(bound)
+        regions = _union([self.interval_regions(bound, region, index) for index, region in positive])
+        excluded = [
+            relation
+            for inner in negated
+            if (relation := _excluded_values(bound, inner, REGION_LOW)) is not None
+        ]
+        columns = ("__u_lo", "__u_hi")
+        bounds = regions.select(SCOPE, SOURCE_UUID, REGION_LOW, REGION_HIGH)
+        points = [
+            relation.with_columns(ma.col(REGION_LOW).alias(REGION_HIGH)).select(
+                SCOPE, SOURCE_UUID, REGION_LOW, REGION_HIGH
+            )
+            for relation in excluded
+        ]
+        pieces = self.pieces(self.cuts(_union([bounds, *points])), columns)
+        coverage = self.interval_coverage(regions, pieces, columns, len(positive))
+        for relation in excluded:
+            coverage = coverage.join(
+                relation.select(
+                    SCOPE, SOURCE_UUID, ma.col(REGION_LOW).alias(columns[0]), ma.col(REGION_LOW).alias(columns[1])
+                ),
+                on=[SCOPE, SOURCE_UUID, *columns],
+                how="anti",
+            )
+        return self._empty_rules(bound, coverage)
+
     # -- relational pieces ----------------------------------------------
 
     def _bound(self, value: t.Any, wildcard: t.Any, default: t.Any) -> BaseExpressionAPI:
@@ -704,6 +817,21 @@ class UnorderedField(Field):
             return frozenset(region.values)
         raise self.not_applicable(region)
 
+    def unsatisfiable_rules(
+        self, bound: Relation, entries: t.Sequence[tuple[int, Dimension, Region]]
+    ) -> Relation:
+        """Rules whose positive regions share no named value once negated values are removed."""
+        positive, negated = _split_entries(entries, (Point, Members, Everything))
+        if not positive:
+            return self._no_rules(bound)
+        regions = _union([self.value_regions(bound, region, index) for index, region in positive])
+        coverage = self.value_coverage(regions, self.value_pieces(regions), len(positive))
+        for inner in negated:
+            excluded = _excluded_values(bound, inner, VALUE)
+            if excluded is not None:
+                coverage = coverage.join(excluded, on=[SCOPE, SOURCE_UUID, VALUE], how="anti")
+        return self._empty_rules(bound, coverage)
+
     def regions(self, bound: Relation, region: Region, dimension_index: int) -> Relation:
         return self.value_regions(bound, region, dimension_index)
 
@@ -760,6 +888,23 @@ class TruthyField(Field):
         if y == 0 or x == y:
             return Outcome(x)
         return self.unsatisfiable(f"conflicting required outcomes {x} and {y}")
+
+    def unsatisfiable_rules(
+        self, bound: Relation, entries: t.Sequence[tuple[int, Dimension, Region]]
+    ) -> Relation:
+        """Rules whose conflicting required outcomes (same strategy, one field) cannot both hold."""
+        by_strategy: dict[MatchStrategy, list[BaseExpressionAPI]] = {}
+        for _, dimension, region in entries:
+            if dimension.match_strategy in (MatchStrategy.TRUTHY, MatchStrategy.PRESENCE, MatchStrategy.OUTCOME):
+                by_strategy.setdefault(dimension.match_strategy, []).append(required_outcome(region))
+        conflict = ma.lit(False)
+        for outcomes in by_strategy.values():
+            for i, left in enumerate(outcomes):
+                for right in outcomes[i + 1 :]:
+                    conflict = conflict | (left.eq(1) & right.eq(-1)) | (left.eq(-1) & right.eq(1))
+        if not by_strategy:
+            return self._no_rules(bound)
+        return self._rules(bound.filter(conflict.fill_null(False)))
 
     def map_truthy(self, value: t.Any) -> t.Any:
         """Rule value to its declared outcome through the field's truthy mapping."""

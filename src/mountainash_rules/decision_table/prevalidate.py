@@ -16,6 +16,8 @@ from mountainash_rules.core.constants import DataType, MatchStrategy
 from mountainash_rules.core.dimension import ContextField, Dimension, DimensionsMetadata
 from mountainash_rules.core.numeric import exact_literal
 from mountainash_rules.core.set_wildcard import canonicalize_set_expr
+from mountainash_rules.decision_table.fields import BOUND_SCOPE, BOUND_UUID, SOURCE_UUID, family_for
+from mountainash_rules.decision_table.strategies import strategy_for, unsatisfiable_rules
 
 
 @dataclass(frozen=True, order=True)
@@ -59,41 +61,9 @@ def _uuids(values: list[Any]) -> tuple[Any, ...]:
     return tuple(sorted(set(value for value in values if value is not None), key=repr))
 
 
-def _scope(row: dict[str, Any], metadata: DimensionsMetadata) -> str:
-    return "default" if metadata.scope_column is None else row.get(metadata.scope_column)
-
-
 def _declared_scopes(metadata: DimensionsMetadata) -> set[str]:
     scopes = {output.scope or "default" for output in metadata.outputs}
     return scopes or {"default"}
-
-
-def _is_dtype(value: Any, field: ContextField) -> bool:
-    if value is None:
-        return field.wildcard_declared and field.wildcard is None
-    if field.data_type is DataType.STR:
-        return type(value) is str
-    if field.data_type is DataType.BOOL:
-        return type(value) is bool
-    if field.data_type is DataType.INT:
-        return type(value) is int
-    if field.data_type is DataType.DECIMAL:
-        return isinstance(value, Decimal)
-    if field.data_type is DataType.DATE:
-        return isinstance(value, dt.date) and not isinstance(value, dt.datetime)
-    if field.data_type is DataType.DATETIME:
-        return isinstance(value, dt.datetime) and (
-            (value.tzinfo is None) if field.timezone == "naive" else (value.tzinfo is not None)
-        )
-    if field.data_type is DataType.FLOAT:
-        return type(value) in (int, float)
-    return False
-
-
-def _is_wildcard(value: Any, field: ContextField) -> bool:
-    return field.wildcard_declared and value == field.wildcard and _is_dtype(value, field)
-
-
 
 
 def _strategy_allowed(dim: Dimension) -> bool:
@@ -188,55 +158,6 @@ def _add_schema_findings(metadata: DimensionsMetadata, schema: dict[str, Any], e
     for name, data_types in types.items():
         if len(data_types) > 1:
             errors.append(Finding("output_type_conflict", "error", f"Output {name!r} has incompatible types across scopes", tuple(sorted(scopes[name]))))
-
-
-def _value_findings(row: dict[str, Any], uuid: Any, metadata: DimensionsMetadata, errors: list[Finding], warnings: list[Finding]) -> None:
-    for dim in metadata.dimensions:
-        if dim.match_strategy is MatchStrategy.CONTEXT_REGEX:
-            continue
-        pairs = ((dim.range_min_field, False), (dim.range_max_field, False)) if dim.match_strategy is MatchStrategy.RANGE else ((dim.resolved_rule_field, dim.match_strategy in _SET),)
-        for column, is_set in pairs:
-            value = row.get(column)
-            if value is None and not (dim.field.wildcard_declared and dim.field.wildcard is None):
-                errors.append(Finding("null_rule_cell", "error", f"{column!r} is null without a null wildcard", _uuids([uuid])))
-                continue
-            if is_set:
-                if not isinstance(value, list):
-                    errors.append(Finding("incompatible_list_dtype", "error", f"{column!r} must be a list", _uuids([uuid])))
-                    continue
-                for item in value:
-                    if item is None:
-                        errors.append(Finding("null_list_element", "error", f"{column!r} contains null", _uuids([uuid])))
-                    elif not _is_dtype(item, dim.field):
-                        errors.append(Finding("incompatible_list_element", "error", f"{column!r} has incompatible element", _uuids([uuid])))
-            elif not _is_wildcard(value, dim.field) and not _is_dtype(value, dim.field):
-                errors.append(Finding("incompatible_rule_value", "error", f"{column!r} is incompatible with {dim.data_type.value}", _uuids([uuid])))
-        value = row.get(dim.resolved_rule_field)
-        if dim.match_strategy is MatchStrategy.TRUTHY and not _is_wildcard(value, dim.field) and value not in dim.field.truthy:
-            errors.append(Finding("unmapped_truthy_value", "error", f"{dim.resolved_rule_field!r} is not mapped", _uuids([uuid])))
-        if dim.match_strategy is MatchStrategy.PRESENCE and not _is_wildcard(value, dim.field) and value not in {"IS_NULL", "IS_NOT_NULL"}:
-            errors.append(Finding("invalid_presence_value", "error", f"{dim.resolved_rule_field!r} must be IS_NULL or IS_NOT_NULL", _uuids([uuid])))
-        if dim.match_strategy is MatchStrategy.OUTCOME and value not in {-1, 0, 1}:
-            errors.append(Finding("invalid_outcome_value", "error", f"{dim.resolved_rule_field!r} must be -1, 0, or 1", _uuids([uuid])))
-    for field_name in {dim.context_field for dim in metadata.dimensions}:
-        presence = [dim for dim in metadata.dimensions if dim.context_field == field_name and dim.match_strategy is MatchStrategy.PRESENCE]
-        concrete = [
-            dim for dim in metadata.dimensions
-            if dim.context_field == field_name
-            and dim.match_strategy not in {MatchStrategy.PRESENCE, MatchStrategy.CONTEXT_REGEX}
-            and not _is_wildcard(row.get(dim.resolved_rule_field), dim.field)
-        ]
-        if any(row.get(dim.resolved_rule_field) == "IS_NULL" for dim in presence) and concrete:
-            warnings.append(Finding("unsatisfiable_rule", "warning", f"{field_name!r} is both null and concrete", _uuids([uuid])))
-    for output in metadata.outputs:
-        if (output.scope or "default") != _scope(row, metadata):
-            continue
-        value = row.get(output.contribution_column)
-        field = ContextField(name=output.output_name, data_type=output.data_type, precision=output.precision, scale=output.scale, rounding=output.rounding, timezone=output.timezone)
-        if value is None:
-            errors.append(Finding("null_contribution", "error", f"{output.contribution_column!r} is null", _uuids([uuid])))
-        elif not _is_dtype(value, field):
-            errors.append(Finding("incompatible_contribution_dtype", "error", f"{output.contribution_column!r} has incompatible type", _uuids([uuid])))
 
 
 def _signature_placeholder(
@@ -524,7 +445,6 @@ def _relation_value_findings(
     relation: Any,
     metadata: DimensionsMetadata,
     errors: list[Finding],
-    warnings: list[Finding],
 ) -> None:
     """Extract scalar invalidity through relation predicates, never source rows."""
     uuid_column = metadata.uuid_column
@@ -600,30 +520,44 @@ def _relation_value_findings(
             finding = _relation_finding(relation, invalid.fill_null(False), "invalid_outcome_value", f"{field!r} must be -1, 0, or 1", uuid_column)
             if finding:
                 errors.append(finding)
-    for field_name in {dim.context_field for dim in metadata.dimensions}:
-        null_dimensions = [
-            dim for dim in metadata.dimensions
-            if dim.context_field == field_name and dim.match_strategy is MatchStrategy.PRESENCE
-        ]
-        concrete_dimensions = [
-            dim for dim in metadata.dimensions
-            if dim.context_field == field_name
-            and dim.match_strategy in {MatchStrategy.EXACT, MatchStrategy.NOT_EQUAL, MatchStrategy.MIN, MatchStrategy.MAX}
-        ]
-        if not null_dimensions or not concrete_dimensions:
-            continue
-        null_condition = ma.lit(False)
-        for dim in null_dimensions:
-            null_condition = null_condition | ma.col(dim.resolved_rule_field).eq("IS_NULL")
-        concrete_condition = ma.lit(False)
-        for dim in concrete_dimensions:
-            concrete_condition = concrete_condition | ma.col(dim.resolved_rule_field).ne(dim.field.wildcard)
-        selected = relation.filter((null_condition & concrete_condition).fill_null(False))
-        if selected.count_rows():
-            warnings.append(Finding(
-                "unsatisfiable_rule", "warning", f"{field_name!r} is both null and concrete",
-                _uuids([row[uuid_column] for row in selected.select(uuid_column).to_dicts()]),
-            ))
+        if dim.match_strategy is MatchStrategy.TRUTHY:
+            dtype = relation.collect_schema(allow_execution=False)[field]
+            if _schema_type_compatible(dtype, dim.field, False):
+                cell = strategy_for(dim.match_strategy).cells(family_for(dim), relation, dim)[0]
+                mapped = [key for key in dim.field.truthy if key is not None]
+                unmapped = ~cell.wildcard & cell.value.is_not_null()
+                if mapped:
+                    unmapped = unmapped & ~cell.value.is_in(mapped)
+                finding = _relation_finding(relation, unmapped.fill_null(False), "unmapped_truthy_value", f"{field!r} is not mapped", uuid_column)
+                if finding:
+                    errors.append(finding)
+
+
+_CELL_BREACHES = frozenset({
+    "null_rule_cell", "unmapped_truthy_value", "invalid_presence_value", "invalid_outcome_value",
+    "null_list_element",
+})
+
+
+def _unsatisfiable_findings(
+    relation: Any, metadata: DimensionsMetadata, blocked: set[Any]
+) -> list[Finding]:
+    """Warnings for rules whose conditions cannot all hold, from the shared family coverage.
+
+    Rules with a malformed rule cell cannot be bound; they are reported as breaches instead.
+    """
+    uuid_column = metadata.uuid_column
+    scope = ma.lit("default") if metadata.scope_column is None else ma.col(metadata.scope_column)
+    bound = relation.filter(ma.col(uuid_column).is_not_null()).with_columns(
+        scope.alias(BOUND_SCOPE), ma.col(uuid_column).alias(BOUND_UUID)
+    )
+    findings: list[Finding] = []
+    for field_name, reason, rules in unsatisfiable_rules(bound, metadata.dimensions):
+        uuids = _uuids([row[SOURCE_UUID] for row in rules.select(SOURCE_UUID).to_dicts()])
+        uuids = tuple(uuid for uuid in uuids if uuid not in blocked)
+        if uuids:
+            findings.append(Finding("unsatisfiable_rule", "warning", f"{field_name!r}: {reason}", uuids))
+    return findings
 
 def prevalidate(rules: Any, metadata: DimensionsMetadata) -> ValidatedRules:
     """Capture ``rules`` once, aggregate all breaches, or return owned validation."""
@@ -631,9 +565,9 @@ def prevalidate(rules: Any, metadata: DimensionsMetadata) -> ValidatedRules:
     copied_metadata = metadata.model_copy(deep=True)
     schema = captured.collect_schema(allow_execution=False)
     errors: list[Finding] = []
-    warnings: list[Finding] = []
     _add_schema_findings(copied_metadata, schema, errors)
-    _relation_value_findings(captured, copied_metadata, errors, warnings)
+    structural = bool(errors)
+    _relation_value_findings(captured, copied_metadata, errors)
     if copied_metadata.uuid_column in schema:
         scoped = (
             captured.with_columns(ma.lit("default").alias("__pv_scope"))
@@ -652,6 +586,10 @@ def prevalidate(rules: Any, metadata: DimensionsMetadata) -> ValidatedRules:
                 (row[copied_metadata.uuid_column],),
             ))
     _signatures(captured, copied_metadata, errors)
+    warnings: list[Finding] = []
+    if not structural and copied_metadata.uuid_column in schema:
+        blocked = {uuid for finding in errors if finding.kind in _CELL_BREACHES for uuid in finding.rule_uuids}
+        warnings = _unsatisfiable_findings(captured, copied_metadata, blocked)
     breaches, found_warnings = _sorted_findings(errors), _sorted_findings(warnings)
     if breaches:
         raise DataContractError(breaches, found_warnings)

@@ -18,6 +18,12 @@ from mountainash_rules.core.constants import MatchStrategy
 from mountainash_rules.core.dimension import Dimension
 from mountainash_rules.decision_table.errors import DecisionTableError
 from mountainash_rules.decision_table.fields import (
+    BOUND_SCOPE,
+    BOUND_UUID,
+    SCOPE,
+    SOURCE_UUID,
+    concrete_flag,
+    required_outcome,
     Field,
     Region,
     family_for,
@@ -231,3 +237,45 @@ STRATEGIES: dict[MatchStrategy, Strategy] = {
 
 def strategy_for(match_strategy: MatchStrategy) -> Strategy:
     return STRATEGIES[match_strategy]
+
+
+def unsatisfiable_rules(
+    bound: Relation, dimensions: t.Sequence[Dimension]
+) -> list[tuple[str, str, Relation]]:
+    """``(context field, reason, rules)`` for rules whose conditions on a field cannot all hold.
+
+    Each dimension is lowered and interpreted exactly as construction does; the field family's
+    ``unsatisfiable_rules`` decides emptiness from those regions.  A rule requiring a null
+    context value (PRESENCE ``IS_NULL``) together with any other concrete condition on the
+    same field is unsatisfiable across families.
+    """
+    by_field: dict[str, list[tuple[int, Dimension, t.Any]]] = {}
+    families: dict[str, dict[type, Field]] = {}
+    for index, dimension in enumerate(dimensions):
+        if dimension.match_strategy is MatchStrategy.CONTEXT_REGEX:
+            continue
+        strategy = strategy_for(dimension.match_strategy)
+        family = strategy.family(dimension)
+        region = family.interpret(strategy.lower(family, strategy.cells(family, bound, dimension), dimension))
+        by_field.setdefault(dimension.context_field, []).append((index, dimension, region))
+        families.setdefault(dimension.context_field, {})[type(family)] = family
+
+    found: list[tuple[str, str, Relation]] = []
+    for field_name, entries in by_field.items():
+        for family_type, family in families[field_name].items():
+            members = [entry for entry in entries if type(family_for(entry[1])) is family_type]
+            found.append((field_name, "conflicting conditions", family.unsatisfiable_rules(bound, members)))
+        presence = [e for e in entries if e[1].match_strategy is MatchStrategy.PRESENCE]
+        concrete = [e for e in entries if e[1].match_strategy is not MatchStrategy.PRESENCE]
+        if presence and concrete:
+            null = ma.lit(False)
+            for _, _, region in presence:
+                null = null | required_outcome(region).eq(1)
+            other = ma.lit(False)
+            for _, _, region in concrete:
+                other = other | concrete_flag(region)
+            keys = bound.filter((null & other).fill_null(False)).select(
+                ma.col(BOUND_SCOPE).alias(SCOPE), ma.col(BOUND_UUID).alias(SOURCE_UUID)
+            )
+            found.append((field_name, "both null and concrete", keys))
+    return found
