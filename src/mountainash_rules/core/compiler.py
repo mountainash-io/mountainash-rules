@@ -216,7 +216,7 @@ class DimensionCompiler:
         if dim.match_strategy is MatchStrategy.CONTEXT_REGEX:
             return (
                 ma.when(~ma.col(f"__ctx_present_{dim.dimension_name}"))
-                .then(-1)
+                .then(0)
                 .when(context.str.regex_contains(dim.regex_pattern))
                 .then(1)
                 .otherwise(-1)
