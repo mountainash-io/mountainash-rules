@@ -299,3 +299,31 @@ def test_presence_column_on_int_field_signs_as_text(backend_name):
 
     clean = {"rule_id": ["a", "b"], "presence": ["IS_NULL", "IS_NOT_NULL"], "result": [1, 1]}
     assert prevalidate(_relation(backend_name, clean, "presence_clean"), metadata).warnings == ()
+
+
+@pytest.mark.parametrize("backend_name", ["polars", "ibis-duckdb"])
+def test_outcome_column_on_str_field_signs_as_int(backend_name):
+    metadata = DimensionsMetadata(
+        uuid_column="rule_id",
+        fields=(ContextField(name="s", data_type=DataType.STR, wildcard="*"),),
+        dimensions=(
+            Dimension(
+                dimension_name="outcome",
+                context_field="s",
+                rule_field="outcome",
+                match_strategy=MatchStrategy.OUTCOME,
+            ),
+        ),
+        outputs=(_result_output(),),
+    )
+    data = {
+        "rule_id": ["dup-1", "dup-2", "conflict", "other"],
+        "outcome": [1, 1, 1, -1],
+        "result": [1, 1, 2, 1],
+    }
+    findings = _findings(backend_name, data, metadata, "outcome_str")
+    assert findings["duplicate_rule"].rule_uuids == ("dup-1", "dup-2")
+    assert findings["conflicting_rule"].rule_uuids == ("conflict", "dup-1", "dup-2")
+
+    clean = {"rule_id": ["a", "b"], "outcome": [1, 0], "result": [1, 1]}
+    assert prevalidate(_relation(backend_name, clean, "outcome_clean"), metadata).warnings == ()

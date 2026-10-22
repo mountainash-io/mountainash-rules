@@ -197,6 +197,9 @@ def _signature_scalar_payload(
     if dim.match_strategy is MatchStrategy.PRESENCE:
         # A PRESENCE rule column holds text whatever the field's data type.
         return wildcard, missing, ma.when(wildcard | missing).then(ma.lit("")).otherwise(raw)
+    if dim.match_strategy is MatchStrategy.OUTCOME:
+        # An OUTCOME rule column holds -1/0/1 whatever the field's data type.
+        return wildcard, missing, ma.when(wildcard | missing).then(ma.lit(0)).otherwise(raw)
     payload = (
         raw.cast(dim.decimal_dtype, rounding=dim.rounding)
         if dim.data_type is DataType.DECIMAL
