@@ -296,3 +296,20 @@ def test_normalized_signatures_are_scoped_and_ignore_undeclared_columns():
     validated = prevalidate(source, declared)
 
     assert validated.warnings == ()
+
+
+def test_prevalidate_snapshots_the_source_once():
+    class SnapshotSpy:
+        def __init__(self, source):
+            self.source = source
+            self.calls = 0
+
+        def snapshot(self):
+            self.calls += 1
+            return self.source.snapshot()
+
+    source = SnapshotSpy(relation({"rule_id": ["r1"], "region": ["EU"]}))
+
+    prevalidate(source, metadata())
+
+    assert source.calls == 1
