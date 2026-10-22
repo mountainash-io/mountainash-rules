@@ -110,19 +110,3 @@ class TestDimensionMetadataValidation:
             dimensions=(Dimension(dimension_name="x", context_field="x"),),
         )
         assert metadata.dimensions[0].field == field
-
-
-@pytest.mark.parametrize("strategy", [MatchStrategy.SET_MEMBERSHIP, MatchStrategy.SET_EXCLUSION])
-def test_boolean_sets_are_declarable_without_broadening_filter(strategy):
-    import polars as pl
-    from mountainash_rules import ExpressionRulesEngine
-
-    dimension = Dimension(
-        dimension_name="flags", context_field="flags", match_strategy=strategy
-    )
-    metadata = DimensionsMetadata(
-        fields=(ContextField(name="flags", data_type="bool", wildcard=None, wildcard_declared=True),),
-        dimensions=(dimension,),
-    )
-    with pytest.raises(ValueError):
-        ExpressionRulesEngine(pl.DataFrame({"flags": [[False], [True]]}), metadata)

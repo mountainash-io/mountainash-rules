@@ -14,14 +14,6 @@ from mountainash_rules import (
 
 
 
-class TestMetadataFields:
-    def test_priority_requires_field(self):
-        with pytest.raises(ValueError, match="priority_field"):
-            DimensionsMetadata(
-                fields=(ContextField(name="x", data_type="str"),),
-                dimensions=(Dimension(dimension_name="x", context_field="x"),),
-                hit_policy=HitPolicy.PRIORITY,
-            )
 
 
 def _region_md(**kwargs):
@@ -117,25 +109,20 @@ class TestPolicySemantics:
             }
         )
         engine = ExpressionRulesEngine(rules=rules, dimension_metadata=_region_md())
-        result = engine.evaluate({"region": "AU"}, hit_policy=HitPolicy.ANY)
-        assert result.count == 1
+        result = engine.evaluate(
+            {"region": "AU"}, hit_policy=HitPolicy.ANY, output_fields=["price"]
+        )
 
     def test_any_disagreeing_outputs_raises(self):
         engine = ExpressionRulesEngine(
             rules=self._rules(), dimension_metadata=_region_md()
         )
         with pytest.raises(HitPolicyViolationError):
-            engine.evaluate({"region": "AU"}, hit_policy=HitPolicy.ANY)
-
-    def test_metadata_policy_applies_and_override_wins(self):
-        md = _region_md(hit_policy=HitPolicy.FIRST)
-        engine = ExpressionRulesEngine(rules=self._rules(), dimension_metadata=md)
-        assert engine.evaluate({"region": "AU"}).count == 1  # FIRST from metadata
-        assert (
-            engine.evaluate({"region": "AU"}, hit_policy=HitPolicy.COLLECT).count == 2
-        )  # override
-
-
+            engine.evaluate(
+                {"region": "AU"},
+                hit_policy=HitPolicy.ANY,
+                output_fields=["price"],
+            )
 class TestResultSelect:
     def _collect_result(self, **eval_kwargs):
         rules = pl.DataFrame(

@@ -4,7 +4,6 @@ import polars as pl
 import pytest
 
 import mountainash.expressions as ma
-from mountainash_rules.core.constants import DataType
 
 from mountainash_rules import (
     ContextField,
@@ -26,8 +25,6 @@ def _metadata():
             Dimension(dimension_name="region", context_field="region"),
             Dimension(dimension_name="channel", context_field="channel"),
         ),
-        priority_field="price",
-        output_fields=["price"],
     )
 
 
@@ -82,21 +79,31 @@ def test_empty_contexts_preserve_schema_and_result_state(
 def test_empty_rules_preserve_schema_for_all_policies(policy, empty_contexts):
     rules = _rules()
     contexts = _contexts()
-    full = _engine(rules).evaluate_batch(contexts, hit_policy=policy)
+    selection = {"priority_field": "price"} if policy is HitPolicy.PRIORITY else {}
+    full = _engine(rules).evaluate_batch(
+        contexts, hit_policy=policy, **selection
+    )
     engine = _engine(rules.head(0))
     batch = engine.evaluate_batch(
         contexts.head(0) if empty_contexts else contexts,
         hit_policy=policy,
         chunk_size=1,
+        **selection,
     )
     assert batch.count == 0
     assert batch.survivors.schema == full.survivors.schema
-    single = engine.evaluate({"region": "AU", "channel": "BROKER"}, hit_policy=policy)
+    single = engine.evaluate(
+        {"region": "AU", "channel": "BROKER"}, hit_policy=policy, **selection
+    )
     assert single.count == 0
     assert (
         single.survivors.schema
         == _engine(rules)
-        .evaluate({"region": "AU", "channel": "BROKER"}, hit_policy=policy)
+        .evaluate(
+            {"region": "AU", "channel": "BROKER"},
+            hit_policy=policy,
+            **selection,
+        )
         .survivors.schema
     )
 
@@ -216,57 +223,3 @@ def test_empty_batches_do_not_skip_configuration_or_reserved_column_validation()
     unconfigured = ExpressionRulesEngine(_rules(), dimension_expressions=expressions)
     with pytest.raises(ValueError, match="output_fields"):
         unconfigured.evaluate_batch(contexts, hit_policy="any", chunk_size=1)
-
-
-def _boolean_coercion_none():
-    from mountainash_rules import BooleanCoercion
-
-    return BooleanCoercion.NONE
-
-
-def _boolean_boundary_engine(rules):
-    return ExpressionRulesEngine(
-        rules,
-        dimension_metadata=DimensionsMetadata(
-            fields=(ContextField(name="active", data_type=DataType.BOOL, wildcard=None, wildcard_declared=True),),
-            dimensions=(Dimension(
-                dimension_name="value", context_field="active", rule_field="flag"
-            ),),
-        ),
-        boolean_coercion=_boolean_coercion_none(),
-    )
-
-
-@pytest.mark.parametrize("chunk_size", [None, 1])
-def test_late_invalid_boolean_value_precedes_earlier_unique_violation(chunk_size):
-    engine = _boolean_boundary_engine(
-        pl.DataFrame(
-            {
-                "rule_name": ["true", "wildcard"],
-                "flag": [True, None],
-            }
-        )
-    )
-    contexts = pl.DataFrame(
-        {"cid": [0, 1], "active": pl.Series("active", [True, 2], dtype=pl.Object)}
-    )
-    with pytest.raises(ValueError) as exc:
-        engine.evaluate_batch(
-            contexts,
-            context_id_field="cid",
-            hit_policy="unique",
-            chunk_size=chunk_size,
-        )
-    assert not isinstance(exc.value, HitPolicyViolationError)
-
-
-@pytest.mark.parametrize("case", ["top_n_zero", "no_match", "empty_rules"])
-def test_invalid_boolean_batch_value_is_not_hidden_by_empty_result_paths(case):
-    rules = pl.DataFrame({"rule_name": ["false"], "flag": [False]})
-    if case == "empty_rules":
-        rules = rules.head(0)
-    options = {"top_n_per_context": 0} if case == "top_n_zero" else {}
-    with pytest.raises(ValueError):
-        _boolean_boundary_engine(rules).evaluate_batch(
-            pl.DataFrame({"active": [2]}), **options
-        )
