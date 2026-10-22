@@ -782,9 +782,9 @@ class TestBackendAgnosticism:
                     ["A"],
                     ["A"],
                     [],
-                    [NOT_SET],
+                    [UNKNOWN],
                 ],
-                f"{CTX_PREFIX}list_col": ["A", "A", "A", UNKNOWN, NOT_SET, "A", "A"],
+                f"{CTX_PREFIX}list_col": ["A", "A", "A", UNKNOWN, None, "A", "A"],
             },
         )
         if backend_name in {"pandas", "narwhals-polars", "narwhals-pandas"}:

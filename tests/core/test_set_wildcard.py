@@ -8,6 +8,8 @@ from mountainash.relations import relation
 from mountainash_rules import ContextField
 from mountainash_rules.core.dimension import Dimension, DimensionsMetadata
 from mountainash_rules.core.constants import DataType
+from mountainash_rules.core.compiler import normalize_rule_relation, rule_binding_names
+from tests.conftest import build_backend_df
 
 
 @pytest.mark.parametrize(
@@ -30,6 +32,7 @@ def test_normalized_set_payload_is_canonical_without_rewriting_authored_values(
         dimensions=(Dimension(dimension_name="value", context_field="value", match_strategy="set_membership"),),
     )
     dim = metadata.dimensions[0]
+    value_name, state_name = rule_binding_names(dim)
     rows = normalize_rule_relation(rules, [dim]).sort("rule").to_dicts()
     assert [row["value"] for row in rows] == authored
     assert [row[value_name] for row in rows] == [sorted(values), [], None]
