@@ -377,7 +377,7 @@ def prevalidate(rules: Any, metadata: DimensionsMetadata) -> ValidatedRules:
         signature_columns.add(copied_metadata.uuid_column)
     if copied_metadata.scope_column is not None:
         signature_columns.add(copied_metadata.scope_column)
-    signature_rows = captured.select(*sorted(signature_columns)).to_dicts()
+    signature_rows = captured.select(*sorted(signature_columns & set(schema))).to_dicts()
     seen: dict[tuple[Any, Any], list[Any]] = {}
     for row in signature_rows:
         uuid = row.get(copied_metadata.uuid_column) if copied_metadata.uuid_column else None

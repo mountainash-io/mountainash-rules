@@ -313,3 +313,33 @@ def test_prevalidate_snapshots_the_source_once():
     prevalidate(source, metadata())
 
     assert source.calls == 1
+
+
+def test_prevalidate_aggregates_missing_declared_columns():
+    declared = DimensionsMetadata(
+        uuid_column="rule_id",
+        fields=(ContextField(name="amount", data_type=DataType.INT, wildcard=-1),),
+        dimensions=(
+            Dimension(
+                dimension_name="amount",
+                context_field="amount",
+                match_strategy=MatchStrategy.RANGE,
+                range_min_field="minimum",
+                range_max_field="maximum",
+            ),
+        ),
+        outputs=(
+            Aggregate(
+                output_name="fee",
+                contribution_column="fee_contribution",
+                data_type=DataType.INT,
+            ),
+        ),
+    )
+
+    with pytest.raises(Exception) as caught:
+        prevalidate(relation({"rule_id": ["r1"]}), declared)
+
+    assert {
+        finding.kind for finding in caught.value.breaches
+    } >= {"missing_rule_column", "missing_contribution_column"}
