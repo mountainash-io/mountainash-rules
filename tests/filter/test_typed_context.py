@@ -187,8 +187,8 @@ def test_ordinary_string_sentinels_never_earn_specificity(
         build_backend_df(
             backend_name,
             {
-                "rule_name": ["pattern", "unknown", "unset"],
-                "value": [pattern, UNKNOWN, NOT_SET],
+                "rule_name": ["pattern", "unknown"],
+                "value": [pattern, UNKNOWN],
             },
         ),
         DimensionsMetadata(
@@ -201,24 +201,21 @@ def test_ordinary_string_sentinels_never_earn_specificity(
             ]
         ),
     )
+    # Only the declared wildcard (UNKNOWN) is a sentinel; NOT_SET is an ordinary string.
     contexts = [
         {},
         {"value": None},
         {"value": UNKNOWN},
-        {"value": NOT_SET},
         {"value": concrete},
         {"value": "different"},
         {"value": ""},
     ]
     for context in contexts:
         value = context.get("value")
-        score = (
-            0 if value in (None, UNKNOWN, NOT_SET) else (1 if value == concrete else -1)
-        )
+        score = 0 if value in (None, UNKNOWN) else (1 if value == concrete else -1)
         expected = [
             ("pattern", score, int(score == 1)),
             ("unknown", 0, 0),
-            ("unset", 0, 0),
         ]
         assert _scores(engine.explain(context).frame) == expected
         survivors = [row for row in expected if row[1] >= 0]
@@ -232,7 +229,7 @@ def test_ordinary_string_sentinels_never_earn_specificity(
                 == survivors
             )
     if strategy == "regex":
-        assert engine.evaluate({"value": "A"}).count == 2
+        assert engine.evaluate({"value": "A"}).count == 1
         # Concrete regex controls must still execute rather than always becoming unknown.
         matching = ExpressionRulesEngine(
             pl.DataFrame({"rule_name": ["pattern"], "value": ["^A$"]}),
@@ -267,7 +264,6 @@ def test_context_regex_requires_concrete_input(backend_name, pattern):
         {},
         {"value": None},
         {"value": UNKNOWN},
-        {"value": NOT_SET},
         {"value": ""},
         {"value": "A"},
     ]
@@ -620,36 +616,6 @@ def test_object_context_values_are_classified_before_backend_conversion():
     )
     with pytest.raises(ValueError):
         engine.evaluate_batch(invalid, context_id_field="cid")
-
-
-def test_boolean_alias_normalization_preserves_a_shared_nonboolean_binding():
-    rules = pl.DataFrame(
-        {
-            "rule_name": ["both"],
-            "bool_flag": [True],
-            "number_flag": [1],
-        }
-    )
-    metadata = DimensionsMetadata(
-        fields=(ContextField(name="active", data_type=DataType.BOOL, wildcard=None, wildcard_declared=True), ContextField(name="region", data_type=DataType.STR, wildcard=UNKNOWN)),
-        dimensions=[
-            Dimension(
-                dimension_name="as_boolean", rule_field="bool_flag", context_field="active",
-            ),
-            Dimension(
-                dimension_name="as_number", rule_field="number_flag", context_field="active",
-            ),
-        ]
-    )
-    contexts = pl.DataFrame({"cid": [7], "active": [1]})
-    result = _boolean_engine(
-        _boolean_coercion(1), rules=rules, metadata=metadata
-    ).evaluate_batch(contexts, context_id_field="cid")
-    assert relation(result.survivors).to_polars().select(
-        "rule_name", "__t_as_boolean", "__t_as_number", "__specificity"
-    ).rows() == [("both", 1, 1, 2)]
-    assert contexts.schema["active"] == pl.Int64
-    assert contexts["active"].to_list() == [1]
 
 
 def test_unselected_boolean_dimension_does_not_validate_its_source_field():

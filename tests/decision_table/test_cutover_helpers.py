@@ -12,12 +12,21 @@ from mountainash_rules.decision_table.helpers import check_sources, select_scope
 
 
 def scoped_metadata():
-    aggregate = Aggregate(column_name="fee", output_name="fee", data_type="int")
+    outputs = tuple(
+        Aggregate(
+            scope=scope,
+            output_name="fee",
+            contribution_column="fee",
+            data_type="int",
+        )
+        for scope in ("rates", "fees")
+    )
     return DimensionsMetadata(
-        dimensions=[],
-        uuid_field="rule_id",
-        outcome_scope_field="scope",
-        outcome_scopes={"rates": [aggregate], "fees": [aggregate]},
+        dimensions=(),
+        fields=(),
+        uuid_column="rule_id",
+        scope_column="scope",
+        outputs=outputs,
     )
 
 
@@ -58,7 +67,7 @@ def test_check_sources_rejects_missing_source_identity(backend_name):
 def test_fold_contributions_once_per_rule_and_cell(backend_name, operation, expected):
     contributions = ma.relation({"cell": ["c1", "c1", "c2"], "a0001": [2, 5, 11]})
     aggregate = Aggregate(
-        column_name="a0001", output_name="fee", data_type="int", operation=operation
+        output_name="fee", contribution_column="a0001", data_type="int", operation=operation
     )
     result = fold_contributions(contributions, [aggregate], ["cell"])
     assert result.filter(ma_expr.col("cell") == "c1").item("fee") == expected
@@ -67,7 +76,7 @@ def test_fold_contributions_once_per_rule_and_cell(backend_name, operation, expe
 def test_fold_cells_are_independent_and_outputs_use_output_name(backend_name):
     contributions = ma.relation({"cell": ["c1", "c1", "c2"], "a0001": [2, 5, 11]})
     aggregate = Aggregate(
-        column_name="a0001", output_name="fee", data_type="int", operation=AggregateOp.SUM
+        output_name="fee", contribution_column="a0001", data_type="int", operation=AggregateOp.SUM
     )
     result = fold_contributions(contributions, [aggregate], ["cell"])
     assert result.filter(ma_expr.col("cell") == "c1").item("fee") == 7

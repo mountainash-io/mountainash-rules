@@ -455,61 +455,19 @@ requested_region
 The original metadata still matches our existing request model. Before using the replacement, update the request schema and construct an engine with the revised metadata. Editing configuration objects or loading a file does not provide a live reload mechanism for an existing engine.
 
 <!-- concept:96 -->
-## Metadata in YAML {#yaml-round-trip}
+## Flat metadata tables {#flat-metadata-tables}
 
-`DimensionsMetadata.to_yaml()` produces text that can be stored and reviewed separately from Python code. `from_yaml(text)` reconstructs the model and runs its validation. The round-trip preserves the metadata values under the package version doing the loading:
+`DimensionsMetadata.to_tables()` returns five Mountainash relations: `ruleset`,
+`fields`, `dimensions`, `outputs`, and `truthy`. `DimensionsMetadata.from_tables()`
+reconstructs metadata from those relations. These tables are the metadata
+serialization format; there is no YAML API.
 
-```python
-yaml_text = metadata.to_yaml()
-restored = DimensionsMetadata.from_yaml(yaml_text)
-print(restored == metadata)
-print(yaml_text, end="")
-```
-
-The equality check prints `True`. The serialized metadata is:
-
-```yaml
-dimensions:
-- dimension_name: product_line
-  role: context_key
-- dimension_name: region
-  context_field: requested_region
-  rule_field: region_code
-  valid_values:
-  - AU
-  - NZ
-- dimension_name: hours
-  context_field: operating_hours
-  match_strategy: range
-  data_type: int
-  range_min_field: hours_from
-  range_max_field: hours_to
-  range_max_inclusive: false
-output_fields:
-- team
-```
-
-The serializer omits defaults. The first dimension therefore has no `match_strategy: exact` or `data_type: str` lines, and the table has no `hit_policy: collect` line. The loader supplies those values. Enum members appear as ordinary strings, not Python object tags.
-
-For files, `to_yaml_file(path)` writes UTF-8 text and returns the path; `from_yaml_file(path)` reads it. This example uses a temporary directory so it leaves no configuration file behind:
-
-```python
-from pathlib import Path
-from tempfile import TemporaryDirectory
-
-with TemporaryDirectory() as directory:
-    path = metadata.to_yaml_file(Path(directory) / "service-metadata.yaml")
-    loaded = DimensionsMetadata.from_yaml_file(path)
-    print(loaded == metadata)
-```
-
-```text
-True
-```
-
-Loading uses `yaml.safe_load` followed by Pydantic model validation. Missing range fields, incompatible types and duplicate names still fail; moving the declaration into a file does not bypass the model checks. The YAML contains metadata only. It does not save the rule rows, the `ServiceRequest` class or a constructed engine.
-
-Omitted defaults also mean that the file depends on the defaults of the version loading it. This round-trip is not a guarantee that a future version with changed defaults will interpret an old file identically. Version your metadata with the rule data and application code that use it, and exercise representative decisions when upgrading.
+Each field is declared once as a `ContextField` with its datatype, optional
+decimal precision and scale, datetime resolution and timezone, declared
+wildcard, and truthy mapping. A `Dimension` names its context field. Typed
+wildcard values are stored as canonical text and decoded using the field's
+datatype; explicit `wildcard=None` is preserved distinctly from an undeclared
+wildcard.
 
 <!-- concept:8 -->
 ## Mountainash expressions {#mountainash-expressions-what-to-compute}

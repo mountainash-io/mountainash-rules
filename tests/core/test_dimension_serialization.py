@@ -79,7 +79,7 @@ from mountainash_rules.engines.filter.engine import ExpressionRulesEngine
 
 def _effective_dated_metadata():
     return DimensionsMetadata(
-        fields=(ContextField(name="asof", data_type=DataType.DATE),),
+        fields=(ContextField(name="asof", data_type=DataType.DATE, wildcard=UNKNOWN_DATE),),
         dimensions=(Dimension(
             dimension_name="asof", context_field="asof", match_strategy=MatchStrategy.RANGE,
             range_min_field="eff_from", range_max_field="eff_to",

@@ -181,7 +181,7 @@ class TestNoMatch:
             table_name="no_match_rules",
         )
         metadata = DimensionsMetadata(
-            fields=(ContextField(name="region", data_type="str", wildcard=UNKNOWN)),
+            fields=(ContextField(name="region", data_type="str", wildcard=UNKNOWN),),
             dimensions=[
                 Dimension(
                     dimension_name="region", context_field="region",
@@ -238,7 +238,7 @@ class TestTieHandling:
             table_name="tie_rules_b",
         )
         metadata = DimensionsMetadata(
-            fields=(ContextField(name="region", data_type="str", wildcard=UNKNOWN)),
+            fields=(ContextField(name="region", data_type="str", wildcard=UNKNOWN),),
             dimensions=[
                 Dimension(
                     dimension_name="region", context_field="region",

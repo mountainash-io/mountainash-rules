@@ -177,7 +177,10 @@ def test_reusable_context_bindings_retain_original_provenance(
     from mountainash_rules.core.context import bind_context_columns
     from tests.conftest import build_backend_df
 
-    dim = Dimension(dimension_name="region", context_field="region")
+    (dim,) = DimensionsMetadata(
+        fields=(ContextField(name="region", data_type="str"),),
+        dimensions=(Dimension(dimension_name="region", context_field="region"),),
+    ).dimensions
     rel = relation(build_backend_df(backend_name, {"row": [1]}))
     bound = bind_context_columns(rel, [dim], values=context).to_dicts()[0]
     assert bound["__ctx_origin_region"] == origin

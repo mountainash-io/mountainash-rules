@@ -64,6 +64,7 @@ def set_state(
         dim.data_type is DataType.DATETIME and isinstance(element_dtype, TimestampDtype)
     ):
         return wildcard.fill_null(False), ma.lit(True), _empty_set_expr(dim)
+    payload = canonicalize_set_expr(col)
     if dim.data_type is DataType.FLOAT and element_dtype not in {
         MountainashDtype.FP32,
         MountainashDtype.FP64,

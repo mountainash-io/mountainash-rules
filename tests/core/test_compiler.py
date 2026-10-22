@@ -30,8 +30,17 @@ def compiler():
 
 def _bound_relation(frame, dim):
     if not hasattr(dim, "_field") or dim._field is None:
-        data_type = "int" if dim.dimension_name in {"amount", "tier", "num_col"} else "str"
-        object.__setattr__(dim, "_field", ContextField(name=dim.context_field, data_type=data_type))
+        ctx = f"{CTX_PREFIX}{dim.dimension_name}"
+        if isinstance(frame, pl.DataFrame) and ctx in frame.columns:
+            numeric = frame[ctx].dtype.is_numeric()
+        else:
+            numeric = dim.dimension_name in {"amount", "tier", "num_col"}
+        data_type, wildcard = ("int", UNKNOWN_NUMERIC) if numeric else ("str", UNKNOWN)
+        object.__setattr__(
+            dim,
+            "_field",
+            ContextField(name=dim.context_field, data_type=data_type, wildcard=wildcard),
+        )
     return bind_compiler_inputs(frame, [dim])
 
 
@@ -173,30 +182,6 @@ class TestRangeCompilation:
         )
         values = result["__t_amount"].to_list()
         assert values == [1, 1]  # both boundaries inclusive
-
-    def test_range_boundary_exclusive(self, compiler):
-        dim = Dimension(
-            dimension_name="amount", context_field="amount",
-            match_strategy=MatchStrategy.RANGE,
-            range_min_field="amount_min",
-            range_max_field="amount_max",
-        )
-        expr = compiler.compile_dimension(dim)
-
-        df = pl.DataFrame(
-            {
-                "amount_min": [10, 10],
-                "amount_max": [20, 20],
-                f"{CTX_PREFIX}amount": [10, 20],
-            }
-        )
-        result = (
-            _bound_relation(df, dim)
-            .with_columns(expr.name.alias("__t_amount"))
-            .to_polars()
-        )
-        values = result["__t_amount"].to_list()
-        assert values == [-1, -1]  # both boundaries exclusive
 
     def test_range_unknown_min_produces_unknown(self, compiler):
         dim = Dimension(

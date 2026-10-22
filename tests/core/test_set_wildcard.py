@@ -7,7 +7,7 @@ from mountainash.relations import relation
 
 from mountainash_rules import ContextField
 from mountainash_rules.core.dimension import Dimension, DimensionsMetadata
-from mountainash_rules.core.types import DataType
+from mountainash_rules.core.constants import DataType
 
 
 @pytest.mark.parametrize(

@@ -4,7 +4,7 @@ import polars as pl
 import pytest
 
 import mountainash.expressions as ma
-from mountainash_rules.core.types import DataType
+from mountainash_rules.core.constants import DataType
 
 from mountainash_rules import (
     ContextField,
