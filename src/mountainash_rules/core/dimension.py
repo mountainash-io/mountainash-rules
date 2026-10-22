@@ -10,7 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, field_validator,
 from mountainash import DecimalDtype
 
 from mountainash_rules.core.aggregate import Aggregate
-from mountainash_rules.core.constants import DataType, MatchStrategy, PYTHON_TO_DATATYPE
+from mountainash_rules.core.constants import DataType, HitPolicy, MatchStrategy, PYTHON_TO_DATATYPE
 
 
 class ContextField(BaseModel):
@@ -60,6 +60,19 @@ class ContextField(BaseModel):
     def decimal_dtype(self) -> DecimalDtype | None:
         return DecimalDtype(self.precision, self.scale) if self.precision is not None else None
 
+    def successor(self, value):
+        """Return the next representable ordered value at this field's resolution."""
+        if self.data_type is DataType.DATE and isinstance(value, dt.date) and not isinstance(value, dt.datetime):
+            return value + dt.timedelta(days=1)
+        if self.data_type is DataType.DATETIME and isinstance(value, dt.datetime):
+            unit = {"s": dt.timedelta(seconds=1), "ms": dt.timedelta(milliseconds=1), "us": dt.timedelta(microseconds=1)}[self.datetime_unit]
+            return value + unit
+        if self.data_type is DataType.DECIMAL and isinstance(value, Decimal):
+            return value + Decimal(1).scaleb(-self.scale)
+        if self.data_type is DataType.INT and type(value) is int:
+            return value + 1
+        raise ValueError(f"No ordered successor for {value!r} in {self.data_type.value}")
+
 
 class Dimension(BaseModel):
     """A matching strategy over one declared context field."""
@@ -73,27 +86,35 @@ class Dimension(BaseModel):
     range_min_field: str | None = None
     range_max_field: str | None = None
     regex_pattern: str | None = None
-    _field: ContextField = PrivateAttr()
+    _field: ContextField | None = PrivateAttr(default=None)
 
     @property
     def field(self) -> ContextField:
+        if self._field is None:
+            raise ValueError(f"Dimension {self.dimension_name!r} is not resolved against metadata")
         return self._field
+
+    def model_copy(self, *, update=None, deep=False):
+        copied = super().model_copy(update=update, deep=deep)
+        if self._field is not None:
+            object.__setattr__(copied, "_field", self._field)
+        return copied
 
     @property
     def data_type(self) -> DataType:
-        return self._field.data_type
+        return self.field.data_type
 
     @property
     def decimal_dtype(self) -> DecimalDtype | None:
-        return self._field.decimal_dtype
+        return self.field.decimal_dtype
 
     @property
     def rounding(self) -> str | None:
-        return self._field.rounding
+        return self.field.rounding
 
     @property
     def wildcard(self) -> t.Any:
-        return self._field.wildcard
+        return self.field.wildcard
 
     @property
     def resolved_context_field(self) -> str:
@@ -125,7 +146,7 @@ class DimensionsMetadata(BaseModel):
     uuid_column: str | None = None
     scope_column: str | None = None
     outputs: tuple[Aggregate, ...] = ()
-    hit_policy: t.Any = None
+    hit_policy: t.Any = HitPolicy.COLLECT
     priority_field: str | None = None
     output_fields: tuple[str, ...] = ()
 
@@ -159,6 +180,8 @@ class DimensionsMetadata(BaseModel):
             if key in outputs:
                 raise ValueError("Output names must be unique within each scope")
             outputs.add(key)
+        if self.hit_policy is HitPolicy.PRIORITY and not self.priority_field:
+            raise ValueError("PRIORITY hit policy requires priority_field")
         return self
 
     def get_dimension(self, name: str) -> Dimension:

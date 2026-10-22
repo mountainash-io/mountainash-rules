@@ -201,7 +201,7 @@ class DimensionCompiler:
         )
 
     def compile_dimension(self, dim: Dimension) -> BaseExpressionAPI:
-        if dim.data_type is DataType.BOOL and dim.match_strategy in (
+        if dim._field is not None and dim.data_type is DataType.BOOL and dim.match_strategy in (
             MatchStrategy.SET_MEMBERSHIP,
             MatchStrategy.SET_EXCLUSION,
         ):
