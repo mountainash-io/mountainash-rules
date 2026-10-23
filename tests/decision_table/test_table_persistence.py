@@ -585,3 +585,17 @@ def test_remote_match_parity_and_tamper_detection(backend_name, remote_target):
     report = verify_saved_table(remote_target, storage_profile=profile)
     assert report.mismatched == (file_name("entries"),)
 
+
+
+@pytest.mark.parametrize(
+    "root, name, expected",
+    [
+        ("/tmp/table", "entries.parquet", "/tmp/table/entries.parquet"),
+        ("/tmp/table/", "entries.parquet", "/tmp/table/entries.parquet"),
+        ("s3://bucket/tables/t1", "manifest.json", "s3://bucket/tables/t1/manifest.json"),
+        ("s3://bucket/tables/t1/", "manifest.json", "s3://bucket/tables/t1/manifest.json"),
+        ("sftp://host/data", "truthy.parquet", "sftp://host/data/truthy.parquet"),
+    ],
+)
+def test_saved_file_paths_join_under_local_and_uri_roots(root, name, expected):
+    assert persistence._join(root, name) == expected
