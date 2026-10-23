@@ -1,42 +1,36 @@
-"""Tests for evaluate_batch and exact accumulator indexed resolution."""
+"""Tests for evaluate_batch."""
 
-import mountainash_rules as rules
 import polars as pl
 import pytest
 from mountainash.relations import relation
 
 from mountainash_rules import (
-    AccumulatorEngine,
+    ContextField,
     Dimension,
-    DimensionRole,
     DimensionsMetadata,
     ExpressionRulesEngine,
     HitPolicy,
     MatchStrategy,
 )
 from tests.conftest import ALL_BACKENDS, build_backend_df
-from tests.accumulator.exact_runtime_fixtures import declarations, gate, uuid
 
 
 def _metadata():
     return DimensionsMetadata(
+        fields=(ContextField(name="region", data_type="str", wildcard="<NA>"), ContextField(name="amount", data_type="int", wildcard=-999999999), ContextField(name="product_code", data_type="str", wildcard="<NA>")),
         dimensions=[
             Dimension(
-                dimension_name="region", wildcard_values=[None, "<NA>", "<NOT_SET>"]
+                dimension_name="region", context_field="region",
             ),
             Dimension(
-                dimension_name="amount",
+                dimension_name="amount", context_field="amount",
                 match_strategy=MatchStrategy.RANGE,
-                data_type=int,
-                wildcard_values=[None, -999999999, -999999998],
                 range_min_field="amt_min",
                 range_max_field="amt_max",
             ),
             Dimension(
-                dimension_name="code",
+                dimension_name="code", context_field="product_code",
                 match_strategy=MatchStrategy.PREFIX,
-                context_field="product_code",
-                wildcard_values=[None, "<NA>", "<NOT_SET>"],
             ),
         ]
     )
@@ -205,132 +199,10 @@ class TestChunking:
         assert "0" in msg and "3" in msg
 
 
-class TestExactIndexedResolution:
-    def _setup(self):
-        dimensions = (
-            Dimension(dimension_name="segment", role=DimensionRole.CONTEXT_KEY),
-            Dimension(
-                dimension_name="region", wildcard_values=[None, "<NA>", "<NOT_SET>"]
-            ),
-        )
-        aggregate = rules.Aggregate(
-            column_name="amount",
-            output_name="pricing.total",
-            data_type="int",
-            numeric_semantics="numeric-1",
-        )
-        profile = rules.ResolutionProfile(
-            profile_id="quote",
-            mode="candidates",
-            output_fields=("pricing.total",),
-            provenance="none",
-            dimensions=("region",),
-            allow_dont_care=("region",),
-            promise="candidate_only",
-        )
-        contract = rules.ContextContract(
-            schema_version=1,
-            contract_id="client",
-            domain_ref="D",
-            fields=(
-                rules.ContextField(name="region", data_type="str", required=True),
-                rules.ContextField(name="segment", data_type="str", required=True),
-            ),
-            profiles=(profile,),
-        )
-        source_rows = [
-            {
-                "id": uuid(1),
-                "rule_name": "au",
-                "segment": "retail",
-                "region": "AU",
-                "amount": 1,
-            },
-            {
-                "id": uuid(2),
-                "rule_name": "nz",
-                "segment": "retail",
-                "region": "NZ",
-                "amount": 2,
-            },
-            {
-                "id": uuid(3),
-                "rule_name": "corp",
-                "segment": "corp",
-                "region": "AU",
-                "amount": 3,
-            },
-        ]
-        kwargs = declarations(
-            dimensions,
-            (aggregate,),
-            contracts=(contract,),
-            partition_keys=(("corp",), ("retail",), (None,)),
-        )
-        validation = gate(source_rows, kwargs)
-        engine = AccumulatorEngine(
-            kwargs["metadata"],
-            kwargs["aggregates"],
-            limits=kwargs["limits"],
-        )
-        return engine, engine.build_all(source_rows, validation=validation)
-
-    @staticmethod
-    def _candidate_source_ids(result):
-        return {row["source_id"] for row in result.candidate_contributors.to_dicts()}
-
-    def test_lattice_index_routes_by_partition(self):
-        engine, lattices = self._setup()
-        index = engine.index(lattices)
-
-        result = index.apply(
-            {"segment": "corp", "region": "AU"},
-            contract_id="client",
-            profile_id="quote",
-        )
-
-        assert self._candidate_source_ids(result) == {uuid(3)}
-
-    def test_lattice_index_apply_batch(self):
-        engine, lattices = self._setup()
-        index = engine.index(lattices)
-        batch = index.apply_batch(
-            [
-                {"request": "retail", "segment": "retail", "region": "AU"},
-                {"request": "corp", "segment": "corp", "region": "AU"},
-            ],
-            contract_id="client",
-            profile_id="quote",
-            context_id_field="request",
-        )
-
-        assert list(batch.records) == ["retail", "corp"]
-        assert self._candidate_source_ids(batch.for_context("retail")) == {uuid(1)}
-        assert self._candidate_source_ids(batch.for_context("corp")) == {uuid(3)}
-
-    def test_repeated_calls_keep_masks_request_scoped(self):
-        engine, lattices = self._setup()
-        index = engine.index(lattices)
-        context = {"segment": "retail", "region": "AU"}
-
-        unmasked = index.apply(context, contract_id="client", profile_id="quote")
-        masked = index.apply(
-            context,
-            contract_id="client",
-            profile_id="quote",
-            dont_care=("region",),
-        )
-        repeated = index.apply(context, contract_id="client", profile_id="quote")
-
-        assert self._candidate_source_ids(unmasked) == {uuid(1)}
-        assert self._candidate_source_ids(masked) == {uuid(1), uuid(2)}
-        assert self._candidate_source_ids(repeated) == {uuid(1)}
-
 
 class TestBatchBackendSweep:
     """Task 2's agreement oracle across backends (EXACT + RANGE dims only;
-    per-row string-match strategies are broken on pandas/narwhals upstream,
-    mountainash-io/mountainash#89, and are swept in test_compiler instead)."""
+    per-row string-match strategies are swept in test_compiler instead)."""
 
     _RULE_DATA = {
         "rule_name": ["au_low", "au_high", "nz_any"],
@@ -342,16 +214,15 @@ class TestBatchBackendSweep:
 
     def _md(self):
         return DimensionsMetadata(
+            fields=(ContextField(name="region", data_type="str", wildcard="<NA>"), ContextField(name="amount", data_type="int", wildcard=-999999999)),
             dimensions=[
                 Dimension(
-                    dimension_name="region", wildcard_values=[None, "<NA>", "<NOT_SET>"]
+                    dimension_name="region", context_field="region",
                 ),
                 Dimension(
-                    dimension_name="amount",
+                    dimension_name="amount", context_field="amount",
                     match_strategy=MatchStrategy.RANGE,
-                    data_type=int,
-                    wildcard_values=[None, -999999999, -999999998],
-                    range_min_field="amt_min",
+                        range_min_field="amt_min",
                     range_max_field="amt_max",
                 ),
             ]

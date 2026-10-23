@@ -1,157 +1,71 @@
-"""Mountain Ash Utils Rules — expression-based rule evaluation engine."""
+"""Mountain Ash rules public API."""
 
 from mountainash_rules.__version__ import __version__
-from mountainash_rules._native import (
-    LanguageResourceError,
-    LanguageSyntaxError,
-    LanguageWireError,
-)
+from mountainash_rules.context_validation import check_context_schema, validate_contexts
+from mountainash_rules.core.aggregate import Aggregate, AggregateOp
 from mountainash_rules.core.batch_result import BatchRuleResult
 from mountainash_rules.core.compiler import DimensionCompiler
 from mountainash_rules.core.constants import (
-    NOT_SET,
-    NOT_SET_DATE,
-    NOT_SET_DATETIME,
-    NOT_SET_NUMERIC,
     UNKNOWN,
     UNKNOWN_DATE,
     UNKNOWN_DATETIME,
     UNKNOWN_NUMERIC,
     BooleanCoercion,
     DataType,
-    DimensionRole,
     HitPolicy,
     MatchStrategy,
-    not_set_sentinel_for,
-    sentinels_for,
     unknown_sentinel_for,
 )
-from mountainash_rules.core.codec import (
-    canonical_bytes,
-    decode_validation_bundle,
-    encode_validation_bundle,
-    make_exact_envelope,
-)
-from mountainash_rules.core.contracts import (
-    AnalysisInput,
-    CarriedResult,
-    ContextContract,
-    ContextField,
-    ContractBinding,
-    CoverageRequirement,
-    DiagnosticRule,
-    DomainDefinition,
-    DomainField,
-    ExactCapabilityError,
-    ExactLimits,
-    ExactResourceError,
-    Finding,
-    InvalidContextError,
-    Issue,
-    OutcomeRecord,
-    RequiredCheck,
-    ResolutionProfile,
-    Scope,
-    UnresolvedContextError,
-    ValidatedBuildInput,
-    ValidationBundle,
-    ValidationPolicy,
-    ValidationReport,
-    WarningApproval,
-)
-from mountainash_rules.core.dimension import Dimension, DimensionsMetadata
+from mountainash_rules.core.dimension import ContextField, Dimension, DimensionsMetadata
 from mountainash_rules.core.hit_policy import HitPolicyViolationError, SelectionInfo
-from mountainash_rules.core.language import LanguageLimits, RegexOptions, StringLanguage
 from mountainash_rules.core.result import ExplainResult, RuleResult
-from mountainash_rules.core.scalar import decode_scalar, encode_scalar
-from mountainash_rules.engines.accumulator.aggregate import Aggregate, AggregateOp
-from mountainash_rules.engines.accumulator.analysis import (
-    analyze_sources,
-    attach_warning_approvals,
-    validate_build_input,
+from mountainash_rules.decision_table.apply import MatchOperation, MatchResult
+from mountainash_rules.decision_table.build import build_decision_table
+from mountainash_rules.decision_table.errors import DecisionTableError
+from mountainash_rules.decision_table.persistence import VerificationReport, verify_saved_table
+from mountainash_rules.decision_table.prevalidate import (
+    DataContractError,
+    Finding,
+    ValidatedRules,
+    prevalidate,
 )
-from mountainash_rules.engines.accumulator.engine import AccumulatorEngine
-from mountainash_rules.engines.accumulator.lattice import (
-    AmbiguousPartitionError,
-    Lattice,
-    LatticeIndex,
-)
-from mountainash_rules.engines.accumulator.result import AccumulatorResult, AccumulatorBatchResult
+from mountainash_rules.decision_table.table import DecisionTable
 from mountainash_rules.engines.filter.engine import ExpressionRulesEngine
 
 __all__ = (
-    "analyze_sources",
-    "attach_warning_approvals",
-    "canonical_bytes",
-    "decode_scalar",
-    "decode_validation_bundle",
-    "encode_scalar",
-    "encode_validation_bundle",
-    "make_exact_envelope",
-    "validate_build_input",
-    "AnalysisInput",
-    "CarriedResult",
-    "ContextContract",
-    "ContextField",
-    "ContractBinding",
-    "CoverageRequirement",
-    "DiagnosticRule",
-    "DomainDefinition",
-    "DomainField",
-    "ExactCapabilityError",
-    "ExactLimits",
-    "ExactResourceError",
-    "Finding",
-    "InvalidContextError",
-    "Issue",
-    "OutcomeRecord",
-    "RequiredCheck",
-    "ResolutionProfile",
-    "Scope",
-    "UnresolvedContextError",
-    "ValidatedBuildInput",
-    "ValidationBundle",
-    "ValidationPolicy",
-    "ValidationReport",
-    "WarningApproval",
-    "NOT_SET",
-    "NOT_SET_DATE",
-    "NOT_SET_DATETIME",
-    "NOT_SET_NUMERIC",
     "UNKNOWN",
     "UNKNOWN_DATE",
     "UNKNOWN_DATETIME",
     "UNKNOWN_NUMERIC",
-    "AccumulatorEngine",
-    "AccumulatorBatchResult",
-    "AccumulatorResult",
     "Aggregate",
     "AggregateOp",
-    "AmbiguousPartitionError",
     "BatchRuleResult",
     "BooleanCoercion",
+    "ContextField",
+    "DataContractError",
     "DataType",
+    "DecisionTable",
+    "DecisionTableError",
     "Dimension",
     "DimensionCompiler",
-    "DimensionRole",
     "DimensionsMetadata",
     "ExplainResult",
     "ExpressionRulesEngine",
+    "Finding",
     "HitPolicy",
     "HitPolicyViolationError",
-    "LanguageLimits",
-    "LanguageResourceError",
-    "LanguageSyntaxError",
-    "LanguageWireError",
-    "Lattice",
-    "LatticeIndex",
+    "MatchOperation",
+    "MatchResult",
     "MatchStrategy",
-    "RegexOptions",
     "RuleResult",
     "SelectionInfo",
-    "StringLanguage",
+    "ValidatedRules",
+    "VerificationReport",
     "__version__",
-    "not_set_sentinel_for",
-    "sentinels_for",
+    "build_decision_table",
+    "check_context_schema",
+    "prevalidate",
     "unknown_sentinel_for",
+    "validate_contexts",
+    "verify_saved_table",
 )

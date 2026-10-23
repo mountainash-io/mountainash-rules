@@ -9,7 +9,7 @@ from pydantic import BaseModel
 
 import mountainash.expressions as ma
 from mountainash.expressions import BaseExpressionAPI
-from mountainash.relations import concat, relation
+from mountainash.relations import Relation, concat, relation
 
 import dataclasses
 
@@ -21,7 +21,6 @@ from mountainash_rules.core.constants import (
 )
 from mountainash_rules.core.context import (
     _validate_boolean_coercion,
-    _validate_context_ids,
     bind_context_columns,
     extract_context_values,
 )
@@ -53,10 +52,10 @@ class ExpressionRulesEngine:
     then evaluates contexts against the rules DataFrame in a single-pass
     vectorized operation.
 
-    The engine is backend-agnostic. The DataFrame backend (Polars, Ibis,
-    Narwhals-wrapped Pandas/PyArrow) is determined by the type of `rules`
-    passed to the constructor. The `RuleResult.survivors` accessor returns
-    a DataFrame in the same backend as the input.
+    The engine is backend-agnostic: the backend (Polars or Ibis-DuckDB, the supported
+    and tested ones) is determined by the type of `rules` passed to the constructor,
+    which may be a native table or a Mountainash `Relation`. The `RuleResult.survivors`
+    accessor returns a DataFrame in the same backend as the input.
 
     Two construction paths:
     - Convenience: provide dimension_metadata (auto-compiled to expressions)
@@ -93,20 +92,15 @@ class ExpressionRulesEngine:
         if not configured:
             raise ValueError("Filter engines require at least one dimension")
 
-        if dimension_metadata is not None and output_fields is not None:
-            raise ValueError("Configure output_fields on dimension_metadata, not both")
         if output_fields is not None and (
             not isinstance(output_fields, list) or not output_fields
         ):
             raise ValueError("output_fields must be a nonempty list of field names")
-        self._rule_columns = relation(rules).columns
-        if dimension_metadata is not None:
-            declared = dimension_metadata.output_fields
-        elif output_fields is not None:
-            declared = output_fields
-        else:
-            declared = []
-        self._output_fields = validate_output_fields(declared, self._rule_columns)
+        rules_rel = rules if isinstance(rules, Relation) else relation(rules)
+        self._rule_columns = rules_rel.columns
+        self._output_fields = validate_output_fields(
+            output_fields or [], self._rule_columns
+        )
         self._expressions: dict[str, BaseExpressionAPI]
         self._metadata: DimensionsMetadata | None
 
@@ -163,25 +157,22 @@ class ExpressionRulesEngine:
         policy: HitPolicy | str | None,
         priority_field: str | None,
         observability: bool,
+        output_fields: list[str] | None = None,
     ) -> tuple[HitPolicy, SelectionInfo]:
         if policy is None:
-            policy = (
-                self._metadata.hit_policy
-                if self._metadata is not None
-                else HitPolicy.COLLECT
-            )
+            policy = HitPolicy.COLLECT
         policy = normalize_policy(policy)
         info = selection_info_from_metadata(
             self._metadata,
             priority_field,
             observability,
-            output_fields=self._output_fields,
+            output_fields=output_fields if output_fields is not None else self._output_fields,
         )
         check_policy_config(self._rule_columns, policy, info)
         return policy, info
 
     def _normalized_rules(self, active_dims: list[str]) -> t.Any:
-        rel = relation(self._rules)
+        rel = self._rules if isinstance(self._rules, Relation) else relation(self._rules)
         self._check_reserved(rel, "Rules")
         if self._metadata is not None:
             rel = normalize_rule_relation(
@@ -217,6 +208,7 @@ class ExpressionRulesEngine:
         include_observability: bool = True,
         hit_policy: HitPolicy | str | None = None,
         priority_field: str | None = None,
+        output_fields: list[str] | None = None,
     ) -> RuleResult:
         """Evaluate rules against a context.
 
@@ -239,7 +231,7 @@ class ExpressionRulesEngine:
         self._validate_limit("min_specificity", min_specificity)
 
         hit_policy, info = self._selection_config(
-            hit_policy, priority_field, include_observability
+            hit_policy, priority_field, include_observability, output_fields
         )
 
         context_values = extract_context_values(
@@ -327,12 +319,11 @@ class ExpressionRulesEngine:
         context_id_field: str | None,
     ) -> t.Any:
         """Classify original per-row availability before conversion or aliasing."""
-        rel = relation(contexts)
+        rel = contexts if isinstance(contexts, Relation) else relation(contexts)
         self._check_reserved(rel, "Contexts")
         if context_id_field is None:
             rel = rel.with_row_index(name="__context_id")
         else:
-            _validate_context_ids(rel, context_id_field)
             rel = rel.with_columns(ma.col(context_id_field).alias("__context_id"))
         if self._metadata is not None:
             rel = bind_context_columns(
@@ -362,6 +353,7 @@ class ExpressionRulesEngine:
         dimensions: list[str] | None = None,
         hit_policy: HitPolicy | str | None = None,
         priority_field: str | None = None,
+        output_fields: list[str] | None = None,
         top_n_per_context: int | None = None,
         min_specificity: int | None = None,
         include_observability: bool = True,
@@ -377,7 +369,7 @@ class ExpressionRulesEngine:
         ):
             raise ValueError("context_id_field must be a nonempty string or None")
         selection = self._selection_config(
-            hit_policy, priority_field, include_observability
+            hit_policy, priority_field, include_observability, output_fields
         )
 
         prepared = self._prepare_contexts(contexts, active_dims, context_id_field)
@@ -497,31 +489,6 @@ class ExpressionRulesEngine:
             .collect()
         )
 
-    def _conform_to_rules_backend(self, prepared: t.Any) -> t.Any:
-        """Rehost the prepared contexts in the rules frame's backend.
-
-        The cross-join requires both sides in one backend; contexts arrive
-        as whatever the caller built (typically polars). Detection and
-        conversion go through mountainash only.
-        """
-        from mountainash.core.backend_detection import (
-            CONST_BACKEND,
-            identify_backend,
-        )
-
-        backend = identify_backend(self._rules)
-        if backend is CONST_BACKEND.IBIS:
-            return relation(prepared.to_ibis())
-        native = prepared.collect()
-        if identify_backend(native) is backend:
-            return relation(native)
-        if backend in (CONST_BACKEND.NARWHALS, CONST_BACKEND.PANDAS):
-            module = type(self._rules).__module__
-            impl = str(getattr(self._rules, "implementation", "")).lower()
-            if "pandas" in module or "pandas" in impl:
-                return relation(prepared.to_pandas())
-            return relation(prepared.to_polars())
-        return relation(prepared.to_polars())
 
     def _evaluate_batch_frame(
         self,
@@ -537,7 +504,9 @@ class ExpressionRulesEngine:
             name="__rule_index"
         )
 
-        joined = rules_rel.join(self._conform_to_rules_backend(prepared), how="cross")
+        # Contexts are small and often host-originated; the join runs where the rules live and
+        # Mountainash copies the contexts there, never the rules to the contexts' backend.
+        joined = rules_rel.join(prepared, how="cross", execute_on="left")
 
         # Ternary, survival, specificity — same expressions as _evaluate
         dim_columns = [self._expressions[d].name.alias(f"__t_{d}") for d in active_dims]

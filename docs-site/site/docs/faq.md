@@ -2,464 +2,294 @@
 
 Focused answers for rule authors, application developers and maintainers. The linked chapters contain worked examples and implementation detail; the [glossary](glossary.md) defines recurring terms.
 
-## General Architecture and Design
+## General
 
-### What is mountainash-rules and what problems does it solve?
+### What is Mountainash Rules and what does it solve?
 
-Mountainash Rules represents business rules as table rows with explicit matching metadata. The Expression Rules Engine evaluates those rows against a context and applies a hit policy. The Exact Accumulator analyzes validated sources, compiles immutable cells, and resolves normalized contexts against contract-bound artifacts.
+It represents business rules as table rows with explicit matching metadata. The Expression Rules Engine evaluates the rows against a context and applies a hit policy. A DecisionTable cuts the rows into non-overlapping entries once, folds the contributions of the rules that cover each entry, and then answers contexts by lookup.
 
-Read [Vectorized Evaluation](chapters/01-two-rule-engines/index.md#comparing-rules-as-columns).
+Read [Two Engines, One Rule Model](chapters/01-two-rule-engines/index.md).
 
-### What are the two engines and when should I use each one?
+### When should I use the expression engine and when a DecisionTable?
 
-Use `ExpressionRulesEngine` to match, rank and select individual rule rows. Use `AccumulatorEngine` when you need a source-validated exact artifact with cell-level outputs and contributor provenance. Its source analysis, build, and contract-bound resolution phases are separate; it does not consume filter-engine survivors.
+Use `ExpressionRulesEngine` when the answer is a *rule*: which rule applies and why, with a hit policy choosing among survivors. Use a `DecisionTable` when several rules apply to one context and their outputs combine (fees that add, a rate built from a base and margins), or when you want to build once and serve many contexts, including from a saved table.
 
-Read [AccumulatorEngine](chapters/07-accumulator-engine/index.md#accumulatorengine).
+Read [The two engines](chapters/01-two-rule-engines/index.md#the-two-engines).
 
-### What does "backend-agnostic" mean in the context of mountainash-rules?
+### Which backends are supported?
 
-Expression-engine matching executes through Mountainash expressions and relations, with documented limitations such as per-row `REGEX`. The exact accumulator prototype accepts several input formats but extracts source rows into Python and computes geometry and folds locally in Python/native code before materializing typed relations. It does not construct an accumulator plan on the source backend. Input compatibility and backend-purity tests therefore do not establish its architectural acceptance.
+Polars and Ibis-DuckDB. Every backend-dependent behaviour test runs on both, and `duckdb` is pinned `<2.0`. Package code never imports a DataFrame library: it builds Mountainash relations and expressions.
 
-Read [Backend-Agnostic Design](chapters/01-two-rule-engines/index.md#using-other-dataframe-libraries).
+Read [Backends](chapters/01-two-rule-engines/index.md#backends).
 
-### What is the role of Pydantic in mountainash-rules?
+### Does the engine validate my rules or contexts?
 
-Pydantic validates configuration models such as `Dimension`, `DimensionsMetadata` and `Aggregate`. It catches declared field/type/strategy constraints and invalid enum values. It is not a substitute for checking the actual rule table's columns, reserved values and business meaning. Metadata validation and data validation are separate responsibilities.
+No. `ExpressionRulesEngine` evaluates what it is given and lets backend errors propagate. For a DecisionTable, `prevalidate` checks the rules and `check_context_schema` and `validate_contexts` check contexts; `match` itself checks nothing.
 
-Read [Pydantic Model Validation](chapters/02-shared-rule-model/index.md#pydantic-models-validate-configuration-before-evaluation).
+Read [Construct an engine and evaluate a context](chapters/04-expression-rules-engine/index.md#construct-an-engine-and-evaluate-a-context).
 
-### Why use a rule table rather than condition chains?
+### What is the role of pydantic?
 
-A table makes repeated decision structure explicit as data: rows can be reviewed, versioned and compared without encoding each rule as another branch. Dimension metadata supplies the comparison semantics, while results expose matching information. This works when the decision fits the package's tabular model; it does not remove the need to review rule changes or manage application state.
+`ContextField`, `Dimension`, `DimensionsMetadata` and `Aggregate` are pydantic models, so a mistake in a declaration fails when you construct it. Your own pydantic model can also serve as a context, with `request_id` and one attribute per context field.
 
-Read [DataFrame as Rule Store](chapters/01-two-rule-engines/index.md#put-the-rules-in-a-table).
+Read [The shared rule model](chapters/02-shared-rule-model/index.md).
 
-### What is a Context Object and how is it used?
+### What is a context?
 
-A context supplies the facts against which rules are evaluated, commonly as a dictionary or Pydantic model. Metadata maps each logical dimension to its context field. Missing values are normalized before comparison, but the resulting behavior depends on the strategy. For batches, each context is a row with an identifier rather than one shared dictionary.
+The facts for one decision: a dictionary, a pydantic model, or a row of a context table. Each dimension reads the context field named by its `context_field`.
 
-Read [Context Object](chapters/01-two-rule-engines/index.md#describe-one-delivery).
+Read [Rules and contexts](chapters/02-shared-rule-model/index.md#rules-and-contexts).
 
-### How are rules stored and what format do they use?
+## Ternary logic, wildcards and null
 
-Rules are rows in a supported relation or DataFrame. Metadata identifies each strategy's input columns: scalar strategies generally use one rule field, while `RANGE` uses two bounds. Other columns can carry outputs. Use the declared data types and reserved sentinel conventions; a visually empty cell is not a universal portable wildcard.
+### What is ternary logic and why does the package use it?
 
-Read [DataFrame as Rule Store](chapters/01-two-rule-engines/index.md#put-the-rules-in-a-table).
+Each dimension scores a rule 1 (match), 0 (unknown or don't-care) or −1 (non-match). A rule survives when no dimension scores −1; its specificity is the number of 1s. The third value lets a rule that places no constraint, or a context that omits a value, stay possible without earning specificity.
 
-### How is the package organized?
+Read [Ternary logic](chapters/03-matching-concepts/index.md#ternary-logic-match-unknown-and-non-match).
 
-Shared models, context handling, comparison compilation and result selection live under `core/`. The filter and exact-accumulator implementations live under `engines/`; the accumulator includes source analysis, predicates, layouts, persistence, results, and native state. Application imports use the package root.
+### How do I write a rule that matches everything?
 
-Read [Keep the public boundary small](chapters/11-extending-and-maintaining/index.md#keep-the-public-boundary-small).
+Give every dimension of the rule the wildcard marker its field declares (for example `"*"`, or null where `wildcard_declared=True`). Such a rule survives for every context at specificity 0.
 
-## Ternary Logic and Sentinel Values
+Read [Wildcards are declared, never inferred](chapters/03-matching-concepts/index.md#wildcards-are-declared-never-inferred).
 
-### What is ternary logic and why does mountainash-rules use it?
+### How do I declare a wildcard?
 
-Matching uses three numeric outcomes: `1` for a hard match, `0` for unknown, and `-1` for a contradiction. This lets a rule remain eligible without claiming a definite match on every dimension. Unknown is an evaluation outcome, not a synonym for every null, missing field or stored sentinel in every strategy.
+On the `ContextField`: `ContextField(name="region", data_type=DataType.STR, wildcard="*")`, or `wildcard_declared=True` with `wildcard=None` to make null the marker. A field has exactly one marker, used by every dimension on it.
 
-Read [Ternary Logic](chapters/03-matching-concepts/index.md#ternary-logic-match-unknown-and-non-match).
+Read [ContextField: a typed fact](chapters/02-shared-rule-model/index.md#contextfield-a-typed-fact).
 
-### What are sentinel values and how do they work?
+### Is null a wildcard?
 
-Sentinels are reserved values that represent rule-side UNKNOWN or context-side NOT_SET. Strings, numbers, dates and datetimes have distinct typed pairs; Boolean exact comparisons use null handling instead. Use the helper functions rather than substituting arbitrary magic values. Keep sentinel values out of legitimate business data and check each strategy's treatment of them.
+Only where the field declares it. A rule-side null on any other field is invalid data, which `prevalidate` reports.
 
-Read [Sentinel Values](chapters/03-matching-concepts/index.md#sentinel-values-telling-no-constraint-apart-from-no-answer).
+Read [Wildcards are declared, never inferred](chapters/03-matching-concepts/index.md#wildcards-are-declared-never-inferred).
 
-### How does ternary logic affect rule matching outcomes?
+### What happens when the context is missing a value?
 
-A rule survives when no active dimension yields `-1`. Specificity counts the dimensions yielding `1`; unknown outcomes add nothing. Ranking then follows the hit policy, so a higher-specificity survivor does not necessarily win under `FIRST`, `PRIORITY` or `RULE_ORDER`. Survival, specificity and selection answer different questions.
+A missing or null context value scores 0 on a value dimension. The rule stays possible and earns no specificity; the engine neither drops the rule nor treats the value as a match. A `TRUTHY` field whose mapping covers `None` maps null to that outcome.
 
-Read [Survival Computation](chapters/04-expression-rules-engine/index.md#understand-survival-and-ranking).
+Read [Missing and null context values](chapters/03-matching-concepts/index.md#missing-and-null-context-values).
 
-### Can I have a rule that matches everything (a default rule)?
+### How do I ask whether a field is null?
 
-For strategies that recognize rule-side wildcards, an unconstrained row can serve as a fallback and typically contributes no specificity on those dimensions. Use typed scalar sentinels or the documented set wildcard list. Do not assume this works for `CONTEXT_REGEX`, which has no rule-side wildcard branch, or that a fallback guarantees the policy will select it.
+Use a `PRESENCE` dimension: rule cells `IS_NULL`, `IS_NOT_NULL` or the wildcard. An explicit context null is a known fact (1 against `IS_NULL`); an omitted field is unknown.
 
-Read [Sentinel Values](chapters/03-matching-concepts/index.md#sentinel-values-telling-no-constraint-apart-from-no-answer).
+Read [PRESENCE](chapters/03-matching-concepts/index.md#presence-asking-whether-a-field-is-null).
 
-### What happens when the context is missing a value for a dimension?
+### What is the difference between "don't-care" and "unknown"?
 
-An omitted field or Python `None` is normalized to the declared type’s `NOT_SET` value; Boolean absence remains null. The selected strategy then determines the outcome. Ordinary ternary comparisons and row-based string strategies produce unknown, while `EXACT_KEY` rejects a missing context against a specific key and `CONTEXT_REGEX` rejects it for every rule.
+Both score 0. A don't-care is a rule cell with no constraint; unknown is a context value that was not supplied. A rule that requires `region = EU` is *possible* but unproven when the region is missing.
 
-Read [Context Value Extraction](chapters/09-expression-engine-internals/index.md#context-value-extraction).
+Read [Don't-care versus unknown](chapters/03-matching-concepts/index.md#dont-care-versus-unknown).
 
-## Match Strategies and Dimensions
+## Match strategies and dimensions
 
-### Which MatchStrategy members are available?
+### Which match strategies exist?
 
-There are thirteen members: `EXACT`, `EXACT_KEY`, `NOT_EQUAL`, `RANGE`, `GREATER_THAN`, `LESS_THAN`, `PREFIX`, `SUFFIX`, `CONTAINS`, `REGEX`, `CONTEXT_REGEX`, `SET_MEMBERSHIP` and `SET_EXCLUSION`. Their input types and wildcard rules differ. Filter support does not itself make a strategy part of exact accumulator compilation; that path requires a normalized predicate and proof-preserving lifecycle support.
+`exact`, `not_equal`, `range`, `min`, `max`, `prefix`, `suffix`, `contains`, `regex`, `context_regex`, `set_membership`, `set_exclusion`, `truthy`, `outcome` and `presence`.
 
-Read [MatchStrategy Enum](chapters/02-shared-rule-model/index.md#the-matchstrategy-enum).
+Read [Match strategies](chapters/03-matching-concepts/index.md#match-strategies).
 
-### How does the EXACT match strategy work?
+### How do ranges and thresholds work?
 
-`EXACT` compares a rule value with its context value using ternary-aware equality. Ordinary equality yields a hard match, inequality a contradiction, and recognized sentinel operands an unknown outcome. Boolean exact matching uses explicit null checks. `EXACT_KEY` is a separate asymmetric strategy, not an interchangeable spelling of `EXACT`.
+`range` is a closed interval read from two columns (`range_min_field`, `range_max_field`), where a marker endpoint is unbounded. `min` scores 1 when the context is at least the rule's threshold and `max` when it is at most the threshold. All three need a numeric or temporal field; use `DECIMAL`, not `FLOAT`, for fractions.
 
-Read [EXACT Strategy](chapters/03-matching-concepts/index.md#exact-strategy).
+Read [Match strategies](chapters/03-matching-concepts/index.md#match-strategies).
 
-### How does the RANGE match strategy work?
+### How do the string and set strategies work?
 
-`RANGE` compares the context with two rule columns using the dimension's lower and upper inclusivity flags, then combines the outcomes with ternary AND. A sentinel bound is unknown rather than a hard match: with one unspecified bound and one passing bound, the dimension can survive with outcome `0`. Endpoint inclusivity and an unspecified bound are different concepts.
+`prefix`, `suffix` and `contains` test whether the context string starts with, ends with or contains the rule's string. `regex` applies a pattern from each rule row; `context_regex` applies one pattern from the dimension. `set_membership` and `set_exclusion` read a list column; null elements in a list are invalid.
 
-Read [RANGE Strategy](chapters/03-matching-concepts/index.md#range-strategy).
+Read [Match strategies](chapters/03-matching-concepts/index.md#match-strategies).
 
-### How do the string match strategies (PREFIX, SUFFIX, CONTAINS, REGEX) work?
+### What is a truthy mapping?
 
-`PREFIX` and `SUFFIX` test the start or end of the context string; `CONTAINS` searches for literal text anywhere within it. `REGEX` reads a pattern from each rule row and currently uses Polars. These four strategies return unknown for a rule wildcard or missing context. `CONTEXT_REGEX` instead stores one pattern in metadata and rejects missing input.
+A `ContextField.truthy` dictionary from values (including `None`) to outcomes −1, 0 or 1. The rule's and the context's values both pass through it, and a `TRUTHY` dimension scores 1 when the two outcomes are equal and non-zero.
 
-Read [PREFIX Strategy](chapters/03-matching-concepts/index.md#prefix-strategy).
+Read [Truthy mappings and outcomes](chapters/03-matching-concepts/index.md#truthy-mappings-and-outcomes).
 
-### How do SET_MEMBERSHIP and SET_EXCLUSION strategies work?
+### What data types can a field have?
 
-The rule cell holds a list and the context supplies a scalar. `SET_MEMBERSHIP` accepts membership; `SET_EXCLUSION` accepts non-membership. A reserved one-element list containing the typed UNKNOWN sentinel represents an unconstrained rule. Boolean set dimensions are rejected. Exact-accumulator support, where available, derives from validated normalized predicates rather than a mutable set-combination column.
+`STR`, `INT`, `FLOAT`, `DECIMAL`, `BOOL`, `DATE` and `DATETIME`. `DECIMAL` needs precision, scale and rounding; `DATETIME` needs a unit and a timezone. `FLOAT` cannot be ordered.
 
-Read [SET_MEMBERSHIP Strategy](chapters/03-matching-concepts/index.md#set_membership-strategy).
+Read [ContextField: a typed fact](chapters/02-shared-rule-model/index.md#contextfield-a-typed-fact).
 
-### What is the DimensionRole enum and what are CONSTRAINT and CONTEXT_KEY?
+### Can several dimensions read the same field?
 
-`CONSTRAINT` is the ordinary matching role. In accumulator metadata, `CONTEXT_KEY` identifies fields used to select a declared source-validated partition; it is not a compiled cell predicate. The filter engine does not automatically exclude a dimension merely because its role is `CONTEXT_KEY`: it still compiles and evaluates its configured strategy.
+Yes. For example an `EXACT` and a `PRESENCE` dimension on `region`, or a `RANGE` and a `MIN` on `term`. They share the field's wildcard marker.
 
-Read [DimensionRole Enum](chapters/02-shared-rule-model/index.md#the-dimensionrole-enum).
+Read [Dimension: one comparison](chapters/02-shared-rule-model/index.md#dimension-one-comparison).
 
-### What is the Dimension class and how do I configure it?
+### How is metadata serialised?
 
-A `Dimension` combines a logical name, match strategy, data type, role and field mappings. Use `rule_field` and `context_field` when physical names differ from the logical name; use the two bound fields for `RANGE`. Strategy-specific validation ensures required configuration is present. Begin with the worked library rather than inferring argument names from a prose label.
+As five flat relational tables (`ruleset`, `fields`, `dimensions`, `outputs`, `truthy`) through `DimensionsMetadata.to_tables()` and `from_tables()`. Typed markers are stored as canonical text and parsed by the field's type.
 
-Read [Dimension Class](chapters/02-shared-rule-model/index.md#the-dimension-class).
+Read [Metadata as five flat tables](chapters/02-shared-rule-model/index.md#metadata-as-five-flat-tables).
 
-### What is DimensionsMetadata and why is it a collection?
+## ExpressionRulesEngine and results
 
-`DimensionsMetadata` holds the dimension collection and table-level hit-policy settings, including priority and output-field information. It offers dimension lookup and YAML serialization. Treat it as configuration for a rule library, not as the rules themselves or a complete validator of the underlying DataFrame.
+### How does evaluation work?
 
-Read [DimensionsMetadata](chapters/02-shared-rule-model/index.md#dimensionsmetadata).
+The engine compiles each dimension once, binds the rules and the context, computes one ternary column per dimension, keeps the survivors, orders them by the hit policy, assigns `__rank` and applies limits, all in one relational chain.
 
-### What are Data Type Constraints for match strategies?
+Read [Inside the Expression Rules Engine](chapters/09-expression-engine-internals/index.md).
 
-Ordered strategies require appropriate numeric or temporal values, string strategies require strings, and set strategies require supported non-Boolean element types. `RANGE` needs two bounds; `CONTEXT_REGEX` needs a literal pattern. The chapter's validation table states the actual model checks. Valid metadata still does not guarantee that your data columns have the intended dtype or values.
+### What does a `RuleResult` offer?
 
-Read [Data Type Constraints](chapters/02-shared-rule-model/index.md#data-type-constraints).
+`survivors`, `best_match`, `count`, `explain(rule_name)`, `at_least(n)`, `active_dimensions` and `select(policy, ...)`.
 
-## ExpressionRulesEngine and Results
+Read [Read the result](chapters/04-expression-rules-engine/index.md#read-the-result).
 
-### How does the ExpressionRulesEngine evaluation pipeline work?
+### How do I see why a rule did not match?
 
-The metadata construction path compiles dimension expressions once. Evaluation binds context columns, computes per-dimension ternaries, derives survival and specificity, orders survivors, checks policy assertions and applies result limits/cardinality. Engine-level `explain()` stops before selection. Batch evaluation shares the expressions but prepares contexts and implements per-context selection differently.
+Call `engine.explain(context)`. It scores every rule with no filtering and exposes `__t_<dimension>`, `__survived` and `__specificity`.
 
-Read [Dimension Expression Phase](chapters/09-expression-engine-internals/index.md#dimension-expression-phase).
+Read [Explain every rule](chapters/04-expression-rules-engine/index.md#explain-every-rule).
 
-### What is the DimensionCompiler and what does it produce?
+### What are the `__t_<dimension>` columns?
 
-`DimensionCompiler` translates dimension metadata into expression objects; it does not evaluate a rule table itself. Its dispatch targets produce the ternary operations used later by the engine. Some families share helpers, while `EXACT_KEY`, Boolean handling and the two regex strategies require distinct branches. Context values arrive through the column names those expressions reference.
+Observability columns holding each dimension's ternary outcome for each survivor. Set `include_observability=False` to drop them; rank and specificity remain.
 
-Read [DimensionCompiler](chapters/09-expression-engine-internals/index.md#dimensioncompiler).
+Read [Read the result](chapters/04-expression-rules-engine/index.md#read-the-result).
 
-### What is specificity scoring and how does ranking work?
+### How do `top_n`, `min_specificity` and `dimensions` work?
 
-Specificity is the number of active dimensions with outcome `1`. Default `COLLECT` ordering sorts descending by that score and then ascending by original rule position. Ranks are sequential positions, not shared dense ranks for equal specificity. Other policies change the ordering, so inspect the policy before interpreting rank as specificity.
+`min_specificity` keeps rows with at least that many hard matches; `top_n` then keeps at most that many rows; `dimensions` evaluates a subset of dimensions. `__rank` is assigned before filters and is not renumbered.
 
-Read [Specificity Scoring](chapters/04-expression-rules-engine/index.md#specificity-how-many-dimensions-matched).
+Read [Limit and project](chapters/04-expression-rules-engine/index.md#limit-and-project).
 
-### What is the RuleResult class and what accessors does it provide?
+### How do I build an engine from custom expressions?
 
-`RuleResult` wraps the returned survivor frame and exposes `survivors`, `best_match`, `count` and `active_dimensions`. `explain(rule_name)` reads one retained rule's ternaries; `at_least(n)` returns a filtered DataFrame; `select()` reapplies selection when the necessary information remains. It is not an unfiltered record of every rule that was evaluated.
+Pass `dimension_expressions` (a dictionary of ternary Mountainash expressions over `__ctx_<name>` columns) instead of metadata, and `output_fields` if you will use `any`.
 
-Read [RuleResult Class](chapters/04-expression-rules-engine/index.md#read-the-result-contract).
+Read [The expressions-only path](chapters/04-expression-rules-engine/index.md#the-expressions-only-path).
 
-### How does the explain method work and what does it show?
+### How are Boolean inputs read?
 
-`RuleResult.explain(rule_name)` looks up that name in the retained result and returns a dimension-to-ternary dictionary. It cannot explain a rule absent from that result, and it requires the ternary columns to remain available. Use engine-level `explain(context)` when diagnosing eliminated rules or comparing all rule outcomes.
+`BOOL` fields read real Booleans. `BooleanCoercion` flags widen the accepted original values; a value that is still not a Boolean is unknown, not an error.
 
-Read [RuleResult Explain Method](chapters/05-expression-results-and-policies/index.md#explain-a-decision-and-refine-the-result).
+Read [Boolean inputs](chapters/04-expression-rules-engine/index.md#boolean-inputs).
 
-### What is the difference between the convenience and advanced paths?
+## Hit policies
 
-The convenience constructor compiles `dimension_metadata`. The advanced constructor accepts an already-compiled `dimension_expressions` dictionary. Both require rules, and exactly one configuration path must be supplied. Advanced expressions must follow the context-column and ternary contracts. Without dimension metadata, `ANY` also requires explicit `output_fields` at construction.
+### What is a hit policy?
 
-Read [Convenience vs Advanced Path](chapters/04-expression-rules-engine/index.md#convenience-vs-advanced-construction).
+The rule for choosing among surviving rules: `collect`, `rule_order`, `first`, `priority`, `unique` or `any`. It, the `priority_field` and the `output_fields` are call-time arguments of `evaluate`, `evaluate_batch` and `RuleResult.select`.
 
-### How do the at_least, top_n, and min_specificity filters work?
+Read [The six policies](chapters/05-expression-results-and-policies/index.md#the-six-policies).
 
-`result.at_least(n)` returns a native frame containing retained rows with specificity at least n; it leaves the original result unchanged. `top_n` and `min_specificity` are evaluation arguments applied after ranking. They can leave gaps in retained ranks, and their result is conservatively marked incomplete for later `select()` calls.
+### What does `HitPolicyViolationError` mean?
 
-Read [At Least Filter](chapters/05-expression-results-and-policies/index.md#at_least-filtering-the-returned-survivors).
+`unique` found more than one survivor, or `any` found survivors that disagree on `output_fields`. `error.offending` holds the survivors (single) or a `__context_id`/`__n` summary (batch).
 
-### What are the observability columns and how can I use them?
+Read [Violations](chapters/05-expression-results-and-policies/index.md#violations).
 
-The per-dimension `__t_<name>` columns carry matching outcomes; `__specificity` and `__rank` describe scoring and ordering. They are useful for inspection but belong to the engine's reserved namespace. `include_observability=False` removes per-dimension ternaries from ordinary results, so code that calls per-rule `explain()` must retain them.
+### Why can `select` refuse a result?
 
-Read [Observability Columns](chapters/04-expression-rules-engine/index.md#observability-columns).
+A result that was limited (`top_n`, `min_specificity`) or reduced to one row (`first`, `priority`, `any`) may be missing rows, so re-selection would be wrong. Re-evaluate with the complete candidate set.
 
-### What is the engine-level explain() method, and how is it different from RuleResult.explain()?
+Read [Re-select a result](chapters/05-expression-results-and-policies/index.md#re-select-a-result).
 
-`engine.explain(context)` scores every rule without survivor filtering, sorting, rank assignment or hit-policy selection. It returns `ExplainResult`, not `RuleResult`. In contrast, `result.explain(rule_name)` reads one rule from an already-selected survivor result. Choose the former to understand rejection and the latter to inspect a retained match.
+### How does `any` choose its output columns?
 
-Read [Engine-Level Explain](chapters/05-expression-results-and-policies/index.md#engine-level-explain-scoring-every-rule).
+From `output_fields`, or, on a metadata-backed engine, every rule column that is not a dimension condition column, not `rule_name`, not the priority field and not internal. The expressions-only path requires explicit `output_fields`.
 
-### How can I inspect ExplainResult when diagnosing a rule table?
+Read [Output fields](chapters/05-expression-results-and-policies/index.md#output-fields).
 
-Use `ExplainResult.frame`, `survivors` and `non_survivors` to compare the per-dimension ternaries, `__survived` and `__specificity`. A rejected rule can still have positive specificity because another dimension matched. There is no rank or selected winner: this interface shows scoring before selection.
+## Batch evaluation
 
-Read [ExplainResult Class](chapters/05-expression-results-and-policies/index.md#the-explainresult-class).
+### What does `evaluate_batch` do?
 
-### How can separate consumers share one evaluation?
+Scores every context of a table against every rule in one pass and ranks per context, returning a `BatchRuleResult`.
 
-Keep one complete `COLLECT` result with its selection provenance and ranking columns, then let consumers call `select()` for their required policies. Keep observability columns as well if consumers need per-rule explanations. Limiting filters and the one-row policies `FIRST`, `PRIORITY` and `ANY` mark a result as possibly truncated. A complete `COLLECT` result containing just one survivor remains eligible for reselection.
+Read [Evaluate a table of requests](chapters/06-batch-evaluation/index.md#evaluate-a-table-of-requests).
 
-Read [RuleResult Select Method](chapters/05-expression-results-and-policies/index.md#reapplying-a-policy-with-ruleresultselect).
+### How are context ids handled?
 
-## Hit Policies
+`context_id_field` names the id column, which the engine does not check; without it, ids are zero-based row positions. Results always call the column `__context_id`.
 
-### What is a hit policy and why does it exist?
+Read [Context identity](chapters/06-batch-evaluation/index.md#context-identity).
 
-A hit policy defines what to do with the survivor set: how to order it, what assertions it must satisfy, and whether to keep all rows or one. It is applied after matching rather than changing a dimension's comparison. Choosing a policy makes assumptions such as uniqueness or output agreement explicit.
+### What does `chunk_size` change?
 
-Read [HitPolicy Enum](chapters/05-expression-results-and-policies/index.md#choose-and-reapply-a-hit-policy).
+Only the work per step: contexts are evaluated in slices to bound the cross join, and results are identical.
 
-### What are the six hit policies, and when should I use each?
+Read [Chunking](chapters/06-batch-evaluation/index.md#chunking).
 
-`COLLECT` retains specificity-ranked survivors. `UNIQUE` requires at most one. `FIRST` chooses the earliest declared survivor. `PRIORITY` orders by descending priority, then specificity and rule position, and chooses one. `ANY` requires output agreement before choosing one specificity-ranked row. `RULE_ORDER` retains all survivors in declaration order. All can return no rows when nothing survives.
+## DecisionTable
 
-Read [HitPolicy Enum](chapters/05-expression-results-and-policies/index.md#choose-and-reapply-a-hit-policy).
+### What are the five layers?
 
-### What does HitPolicyViolationError mean, and when is it raised?
+Prevalidation, construction, post-validation (deferred), application, and business post-aggregation. Each has its own input and output.
 
-`HitPolicyViolationError` reports a violated `UNIQUE` or `ANY` assertion. It carries the policy and an offending frame, which can be inspected rather than treated as a generic empty result. Assertions consider the full relevant survivor set before optional truncation; reducing `top_n` does not repair a contradictory policy.
+Read [The five layers of a DecisionTable](chapters/01-two-rule-engines/index.md#the-five-layers-of-a-decisiontable).
 
-Read [HitPolicyViolationError](chapters/05-expression-results-and-policies/index.md#hitpolicyviolationerror).
+### What does `prevalidate` check?
 
-### How do I configure a hit policy at the table level versus per call?
+Declared columns and types, UUID and scope identity, null cells, contributions, strategy and type pairings, and duplicate or conflicting rules. It collects every breach and raises `DataContractError`, or returns `ValidatedRules`; unsatisfiable rules are warnings.
 
-Store the library's default `hit_policy`, `priority_field` and `output_fields` in `DimensionsMetadata`. Evaluation can override the policy and priority field for one call. `PRIORITY` needs a priority field, and `ANY` needs meaningful output-field selection. Explicit output fields are preferable when inference would accidentally include auxiliary columns.
+Read [Layer 1: prevalidation](chapters/07-decision-table-construction/index.md#layer-1-prevalidation).
 
-Read [Table-Level Hit Policy Fields](chapters/05-expression-results-and-policies/index.md#table-level-hit-policy-fields).
+### What is an entry?
 
-### Why can re-selection not recover discarded survivors?
+One covered cell of a scope: its cell columns, an `entry_id`, an `entry_sources_id` and the folded outputs.
 
-`select()` uses only the rows already retained and requires selection provenance and ranking columns. Results from `FIRST`, `PRIORITY`, `ANY`, `top_n` or `min_specificity` are conservatively marked possibly truncated and reject reselection, even if no row happened to be lost. Keep a complete `COLLECT`, `UNIQUE` or `RULE_ORDER` result when another policy will be needed.
+Read [What an entry is](chapters/07-decision-table-construction/index.md#what-an-entry-is).
 
-Read [RuleResult Select Method](chapters/05-expression-results-and-policies/index.md#reapplying-a-policy-with-ruleresultselect).
+### How are contributions folded?
 
-### How do ordering, assertions, and cardinality interact in a hit policy?
+Each rule contributes once to every cell it covers; the output of the cell is the `SUM` (default), `MIN` or `MAX` of the contributions, as declared by the `Aggregate`.
 
-Ordering establishes deterministic positions, assertions validate the full survivor population, and optional filters/cardinality determine what is returned. These stages must not be rearranged casually: asserting uniqueness after taking one row would conceal ambiguity. The batch path performs the corresponding checks per context with its own grouped implementation.
+Read [Folding](chapters/07-decision-table-construction/index.md#folding).
 
-Read [Cardinality Application](chapters/09-expression-engine-internals/index.md#cardinality-application).
+### How do I find which rules built an entry?
 
-## Batch Evaluation
+Join `table.entry_sources` on `(scope, entry_sources_id)`; it lists the `source_uuid` of every contributing rule.
 
-### What does evaluate_batch() do, and when should I use it instead of evaluate()?
+Read [Provenance: entry_sources](chapters/07-decision-table-construction/index.md#provenance-entry_sources).
 
-`evaluate_batch()` evaluates a contexts frame against the same rules and returns a `BatchRuleResult`. It prepares context columns, pairs contexts with rules, and ranks/selects survivors per context. Use it for frame-based workloads, but account for the context-by-rule intermediate relation and documented dtype/strategy boundaries instead of assuming it is always faster than a loop.
+### What does `match` return?
 
-Read [Evaluate Batch Method](chapters/06-batch-evaluation/index.md#evaluate-a-table-of-requests).
+`MatchResult(matches)`: one record per matching entry per request, with `request_id`, `scope`, `entry_id`, `entry_sources_id`, `specificity`, the condition columns and the outputs. It does not fold, rank-filter or choose among entries.
 
-### How is BatchRuleResult different from RuleResult?
+Read [Layer 4: match](chapters/08-applying-decision-tables/index.md#layer-4-match).
 
-`BatchRuleResult` contains rows from several contexts. Its `count` counts returned rows, not successful contexts; `best_matches`, `counts_per_context` and the matched/unmatched ID accessors expose per-context information. `for_context(id)` returns an ordinary `RuleResult` over one context's retained rows. Context identity remains explicit throughout.
+### Does `match` validate contexts?
 
-Read [BatchRuleResult Class](chapters/06-batch-evaluation/index.md#read-the-result-as-a-batch).
+No. Run `check_context_schema` and `validate_contexts` first; a context null is unknown and is not rejected.
 
-### How does evaluate_batch() rank rules independently for each context without window functions?
+Read [Context validation](chapters/08-applying-decision-tables/index.md#context-validation).
 
-The implementation sorts by context ID and policy keys, assigns a global row index, computes each context group's minimum index, joins those group bases back, and subtracts the base to obtain a 1-based per-context rank. It does not create one Python result frame per context or require a backend window function for that calculation.
+### How do I choose among several matching entries?
 
-Read [Per-Context Ranking](chapters/06-batch-evaluation/index.md#rank-matches-within-each-request).
+That is layer 5: your own code, for your domain. The quickstart and Chapter 8 show picking the highest-specificity entry per scope and adding three outputs; it is an example, not behaviour of the package.
 
-### What is chunked batch evaluation for, and does it change results?
+Read [Layer 5: business post-aggregation](chapters/08-applying-decision-tables/index.md#layer-5-business-post-aggregation).
 
-`chunk_size` limits how many prepared contexts enter each cross join. The complete projection is prepared first, and successful chunk results are concatenated. Chunking does not reduce the total matching work or promise a speedup. The chapter demonstrates whole/chunked equality for its workload and aggregation of policy violations across chunks; dtype and selection boundaries still apply.
+### How do I save and load a table?
 
-Read [Chunked Batch Evaluation](chapters/06-batch-evaluation/index.md#work-in-smaller-chunks).
+`table.save(path)`, `DecisionTable.load(path, connection=None)` and the optional `verify_saved_table(path)`. A saved table is eight Parquet files and a manifest written last.
 
-### How are batch contexts prepared and conformed to the rules backend?
+Read [Persistence](chapters/08-applying-decision-tables/index.md#persistence).
 
-Preparation resolves context fields, generates or validates non-null unique context IDs, fills typed missing values and projects needed columns. Boolean absence remains null in both scalar and batch paths. Identity validation covers the complete input before chunking. The prepared contexts relation is then conformed to the rules backend before joining.
+### Why does a context table get copied but the entries do not?
 
-Read [Batch Context Preparation](chapters/06-batch-evaluation/index.md#keep-each-context-identifiable).
+Every join states `execute_on` on the entries' side, so a small context relation is copied to the entries' backend and the entries never leave it.
 
-### How do hit policies and filters apply in a batch?
+Read [How it executes](chapters/08-applying-decision-tables/index.md#how-it-executes).
 
-Ordering, policy assertions and returned cardinality are per context. `min_specificity` removes weak rows, and `top_n_per_context` limits preassigned rank positions rather than renumbering survivors after filtering. A `UNIQUE` or `ANY` violation is checked before those limits can hide it. Read the batch contract rather than assuming every scalar filter combination is interchangeable.
+## Maintenance
 
-Read [Per-Context Ranking](chapters/06-batch-evaluation/index.md#rank-matches-within-each-request).
+### What may change where when I add a strategy?
 
-## Exact Accumulator and Lattice
+The enum and validation, the engine's compiler arm, a strategy class for prevalidation and construction, and tests on both backends.
 
-### What problem does the AccumulatorEngine solve that the ExpressionRulesEngine cannot?
+Read [What changes where](chapters/11-extending-and-maintaining/index.md#what-changes-where).
 
-The accumulator turns source-validated rule rows into an immutable exact artifact. It resolves a normalized context under a declared contract and profile, producing a typed outcome, selected cell identity, outputs, and contributor UUIDs where they are definite. Filtering individual rules does not create that artifact or its evidence.
+### Which Mountainash workarounds remain?
 
-Read [Inside the Exact Accumulator](chapters/10-accumulator-engine-internals/index.md#the-bounded-lifecycle).
+#366 (integer division on DuckDB), #367 (multi-column explode) and #368 (null ordering in windows). `duckdb` is pinned `<2.0` for #363.
 
-### What is required before building a lattice?
-
-First run `analyze_sources(...)` to obtain source diagnostics for the current material. Review actual warnings, attach only explicit scoped `WarningApproval` records, then call `validate_build_input(...)`. Its returned `ValidatedBuildInput` is the required `validation=` argument to `build()` and `build_all()`. A source report alone is not build permission.
-
-Read [Source analysis is separate from compilation](chapters/10-accumulator-engine-internals/index.md#source-analysis-is-separate-from-compilation).
-
-### What does lattice construction produce?
-
-Construction normalizes admitted sources into predicates, discovers declared scopes, and compiles nonempty, disjoint exact cells. Each cell has `cell_id`, `predicate_id`, and `contributor_set_id`; contributor relations use source UUIDs. The inspection relation returned by `lattice.combinations` contains cells and declared outputs, not source-rule combinations, ranks, or arithmetic identities.
-
-Read [Normalized predicates and disjoint cells](chapters/10-accumulator-engine-internals/index.md#normalized-predicates-and-disjoint-cells).
-
-### How are contributors represented?
-
-`lattice.contributors` relates contributor-set IDs to source UUIDs. `lattice.lineage(cell_id)` exposes the declared outputs and contributors for one exact cell. Runtime candidate inspection remains separate from definite lineage: possible contributors do not become a final result merely because a cell was considered.
-
-Read [Normalized predicates and disjoint cells](chapters/10-accumulator-engine-internals/index.md#normalized-predicates-and-disjoint-cells).
-
-### Why does the accumulator use scoped 63-bit words?
-
-The compiled layout represents source membership as dense 63-bit words within a scope-local source map. The words bound narrow native state and permit membership operations without treating source order as provenance. `ExactLimits` bounds scopes, source-scope edges, contributor edges, and word rows; an exhausted bound raises `ExactResourceError`.
-
-Read [Scoped narrow state](chapters/10-accumulator-engine-internals/index.md#scoped-narrow-state).
-
-### How are aggregate outputs defined?
-
-An exact `Aggregate` names the source column, a namespaced output, declared data type, and `numeric_semantics="numeric-1"` together. The implemented operations are `sum`, `min`, `max`, and `product`; sum and product require numeric declarations. Folds are exact-native and bounded by `max_numeric_bits`, rather than being backend aggregate columns.
-
-Read [Numeric-1 output folds](chapters/10-accumulator-engine-internals/index.md#numeric-1-output-folds).
-
-### How is an exact lattice applied?
-
-`engine.apply(lattice, context, *, contract_id, profile_id, dont_care=None)` requires the named contract and profile identifiers. It checks the exact artifact against the engine, admits the context under the selected binding, and returns `AccumulatorResult`. Invalid and unresolved contexts retain typed outcomes and are re-raised by `raise_for_status()`; they are not default matches.
-
-Read [Contract-bound resolution](chapters/10-accumulator-engine-internals/index.md#contract-bound-resolution).
-
-### How do partitions route?
-
-Use `engine.index(lattices)` for reusable routing or `apply_auto(...)` for one call. Both operate on coherent exact lattices and require `contract_id` and `profile_id` to resolve. No matching route raises `KeyError`; an admissible best-specificity tie raises `AmbiguousPartitionError`.
-
-Read [Contract-bound resolution](chapters/10-accumulator-engine-internals/index.md#contract-bound-resolution).
-
-### What do save, load, and with_binding require?
-
-`lattice.save(directory, limits=limits)`, `Lattice.load(directory, limits=limits)`, and `lattice.with_binding(binding, evidence=evidence, limits=limits)` each require explicit `ExactLimits`. Load validates and restores typed native state and semantic evidence before returning an executable artifact. A flat or legacy lattice remains inspection-only and cannot be promoted to application by loading it.
-
-Read [Persistence and native restoration](chapters/10-accumulator-engine-internals/index.md#persistence-and-native-restoration).
-
-### What can AccumulatorResult inspect?
-
-An accumulator result exposes its typed outcome, status, reason, binding/contract/profile IDs, decoded values, selected `cell_id`, definite contributor UUIDs, observations, and issues. Candidate cells and contributors are inspection data only. It does not expose filter-style survivor ranks or rule-result selection.
-
-Read [Contract-bound resolution](chapters/10-accumulator-engine-internals/index.md#contract-bound-resolution).
-
-## Practical Usage and Best Practices
-
-### How do I define a simple rule evaluation with ExpressionRulesEngine?
-
-Create a rules DataFrame and `DimensionsMetadata`, construct the engine through the metadata path, and pass a context to `evaluate()`. The worked chapter follows a discount library through survival, specificity, tie-breaking, result accessors and a no-match case.
-
-Read [ExpressionRulesEngine](chapters/04-expression-rules-engine/index.md#construct-an-engine-and-evaluate-a-context).
-
-### How do I set up the AccumulatorEngine for a benefits accumulation problem?
-
-Declare supported constraint strategies and the payload columns to aggregate, build the lattice, then apply a context. Read the accumulated columns as values belonging to each matching combination. The worked service-task example shows a broad baseline alongside regional combinations and demonstrates all four aggregate operations.
-
-Read [AccumulatorEngine](chapters/07-accumulator-engine/index.md#accumulatorengine).
-
-### How should I choose between EXACT, RANGE, and other match strategies for a dimension?
-
-Choose the predicate your data actually expresses: equality/inequality, an ordered interval or threshold, a string pattern, or membership in a list. Then check its allowed types, field layout and sentinel behavior. If the library will also feed the accumulator, choose from its supported subset or explicitly separate filter-only behavior.
-
-Read [Match Strategy Patterns](chapters/02-shared-rule-model/index.md#rules-are-rows-comparisons-are-match-strategies).
-
-### How do I make rules explainable for audit or compliance purposes?
-
-Retain the rule library version, input context, selected policy and relevant result data in your application's own audit design. Use per-rule explanation for retained matches and engine-level explanation to diagnose all rules. The library supplies observability; it does not itself establish regulatory compliance or preserve your application's historical inputs.
-
-Read [Engine-Level Explain](chapters/05-expression-results-and-policies/index.md#engine-level-explain-scoring-every-rule).
-
-### What are common pitfalls when designing rule tables?
-
-Common mistakes include confusing rule and context field names, using reserved values as legitimate data, assuming a missing context always means unknown, treating every null as a wildcard, assuming filter strategies automatically compile to exact cells, and leaving `ANY` output fields ambiguous. Validate metadata, inspect a small representative table and exercise the actual strategy/backend combinations you depend on.
-
-Read [Dimension Validator](chapters/02-shared-rule-model/index.md#the-dimension-validator).
-
-### How do I keep source rules semantically separate in the AccumulatorEngine?
-
-Express the separation in the normalized predicate, declared domain, routing partition, or validation policy. The exact compiler has no undocumented exclusion based on sentinel values, source order, or aggregate payload. Source diagnostics and compiled-cell proofs must continue to reflect the declared meaning.
-
-Read [Source gate before compilation](chapters/11-extending-and-maintaining/index.md#source-gate-before-compilation).
-
-### How do I evaluate many contexts against the same rule table efficiently?
-
-Reuse the constructed filter engine and consider `evaluate_batch()` for frame-based contexts. Choose chunk size from the size of the intermediate relation and the output you retain, not a universal benchmark. For exact-accumulator workflows, retain a built or strictly restored lattice and resolve contexts against its declared bindings rather than rebuilding it per request.
-
-Read [Evaluate Batch Method](chapters/06-batch-evaluation/index.md#evaluate-a-table-of-requests).
-
-### Can I use both engines together in a single evaluation pipeline?
-
-Yes, when the application has distinct decisions that justify both. Keep the handoff explicit: a filter result is a selected rule-row view, while an accumulator result is a contract-bound exact outcome. The accumulator does not execute application through a reused filter-engine result path.
-
-Read [Contract-bound resolution](chapters/10-accumulator-engine-internals/index.md#contract-bound-resolution).
-
-### What should I know about performance and scalability?
-
-Measure the workload you intend to run. Filter work depends on rules, dimensions, contexts, strategies and backend behavior. Exact-accumulator work depends on source size, predicate and domain complexity, scoped layout, proof work, output folds, and context resolution. Its explicit limits are hard resource boundaries, not performance promises.
-
-Read [The bounded lifecycle](chapters/10-accumulator-engine-internals/index.md#the-bounded-lifecycle).
-
-### How does mountainash-rules handle null values in rule table columns?
-
-Null handling is typed and strategy-specific. Boolean exact matching uses null as unknown; scalar sentinel-aware comparisons use their declared reserved values; set normalization can turn a whole-cell null into the canonical wildcard list. Null list elements and reserved sentinels inside ordinary sets have their own validation rules. Do not normalize every column with one blanket replacement.
-
-Read [Set Value Normalization](chapters/03-matching-concepts/index.md#set-value-normalization).
-
-### How do I validate that my DimensionsMetadata and rule table are consistent?
-
-Validate the metadata model, then separately check that every required rule field exists with the intended dtype and sentinel representation. `RANGE` requires its two bound columns rather than treating `resolved_rule_field` as a data column. Check reserved engine names and run a representative evaluation. Pydantic configuration success is not proof that the table satisfies the business contract.
-
-Read [Dimension Validator](chapters/02-shared-rule-model/index.md#the-dimension-validator).
-
-## Input boundaries and extension work
-
-### Does a missing context always produce UNKNOWN?
-
-No. A missing context normally produces unknown for equality, range, threshold, row-based string and set comparisons. `EXACT_KEY` rejects it against a concrete rule key but permits a rule wildcard; `CONTEXT_REGEX` rejects it for every rule. Required-field validation remains an application decision.
-
-Read [Ternary Logic](chapters/03-matching-concepts/index.md#ternary-logic-match-unknown-and-non-match).
-
-### How are missing Boolean values handled in scalar and batch evaluation? {#why-do-missing-boolean-batch-inputs-differ-from-scalar-evaluation}
-
-Both paths preserve Boolean absence as null. For Boolean `EXACT` and `NOT_EQUAL`, a null context produces unknown against both concrete rule values. `EXACT_KEY` rejects a null context against a concrete rule, while a null rule remains a wildcard. Missing input is distinct from the concrete value `False`.
-
-Read [Bool Ternary Comparison](chapters/03-matching-concepts/index.md#bool-ternary-comparison).
-
-### What must change when I add a filter strategy?
-
-Add its enum value, configuration validation and compiler dispatch, then prove the ternary behavior on the backends you support. A strategy using several rule columns also needs those columns classified correctly for inferred ANY output fields. Preserve scalar and batch observable behavior; a filter-only change does not need an exact-accumulator path.
-
-Read [Shared filter-engine maintenance](chapters/11-extending-and-maintaining/index.md#shared-filter-engine-maintenance).
-
-### Must every filter strategy also support the accumulator?
-
-No. A filter predicate can be complete without being part of exact accumulator compilation. Accumulator support requires a normalized source representation, predicate/domain meaning, source diagnostics, disjoint-cell proof, bounded layout, strict restoration, and contract-bound resolution. Unsupported strategies must fail explicitly rather than silently selecting a different interpretation.
-
-Read [The exact accumulator change map](chapters/11-extending-and-maintaining/index.md#the-exact-accumulator-change-map).
-
-### What makes a valid aggregate extension?
-
-Define the exact input domain, complete native declaration, `numeric-1` fold, deterministic numeric behavior, output storage, lineage, resource reservations, snapshot restoration, and runtime decoding. A running average needs a data-model design with its own state; it is not a substitute for one of the current folds.
-
-Read [Numeric-1 aggregate maintenance](chapters/11-extending-and-maintaining/index.md#numeric-1-aggregate-maintenance).
-
-### Where must a new hit policy be implemented?
-
-Update the enum and the relevant shared ordering, assertion and cardinality logic. Also update the batch path: it shares ordering but implements per-context assertions and truncation separately. Add companion metadata validation if needed and preserve the deterministic final rule-index tie-break. A scalar-only change does not complete the batch contract.
-
-Read [Shared filter-engine maintenance](chapters/11-extending-and-maintaining/index.md#shared-filter-engine-maintenance).
-
-### What does the public/native boundary require?
-
-Applications import supported types and functions from `mountainash_rules`. Private predicate, layout, persistence, codec, and native-bridge modules can change as the exact lifecycle evolves. A private import or a passing narrow implementation check does not prove portability or an end-to-end artifact lifecycle.
-
-Read [Keep the public boundary small](chapters/11-extending-and-maintaining/index.md#keep-the-public-boundary-small).
-
-### Can older code read newly serialized values?
-
-Not necessarily. New serialized exact artifacts include canonical evidence, typed native relations, identifiers, declarations, and bindings; older code can reject a value or record it does not understand. Renaming or removing an established serialized value is a compatibility change. Review save/load/restore behavior in both directions rather than relying on serialization alone.
-
-Read [Strict native restoration](chapters/11-extending-and-maintaining/index.md#strict-native-restoration).
+Read [Known upstream workarounds](chapters/11-extending-and-maintaining/index.md#known-upstream-workarounds).

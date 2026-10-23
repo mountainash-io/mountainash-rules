@@ -18,6 +18,7 @@ from mountainash_rules.core.hit_policy import (
     normalize_policy,
     ordering_keys,
     selection_is_truncated,
+    validate_output_fields,
     validate_priority_field,
 )
 
@@ -47,7 +48,10 @@ class RuleResult:
         self._selection_info = selection_info
 
     def select(
-        self, policy: HitPolicy | str, priority_field: str | None = None
+        self,
+        policy: HitPolicy | str,
+        priority_field: str | None = None,
+        output_fields: list[str] | None = None,
     ) -> "RuleResult":
         """Re-apply a policy only when the full candidate basis is retained."""
         selected_policy: HitPolicy = normalize_policy(policy)
@@ -68,8 +72,18 @@ class RuleResult:
             if required not in rel.columns:
                 raise ValueError(f"select() requires the {required} column")
         pf = priority_field if priority_field is not None else info.priority_field
-        # replace preserves the concrete dataclass type, which Sonar cannot infer.
-        selected_info = t.cast(SelectionInfo, replace(info, priority_field=pf))
+        if output_fields is not None:
+            validate_output_fields(output_fields, rel.columns)
+        selected_info = t.cast(
+            SelectionInfo,
+            replace(
+                info,
+                priority_field=pf,
+                output_fields=tuple(output_fields)
+                if output_fields is not None
+                else info.output_fields,
+            ),
+        )
         check_policy_config(rel.columns, selected_policy, selected_info)
         check_priority(rel, selected_policy, selected_info)
         keys = ordering_keys(selected_policy, pf)

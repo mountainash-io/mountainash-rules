@@ -2,11 +2,8 @@
 
 from __future__ import annotations
 
-import math
 import typing as t
 from itertools import product
-from dataclasses import dataclass
-from types import MappingProxyType
 
 from pydantic import BaseModel
 
@@ -19,6 +16,7 @@ from mountainash import (
     text_value,
     value_kind,
 )
+from mountainash.core.dtypes import TimestampDtype
 from mountainash.expressions import BaseExpressionAPI
 
 from mountainash_rules.core.constants import BooleanCoercion, DataType
@@ -26,15 +24,9 @@ from mountainash_rules.core.numeric import (
     decimal_operand,
     exact_literal,
     literal_dtype,
-    reject_invalid,
 )
 
 if t.TYPE_CHECKING:
-    from mountainash_rules.core.contracts import (
-        ContextContract,
-        Issue,
-        ResolutionProfile,
-    )
     from mountainash_rules.core.dimension import Dimension, DimensionsMetadata
 
 _CONTEXT_FLOAT_DTYPES = frozenset({MountainashDtype.FP32, MountainashDtype.FP64})
@@ -47,6 +39,7 @@ def context_absence_expression(
     absent = (
         raw.is_null()
         if source_dtype in (MountainashDtype.DATE, MountainashDtype.TIMESTAMP)
+        or isinstance(source_dtype, TimestampDtype)
         else raw.value_kind().eq(ValueKind.ABSENT.value)
     )
     if (
@@ -111,41 +104,6 @@ def _normalize_boolean(
     )
 
 
-def _validate_context_ids(rel: t.Any, context_id_field: str) -> None:
-    """Reject missing, null or duplicate caller IDs before conversion/chunking.
-
-    Aggregate row, non-null and distinct counts together; never collect the
-    full input merely to validate identity. A single null is invalid even
-    when uniqueness would otherwise allow it.
-    """
-    if not isinstance(context_id_field, str) or not context_id_field:
-        raise ValueError("context_id_field must be a nonempty string or None")
-    if context_id_field not in rel.columns:
-        raise ValueError(f"context_id_field {context_id_field!r} not found in contexts")
-    stats = (
-        rel.group_by()
-        .agg(
-            ma.count_records().alias("__total"),
-            ma.col(context_id_field).count().alias("__non_null"),
-            ma.col(context_id_field).n_unique().alias("__distinct"),
-        )
-        .to_dict()
-    )
-    total = stats["__total"][0]
-    non_null = stats["__non_null"][0]
-    distinct = stats["__distinct"][0]
-    if non_null != total:
-        raise ValueError(
-            f"context_id_field {context_id_field!r} must be non-null "
-            f"({total - non_null} null value(s) found among {total} rows)"
-        )
-    if distinct != total:
-        raise ValueError(
-            f"context_id_field {context_id_field!r} must be globally unique "
-            f"({total} rows, {distinct} distinct value(s))"
-        )
-
-
 def extract_context_values(
     context: BaseModel | dict,
     dimension_names: list[str],
@@ -184,13 +142,15 @@ def context_binding_expressions(
     """Build reusable native payload/presence/provenance and invalid admission."""
     from mountainash_rules.core.compiler import scalar_operand, typed_marker_predicate
 
-    marker = supplied & typed_marker_predicate(raw, source_dtype, dim.wildcard_values)
+    markers = [dim.field.wildcard] if dim.field.wildcard_declared else []
+    marker = supplied & typed_marker_predicate(raw, source_dtype, markers)
     absent = (
         context_absence_expression(raw, source_dtype, dim.data_type)
         if strict_concrete
         else (
             raw.is_null()
             if source_dtype in (MountainashDtype.DATE, MountainashDtype.TIMESTAMP)
+            or isinstance(source_dtype, TimestampDtype)
             else raw.value_kind().eq(ValueKind.ABSENT.value)
         )
     )
@@ -199,7 +159,7 @@ def context_binding_expressions(
     if dim.data_type is DataType.DECIMAL:
         assert dim.rounding is not None
         operand = decimal_operand(
-            raw, source_dtype, dim.numeric_dtype, dim.rounding, inactive=~present
+            raw, source_dtype, dim.decimal_dtype, dim.rounding, inactive=~present
         )
         payload, invalid = operand.value, operand.invalid
     elif dim.data_type is DataType.BOOL:
@@ -231,6 +191,8 @@ def context_binding_expressions(
             .otherwise(raw)
             .cast(dim.data_type.python_type)
         )
+    if dim.data_type is DataType.DATETIME:
+        payload = payload.dt.truncate(f"1{dim.field.datetime_unit}")
     origin = (
         ma.when(~supplied)
         .then("omitted")
@@ -249,6 +211,7 @@ def context_binding_expressions(
         payload.alias(f"__ctx_value_{name}"),
         (present & ~invalid).alias(f"__ctx_present_{name}"),
         supplied.alias(f"__ctx_supplied_{name}"),
+        (supplied & raw.is_null()).fill_null(False).alias(f"__ctx_null_{name}"),
         origin.alias(f"__ctx_origin_{name}"),
     ], invalid
 
@@ -285,6 +248,7 @@ def bind_context_columns(
     boolean_coercion: BooleanCoercion = BooleanCoercion.NONE,
 ) -> t.Any:
     """Filter admission convenience around reusable context binding expressions."""
+    schema = rel.schema if values is None else {}
     columns = []
     invalid = {}
     for dim in dimensions:
@@ -292,7 +256,7 @@ def bind_context_columns(
             field = dim.resolved_context_field
             supplied = field in rel.columns
             raw = ma.col(field) if supplied else ma.lit(None)
-            dtype = rel.schema.get(field)
+            dtype = schema.get(field)
         else:
             supplied = dim.dimension_name in values
             value = values.get(dim.dimension_name)
@@ -303,183 +267,10 @@ def bind_context_columns(
             else:
                 raw, dtype = exact_literal(value), literal_dtype(value)
         bindings, failure = context_binding_expressions(
-            dim,
-            raw,
-            dtype,
-            ma.lit(supplied),
-            boolean_coercion,
+            dim, raw, dtype, ma.lit(supplied), boolean_coercion
         )
         columns.extend(bindings)
         invalid[dim.resolved_context_field + ":" + dim.dimension_name] = failure
-    admission = (
-        rel
-        if values is None
-        else rel.group_by().agg(ma.count_records().alias("__context_anchor"))
-    )
-    reject_invalid(admission, invalid)
     return rel.with_columns(*columns)
 
 
-@dataclass(frozen=True, slots=True)
-class ClassifiedContext:
-    """Supplied facts remain separate from observations retained by a profile.
-
-    This boundary classifies availability and types only. Joint-domain, guard
-    and routing admission must still run before effective facts are reasoned on.
-    """
-
-    provided_values: t.Mapping[str, t.Any]
-    effective_values: t.Mapping[str, t.Any]
-    observations: t.Mapping[str, str]
-    issues: tuple[Issue, ...]
-
-
-def classify_exact_context(
-    context: BaseModel | t.Mapping[str, t.Any],
-    metadata: DimensionsMetadata,
-    contract: ContextContract,
-    profile: ResolutionProfile,
-    *,
-    dont_care: t.Sequence[str] = (),
-) -> ClassifiedContext:
-    """Classify original values before masking, casting or sentinel filling."""
-    from mountainash_rules.core.constants import (
-        DimensionRole,
-        MatchStrategy,
-        unknown_sentinel_for,
-        not_set_sentinel_for,
-    )
-    from mountainash_rules.core.contracts import Issue
-    from mountainash_rules.core.scalar import normalize_scalar
-
-    raw: t.Mapping[str, t.Any]
-    if isinstance(context, BaseModel):
-        raw = {name: getattr(context, name) for name in context.model_fields_set}
-    elif isinstance(context, t.Mapping):
-        raw = context
-    else:
-        raise ValueError("Context must be a mapping or Pydantic model")
-    issues = []
-    masks: set[str]
-    if isinstance(dont_care, (str, bytes)) or not isinstance(dont_care, t.Sequence):
-        issues.append(
-            Issue(
-                field="dont_care",
-                dimension=None,
-                code="invalid_type",
-                message="dont_care must be a sequence of dimension names",
-            )
-        )
-        masks = set()
-    elif any(type(name) is not str for name in dont_care) or len(set(dont_care)) != len(
-        dont_care
-    ):
-        issues.append(
-            Issue(
-                field="dont_care",
-                dimension=None,
-                code="invalid_type",
-                message="dont_care requires unique dimension names",
-            )
-        )
-        masks = set()
-    else:
-        masks = set(dont_care)
-    provided = {}
-    states = {}
-    aliases: dict[str, list[Dimension]] = {}
-    for dim in metadata.dimensions:
-        aliases.setdefault(dim.resolved_context_field, []).append(dim)
-    allowed = set(profile.allow_dont_care)
-    selected = set(profile.dimensions)
-
-    def issue(field, dimension, code, message):
-        issues.append(
-            Issue(field=field, dimension=dimension, code=code, message=message)
-        )
-
-    for name in sorted(masks - allowed):
-        masked_dimension = next((d for d in metadata.dimensions if d.dimension_name == name), None)
-        issue(
-            masked_dimension.resolved_context_field if masked_dimension else None,
-            name,
-            "forbidden_projection",
-            "Mask is not permitted by the profile",
-        )
-    for field in contract.fields:
-        name = field.name
-        if name not in raw:
-            states[name] = "omitted"
-        elif raw[name] is None:
-            states[name] = "null"
-        elif value_kind(raw[name]) is ValueKind.ABSENT or (
-            field.data_type in (DataType.INT, DataType.FLOAT)
-            and value_kind(raw[name]) is ValueKind.FLOAT
-            and math.isnan(raw[name])
-        ):
-            states[name] = "native_missing"
-        else:
-            try:
-                value = normalize_scalar(
-                    raw[name],
-                    field.data_type,
-                    timezone=field.timezone,
-                    context=True,
-                    allow_reserved=True,
-                )
-            except ValueError as exc:
-                states[name] = "invalid"
-                issue(name, None, "invalid_type", str(exc))
-                continue
-            marker_value = (
-                value.replace(tzinfo=None)
-                if field.data_type is DataType.DATETIME
-                else value
-            )
-            if (
-                field.data_type is not DataType.BOOL
-                and marker_value == not_set_sentinel_for(field.data_type)
-            ):
-                states[name] = "not_set"
-            elif (
-                field.data_type is not DataType.BOOL
-                and marker_value == unknown_sentinel_for(field.data_type)
-            ):
-                states[name] = "dont_care"
-                for dim in aliases.get(name, ()):
-                    masks.add(dim.dimension_name)
-                    if dim.dimension_name not in allowed:
-                        issue(
-                            name,
-                            dim.dimension_name,
-                            "forbidden_projection",
-                            "UNKNOWN masks every alias and requires permission",
-                        )
-            else:
-                states[name] = "concrete"
-                provided[name] = value
-        if field.required and states[name] != "concrete":
-            issue(
-                name,
-                None,
-                "missing_required",
-                "Required field needs a concrete supplied value",
-            )
-    effective = {}
-    for name, value in provided.items():
-        for dim in aliases.get(name, ()):
-            mandatory = (
-                dim.role is DimensionRole.CONTEXT_KEY
-                or dim.match_strategy is MatchStrategy.CONTEXT_REGEX
-            )
-            if mandatory or (
-                dim.dimension_name in selected and dim.dimension_name not in masks
-            ):
-                effective[name] = value
-                break
-    return ClassifiedContext(
-        MappingProxyType(provided),
-        MappingProxyType(effective),
-        MappingProxyType(states),
-        tuple(issues),
-    )

@@ -314,96 +314,37 @@ jobs:
         run: echo "SHA=$(git rev-parse HEAD)" >> $GITHUB_OUTPUT
 
   # ============================================================
-  # Build the compiled native wheel for every supported
-  # CPython/PyPy version on every supported OS/arch. Never
-  # produces (or falls back to) a pure "-none-any" wheel: the
-  # extension is a hard requirement of every artifact built here.
+  # Build a pure-Python wheel for the release.
   build-wheels:
     needs: configure-release
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        # Native runners avoid cross-architecture tagging/linker assumptions.
-        os: [ubuntu-24.04, ubuntu-24.04-arm, macos-14, macos-15-intel, windows-2022]
-
+    runs-on: ubuntu-24.04
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
         with:
           ref: ${{ needs.configure-release.outputs.resolved_sha }}
           fetch-depth: 0
-
-      - name: Stamp Prerelease Version
-        if: needs.configure-release.outputs.version_suffix != ''
-        shell: bash
-        run: |
-          cp src/${{ env.PACKAGE_SRCDIR }}/__version__.py src/${{ env.PACKAGE_SRCDIR }}/__version__.py.bak
-          echo "__version__ = '${{ needs.configure-release.outputs.version }}'" > src/${{ env.PACKAGE_SRCDIR }}/__version__.py
-
-      - name: Set up Rust for native host builds
-        if: runner.os != 'Linux'
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Build native wheels
-        uses: pypa/cibuildwheel@v4.2.1
-
-      - name: Restore Original Version
-        if: needs.configure-release.outputs.version_suffix != ''
-        shell: bash
-        run: mv src/${{ env.PACKAGE_SRCDIR }}/__version__.py.bak src/${{ env.PACKAGE_SRCDIR }}/__version__.py
-
-      - name: Upload wheel artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: wheels-${{ matrix.os }}
-          path: wheelhouse/*.whl
-          if-no-files-found: error
-
-  # ============================================================
-  # Execute the installed native component without DataFrame dependencies.
-  # The regular pytest job separately exercises the package-root API with
-  # the actual Mountainash dependency graph installed.
-  smoke-test-wheels:
-    needs: [configure-release, build-wheels]
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-24.04, ubuntu-24.04-arm, macos-14, macos-15-intel, windows-2022]
-        python-version: ["3.10", "3.11", "3.12", "3.13", "3.14", "pypy3.10", "pypy3.11"]
-        # PyPy's published macOS interpreters are x86_64, not arm64.
-        exclude:
-          - { os: macos-14, python-version: "pypy3.10" }
-          - { os: macos-14, python-version: "pypy3.11" }
-
-    steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ needs.configure-release.outputs.resolved_sha }}
-
-      - name: Set up ${{ matrix.python-version }}
+      - name: Set up Python 3.12
         uses: actions/setup-python@v5
         with:
-          python-version: ${{ matrix.python-version }}
-
-      - name: Download wheel artifacts
-        uses: actions/download-artifact@v4
+          python-version: "3.12"
+      - name: Install Hatch
+        run: pip install hatchling==1.29.0 hatch==1.16.5
+      - name: Stamp Prerelease Version
+        if: needs.configure-release.outputs.version_suffix != ''
+        run: echo "__version__ = '${{ needs.configure-release.outputs.version }}'" > src/${{ env.PACKAGE_SRCDIR }}/__version__.py
+      - name: Build wheel
+        run: hatch build -t wheel
+      - name: Upload wheel artifact
+        uses: actions/upload-artifact@v4
         with:
-          name: wheels-${{ matrix.os }}
-          path: wheelhouse
-
-      - name: Native wheel smoke test
-        run: python scripts/native_wheel_smoke.py wheelhouse/
-
+          name: wheels
+          path: dist/*.whl
+          if-no-files-found: error
   # ============================================================
   # SBOM generation, tag/release creation and asset publication.
-  # Unchanged from the previous single-wheel flow except that
-  # every native wheel built above is attached to the release and
-  # copied into the wheels repository.
   publish-release:
-    needs: [configure-release, build-wheels, smoke-test-wheels]
+    needs: [configure-release, build-wheels]
     runs-on: ubuntu-24.04
     env:
       BUILD_ENV: "build_github"
@@ -452,9 +393,6 @@ jobs:
           token: ${{ steps.app-token.outputs.token }}
           org-name: ${{ env.ORGNAME }}
 
-      - name: Set up Rust
-        uses: dtolnay/rust-toolchain@stable
-
       - name: Setup Build Environment
         run: hatch env create ${{ env.BUILD_ENV }}
 
@@ -469,17 +407,11 @@ jobs:
       - name: Download all wheel artifacts
         uses: actions/download-artifact@v4
         with:
-          pattern: wheels-*
+          name: wheels
           path: wheelhouse-all
-          merge-multiple: true
 
       - name: List Wheels To Publish
-        run: |
-          echo "Publishing the following native wheels:"
-          ls -la wheelhouse-all/*.whl
-
-      # ======================================================
-      # PUBLISH
+        run: ls -la wheelhouse-all/*.whl
 
       - name: Create and Push Tag
         run: |
@@ -512,12 +444,8 @@ jobs:
             - Base Version: ${{ env.BASE_VERSION }}
             ${{ needs.configure-release.outputs.version_suffix && format('- Version Suffix: {0}', needs.configure-release.outputs.version_suffix) || '' }}
 
-            ## Native Wheels
-            This release ships compiled native (`mountainash_rules._native`) wheels for
-            CPython 3.10-3.14 on Linux (x86_64/aarch64), macOS (arm64/x86_64)
-            and Windows (x86_64). PyPy 3.10/3.11 wheels cover Linux (x86_64/aarch64),
-            macOS (x86_64) and Windows (x86_64), matching published interpreter
-            distributions. There is no pure-Python / universal wheel.
+            ## Wheel
+            This release publishes the pure-Python package wheel.
 
       - name: Upload Wheels
         env:
@@ -569,14 +497,14 @@ jobs:
           # Create package directory if it doesn't exist
           mkdir -p ${{ env.PACKAGE_NAME }}
 
-          # Copy every newly built native wheel to the repository
+          # Copy the release wheel to the wheels repository
           cp ../wheelhouse-all/*.whl ${{ env.PACKAGE_NAME }}/
 
           # Add the new wheel files
           git add .
 
           # Commit the changes
-          git commit -m "Add ${{ env.PACKAGE_NAME }} v${{ env.VERSION }} native wheels to wheels repository"
+          git commit -m "Add ${{ env.PACKAGE_NAME }} v${{ env.VERSION }} wheel to wheels repository"
 
           # Push the branch to the repository
           git push -u origin $BRANCH_NAME
@@ -587,8 +515,7 @@ jobs:
       - name: Create Pull Request
         run: |
           # Create a simpler PR body
-          WHEEL_LIST=$(cd wheelhouse-all && ls -1 *.whl | sed 's/^/- /' | paste -sd '\n' -)
-          PR_BODY="This PR adds the following native wheels to the wheels repository:\n${WHEEL_LIST}\n\nThis was automatically generated from the release workflow of ${{ github.repository }}."
+          PR_BODY="This PR adds the pure-Python wheel to the wheels repository.\n\nThis was automatically generated from the release workflow of ${{ github.repository }}."
 
           # Properly escape the PR body for JSON
           PR_BODY_ESCAPED=$(echo "$PR_BODY" | jq -Rs .)

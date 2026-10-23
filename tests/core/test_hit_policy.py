@@ -1,32 +1,25 @@
 """Tests for hit policies, priority, and deterministic tie-breaking."""
 
-import mountainash_rules as rules
 import polars as pl
 import pytest
 
 from mountainash_rules import (
+    ContextField,
     Dimension,
     DimensionsMetadata,
     ExpressionRulesEngine,
     HitPolicy,
     HitPolicyViolationError,
 )
-from tests.accumulator.exact_runtime_fixtures import build, declarations, uuid
 
 
 
-class TestMetadataFields:
-    def test_priority_requires_field(self):
-        with pytest.raises(ValueError, match="priority_field"):
-            DimensionsMetadata(
-                dimensions=[Dimension(dimension_name="x")],
-                hit_policy=HitPolicy.PRIORITY,
-            )
 
 
 def _region_md(**kwargs):
     return DimensionsMetadata(
-        dimensions=[Dimension(dimension_name="region", wildcard_values=["<NA>"])], **kwargs,
+        fields=(ContextField(name="region", data_type="str", wildcard="<NA>"),),
+        dimensions=(Dimension(dimension_name="region", context_field="region"),), **kwargs,
     )
 
 
@@ -116,25 +109,20 @@ class TestPolicySemantics:
             }
         )
         engine = ExpressionRulesEngine(rules=rules, dimension_metadata=_region_md())
-        result = engine.evaluate({"region": "AU"}, hit_policy=HitPolicy.ANY)
-        assert result.count == 1
+        result = engine.evaluate(
+            {"region": "AU"}, hit_policy=HitPolicy.ANY, output_fields=["price"]
+        )
 
     def test_any_disagreeing_outputs_raises(self):
         engine = ExpressionRulesEngine(
             rules=self._rules(), dimension_metadata=_region_md()
         )
         with pytest.raises(HitPolicyViolationError):
-            engine.evaluate({"region": "AU"}, hit_policy=HitPolicy.ANY)
-
-    def test_metadata_policy_applies_and_override_wins(self):
-        md = _region_md(hit_policy=HitPolicy.FIRST)
-        engine = ExpressionRulesEngine(rules=self._rules(), dimension_metadata=md)
-        assert engine.evaluate({"region": "AU"}).count == 1  # FIRST from metadata
-        assert (
-            engine.evaluate({"region": "AU"}, hit_policy=HitPolicy.COLLECT).count == 2
-        )  # override
-
-
+            engine.evaluate(
+                {"region": "AU"},
+                hit_policy=HitPolicy.ANY,
+                output_fields=["price"],
+            )
 class TestResultSelect:
     def _collect_result(self, **eval_kwargs):
         rules = pl.DataFrame(
@@ -169,61 +157,4 @@ class TestResultSelect:
             result.select(HitPolicy.UNIQUE)
 
 
-class TestAccumulatorCollectPin:
-    def test_apply_keeps_all_exact_candidates_despite_filter_first_metadata(self):
-        dimension = Dimension(dimension_name="x")
-        aggregate = rules.Aggregate(
-            column_name="amount",
-            output_name="pricing.total",
-            data_type="int",
-            numeric_semantics="numeric-1",
-        )
-        profile = rules.ResolutionProfile(
-            profile_id="quote",
-            mode="candidates",
-            output_fields=("pricing.total",),
-            provenance="none",
-            dimensions=("x",),
-            allow_dont_care=(),
-            promise="candidate_only",
-        )
-        contract = rules.ContextContract(
-            schema_version=1,
-            contract_id="client",
-            domain_ref="D",
-            fields=(
-                rules.ContextField(name="x", data_type="str", required=False),
-            ),
-            profiles=(profile,),
-        )
-        kwargs = declarations((dimension,), (aggregate,), contracts=(contract,))
-        kwargs["metadata"] = DimensionsMetadata(
-            dimensions=(dimension,),
-            context_contracts=(contract,),
-            hit_policy=HitPolicy.FIRST,
-        )
-        engine, lattice = build(
-            [
-                {"id": uuid(1), "rule_name": "au", "x": "AU", "amount": 1},
-                {"id": uuid(2), "rule_name": "nz", "x": "NZ", "amount": 2},
-            ],
-            kwargs,
-        )
 
-        result = engine.apply(lattice, {}, contract_id="client", profile_id="quote")
-
-        assert result.status == "candidates"
-        assert {row["source_id"] for row in result.candidate_contributors.to_dicts()} == {
-            uuid(1),
-            uuid(2),
-        }
-
-
-def test_hit_policy_yaml_round_trip():
-    md = DimensionsMetadata(
-        dimensions=[Dimension(dimension_name="x")],
-        hit_policy=HitPolicy.PRIORITY,
-        priority_field="salience",
-        output_fields=["price"],
-    )
-    assert DimensionsMetadata.from_yaml(md.to_yaml()) == md

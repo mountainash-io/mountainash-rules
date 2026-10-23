@@ -16,7 +16,25 @@ from mountainash_rules.core.constants import (
     UNKNOWN_NUMERIC,
     MatchStrategy,
 )
+from mountainash_rules import ContextField
+from mountainash_rules.core.constants import DataType
 from mountainash_rules.core.dimension import Dimension, DimensionsMetadata
+_NO_WILDCARD = object()
+
+
+def _make_dimension(fields, *, dimension_name, match_strategy, data_type, wildcard=_NO_WILDCARD, **kwargs):
+    fields.append(ContextField(
+        name=dimension_name,
+        data_type=DataType(data_type) if isinstance(data_type, str) else data_type,
+        wildcard=None if wildcard is _NO_WILDCARD else wildcard,
+        wildcard_declared=wildcard is not _NO_WILDCARD,
+    ))
+    return Dimension(
+        dimension_name=dimension_name,
+        context_field=dimension_name,
+        match_strategy=match_strategy,
+        **kwargs,
+    )
 from mountainash_rules.engines.filter.engine import ExpressionRulesEngine
 
 # ---------------------------------------------------------------------------
@@ -28,8 +46,8 @@ _DEFAULT_STRATEGY_MIX: dict[MatchStrategy, float] = {
     MatchStrategy.RANGE: 0.25,
     MatchStrategy.CONTEXT_REGEX: 0.10,
     MatchStrategy.PREFIX: 0.10,
-    MatchStrategy.GREATER_THAN: 0.05,
-    MatchStrategy.LESS_THAN: 0.05,
+    MatchStrategy.MIN: 0.05,
+    MatchStrategy.MAX: 0.05,
     MatchStrategy.SET_MEMBERSHIP: 0.05,
     MatchStrategy.CONTAINS: 0.05,
 }
@@ -113,6 +131,7 @@ def generate_rules(
         "rule_name": [f"rule_{i:04d}" for i in range(rule_count)]
     }
     dimensions: list[Dimension] = []
+    context_fields: list[ContextField] = []
 
     for k, strategy in enumerate(strategies):
         dim_name = f"DIM_{k}"
@@ -122,11 +141,11 @@ def generate_rules(
             columns[f"{dim_name}_MIN"] = mins
             columns[f"{dim_name}_MAX"] = maxs
             dimensions.append(
-                Dimension(
+                _make_dimension(context_fields,
                     dimension_name=dim_name,
                     match_strategy=MatchStrategy.RANGE,
                     data_type=int,
-                    wildcard_values=[UNKNOWN_NUMERIC],
+                    wildcard=UNKNOWN_NUMERIC,
                     range_min_field=f"{dim_name}_MIN",
                     range_max_field=f"{dim_name}_MAX",
                 )
@@ -138,35 +157,35 @@ def generate_rules(
             values = _gen_string_column(rng, rule_count, pool, unknown_density)
             columns[dim_name] = values
             dimensions.append(
-                Dimension(
+                _make_dimension(context_fields,
                     dimension_name=dim_name,
                     match_strategy=strategy,
                     data_type=str,
-                    wildcard_values=[UNKNOWN],
+                    wildcard=UNKNOWN,
                 )
             )
 
-        elif strategy == MatchStrategy.GREATER_THAN:
+        elif strategy == MatchStrategy.MIN:
             values = _gen_numeric_column(rng, rule_count, unknown_density)
             columns[dim_name] = values
             dimensions.append(
-                Dimension(
+                _make_dimension(context_fields,
                     dimension_name=dim_name,
-                    match_strategy=MatchStrategy.GREATER_THAN,
+                    match_strategy=MatchStrategy.MIN,
                     data_type=int,
-                    wildcard_values=[UNKNOWN_NUMERIC],
+                    wildcard=UNKNOWN_NUMERIC,
                 )
             )
 
-        elif strategy == MatchStrategy.LESS_THAN:
+        elif strategy == MatchStrategy.MAX:
             values = _gen_numeric_column(rng, rule_count, unknown_density)
             columns[dim_name] = values
             dimensions.append(
-                Dimension(
+                _make_dimension(context_fields,
                     dimension_name=dim_name,
-                    match_strategy=MatchStrategy.LESS_THAN,
+                    match_strategy=MatchStrategy.MAX,
                     data_type=int,
-                    wildcard_values=[UNKNOWN_NUMERIC],
+                    wildcard=UNKNOWN_NUMERIC,
                 )
             )
 
@@ -182,11 +201,11 @@ def generate_rules(
                     values.append(f"{pfx}_{suffix_num:03d}")
             columns[dim_name] = values
             dimensions.append(
-                Dimension(
+                _make_dimension(context_fields,
                     dimension_name=dim_name,
                     match_strategy=MatchStrategy.PREFIX,
                     data_type=str,
-                    wildcard_values=[UNKNOWN],
+                    wildcard=UNKNOWN,
                 )
             )
 
@@ -202,11 +221,11 @@ def generate_rules(
                     values.append(f"{prefix_num:03d}_{sfx}")
             columns[dim_name] = values
             dimensions.append(
-                Dimension(
+                _make_dimension(context_fields,
                     dimension_name=dim_name,
                     match_strategy=MatchStrategy.SUFFIX,
                     data_type=str,
-                    wildcard_values=[UNKNOWN],
+                    wildcard=UNKNOWN,
                 )
             )
 
@@ -223,11 +242,11 @@ def generate_rules(
                     values.append(f"{pre}{sub}{post}")
             columns[dim_name] = values
             dimensions.append(
-                Dimension(
+                _make_dimension(context_fields,
                     dimension_name=dim_name,
                     match_strategy=MatchStrategy.CONTAINS,
                     data_type=str,
-                    wildcard_values=[UNKNOWN],
+                    wildcard=UNKNOWN,
                 )
             )
 
@@ -246,7 +265,7 @@ def generate_rules(
                     values.append(pattern)
             columns[dim_name] = values
             dimensions.append(
-                Dimension(
+                _make_dimension(context_fields,
                     dimension_name=dim_name,
                     match_strategy=MatchStrategy.CONTEXT_REGEX,
                     data_type=str,
@@ -266,11 +285,11 @@ def generate_rules(
                     values.append(rng.sample(pool, min(n, len(pool))))
             columns[dim_name] = values
             dimensions.append(
-                Dimension(
+                _make_dimension(context_fields,
                     dimension_name=dim_name,
                     match_strategy=strategy,
                     data_type=str,
-                    wildcard_values=[None],
+                    wildcard=None,
                 )
             )
 
@@ -280,15 +299,15 @@ def generate_rules(
             values = _gen_string_column(rng, rule_count, pool, unknown_density)
             columns[dim_name] = values
             dimensions.append(
-                Dimension(
+                _make_dimension(context_fields,
                     dimension_name=dim_name,
                     match_strategy=strategy,
                     data_type=str,
-                    wildcard_values=[UNKNOWN],
+                    wildcard=UNKNOWN,
                 )
             )
 
-    metadata = DimensionsMetadata(dimensions=dimensions)
+    metadata = DimensionsMetadata(fields=tuple(context_fields), dimensions=tuple(dimensions))
     return columns, metadata
 
 
@@ -339,14 +358,13 @@ def generate_context(
             field_defs[name] = (int, ...)
             field_values[name] = value
 
-        elif strategy in (MatchStrategy.GREATER_THAN, MatchStrategy.LESS_THAN):
+        elif strategy in (MatchStrategy.MIN, MatchStrategy.MAX):
             thresholds = [
                 v for v in rules_dict.get(name, []) if v != UNKNOWN_NUMERIC
             ]
             if thresholds:
                 median = sorted(thresholds)[len(thresholds) // 2]
-                # For GT context should be > threshold; for LT context should be < threshold
-                if strategy == MatchStrategy.GREATER_THAN:
+                if strategy == MatchStrategy.MIN:
                     value = median + rng.randint(1, 50)
                 else:
                     value = median - rng.randint(1, 50)

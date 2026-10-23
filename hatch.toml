@@ -7,8 +7,6 @@ path = "src/mountainash_rules/__version__.py"
 [build.targets.wheel]
 packages = ["src/mountainash_rules"]
 
-[build.targets.wheel.hooks.custom]
-path = "hatch_build.py"
 
 #================
 # Env: build_github
@@ -21,6 +19,9 @@ dependencies = [
     "mountainash_data @             {root:uri}/temp/mountainash-data",
     "mountainash @                  {root:uri}/temp/mountainash",
     "mountainash_settings @         {root:uri}/temp/mountainash-settings",
+    "mountainash_files @            {root:uri}/temp/mountainash-files",
+    "mountainash_transport @        {root:uri}/temp/mountainash-transport",
+    "mountainash_auth_client @      {root:uri}/temp/mountainash-auth-client",
     # "mountainash_utils_dataclasses @  {root:uri}/temp/mountainash-utils-dataclasses",
     # "mountainash_utils_ssh @        {root:uri}/temp/mountainash-utils-ssh",
 
@@ -76,6 +77,8 @@ dependencies = [
     "mountainash_data @             {root:uri}/temp/mountainash-data",
     "mountainash @                  {root:uri}/temp/mountainash",
     "mountainash_settings @         {root:uri}/temp/mountainash-settings",
+    "mountainash_files @            {root:uri}/temp/mountainash-files",
+    "mountainash_transport @        {root:uri}/temp/mountainash-transport",
     "mountainash_auth_client @      {root:uri}/temp/mountainash-auth-client",
 
 ]
@@ -109,6 +112,8 @@ dependencies = [
     "mountainash_data @         {root:uri}/../mountainash-data",
     "mountainash @              {root:uri}/../mountainash",
     "mountainash_settings @     {root:uri}/../mountainash-settings",
+    "mountainash_files @        {root:uri}/../mountainash-files",
+    "mountainash_transport @    {root:uri}/../mountainash-transport",
     "mountainash_auth_client @  {root:uri}/../mountainash-auth-client",
 
 ]

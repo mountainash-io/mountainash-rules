@@ -14,11 +14,13 @@ dependencies:
     org-name: mountainash-io
   - name: mountainash-auth-client
     org-name: mountainash-io
+  - name: mountainash-files
+    org-name: mountainash-io
+  - name: mountainash-transport
+    org-name: mountainash-io
   # - name: mountainash-utils-dataclasses
   #   org-name: mountainash-io
   # - name: mountainash-utils-factoryclasses
-  #   org-name: mountainash-io
-  # - name: mountainash-transport
   #   org-name: mountainash-io
   # - name: mountainash-utils-gpg
   #   org-name: mountainash-io

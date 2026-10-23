@@ -6,6 +6,7 @@ import typing as t
 
 import mountainash.expressions as ma
 from mountainash import DecimalDtype, MountainashDtype
+from mountainash.core.dtypes import dtype_family
 from mountainash.expressions import BaseExpressionAPI
 
 from mountainash_rules.core.constants import DataType, MatchStrategy
@@ -14,7 +15,6 @@ from mountainash_rules.core.numeric import (
     decimal_operand,
     exact_literal,
     literal_dtype,
-    reject_invalid,
 )
 from mountainash_rules.core.set_wildcard import set_state
 
@@ -97,7 +97,7 @@ def rule_flag_state(
     """Mapped flags are authoritative only when their authoring is consistent."""
     if field is None:
         return marker, ma.lit(False)
-    if field not in rel.columns or rel.schema[field] is not MountainashDtype.BOOL:
+    if field not in rel.columns or dtype_family(rel.schema[field]) is not MountainashDtype.BOOL:
         raise ValueError(f"Rule flag {field!r} must be an existing Boolean column")
     flag = ma.col(field)
     return flag.fill_null(False), flag.is_null() | ((~flag).fill_null(False) & marker)
@@ -110,15 +110,12 @@ def scalar_operand(
     inactive: BaseExpressionAPI,
 ) -> tuple[BaseExpressionAPI, BaseExpressionAPI]:
     """Admit the original scalar domain and provide an unused typed payload."""
+    source_dtype = dtype_family(source_dtype)
     if dim.data_type is DataType.DECIMAL:
-        assert dim.numeric_dtype is not None and dim.rounding is not None
-        operand = decimal_operand(
-            raw, source_dtype, dim.numeric_dtype, dim.rounding, inactive=inactive
-        )
+        assert dim.decimal_dtype is not None and dim.rounding is not None
+        operand = decimal_operand(raw, source_dtype, dim.decimal_dtype, dim.rounding, inactive=inactive)
         return operand.value, operand.invalid
     if source_dtype not in _SCALAR_DTYPES[dim.data_type]:
-        # Never ask the backend to compare or cast an unused incompatible value.
-        # Null here is physical storage only; explicit state controls semantics.
         return ma.lit(None).cast(dim.data_type.python_type), ~inactive
     invalid = ~inactive & raw.is_null()
     if dim.data_type is DataType.INT and source_dtype is MountainashDtype.U64:
@@ -134,55 +131,73 @@ def scalar_operand(
 def rule_binding_expressions(
     rel: t.Any,
     dimensions: t.Sequence[Dimension],
-) -> tuple[list[BaseExpressionAPI], dict[str, BaseExpressionAPI]]:
-    """Return native bindings/admission so callers can retain invalid source rows."""
+) -> list[BaseExpressionAPI]:
+    """Native payload and wildcard-state bindings of every rule operand; no admission.
+
+    A PRESENCE operand is the authored ``IS_NULL``/``IS_NOT_NULL`` text whatever the observed
+    field's datatype, so it binds as text rather than as a value of the field.
+    """
     columns = []
-    invalid = {}
-    schema = rel.schema
+    schema = rel.collect_schema(allow_execution=False)
     for dim in dimensions:
         if dim.match_strategy is MatchStrategy.CONTEXT_REGEX:
             continue
-        operands: list[tuple[str | None, str | None, str | None]]
         if dim.match_strategy is MatchStrategy.RANGE:
-            operands = [
-                ("min", dim.range_min_field, dim.range_min_unbounded_field),
-                ("max", dim.range_max_field, dim.range_max_unbounded_field),
-            ]
+            operands = [("min", dim.range_min_field), ("max", dim.range_max_field)]
         else:
-            operands = [(None, dim.resolved_rule_field, dim.rule_wildcard_field)]
-        for endpoint, field, flag_field in operands:
+            operands = [(None, dim.resolved_rule_field)]
+        for endpoint, field in operands:
             if field is None or field not in schema:
                 raise ValueError(f"Missing rule operand {field!r}")
             raw = ma.col(field)
             source_dtype = schema[field]
-            is_set = dim.match_strategy in (
-                MatchStrategy.SET_MEMBERSHIP,
-                MatchStrategy.SET_EXCLUSION,
-            )
-            if is_set:
-                marker, malformed, payload = set_state(rel, dim, field)
+            if dim.match_strategy in (MatchStrategy.SET_MEMBERSHIP, MatchStrategy.SET_EXCLUSION):
+                wildcard, _, payload = set_state(rel, dim, field)
             else:
-                marker = typed_marker_predicate(raw, source_dtype, dim.wildcard_values)
-                malformed = raw.is_null()
-            wildcard, conflict = rule_flag_state(rel, flag_field, marker)
-            invalid[f"{dim.dimension_name}:{field}:authoring"] = conflict | (
-                ~wildcard & malformed
-            )
-            if not is_set:
-                payload, failure = scalar_operand(dim, raw, source_dtype, wildcard)
-                invalid[f"{dim.dimension_name}:{field}"] = failure
-                if dim.match_strategy is MatchStrategy.REGEX:
-                    payload = ma.when(wildcard).then("").otherwise(payload)
+                markers = [dim.field.wildcard] if dim.field.wildcard_declared else []
+                wildcard = typed_marker_predicate(raw, source_dtype, markers)
+                if dim.match_strategy is MatchStrategy.PRESENCE:
+                    payload = raw
+                else:
+                    payload, failure = scalar_operand(dim, raw, source_dtype, wildcard)
+                    if dim.data_type is DataType.DECIMAL:
+                        # decimal_operand substitutes a placeholder zero for an operand it
+                        # cannot convert; an unconvertible rule value is no value at all.
+                        payload = ma.when(failure).then(None).otherwise(payload)
+                    if dim.match_strategy is MatchStrategy.REGEX:
+                        payload = ma.when(wildcard).then("").otherwise(payload)
             value_name, state_name = rule_binding_names(dim, endpoint)
             columns.extend([payload.alias(value_name), wildcard.alias(state_name)])
-    return columns, invalid
+    return columns
 
 
 def normalize_rule_relation(rel: t.Any, dimensions: t.Sequence[Dimension]) -> t.Any:
-    """Filter admission around the shared binding expressions."""
-    columns, invalid = rule_binding_expressions(rel, dimensions)
-    reject_invalid(rel, invalid)
+    """Bind the rule operands of ``dimensions``; the rules are scored as given, never admitted."""
+    columns = rule_binding_expressions(rel, dimensions)
     return rel.with_columns(*columns) if columns else rel
+
+
+def truthy_outcome(
+    dim: Dimension,
+    value: BaseExpressionAPI,
+    *,
+    context: bool = False,
+) -> BaseExpressionAPI:
+    """Map declared source values to their ternary truthy outcomes.
+
+    A rule value maps through the field's ``truthy`` table.  A context value additionally maps
+    ``None`` when the table declares it, read from the bound ``__ctx_origin_<dimension>`` column.
+    """
+    outcome = ma.lit(0)
+    for mapped_value, mapped_outcome in dim.field.truthy.items():
+        if mapped_value is None:
+            if not context:
+                continue
+            matches = ma.col(f"__ctx_origin_{dim.dimension_name}").eq("null")
+        else:
+            matches = value.eq(exact_literal(mapped_value)).fill_null(False)
+        outcome = ma.when(matches).then(mapped_outcome).otherwise(outcome)
+    return outcome
 
 
 class DimensionCompiler:
@@ -202,16 +217,6 @@ class DimensionCompiler:
     ) -> BaseExpressionAPI:
         _, state_name = rule_binding_names(dim, endpoint)
         missing = ~ma.col(f"__ctx_present_{dim.dimension_name}")
-        if dim.match_strategy is MatchStrategy.EXACT_KEY:
-            return (
-                ma.when(ma.col(state_name))
-                .then(0)
-                .when(missing)
-                .then(-1)
-                .when(matched)
-                .then(1)
-                .otherwise(-1)
-            )
         return (
             ma.when(ma.col(state_name) | missing)
             .then(0)
@@ -220,20 +225,38 @@ class DimensionCompiler:
             .otherwise(-1)
         )
 
+    @staticmethod
+    def _outcome_ternary(
+        rule: BaseExpressionAPI, context: BaseExpressionAPI
+    ) -> BaseExpressionAPI:
+        """Compare required and observed ternary outcomes."""
+        return (
+            ma.when(rule.eq(ma.lit(0)) | context.eq(ma.lit(0)))
+            .then(0)
+            .when(rule.eq(context))
+            .then(1)
+            .otherwise(-1)
+        )
+
     def compile_dimension(self, dim: Dimension) -> BaseExpressionAPI:
-        if dim.data_type is DataType.BOOL and dim.match_strategy in (
-            MatchStrategy.SET_MEMBERSHIP,
-            MatchStrategy.SET_EXCLUSION,
-        ):
-            raise ValueError(
-                "Boolean set strategies are not supported by the ternary filter"
-            )
         context_name = f"__ctx_value_{dim.dimension_name}"
         context = ma.col(context_name)
+        if dim.match_strategy is MatchStrategy.PRESENCE:
+            # Suppliedness and the original nullness, never the value-marker classification: an
+            # explicit null is a known null even when null is the field's declared wildcard.
+            rule, wildcard = rule_binding_names(dim)
+            name = dim.dimension_name
+            return (
+                ma.when(ma.col(wildcard) | ~ma.col(f"__ctx_supplied_{name}"))
+                .then(0)
+                .when(ma.col(f"__ctx_null_{name}"))
+                .then(ma.when(ma.col(rule).eq("IS_NULL")).then(1).otherwise(-1))
+                .otherwise(ma.when(ma.col(rule).eq("IS_NOT_NULL")).then(1).otherwise(-1))
+            )
         if dim.match_strategy is MatchStrategy.CONTEXT_REGEX:
             return (
                 ma.when(~ma.col(f"__ctx_present_{dim.dimension_name}"))
-                .then(-1)
+                .then(0)
                 .when(context.str.regex_contains(dim.regex_pattern))
                 .then(1)
                 .otherwise(-1)
@@ -241,28 +264,34 @@ class DimensionCompiler:
         if dim.match_strategy is MatchStrategy.RANGE:
             lower = ma.col(rule_binding_names(dim, "min")[0])
             upper = ma.col(rule_binding_names(dim, "max")[0])
-            lo = self._ternary(
-                dim,
-                lower.le(context) if dim.range_min_inclusive else lower.lt(context),
-                "min",
-            )
-            hi = self._ternary(
-                dim,
-                upper.ge(context) if dim.range_max_inclusive else upper.gt(context),
-                "max",
-            )
+            lo = self._ternary(dim, lower.le(context), "min")
+            hi = self._ternary(dim, upper.ge(context), "max")
             return ma.when(lo.le(hi)).then(lo).otherwise(hi)
-        value_name, _ = rule_binding_names(dim)
+        value_name, state_name = rule_binding_names(dim)
         rule = ma.col(value_name)
+        if dim.match_strategy is MatchStrategy.OUTCOME:
+            # A context outcome that is omitted (or null) is unknown, never a mismatch.
+            return (
+                ma.when(~ma.col(f"__ctx_present_{dim.dimension_name}"))
+                .then(0)
+                .otherwise(self._outcome_ternary(rule, context))
+            )
+        if dim.match_strategy is MatchStrategy.TRUTHY:
+            rule_outcome = ma.when(ma.col(state_name)).then(0).otherwise(
+                truthy_outcome(dim, rule)
+            )
+            return self._outcome_ternary(
+                rule_outcome, truthy_outcome(dim, context, context=True)
+            )
         match dim.match_strategy:
-            case MatchStrategy.EXACT | MatchStrategy.EXACT_KEY:
+            case MatchStrategy.EXACT:
                 matched = rule.eq(context)
             case MatchStrategy.NOT_EQUAL:
                 matched = rule.ne(context)
-            case MatchStrategy.GREATER_THAN:
-                matched = context.gt(rule)
-            case MatchStrategy.LESS_THAN:
-                matched = context.lt(rule)
+            case MatchStrategy.MIN:
+                matched = context.ge(rule)
+            case MatchStrategy.MAX:
+                matched = context.le(rule)
             case MatchStrategy.PREFIX:
                 matched = context.str.starts_with(rule)
             case MatchStrategy.SUFFIX:

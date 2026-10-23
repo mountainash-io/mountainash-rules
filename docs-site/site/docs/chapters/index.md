@@ -6,26 +6,26 @@ Read the shared foundations first, then follow the part for the engine you need.
 
 ## Shared foundations
 
-1. **[Two Rule Engines, One Shared Model](01-two-rule-engines/index.md)** — Column-wise evaluation, rule tables, contexts and DataFrame backends; individual rule matching compared with compatible rule combinations.
-2. **[The Shared Rule Model: Tables, Contexts and Dimensions](02-shared-rule-model/index.md)** — Dimension definitions, field mappings, types, roles and validation; metadata in YAML; expression and relation APIs.
-3. **[Matching Concepts: Strategies, Unknowns and Wildcards](03-matching-concepts/index.md)** — Matching outcomes, comparison strategies and the treatment of unrestricted conditions and missing values.
+1. **[Two Engines, One Rule Model](01-two-rule-engines/index.md)** — Rule tables, contexts and backends; matching a rule at a time compared with a precomputed DecisionTable; the five layers.
+2. **[The Shared Rule Model: Tables, Contexts and Dimensions](02-shared-rule-model/index.md)** — `ContextField`, `Dimension`, `DimensionsMetadata`, `Aggregate` and the five flat metadata tables.
+3. **[Matching Concepts: Strategies, Unknowns and Wildcards](03-matching-concepts/index.md)** — Ternary outcomes, declared wildcards, null and missing values, PRESENCE and the match strategies.
 
 ## The Expression Rules Engine
 
-4. **[Using the Expression Rules Engine](04-expression-rules-engine/index.md)** — Engine construction, context evaluation, rule survival, specificity and the basic result interface.
-5. **[Expression Engine Hit Policies, Results and Explanations](05-expression-results-and-policies/index.md)** — Selecting among matches, inspecting decisions, explaining comparisons, and filtering or reselecting results.
-6. **[Expression Engine Batch Evaluation](06-batch-evaluation/index.md)** — Evaluating a table of requests, preserving context identity, reading per-context results, and understanding chunking and backend boundaries.
+4. **[Using the Expression Rules Engine](04-expression-rules-engine/index.md)** — Engine construction, context evaluation, survival, specificity, explanations and Boolean inputs.
+5. **[Expression Engine Hit Policies, Results and Explanations](05-expression-results-and-policies/index.md)** — Call-time hit policies, violations, re-selection and output fields.
+6. **[Expression Engine Batch Evaluation](06-batch-evaluation/index.md)** — Evaluating a table of requests, per-context results, chunking and backends.
 
-## The Accumulator Engine
+## The DecisionTable
 
-7. **[Using the Accumulator Engine](07-accumulator-engine/index.md)** — Building compatible rule combinations, declaring aggregates and applying contexts through a worked example.
-8. **[Accumulator Lattices, Results and Routing](08-lattices-results-and-routing/index.md)** — Inspecting combinations and provenance, routing contexts, and saving or loading lattices.
+7. **[Prevalidating Rules and Building a DecisionTable](07-decision-table-construction/index.md)** — `prevalidate`, findings, `build_decision_table`, entries, folding and provenance.
+8. **[Validating Contexts, Matching and Persisting a DecisionTable](08-applying-decision-tables/index.md)** — Context validation, `match`, saving, loading and verifying, and the layer 5 worked example.
 
 ## Implementation and extension
 
 9. **[Inside the Expression Rules Engine](09-expression-engine-internals/index.md)** — Dimension compilation, context binding, matching, ranking and selection.
-10. **[Inside the Exact Accumulator](10-accumulator-engine-internals/index.md)** — Source validation, normalized predicates, disjoint cells, bounded narrow state, numeric-1 folds, and strict artifact restoration.
-11. **[Extending and Maintaining Both Engines](11-extending-and-maintaining/index.md)** — Public boundaries, filter contracts, and the exact accumulator's source-to-runtime obligations.
+10. **[Inside the DecisionTable](10-decision-table-internals/index.md)** — Column plans, regions, construction stages, contributor masks, derived entry metadata, application and persistence.
+11. **[Extending and Maintaining the Package](11-extending-and-maintaining/index.md)** — Public boundaries, the change map, invariants, tests and a review checklist.
 
 ## Appendices
 

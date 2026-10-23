@@ -5,9 +5,7 @@ from __future__ import annotations
 import typing as t
 
 import mountainash.expressions as ma
-from mountainash.relations import relation
-
-from mountainash_rules.core.context import _validate_context_ids
+from mountainash.relations import Relation, relation
 from mountainash_rules.core.hit_policy import SelectionInfo, first_per_context
 from mountainash_rules.core.result import RuleResult
 
@@ -81,11 +79,10 @@ class BatchRuleResult:
         non-null, unique source field. Generated IDs require the original row
         order and count; this result stores no input copy to verify provenance.
         """
-        ctx_rel = relation(contexts)
+        ctx_rel = contexts if isinstance(contexts, Relation) else relation(contexts)
         if self._context_id_field == "__context_id":
             all_ids = range(ctx_rel.count_rows())
         else:
-            _validate_context_ids(ctx_rel, self._context_id_field)
             all_ids = ctx_rel.select(ma.col(self._context_id_field)).to_dict()[
                 self._context_id_field
             ]

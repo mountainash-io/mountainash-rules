@@ -4,6 +4,7 @@ import polars as pl
 import pytest
 
 from mountainash_rules import (
+    ContextField,
     Dimension,
     DimensionsMetadata,
     ExpressionRulesEngine,
@@ -16,18 +17,15 @@ from mountainash_rules import (
 @pytest.fixture
 def engine():
     metadata = DimensionsMetadata(
+        fields=(ContextField(name="region", data_type="str", wildcard="<NA>"), ContextField(name="channel", data_type="str", wildcard="<NA>")),
         dimensions=[
             Dimension(
-                dimension_name="region",
+                dimension_name="region", context_field="region",
                 match_strategy=MatchStrategy.EXACT,
-                data_type="str",
-                wildcard_values=[None, "<NA>", "<NOT_SET>"],
             ),
             Dimension(
-                dimension_name="channel",
+                dimension_name="channel", context_field="channel",
                 match_strategy=MatchStrategy.EXACT,
-                data_type="str",
-                wildcard_values=[None, "<NA>", "<NOT_SET>"],
             ),
         ]
     )

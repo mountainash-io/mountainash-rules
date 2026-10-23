@@ -4,8 +4,9 @@ import polars as pl
 import pytest
 from pydantic import BaseModel
 
+from mountainash_rules import ContextField
 from mountainash_rules.core.context import extract_context_values
-from mountainash_rules.core.constants import MatchStrategy
+from mountainash_rules.core.constants import DataType, MatchStrategy
 from mountainash_rules.core.dimension import Dimension, DimensionsMetadata
 from mountainash_rules.engines.filter.engine import ExpressionRulesEngine
 
@@ -49,25 +50,20 @@ def test_supplied_none_stays_supplied_none():
 @pytest.fixture
 def typed_metadata() -> DimensionsMetadata:
     return DimensionsMetadata(
-        dimensions=[
+        fields=(
+            ContextField(name="region", data_type="str"),
+            ContextField(name="amount", data_type="int"),
+            ContextField(name="score", data_type="float"),
+        ),
+        dimensions=(
+            Dimension(dimension_name="region", context_field="region"),
             Dimension(
-                dimension_name="region",
-                match_strategy=MatchStrategy.EXACT,
-                data_type=str,
-            ),
-            Dimension(
-                dimension_name="amount",
+                dimension_name="amount", context_field="amount",
                 match_strategy=MatchStrategy.RANGE,
-                data_type=int,
-                range_min_field="amount_min",
-                range_max_field="amount_max",
+                range_min_field="amount_min", range_max_field="amount_max",
             ),
-            Dimension(
-                dimension_name="score",
-                match_strategy=MatchStrategy.EXACT,
-                data_type=float,
-            ),
-        ]
+            Dimension(dimension_name="score", context_field="score"),
+        ),
     )
 
 
@@ -94,14 +90,8 @@ def test_missing_string_field_remains_omitted(typed_metadata):
 
 def test_context_field_remap_honoured():
     metadata = DimensionsMetadata(
-        dimensions=[
-            Dimension(
-                dimension_name="region",
-                context_field="cust_region",
-                match_strategy=MatchStrategy.EXACT,
-                data_type=str,
-            ),
-        ]
+        fields=(ContextField(name="cust_region", data_type="str"),),
+        dimensions=(Dimension(dimension_name="region", context_field="cust_region"),)
     )
     values = extract_context_values(
         {"cust_region": "AU", "region": "WRONG"}, ["region"], metadata=metadata
@@ -124,20 +114,18 @@ def _range_engine() -> ExpressionRulesEngine:
         }
     )
     metadata = DimensionsMetadata(
-        dimensions=[
+        fields=(
+            ContextField(name="region", data_type="str"),
+            ContextField(name="amount", data_type="int"),
+        ),
+        dimensions=(
+            Dimension(dimension_name="region", context_field="region"),
             Dimension(
-                dimension_name="region",
-                match_strategy=MatchStrategy.EXACT,
-                data_type=str,
-            ),
-            Dimension(
-                dimension_name="amount",
+                dimension_name="amount", context_field="amount",
                 match_strategy=MatchStrategy.RANGE,
-                data_type=int,
-                range_min_field="amount_min",
-                range_max_field="amount_max",
+                range_min_field="amount_min", range_max_field="amount_max",
             ),
-        ]
+        )
     )
     return ExpressionRulesEngine(rules=rules, dimension_metadata=metadata)
 
@@ -151,14 +139,8 @@ def test_engine_missing_numeric_context_is_unknown():
 def test_engine_context_field_remap_end_to_end():
     rules = pl.DataFrame({"rule_name": ["au_rule"], "region": ["AU"]})
     metadata = DimensionsMetadata(
-        dimensions=[
-            Dimension(
-                dimension_name="region",
-                context_field="cust_region",
-                match_strategy=MatchStrategy.EXACT,
-                data_type=str,
-            ),
-        ]
+        fields=(ContextField(name="cust_region", data_type="str"),),
+        dimensions=(Dimension(dimension_name="region", context_field="cust_region"),)
     )
     engine = ExpressionRulesEngine(rules=rules, dimension_metadata=metadata)
     result = engine.evaluate({"cust_region": "AU"})
@@ -169,31 +151,25 @@ def test_engine_context_field_remap_end_to_end():
 
 
 def test_bool_dimension_missing_context_stays_omitted():
-    from mountainash_rules.core.constants import DataType
-
     md = DimensionsMetadata(
-        dimensions=[
-            Dimension(dimension_name="active", data_type=DataType.BOOL),
-        ]
+        fields=(ContextField(name="active", data_type=DataType.BOOL),),
+        dimensions=(Dimension(dimension_name="active", context_field="active"),)
     )
     values = extract_context_values({}, ["active"], metadata=md)
     assert values == {}
 
 
 @pytest.mark.parametrize(
-    "context,markers,origin,supplied",
+    "context,origin,supplied",
     [
-        ({}, [None], "omitted", False),
-        ({"region": None}, [], "null", True),
-        ({"region": None}, [None], "dont_care", True),
-        ({"region": "ANY"}, ["ANY"], "dont_care", True),
-        ({"region": "EU"}, ["ANY"], "concrete", True),
+        ({}, "omitted", False),
+        ({"region": None}, "null", True),
+        ({"region": "EU"}, "concrete", True),
     ],
 )
 def test_reusable_context_bindings_retain_original_provenance(
     backend_name,
     context,
-    markers,
     origin,
     supplied,
 ):
@@ -201,7 +177,10 @@ def test_reusable_context_bindings_retain_original_provenance(
     from mountainash_rules.core.context import bind_context_columns
     from tests.conftest import build_backend_df
 
-    dim = Dimension(dimension_name="region", wildcard_values=markers)
+    (dim,) = DimensionsMetadata(
+        fields=(ContextField(name="region", data_type="str"),),
+        dimensions=(Dimension(dimension_name="region", context_field="region"),),
+    ).dimensions
     rel = relation(build_backend_df(backend_name, {"row": [1]}))
     bound = bind_context_columns(rel, [dim], values=context).to_dicts()[0]
     assert bound["__ctx_origin_region"] == origin

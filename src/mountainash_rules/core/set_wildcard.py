@@ -5,9 +5,9 @@ from __future__ import annotations
 import typing as t
 
 import mountainash.expressions as ma
-from mountainash import MountainashDtype
+from mountainash import DecimalDtype, MountainashDtype
+from mountainash.core.dtypes import ListDtype, TimestampDtype
 from mountainash.expressions import BaseExpressionAPI
-from mountainash.relations import relation
 
 from mountainash_rules.core.constants import DataType
 from mountainash_rules.core.dimension import Dimension
@@ -26,9 +26,10 @@ def _empty_set_expr(dim: Dimension) -> BaseExpressionAPI:
         DataType.DATE: "date",
         DataType.DATETIME: "datetime",
         DataType.BOOL: "boolean",
-    }[dim.data_type]
+    }.get(dim.data_type)
     return ma.lit([]).list.cast_items(
-        item_type=item_type, field_name=dim.resolved_rule_field
+        item_type=dim.decimal_dtype if dim.data_type is DataType.DECIMAL else item_type,
+        field_name=dim.resolved_rule_field,
     )
 
 
@@ -42,20 +43,14 @@ def set_state(
     from mountainash_rules.core.numeric import exact_literal, literal_dtype
 
     col = ma.col(field)
-    wildcard = (
-        col.is_null()
-        if any(value is None for value in dim.wildcard_values)
-        else ma.lit(False)
-    )
-    if rel.schema[field] is not MountainashDtype.LIST:
+    marker_values = [dim.field.wildcard] if dim.field.wildcard_declared else []
+    wildcard = col.is_null() if any(value is None for value in marker_values) else ma.lit(False)
+    dtype = rel.collect_schema(allow_execution=False)[field]
+    if not isinstance(dtype, ListDtype):
         return wildcard, ma.lit(True), _empty_set_expr(dim)
-    # Empty native schema projection preserves the actual element type without
-    # reading source rows or confusing Boolean/integer/string marker domains.
-    element_dtype = relation(
-        rel.select(col.list.first().alias(field)).head(0).collect()
-    ).schema[field]
+    element_dtype = dtype.element
     embedded = ma.lit(False)
-    for marker in dim.wildcard_values:
+    for marker in marker_values:
         if marker is None or not same_scalar_type(element_dtype, literal_dtype(marker)):
             continue
         contains = col.list.contains(exact_literal(marker)).fill_null(False)
@@ -66,7 +61,17 @@ def set_state(
     null_element = col.list.len().gt(0) & (
         ordered.list.first().is_null() | ordered.list.last().is_null()
     )
-    if element_dtype not in _SCALAR_DTYPES[dim.data_type]:
+    if (
+        element_dtype not in _SCALAR_DTYPES.get(dim.data_type, frozenset())
+        and not (
+            dim.data_type is DataType.DECIMAL
+            and isinstance(element_dtype, DecimalDtype)
+        )
+        and not (
+            dim.data_type is DataType.DATETIME
+            and isinstance(element_dtype, TimestampDtype)
+        )
+    ):
         return wildcard.fill_null(False), ma.lit(True), _empty_set_expr(dim)
     payload = canonicalize_set_expr(col)
     if dim.data_type is DataType.FLOAT and element_dtype not in {

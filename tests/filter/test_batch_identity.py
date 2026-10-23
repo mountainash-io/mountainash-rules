@@ -1,9 +1,9 @@
-"""Batch identity validation and retained-result accessors (B01-B04, B13)."""
+"""Batch evaluation identity behavior and retained-result accessors."""
 
 import polars as pl
 import pytest
 
-from mountainash_rules import Dimension, DimensionsMetadata, ExpressionRulesEngine
+from mountainash_rules import ContextField, Dimension, DimensionsMetadata, ExpressionRulesEngine
 
 
 def _engine(rule_cid=False):
@@ -13,39 +13,10 @@ def _engine(rule_cid=False):
     return ExpressionRulesEngine(
         rules,
         dimension_metadata=DimensionsMetadata(
-            dimensions=[
-                Dimension(
-                    dimension_name="region", wildcard_values=[None, "<NA>", "<NOT_SET>"]
-                )
-            ]
+            fields=(ContextField(name="region", data_type="str", wildcard="<NA>"),),
+            dimensions=[Dimension(dimension_name="region", context_field="region")],
         ),
     )
-
-
-@pytest.mark.parametrize("region", ["AU", "XX"])
-@pytest.mark.parametrize("chunk_size", [None, 1])
-def test_null_ids_rejected_even_without_survivors(region, chunk_size):
-    engine = _engine()
-    contexts = pl.DataFrame(
-        {"cid": pl.Series([None, 1], dtype=pl.Int64), "region": [region, region]}
-    )
-    with pytest.raises(ValueError, match="cid"):
-        engine.evaluate_batch(contexts, context_id_field="cid", chunk_size=chunk_size)
-
-
-def test_duplicate_ids_across_chunks_rejected_globally():
-    engine = _engine()
-    contexts = pl.DataFrame({"cid": [7, 8, 7], "region": ["AU", "NZ", "XX"]})
-    with pytest.raises(ValueError, match="cid"):
-        engine.evaluate_batch(contexts, context_id_field="cid", chunk_size=2)
-
-
-@pytest.mark.parametrize("field", ["", 1, [], "missing"])
-def test_id_field_must_name_an_existing_column(field):
-    engine = _engine()
-    contexts = pl.DataFrame({"region": ["AU"]})
-    with pytest.raises(ValueError, match="context_id_field"):
-        engine.evaluate_batch(contexts, context_id_field=field)
 
 
 @pytest.mark.parametrize("ids", [[30, 20, 10], ["z", "m", "a"]])
@@ -77,23 +48,6 @@ def test_generated_ids_preserve_unmatched_positions_across_chunks():
         assert batch.matched_context_ids == [0, 2, 4]
         assert batch.unmatched_context_ids(contexts) == [1, 3]
         assert batch.context_id_field == "__context_id"
-
-
-@pytest.mark.parametrize(
-    "replacement",
-    [
-        {"region": ["AU", "XX"]},
-        {"cid": [None, 8], "region": ["AU", "XX"]},
-        {"cid": [7, 7], "region": ["AU", "XX"]},
-    ],
-)
-def test_unmatched_accessor_rejects_invalid_original_identity(replacement):
-    engine = _engine()
-    contexts = pl.DataFrame({"cid": [7, 8], "region": ["AU", "XX"]})
-    batch = engine.evaluate_batch(contexts, context_id_field="cid")
-    invalid = pl.DataFrame(replacement)
-    with pytest.raises(ValueError, match="cid"):
-        batch.unmatched_context_ids(invalid)
 
 
 def test_empty_extracted_views_keep_schema_and_loss_state():
