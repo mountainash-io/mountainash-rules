@@ -18,17 +18,20 @@ def canonicalize_set_expr(col: BaseExpressionAPI) -> BaseExpressionAPI:
     return col.list.unique().list.sort()
 
 
+_EMPTY_SET_ELEMENTS = {
+    DataType.STR: MountainashDtype.STRING,
+    DataType.INT: MountainashDtype.I64,
+    DataType.FLOAT: MountainashDtype.FP64,
+    DataType.DATE: MountainashDtype.DATE,
+    DataType.DATETIME: MountainashDtype.TIMESTAMP,
+    DataType.BOOL: MountainashDtype.BOOL,
+}
+
+
 def _empty_set_expr(dim: Dimension) -> BaseExpressionAPI:
-    item_type = {
-        DataType.STR: "string",
-        DataType.INT: "integer",
-        DataType.FLOAT: "number",
-        DataType.DATE: "date",
-        DataType.DATETIME: "datetime",
-        DataType.BOOL: "boolean",
-    }.get(dim.data_type)
+    element = dim.decimal_dtype if dim.data_type is DataType.DECIMAL else _EMPTY_SET_ELEMENTS[dim.data_type]
     return ma.lit([]).list.cast_items(
-        item_type=dim.decimal_dtype if dim.data_type is DataType.DECIMAL else item_type,
+        dtype=ListDtype(element),
         field_name=dim.resolved_rule_field,
     )
 
@@ -78,7 +81,9 @@ def set_state(
         MountainashDtype.FP32,
         MountainashDtype.FP64,
     }:
-        payload = payload.list.cast_items(item_type="number", field_name=field)
+        payload = payload.list.cast_items(
+            dtype=ListDtype(MountainashDtype.FP64), field_name=field
+        )
     return (
         wildcard.fill_null(False),
         (col.is_null() | embedded | null_element).fill_null(False),
