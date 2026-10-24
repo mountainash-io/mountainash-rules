@@ -183,3 +183,4 @@ benchmark_results
 
 # Rust / Cargo build output (native/ crate compiled by hatch_build.py)
 /target/
+/skills-lock.json
