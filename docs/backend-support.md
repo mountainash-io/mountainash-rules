@@ -48,6 +48,14 @@ re-raises them as `DecisionTableError`.
 Construction and application log the backend executions they issue at stage boundaries
 (`mountainash_rules.decision_table.build` and `.apply` loggers).
 
+## Mountainash revision
+
+Mountainash is not yet published to PyPI and is not pinned in `pyproject.toml`; test environments
+install it by path (`hatch.toml`). Use a Mountainash revision containing both the shared-schema
+change (PR 413, `b85df022`) and the resolved-container execution follow-on (PR 414, `ae9d408b`).
+Set payloads cast list items with a resolved `ListDtype` (`cast_items(dtype=...)`); the retired
+`item_type=` argument is not accepted.
+
 ## DuckDB pin
 
 `duckdb` is pinned `<2.0` in `pyproject.toml`. Ibis 12 emits deprecated `->` list lambdas that

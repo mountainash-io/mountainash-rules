@@ -17,7 +17,7 @@ cd mountainash-utils-rules
 hatch env create
 ```
 
-Resolve the configured `mountainash` dependency at delivered merge `b9c0ab4ab6380712c89f27c8d083f658278d4593` or a descendant, together with `mountainash-files`, `mountainash-transport`, `mountainash-data` and `mountainash-settings` (see `hatch.toml`). This is a delivered dependency revision requirement, not an implied release version or checkout layout.
+Resolve the configured `mountainash` dependency at delivered merge `ae9d408b72e59c322bae04a4925100a91e01e7fb` or a descendant containing PRs #413 and #414, together with `mountainash-files`, `mountainash-transport`, `mountainash-data` and `mountainash-settings` (see `hatch.toml` and [backend support](backend-support.md)). This is a delivered dependency revision requirement, not an implied release version or checkout layout.
 
 ---
 
