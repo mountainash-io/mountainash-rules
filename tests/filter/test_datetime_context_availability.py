@@ -92,6 +92,16 @@ def test_concrete_datetime_still_matches(backend_name, unit, timezone):
 
 
 @pytest.mark.parametrize("backend_name", BACKENDS)
+@pytest.mark.parametrize("unit", ["s", "ms", "us"])
+@pytest.mark.parametrize("timezone", ["naive", "utc"])
+@pytest.mark.parametrize("strategy", STRATEGIES, ids=lambda s: s.value)
+def test_declared_datetime_wildcard_rule_is_dont_care(backend_name, unit, timezone, strategy):
+    engine, _, _, base = _setup(backend_name, unit, timezone, strategy)
+    rows = relation(engine.explain({"moment": base}).frame).to_polars().filter(pl.col("rule_name") == "any")
+    assert rows.select("__t_moment", "__survived", "__specificity").rows() == [(0, True, 0)]
+
+
+@pytest.mark.parametrize("backend_name", BACKENDS)
 @pytest.mark.parametrize("timezone", ["naive", "utc"])
 def test_datetime_presence_keeps_null_distinct_from_omission(backend_name, timezone):
     field, base = _field("ms", timezone)

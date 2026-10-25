@@ -49,6 +49,8 @@ def same_scalar_type(left: t.Any, right: t.Any) -> bool:
         or (left in _INTEGER_DTYPES and right in _INTEGER_DTYPES)
         or (left in _FLOAT_DTYPES and right in _FLOAT_DTYPES)
         or (isinstance(left, DecimalDtype) and isinstance(right, DecimalDtype))
+        # A column reports its timestamp parameters; a Python literal reports only the family.
+        or (dtype_family(left) is MountainashDtype.TIMESTAMP and dtype_family(right) is MountainashDtype.TIMESTAMP)
     )
 
 
