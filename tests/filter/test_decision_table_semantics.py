@@ -2,9 +2,11 @@
 
 from decimal import Decimal
 
+import mountainash.expressions as ma
 import polars as pl
 import pytest
 
+from mountainash import MountainashDtype
 from mountainash.relations import relation
 from mountainash_rules import (
     ContextField,
@@ -35,15 +37,29 @@ def _scores(engine, context, dimension):
 
 @pytest.mark.parametrize("backend_name", BACKENDS)
 @pytest.mark.parametrize("context_outcome", [-1, 0, 1])
-def test_outcome_scores_every_rule_context_cell(backend_name, context_outcome):
+@pytest.mark.parametrize(
+    "field",
+    [
+        pytest.param(ContextField(name="outcome", data_type=DataType.INT), id="int"),
+        pytest.param(ContextField(name="outcome", data_type=DataType.INT, wildcard=0), id="int-zero-marker"),
+        pytest.param(
+            ContextField(
+                name="outcome", data_type=DataType.DECIMAL, precision=5, scale=2,
+                rounding="half_to_even", wildcard=0,
+            ),
+            id="decimal-zero-marker",
+        ),
+    ],
+)
+def test_outcome_scores_every_rule_context_cell(backend_name, context_outcome, field):
     engine = ExpressionRulesEngine(
-        build_backend_df(
+        relation(build_backend_df(
             backend_name,
             {"rule_name": ["r-1", "r0", "r1"], "required": [-1, 0, 1]},
             table_name="outcome_rules",
-        ),
+        )).with_columns(ma.col("required").cast(MountainashDtype.I8)),
         DimensionsMetadata(
-            fields=(ContextField(name="outcome", data_type=DataType.INT),),
+            fields=(field,),
             dimensions=(
                 Dimension(
                     dimension_name="outcome",
