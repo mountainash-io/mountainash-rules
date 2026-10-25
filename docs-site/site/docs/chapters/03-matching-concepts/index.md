@@ -206,6 +206,8 @@ for context in ({"vip": "yes"}, {"vip": None}, {}):
 
 Here the mapping says a null `vip` counts like "no". Without the `None` entry, a null would be unknown (0) for both rules. `OUTCOME` is the lower-level form: the rule column already holds an int8 ternary, and the context supplies an already computed ternary. A DecisionTable uses it internally for the columns that hold PRESENCE, TRUTHY and pattern conditions ([Chapter 10](../10-decision-table-internals/index.md)).
 
+A mapping for zero does not make a missing DECIMAL value match zero. Only available context values participate in non-null mappings; omission and declared wildcards remain unknown. An explicit null uses the `None` mapping regardless of its position in the mapping, or remains unknown when there is no such entry. These rules also apply when matching a DecisionTable.
+
 ## Don't-care versus unknown
 
 Consider rule A `region = *` (a don't-care) and rule B `region = EU`.

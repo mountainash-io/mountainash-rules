@@ -196,6 +196,9 @@ def truthy_outcome(
             matches = ma.col(f"__ctx_origin_{dim.dimension_name}").eq("null")
         else:
             matches = value.eq(exact_literal(mapped_value)).fill_null(False)
+            if context:
+                # Inactive payloads (notably DECIMAL's safe zero) are not values.
+                matches = ma.col(f"__ctx_present_{dim.dimension_name}") & matches
         outcome = ma.when(matches).then(mapped_outcome).otherwise(outcome)
     return outcome
 

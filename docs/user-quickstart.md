@@ -272,6 +272,8 @@ Dimension(dimension_name="vip", context_field="vip", rule_field="required",
           match_strategy=MatchStrategy.TRUTHY)
 ```
 
+Only available context values participate in non-null truthy mappings. For example, a DECIMAL mapping containing `Decimal("0") → 1` matches a supplied zero, not an omitted value, explicit null or declared wildcard. Explicit null uses a declared `None` mapping independently of mapping order; omission is always unknown. This applies to both the filter engine and DecisionTable matching.
+
 ### Field types
 
 | `DataType` | Notes |
