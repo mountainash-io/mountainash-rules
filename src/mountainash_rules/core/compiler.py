@@ -49,6 +49,8 @@ def same_scalar_type(left: t.Any, right: t.Any) -> bool:
         or (left in _INTEGER_DTYPES and right in _INTEGER_DTYPES)
         or (left in _FLOAT_DTYPES and right in _FLOAT_DTYPES)
         or (isinstance(left, DecimalDtype) and isinstance(right, DecimalDtype))
+        # A column reports its timestamp parameters; a Python literal reports only the family.
+        or (dtype_family(left) is MountainashDtype.TIMESTAMP and dtype_family(right) is MountainashDtype.TIMESTAMP)
     )
 
 
@@ -116,7 +118,7 @@ def scalar_operand(
         operand = decimal_operand(raw, source_dtype, dim.decimal_dtype, dim.rounding, inactive=inactive)
         return operand.value, operand.invalid
     if source_dtype not in _SCALAR_DTYPES[dim.data_type]:
-        return ma.lit(None).cast(dim.data_type.python_type), ~inactive
+        return ma.lit(None).cast(dim.field.value_dtype), ~inactive
     invalid = ~inactive & raw.is_null()
     if dim.data_type is DataType.INT and source_dtype is MountainashDtype.U64:
         invalid = invalid | (~inactive & raw.gt((1 << 63) - 1))

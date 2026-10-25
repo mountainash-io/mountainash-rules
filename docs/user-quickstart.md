@@ -280,7 +280,7 @@ Only available context values participate in non-null truthy mappings. For examp
 |---|---|
 | `STR`, `INT`, `FLOAT`, `BOOL` | FLOAT supports categorical matching, not ordering |
 | `DECIMAL` | requires `precision` (1–16), `scale` and `rounding` (`"half_to_even"` or `"half_away_from_zero"`); context values are reduced to the declared scale with that rounding when bound |
-| `DATE`, `DATETIME` | DATETIME requires `datetime_unit` (`"s"`, `"ms"`, `"us"`) and `timezone` (`"naive"`, `"utc"`); context values are truncated to the unit when bound |
+| `DATE`, `DATETIME` | DATETIME requires `datetime_unit` (`"s"`, `"ms"`, `"us"`) and `timezone` (`"naive"`, `"utc"`); context values are truncated to the unit when bound. An omitted or null DATETIME value is unknown (0) for either timezone, including an untyped null column |
 
 ```python
 from decimal import Decimal
