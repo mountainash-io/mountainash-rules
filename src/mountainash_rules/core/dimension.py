@@ -8,6 +8,7 @@ from decimal import Decimal
 
 from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, field_validator, model_validator
 from mountainash import DecimalDtype
+from mountainash.core.dtypes import TimestampDtype
 
 from mountainash_rules.core.aggregate import Aggregate
 from mountainash_rules.core.constants import DataType, MatchStrategy, PYTHON_TO_DATATYPE
@@ -59,6 +60,19 @@ class ContextField(BaseModel):
     @property
     def decimal_dtype(self) -> DecimalDtype | None:
         return DecimalDtype(self.precision, self.scale) if self.precision is not None else None
+
+    @property
+    def value_dtype(self) -> t.Any:
+        """Cast target for a value of this field, including a typed null.
+
+        DATETIME keeps its declared timezone so an unavailable value compares with
+        rule values instead of becoming a naive timestamp. Microsecond storage
+        matches Python ``datetime``; the declared unit is applied by truncation.
+        """
+        if self.data_type is DataType.DATETIME:
+            utc = self.timezone == "utc"
+            return TimestampDtype(precision=6, timezone_aware=utc, timezone="UTC" if utc else None)
+        return self.data_type.python_type
 
     def successor(self, value):
         """Return the next representable ordered value at this field's resolution."""

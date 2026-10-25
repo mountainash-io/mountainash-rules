@@ -392,7 +392,7 @@ class Field(abc.ABC):
                 scope, uuid, tag, self.literal(region.value).alias(VALUE), _flag(region.wildcard).alias(WILDCARD)
             )
         if isinstance(region, Everything):
-            typed_null = ma.lit(None).cast(self.context_field.data_type.python_type)
+            typed_null = ma.lit(None).cast(self.context_field.value_dtype)
             return bound.select(scope, uuid, tag, typed_null.alias(VALUE), ma.lit(True).alias(WILDCARD))
         if isinstance(region, Members):
             wildcard = _flag(region.wildcard)

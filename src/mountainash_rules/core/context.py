@@ -189,7 +189,7 @@ def context_binding_expressions(
             ma.when(~present)
             .then(ma.lit(None))
             .otherwise(raw)
-            .cast(dim.data_type.python_type)
+            .cast(dim.field.value_dtype)
         )
     if dim.data_type is DataType.DATETIME:
         payload = payload.dt.truncate(f"1{dim.field.datetime_unit}")

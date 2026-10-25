@@ -116,7 +116,7 @@ def scalar_operand(
         operand = decimal_operand(raw, source_dtype, dim.decimal_dtype, dim.rounding, inactive=inactive)
         return operand.value, operand.invalid
     if source_dtype not in _SCALAR_DTYPES[dim.data_type]:
-        return ma.lit(None).cast(dim.data_type.python_type), ~inactive
+        return ma.lit(None).cast(dim.field.value_dtype), ~inactive
     invalid = ~inactive & raw.is_null()
     if dim.data_type is DataType.INT and source_dtype is MountainashDtype.U64:
         invalid = invalid | (~inactive & raw.gt((1 << 63) - 1))
