@@ -1,7 +1,6 @@
 """Constants for the expression-based rules engine."""
 
 import datetime
-from decimal import Decimal
 from enum import IntFlag, StrEnum
 
 
@@ -67,29 +66,20 @@ class DataType(StrEnum):
 
     @property
     def is_numeric(self) -> bool:
-        return self in (DataType.INT, DataType.FLOAT, DataType.DECIMAL)
+        from mountainash_rules.core.type_families import type_family
+        return type_family(self).is_numeric
 
     @property
     def is_temporal(self) -> bool:
-        return self in (DataType.DATE, DataType.DATETIME)
+        from mountainash_rules.core.type_families import type_family
+        return type_family(self).is_temporal
 
     @property
     def python_type(self) -> type:
-        return _DATATYPE_TO_PYTHON[self]
+        from mountainash_rules.core.type_families import type_family
+        return type_family(self).python_type
 
 
-_DATATYPE_TO_PYTHON: dict[DataType, type] = {
-    DataType.STR: str,
-    DataType.INT: int,
-    DataType.FLOAT: float,
-    DataType.DECIMAL: Decimal,
-    DataType.BOOL: bool,
-    DataType.DATE: datetime.date,
-    DataType.DATETIME: datetime.datetime,
-}
-PYTHON_TO_DATATYPE: dict[type, DataType] = {
-    v: k for k, v in _DATATYPE_TO_PYTHON.items()
-}
 
 # Conventional temporal markers: the proleptic floor, where no business data lives.
 UNKNOWN_DATE = datetime.date(1, 1, 1)
@@ -98,10 +88,5 @@ UNKNOWN_DATETIME = datetime.datetime(1, 1, 1)
 
 def unknown_sentinel_for(data_type: DataType):
     """The conventional rule-side don't-care marker for a data type."""
-    if data_type.is_numeric:
-        return UNKNOWN_NUMERIC
-    if data_type is DataType.DATE:
-        return UNKNOWN_DATE
-    if data_type is DataType.DATETIME:
-        return UNKNOWN_DATETIME
-    return UNKNOWN
+    from mountainash_rules.core.type_families import type_family
+    return type_family(data_type).conventional_marker

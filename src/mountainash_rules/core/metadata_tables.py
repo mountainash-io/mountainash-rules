@@ -2,46 +2,23 @@
 
 from __future__ import annotations
 
-import datetime as dt
-from decimal import Decimal
 
 from mountainash.relations import relation
 
 from mountainash_rules.core.constants import DataType, MatchStrategy
+from mountainash_rules.core.type_families import type_family
 
 
 def _text(value, data_type):
     if value is None:
         return None
-    if data_type is DataType.DATE:
-        return value.isoformat()
-    if data_type is DataType.DATETIME:
-        return value.isoformat()
-    if data_type is DataType.DECIMAL:
-        return format(value, "f")
-    if data_type is DataType.BOOL:
-        return "true" if value else "false"
-    return str(value)
+    return type_family(data_type).format(value)
 
 
 def _parse(value, data_type):
     if value is None:
         return None
-    if data_type is DataType.DATE:
-        return dt.date.fromisoformat(value)
-    if data_type is DataType.DATETIME:
-        return dt.datetime.fromisoformat(value)
-    if data_type is DataType.DECIMAL:
-        return Decimal(value)
-    if data_type is DataType.BOOL:
-        if value not in ("true", "false"):
-            raise ValueError(f"Invalid canonical BOOL marker {value!r}")
-        return value == "true"
-    if data_type is DataType.INT:
-        return int(value)
-    if data_type is DataType.FLOAT:
-        return float(value)
-    return value
+    return type_family(data_type).parse(value)
 
 
 def _rows(table):
