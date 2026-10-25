@@ -263,6 +263,52 @@ def test_value_null_is_unknown_but_mapped_truthy_null_is_an_outcome(backend_name
 
 
 @pytest.mark.parametrize("backend_name", BACKENDS)
+@pytest.mark.parametrize(
+    "truthy, context, expected",
+    [
+        ({Decimal(0): 1}, {}, 0),
+        ({Decimal(0): 1}, {"amount": None}, 0),
+        ({Decimal(0): 1}, {"amount": Decimal(-999)}, 0),
+        ({Decimal(0): 1}, {"amount": Decimal(0)}, 1),
+        ({None: -1, Decimal(0): 1}, {}, 0),
+        ({None: -1, Decimal(0): 1}, {"amount": None}, -1),
+        ({None: -1, Decimal(0): 1}, {"amount": Decimal(0)}, 1),
+        ({Decimal(0): 1, None: -1}, {"amount": None}, -1),
+    ],
+    ids=[
+        "omitted", "null", "wildcard", "zero",
+        "mapped-null-omitted", "null-first", "mapped-null-zero", "null-last",
+    ],
+)
+def test_decimal_truthy_uses_availability_not_the_internal_payload(
+    backend_name, truthy, context, expected
+):
+    engine = ExpressionRulesEngine(
+        build_backend_df(
+            backend_name,
+            {"rule_name": ["zero"], "required": [Decimal("0.00")]},
+            table_name="decimal_truthy_rules",
+        ),
+        DimensionsMetadata(
+            fields=(
+                ContextField(
+                    name="amount", data_type=DataType.DECIMAL,
+                    precision=5, scale=2, rounding="half_to_even",
+                    wildcard=Decimal(-999), truthy=truthy,
+                ),
+            ),
+            dimensions=(
+                Dimension(
+                    dimension_name="amount", context_field="amount",
+                    rule_field="required", match_strategy=MatchStrategy.TRUTHY,
+                ),
+            ),
+        ),
+    )
+    assert _scores(engine, context, "amount") == [("zero", expected, int(expected == 1))]
+
+
+@pytest.mark.parametrize("backend_name", BACKENDS)
 def test_context_regex_missing_and_wildcard_are_unknown(backend_name):
     engine = ExpressionRulesEngine(
         build_backend_df(
