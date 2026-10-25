@@ -263,6 +263,8 @@ batch.for_context("B")     # a RuleResult for one context
 | `presence` | `IS_NULL`, `IS_NOT_NULL` or the wildcard | see the null model above |
 | `outcome` | an int8 ternary (-1, 0, 1) | the context supplies an already computed ternary and the two are equal and non-zero |
 
+`OUTCOME` scores 0 when either outcome is 0, including when the field explicitly declares 0 as its wildcard.
+
 `min`, `max` and `range` need a numeric or temporal field. FLOAT fields cannot be ordered; use DECIMAL. The string strategies need a STR field. Patterns use Mountainash `str.regex_contains`.
 
 ```python
