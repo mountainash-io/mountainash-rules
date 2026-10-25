@@ -11,11 +11,10 @@ import mountainash.expressions as ma
 from mountainash import DecimalDtype, MountainashDtype
 from mountainash.core.dtypes import ListDtype, TimestampDtype, dtype_family
 
-from mountainash_rules.core.compiler import _SCALAR_DTYPES, typed_marker_predicate
 from mountainash_rules.core.constants import DataType, MatchStrategy
 from mountainash_rules.core.dimension import ContextField, Dimension, DimensionsMetadata
-from mountainash_rules.core.numeric import exact_literal
-from mountainash_rules.core.set_wildcard import canonicalize_set_expr
+from mountainash_rules.core.numeric import canonicalize_set_expr, exact_literal, typed_marker_predicate
+from mountainash_rules.core.type_families import type_family
 from mountainash_rules.decision_table.fields import BOUND_SCOPE, BOUND_UUID, SOURCE_UUID, family_for
 from mountainash_rules.decision_table.strategies import strategy_for, unsatisfiable_rules
 
@@ -116,13 +115,7 @@ def _list_element_schema_compatible(dtype: Any, field: ContextField) -> bool:
     """Check a concrete list element descriptor without materializing rows."""
     if not isinstance(dtype, ListDtype):
         return False
-    element = dtype.element
-    if field.data_type is DataType.DATETIME and isinstance(element, TimestampDtype):
-        return _timezone_matches(element, field.timezone)
-    return (
-        element in _SCALAR_DTYPES.get(field.data_type, frozenset())
-        or (field.data_type is DataType.DECIMAL and isinstance(element, DecimalDtype))
-    )
+    return type_family(field.data_type).admits_rule_element(dtype.element, field)
 
 
 def _dimension_findings(dim: Dimension, schema: dict[str, Any]) -> list[Finding]:

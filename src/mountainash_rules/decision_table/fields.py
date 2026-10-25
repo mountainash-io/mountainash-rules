@@ -30,11 +30,10 @@ import mountainash.expressions as ma
 from mountainash.expressions import BaseExpressionAPI
 from mountainash.relations import Relation, concat
 
-from mountainash_rules.core.compiler import typed_marker_predicate
 from mountainash_rules.core.constants import DataType, MatchStrategy
 from mountainash_rules.core.dimension import ContextField, Dimension
-from mountainash_rules.core.numeric import exact_literal
-from mountainash_rules.core.set_wildcard import canonicalize_set_expr, set_state
+from mountainash_rules.core.numeric import canonicalize_set_expr, exact_literal, typed_marker_predicate
+from mountainash_rules.core.set_wildcard import set_state
 from mountainash_rules.decision_table.errors import DecisionTableError
 
 SCOPE = "scope"

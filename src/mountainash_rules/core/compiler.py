@@ -5,85 +5,17 @@ from __future__ import annotations
 import typing as t
 
 import mountainash.expressions as ma
-from mountainash import DecimalDtype, MountainashDtype
+from mountainash import MountainashDtype
 from mountainash.core.dtypes import dtype_family
 from mountainash.expressions import BaseExpressionAPI
 
-from mountainash_rules.core.constants import DataType, MatchStrategy
+from mountainash_rules.core.constants import MatchStrategy
 from mountainash_rules.core.dimension import Dimension, DimensionsMetadata
-from mountainash_rules.core.numeric import (
-    decimal_operand,
-    exact_literal,
-    literal_dtype,
-)
+from mountainash_rules.core.numeric import exact_literal, typed_marker_predicate
 from mountainash_rules.core.set_wildcard import set_state
+from mountainash_rules.core.type_families import type_family
 
 
-_INTEGER_DTYPES = frozenset(
-    {
-        MountainashDtype.I8,
-        MountainashDtype.I16,
-        MountainashDtype.I32,
-        MountainashDtype.I64,
-        MountainashDtype.U8,
-        MountainashDtype.U16,
-        MountainashDtype.U32,
-        MountainashDtype.U64,
-    }
-)
-_FLOAT_DTYPES = frozenset({MountainashDtype.FP32, MountainashDtype.FP64})
-_SCALAR_DTYPES = {
-    DataType.STR: frozenset({MountainashDtype.STRING}),
-    DataType.BOOL: frozenset({MountainashDtype.BOOL}),
-    DataType.INT: _INTEGER_DTYPES,
-    DataType.FLOAT: _FLOAT_DTYPES | _INTEGER_DTYPES,
-    DataType.DATE: frozenset({MountainashDtype.DATE}),
-    DataType.DATETIME: frozenset({MountainashDtype.TIMESTAMP}),
-}
-
-
-def same_scalar_type(left: t.Any, right: t.Any) -> bool:
-    """Compare original scalar domains, allowing widths but not coercive equality."""
-    return (
-        left == right
-        or (left in _INTEGER_DTYPES and right in _INTEGER_DTYPES)
-        or (left in _FLOAT_DTYPES and right in _FLOAT_DTYPES)
-        or (isinstance(left, DecimalDtype) and isinstance(right, DecimalDtype))
-        # A column reports its timestamp parameters; a Python literal reports only the family.
-        or (dtype_family(left) is MountainashDtype.TIMESTAMP and dtype_family(right) is MountainashDtype.TIMESTAMP)
-    )
-
-
-def typed_marker_predicate(
-    expr: BaseExpressionAPI,
-    source_dtype: t.Any,
-    markers: list[t.Any],
-) -> BaseExpressionAPI:
-    """Recognize declared markers in the original native scalar domain."""
-    result = ma.lit(False)
-    for marker in markers:
-        if marker is None:
-            result = result | expr.is_null()
-        else:
-            marker_dtype = literal_dtype(marker)
-            if not same_scalar_type(source_dtype, marker_dtype):
-                continue
-            if isinstance(source_dtype, DecimalDtype) and isinstance(
-                marker_dtype, DecimalDtype
-            ):
-                if (
-                    marker_dtype.scale > source_dtype.scale
-                    or marker_dtype.precision - marker_dtype.scale
-                    > source_dtype.precision - source_dtype.scale
-                ):
-                    # No original value in this column can denote the marker.
-                    # Binding it in the target interpretation would round it.
-                    continue
-                literal = ma.lit(marker, dtype=source_dtype)
-            else:
-                literal = exact_literal(marker)
-            result = result | expr.eq(literal).fill_null(False)
-    return result
 
 
 def rule_binding_names(dim: Dimension, endpoint: str | None = None) -> tuple[str, str]:
@@ -105,29 +37,6 @@ def rule_flag_state(
     return flag.fill_null(False), flag.is_null() | ((~flag).fill_null(False) & marker)
 
 
-def scalar_operand(
-    dim: Dimension,
-    raw: BaseExpressionAPI,
-    source_dtype: t.Any,
-    inactive: BaseExpressionAPI,
-) -> tuple[BaseExpressionAPI, BaseExpressionAPI]:
-    """Admit the original scalar domain and provide an unused typed payload."""
-    source_dtype = dtype_family(source_dtype)
-    if dim.data_type is DataType.DECIMAL:
-        assert dim.decimal_dtype is not None and dim.rounding is not None
-        operand = decimal_operand(raw, source_dtype, dim.decimal_dtype, dim.rounding, inactive=inactive)
-        return operand.value, operand.invalid
-    if source_dtype not in _SCALAR_DTYPES[dim.data_type]:
-        return ma.lit(None).cast(dim.field.value_dtype), ~inactive
-    invalid = ~inactive & raw.is_null()
-    if dim.data_type is DataType.INT and source_dtype is MountainashDtype.U64:
-        invalid = invalid | (~inactive & raw.gt((1 << 63) - 1))
-    elif dim.data_type is DataType.FLOAT and source_dtype in _FLOAT_DTYPES:
-        invalid = invalid | (~inactive & ~raw.is_finite())
-    payload = ma.when(inactive | invalid).then(None).otherwise(raw)
-    if dim.data_type in (DataType.INT, DataType.FLOAT):
-        payload = payload.cast(dim.data_type.python_type)
-    return payload, invalid.fill_null(False)
 
 
 def rule_binding_expressions(
@@ -161,11 +70,7 @@ def rule_binding_expressions(
                 if dim.match_strategy is MatchStrategy.PRESENCE:
                     payload = raw
                 else:
-                    payload, failure = scalar_operand(dim, raw, source_dtype, wildcard)
-                    if dim.data_type is DataType.DECIMAL:
-                        # decimal_operand substitutes a placeholder zero for an operand it
-                        # cannot convert; an unconvertible rule value is no value at all.
-                        payload = ma.when(failure).then(None).otherwise(payload)
+                    payload, _ = type_family(dim.data_type).bind_rule(dim.field, raw, source_dtype, wildcard)
                     if dim.match_strategy is MatchStrategy.REGEX:
                         payload = ma.when(wildcard).then("").otherwise(payload)
             value_name, state_name = rule_binding_names(dim, endpoint)
