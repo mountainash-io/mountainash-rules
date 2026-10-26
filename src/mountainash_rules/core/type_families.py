@@ -38,14 +38,15 @@ from mountainash_rules.core.numeric import (
 )
 
 if t.TYPE_CHECKING:
+    from mountainash_rules.context_validation import _Shape
     from mountainash_rules.core.aggregate import Aggregate
     from mountainash_rules.core.dimension import ContextField
 
 
-_DATETIME_STEPS = {
-    "s": dt.timedelta(seconds=1),
-    "ms": dt.timedelta(milliseconds=1),
-    "us": dt.timedelta(microseconds=1),
+_DATETIME_UNITS = {
+    "s": (dt.timedelta(seconds=1), "add_seconds"),
+    "ms": (dt.timedelta(milliseconds=1), "add_milliseconds"),
+    "us": (dt.timedelta(microseconds=1), "add_microseconds"),
 }
 _ROUNDING = frozenset({"half_to_even", "half_away_from_zero"})
 
@@ -74,6 +75,9 @@ class TypeFamily:
     _scalar_dtypes: t.ClassVar[frozenset] = frozenset()
     _rule_cast: t.ClassVar[type | None] = None
     _empty_element: t.ClassVar[MountainashDtype]
+    accepted_context_families: t.ClassVar[frozenset[str]] = frozenset()
+    _bounds_values: t.ClassVar[tuple[t.Any, t.Any]]
+    _step_value: t.ClassVar[t.Any]
 
     def validate_field(self, field: ContextField) -> None:
         self._validate_field_decimal(field)
@@ -185,6 +189,48 @@ class TypeFamily:
     ) -> BaseExpressionAPI:
         return canonicalize_set_expr(raw)
 
+    def admits_rule_scalar(self, dtype: t.Any, *, timezone: str | None) -> bool:
+        return dtype_family(dtype) in self._scalar_dtypes
+
+    def accepts_context_value(self, value: t.Any) -> bool:
+        return isinstance(value, self.python_type)
+
+    def context_schema_issues(self, field: ContextField, shape: _Shape) -> tuple[list[str], list[str]]:
+        return [], []
+
+    def representability_problem(self, value: t.Any, field: ContextField, shape: _Shape) -> str | None:
+        return None
+
+    def signature_placeholder(self, declaration: ContextField | Aggregate) -> BaseExpressionAPI:
+        return ma.lit(self.python_type())
+
+    def signature_scalar(self, raw: BaseExpressionAPI, declaration: ContextField | Aggregate) -> BaseExpressionAPI:
+        return raw
+
+    def signature_list(self, raw: BaseExpressionAPI, field: ContextField) -> BaseExpressionAPI:
+        return canonicalize_set_expr(raw)
+
+    def bounds(self, field: ContextField) -> tuple[t.Any, t.Any]:
+        return self._bounds_values
+
+    def step(self, field: ContextField) -> t.Any:
+        return self._step_value
+
+    def reduce(self, field: ContextField, value: t.Any) -> t.Any:
+        return value
+
+    def literal(self, field: ContextField, value: t.Any) -> BaseExpressionAPI:
+        return value if isinstance(value, BaseExpressionAPI) else ma.lit(value)
+
+    def quantise(self, field: ContextField, value: BaseExpressionAPI) -> BaseExpressionAPI:
+        return value
+
+    def quantise_list(self, field: ContextField, value: BaseExpressionAPI) -> BaseExpressionAPI:
+        return value
+
+    def shift(self, field: ContextField, value: BaseExpressionAPI, direction: int) -> BaseExpressionAPI:
+        return value + self.step(field) * direction
+
 
 class StringFamily(TypeFamily):
     __slots__ = ()
@@ -193,6 +239,7 @@ class StringFamily(TypeFamily):
     supports_pattern = True
     _scalar_dtypes = frozenset({MountainashDtype.STRING})
     _empty_element = MountainashDtype.STRING
+    accepted_context_families = frozenset({"str"})
 
 
 class IntegerFamily(TypeFamily):
@@ -204,6 +251,25 @@ class IntegerFamily(TypeFamily):
     _scalar_dtypes = _INTEGER_TYPES
     _rule_cast = int
     _empty_element = MountainashDtype.I64
+    accepted_context_families = frozenset({"int"})
+    _bounds_values = (-(2**31), 2**31 - 1)
+    _step_value = 1
+
+    def accepts_context_value(self, value: t.Any) -> bool:
+        return isinstance(value, int) and not isinstance(value, bool)
+
+    def representability_problem(self, value: t.Any, field: ContextField, shape: _Shape) -> str | None:
+        if shape.int_range is not None:
+            low, high = shape.int_range
+            if not low <= value <= high:
+                return f"{value!r} is outside the schema's integer range"
+        return None
+
+    def literal(self, field: ContextField, value: t.Any) -> BaseExpressionAPI:
+        return value if isinstance(value, BaseExpressionAPI) else ma.lit(value).cast(int)
+
+    def quantise(self, field: ContextField, value: BaseExpressionAPI) -> BaseExpressionAPI:
+        return value.cast(int)
 
     def _invalid_rule_value(
         self, raw: BaseExpressionAPI, source_dtype: t.Any
@@ -229,6 +295,14 @@ class FloatFamily(TypeFamily):
     _scalar_dtypes = _FLOAT_TYPES | _INTEGER_TYPES
     _rule_cast = float
     _empty_element = MountainashDtype.FP64
+    accepted_context_families = frozenset({"float", "int"})
+
+    def admits_rule_scalar(self, dtype: t.Any, *, timezone: str | None) -> bool:
+        # Scalar prevalidation has never admitted FLOAT, unlike engine/list binding.
+        return False
+
+    def accepts_context_value(self, value: t.Any) -> bool:
+        return isinstance(value, (int, float)) and not isinstance(value, bool)
 
     def _invalid_rule_value(
         self, raw: BaseExpressionAPI, source_dtype: t.Any
@@ -255,6 +329,64 @@ class DecimalFamily(TypeFamily):
     is_numeric = True
     is_ordered = True
     conventional_marker = UNKNOWN_NUMERIC
+    accepted_context_families = frozenset({"decimal", "int"})
+
+    def admits_rule_scalar(self, dtype: t.Any, *, timezone: str | None) -> bool:
+        return isinstance(dtype, DecimalDtype)
+
+    def accepts_context_value(self, value: t.Any) -> bool:
+        return isinstance(value, (Decimal, int)) and not isinstance(value, bool)
+
+    def context_schema_issues(self, field: ContextField, shape: _Shape) -> tuple[list[str], list[str]]:
+        if shape.scale is not None and shape.scale > t.cast(int, field.scale):
+            return [], [
+                f"field {field.name!r}: schema scale {shape.scale} is finer than declared scale {field.scale}; "
+                f"the engine reduces it with {field.rounding}"
+            ]
+        return [], []
+
+    def representability_problem(self, value: t.Any, field: ContextField, shape: _Shape) -> str | None:
+        number = Decimal(value)
+        exponent = number.normalize().as_tuple().exponent
+        scale = min(s for s in (field.scale, shape.scale) if s is not None)
+        if isinstance(exponent, int) and exponent < -scale:
+            return f"{value!r} has more than {scale} decimal places"
+        for owner, precision, owner_scale in (
+            ("declared", field.precision, field.scale),
+            ("schema's", shape.precision, shape.scale),
+        ):
+            if precision is not None and owner_scale is not None and abs(number) >= Decimal(10) ** (precision - owner_scale):
+                return f"{value!r} exceeds the {owner} precision"
+        return None
+
+    def signature_placeholder(self, declaration: ContextField | Aggregate) -> BaseExpressionAPI:
+        return ma.lit(Decimal(0), dtype=self.decimal_dtype(declaration))
+
+    def signature_scalar(self, raw: BaseExpressionAPI, declaration: ContextField | Aggregate) -> BaseExpressionAPI:
+        return raw.cast(self.decimal_dtype(declaration), rounding=declaration.rounding)
+
+    def signature_list(self, raw: BaseExpressionAPI, field: ContextField) -> BaseExpressionAPI:
+        return canonicalize_set_expr(raw.list.agg(self.signature_scalar(ma.element(), field)))
+
+    def bounds(self, field: ContextField) -> tuple[Decimal, Decimal]:
+        top = Decimal(10 ** t.cast(int, field.precision) - 1).scaleb(-t.cast(int, field.scale))
+        return -top, top
+
+    def step(self, field: ContextField) -> Decimal:
+        return Decimal(1).scaleb(-t.cast(int, field.scale))
+
+    def literal(self, field: ContextField, value: t.Any) -> BaseExpressionAPI:
+        return value if isinstance(value, BaseExpressionAPI) else ma.lit(value, dtype=self.decimal_dtype(field))
+
+    def quantise(self, field: ContextField, value: BaseExpressionAPI) -> BaseExpressionAPI:
+        return value.cast(self.decimal_dtype(field), rounding=field.rounding)
+
+    def quantise_list(self, field: ContextField, value: BaseExpressionAPI) -> BaseExpressionAPI:
+        return canonicalize_set_expr(value.list.agg(self.quantise(field, ma.element())))
+
+    def shift(self, field: ContextField, value: BaseExpressionAPI, direction: int) -> BaseExpressionAPI:
+        step = ma.lit(self.step(field) * direction, dtype=self.decimal_dtype(field))
+        return (value + step).cast(self.decimal_dtype(field), rounding=field.rounding)
 
     def _validate_field_decimal(self, field: ContextField) -> None:
         if not _valid_precision(field):
@@ -284,7 +416,7 @@ class DecimalFamily(TypeFamily):
 
     def successor(self, field: ContextField, value: t.Any) -> t.Any:
         if isinstance(value, Decimal):
-            return value + Decimal(1).scaleb(-field.scale)
+            return value + self.step(field)
         return super().successor(field, value)
 
     def _bind_decimal(
@@ -341,6 +473,7 @@ class BooleanFamily(TypeFamily):
     is_unordered = True
     _scalar_dtypes = frozenset({MountainashDtype.BOOL})
     _empty_element = MountainashDtype.BOOL
+    accepted_context_families = frozenset({"bool"})
     _trim = " \t\n\r\f\v"
     _true = tuple(
         "".join(chars) for chars in product(*[(c, c.upper()) for c in "true"])
@@ -450,6 +583,18 @@ class DateFamily(TypeFamily):
     conventional_marker = UNKNOWN_DATE
     _scalar_dtypes = frozenset({MountainashDtype.DATE})
     _empty_element = MountainashDtype.DATE
+    accepted_context_families = frozenset({"date"})
+    _bounds_values = (dt.date.min, dt.date.max)
+    _step_value = dt.timedelta(days=1)
+
+    def accepts_context_value(self, value: t.Any) -> bool:
+        return isinstance(value, dt.date) and not isinstance(value, dt.datetime)
+
+    def signature_placeholder(self, declaration: ContextField | Aggregate) -> BaseExpressionAPI:
+        return ma.lit(dt.date(1970, 1, 1))
+
+    def shift(self, field: ContextField, value: BaseExpressionAPI, direction: int) -> BaseExpressionAPI:
+        return value.dt.add_days(direction)
 
     def parse(self, text: str) -> dt.date:
         return dt.date.fromisoformat(text)
@@ -471,6 +616,61 @@ class DatetimeFamily(TypeFamily):
     conventional_marker = UNKNOWN_DATETIME
     _scalar_dtypes = frozenset({MountainashDtype.TIMESTAMP})
     _empty_element = MountainashDtype.TIMESTAMP
+    accepted_context_families = frozenset({"datetime"})
+
+    @staticmethod
+    def _timezone_matches(dtype: TimestampDtype, timezone: str | None) -> bool:
+        aware = dtype.timezone_aware
+        return not isinstance(aware, bool) or aware == (timezone == "utc")
+
+    def admits_rule_scalar(self, dtype: t.Any, *, timezone: str | None) -> bool:
+        return super().admits_rule_scalar(dtype, timezone=timezone) and (
+            not isinstance(dtype, TimestampDtype) or self._timezone_matches(dtype, timezone)
+        )
+
+    def context_schema_issues(self, field: ContextField, shape: _Shape) -> tuple[list[str], list[str]]:
+        errors = []
+        if shape.family == "datetime":
+            if shape.unit is not None and shape.unit != field.datetime_unit:
+                errors.append(
+                    f"field {field.name!r}: schema unit {shape.unit!r} does not match declared {field.datetime_unit!r}"
+                )
+            compatible = {field.timezone, "aware" if field.timezone == "utc" else None}
+            if shape.timezone is not None and shape.timezone not in compatible:
+                errors.append(
+                    f"field {field.name!r}: schema timezone {shape.timezone!r} does not match declared {field.timezone!r}"
+                )
+        return errors, []
+
+    def representability_problem(self, value: t.Any, field: ContextField, shape: _Shape) -> str | None:
+        if value.microsecond % (self.step(field) // _DATETIME_UNITS["us"][0]):
+            return f"{value!r} is finer than unit {field.datetime_unit!r}"
+        return None
+
+    def signature_placeholder(self, declaration: ContextField | Aggregate) -> BaseExpressionAPI:
+        return ma.lit(dt.datetime(1970, 1, 1, tzinfo=dt.timezone.utc if declaration.timezone == "utc" else None))
+
+    def bounds(self, field: ContextField) -> tuple[dt.datetime, dt.datetime]:
+        zone = dt.timezone.utc if field.timezone == "utc" else None
+        micros = 1_000_000 - self.step(field) // _DATETIME_UNITS["us"][0]
+        return dt.datetime(1, 1, 1, tzinfo=zone), dt.datetime(9999, 12, 31, 23, 59, 59, micros, tzinfo=zone)
+
+    def step(self, field: ContextField) -> dt.timedelta:
+        return _DATETIME_UNITS[t.cast(str, field.datetime_unit)][0]
+
+    def reduce(self, field: ContextField, value: t.Any) -> t.Any:
+        step = self.step(field) // _DATETIME_UNITS["us"][0]
+        return value if step == 1 else value.replace(microsecond=value.microsecond // step * step)
+
+    def quantise(self, field: ContextField, value: BaseExpressionAPI) -> BaseExpressionAPI:
+        floored = value.dt.floor(f"1{field.datetime_unit}")
+        return floored.dt.convert_time_zone("UTC") if field.timezone == "utc" else floored
+
+    def quantise_list(self, field: ContextField, value: BaseExpressionAPI) -> BaseExpressionAPI:
+        return canonicalize_set_expr(value.list.agg(self.quantise(field, ma.element())))
+
+    def shift(self, field: ContextField, value: BaseExpressionAPI, direction: int) -> BaseExpressionAPI:
+        return getattr(value.dt, _DATETIME_UNITS[t.cast(str, field.datetime_unit)][1])(direction)
 
     def bind_context(
         self,
@@ -492,8 +692,7 @@ class DatetimeFamily(TypeFamily):
 
     def admits_rule_element(self, dtype: t.Any, field: ContextField) -> bool:
         if isinstance(dtype, TimestampDtype):
-            aware = dtype.timezone_aware
-            return not isinstance(aware, bool) or aware == (field.timezone == "utc")
+            return self._timezone_matches(dtype, field.timezone)
         return super().admits_rule_element(dtype, field)
 
     def _validate_field_datetime(self, field: ContextField) -> None:
@@ -518,7 +717,7 @@ class DatetimeFamily(TypeFamily):
 
     def successor(self, field: ContextField, value: t.Any) -> t.Any:
         if isinstance(value, dt.datetime):
-            return value + _DATETIME_STEPS[field.datetime_unit]
+            return value + self.step(field)
         return super().successor(field, value)
 
 

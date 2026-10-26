@@ -426,3 +426,124 @@ def test_datetime_list_rule_admission_checks_declared_timezone():
     assert family.admits_engine_element(naive)
     assert not family.admits_rule_element(naive, field)
     assert family.admits_rule_element(aware, field)
+
+
+@pytest.mark.parametrize("dtype", [MountainashDtype.I64, MountainashDtype.FP32, MountainashDtype.FP64])
+def test_float_rule_scalar_admission_is_narrower_than_list_and_context(dtype):
+    family = type_family(DataType.FLOAT)
+    assert not family.admits_rule_scalar(dtype, timezone=None)
+    assert family.admits_engine_element(dtype)
+    assert family.accepts_context_value(3)
+    assert family.accepts_context_value(3.5)
+    assert not family.accepts_context_value(True)
+
+
+def test_decimal_schema_admission_and_scale_notice_keep_distinct_roles():
+    from mountainash_rules.context_validation import _Shape
+
+    family = type_family(DataType.DECIMAL)
+    field = ContextField(name="amount", data_type="decimal", precision=5, scale=2, rounding="half_to_even")
+    assert not family.admits_rule_scalar(MountainashDtype.I64, timezone=None)
+    assert family.admits_rule_scalar(DecimalDtype(7, 3), timezone=None)
+    assert "int" in family.accepted_context_families
+    assert family.accepts_context_value(2)
+    assert not family.accepts_context_value(True)
+    errors, notices = family.context_schema_issues(field, _Shape("decimal", "decimal(7,3)", precision=7, scale=3))
+    assert (len(errors), len(notices)) == (0, 1)
+    assert family.context_schema_issues(field, _Shape("int", "i64")) == ([], [])
+
+
+def test_datetime_schema_checks_unit_without_changing_rule_admission():
+    from mountainash_rules.context_validation import _Shape
+
+    family = type_family(DataType.DATETIME)
+    field = ContextField(name="at", data_type="datetime", datetime_unit="ms", timezone="utc")
+    assert family.admits_rule_scalar(TimestampDtype(precision=6, timezone_aware=True), timezone="utc")
+    assert not family.admits_rule_scalar(TimestampDtype(precision=6, timezone_aware=False), timezone="utc")
+    observed = []
+    for unit, timezone in [("us", "naive"), ("ms", "naive"), ("us", "utc"), ("ms", "aware")]:
+        errors, notices = family.context_schema_issues(field, _Shape("datetime", "timestamp", unit=unit, timezone=timezone))
+        observed.append((len(errors), len(notices)))
+    assert observed == [(2, 0), (1, 0), (1, 0), (0, 0)]
+
+
+@pytest.mark.parametrize("kind,value,shape_options,allowed", [
+    (DataType.INT, 127, {"int_range": (-128, 127)}, True),
+    (DataType.INT, 128, {"int_range": (-128, 127)}, False),
+    (DataType.DECIMAL, Decimal("12.34"), {"precision": 4, "scale": 2}, True),
+    (DataType.DECIMAL, Decimal("12.345"), {"precision": 6, "scale": 3}, False),
+    (DataType.DECIMAL, Decimal("100.00"), {"precision": 4, "scale": 2}, False),
+    (DataType.DATETIME, dt.datetime(2026, 10, 26, microsecond=123000), {}, True),
+    (DataType.DATETIME, dt.datetime(2026, 10, 26, microsecond=123001), {}, False),
+])
+def test_representability_preserves_width_precision_and_resolution(kind, value, shape_options, allowed):
+    from mountainash_rules.context_validation import _Shape
+
+    options = {"precision": 5, "scale": 2, "rounding": "half_to_even"} if kind is DataType.DECIMAL else {"datetime_unit": "ms", "timezone": "naive"} if kind is DataType.DATETIME else {}
+    field = ContextField(name="x", data_type=kind, **options)
+    shape = _Shape(kind.value, kind.value, **shape_options)
+    assert (type_family(kind).representability_problem(value, field, shape) is None) is allowed
+
+
+def test_decimal_signature_reduction_is_not_engine_list_binding(backend_name):
+    family = type_family(DataType.DECIMAL)
+    field = ContextField(name="x", data_type="decimal", precision=5, scale=2, rounding="half_to_even")
+    output = Aggregate(output_name="total", contribution_column="actual", data_type="decimal", precision=4, scale=1, rounding="half_away_from_zero")
+    source = relation(build_backend_df(backend_name, {"raw": [[Decimal("1.245"), Decimal("1.244"), Decimal("1.255")]], "actual": [Decimal("1.255")]}))
+    values = source.select(
+        family.signature_list(ma.col("raw"), field).alias("signature"),
+        family.engine_list_payload(ma.col("raw"), source.schema["raw"].element, source_name="raw").alias("engine"),
+        family.signature_scalar(ma.col("actual"), output).alias("output"),
+        family.signature_placeholder(output).alias("placeholder"),
+    ).to_dicts()
+    assert values == [{"signature": [Decimal("1.24"), Decimal("1.26")], "engine": [Decimal("1.244"), Decimal("1.245"), Decimal("1.255")], "output": Decimal("1.3"), "placeholder": Decimal("0.0")}]
+
+
+def test_decimal_construction_uses_each_declaration_without_python_reduction(backend_name):
+    family = type_family(DataType.DECIMAL)
+    source = relation(build_backend_df(backend_name, {"raw": [Decimal("2.225")]}))
+    fine = ContextField(name="x", data_type="decimal", precision=5, scale=2, rounding="half_to_even")
+    coarse = ContextField(name="x", data_type="decimal", precision=4, scale=1, rounding="half_away_from_zero")
+    for field, bounds, step, quantised, shifted in [
+        (fine, (Decimal("-999.99"), Decimal("999.99")), Decimal("0.01"), Decimal("2.22"), Decimal("2.23")),
+        (coarse, (Decimal("-999.9"), Decimal("999.9")), Decimal("0.1"), Decimal("2.2"), Decimal("2.3")),
+        (fine, (Decimal("-999.99"), Decimal("999.99")), Decimal("0.01"), Decimal("2.22"), Decimal("2.23")),
+    ]:
+        assert family.bounds(field) == bounds
+        assert family.step(field) == step
+        assert family.reduce(field, Decimal("2.225")) == Decimal("2.225")
+        value = family.quantise(field, family.literal(field, ma.col("raw")))
+        assert source.select(value.alias("value"), family.shift(field, value, 1).alias("shifted")).to_dicts() == [{"value": quantised, "shifted": shifted}]
+
+
+@pytest.mark.parametrize("timezone", ["naive", "utc"])
+def test_datetime_construction_and_signature_keep_different_resolutions(backend_name, timezone):
+    family = type_family(DataType.DATETIME)
+    zone = dt.timezone.utc if timezone == "utc" else None
+    instant = dt.datetime(2026, 10, 26, 12, 0, 0, 999999, tzinfo=zone)
+    source = _source(backend_name, [instant], TimestampDtype(precision=6, timezone_aware=zone is not None, timezone="UTC" if zone else None))
+    for unit, micros, step in [("s", 0, dt.timedelta(seconds=1)), ("ms", 999000, dt.timedelta(milliseconds=1)), ("us", 999999, dt.timedelta(microseconds=1)), ("s", 0, dt.timedelta(seconds=1))]:
+        field = ContextField(name="x", data_type="datetime", datetime_unit=unit, timezone=timezone)
+        assert family.bounds(field) == (dt.datetime(1, 1, 1, tzinfo=zone), dt.datetime(9999, 12, 31, 23, 59, 59, micros, tzinfo=zone))
+        assert family.step(field) == step
+        assert family.reduce(field, instant) == instant.replace(microsecond=micros)
+        quantised = family.quantise(field, ma.col("raw"))
+        assert source.select(
+            quantised.alias("value"),
+            family.shift(field, quantised, 1).alias("next"),
+            family.signature_scalar(ma.col("raw"), field).alias("signature"),
+        ).to_dicts() == [{"value": instant.replace(microsecond=micros), "next": dt.datetime(2026, 10, 26, 12, 0, 1, tzinfo=zone), "signature": instant}]
+
+
+def test_public_integer_successor_is_not_limited_by_region_bounds():
+    field = ContextField(name="x", data_type="int")
+    family = type_family(DataType.INT)
+    assert family.successor(field, family.bounds(field)[1]) == 2147483648
+
+
+def test_date_shift_preserves_calendar_arithmetic(backend_name):
+    field = ContextField(name="x", data_type="date")
+    family = type_family(DataType.DATE)
+    source = _source(backend_name, [dt.date(2024, 2, 28)], MountainashDtype.DATE)
+    value = family.literal(field, ma.col("raw"))
+    assert source.select(family.shift(field, value, 1).alias("next"), family.shift(field, value, -1).alias("previous")).to_dicts() == [{"next": dt.date(2024, 2, 29), "previous": dt.date(2024, 2, 27)}]

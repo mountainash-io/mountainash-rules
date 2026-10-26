@@ -151,12 +151,13 @@ class DimensionsMetadata(BaseModel):
             except KeyError as exc:
                 raise ValueError(f"Undeclared context field {dim.context_field!r}") from exc
             object.__setattr__(dim, "_field", field)
+            family = type_family(field.data_type)
             if dim.match_strategy in (MatchStrategy.MIN, MatchStrategy.MAX, MatchStrategy.RANGE):
-                if field.data_type is DataType.FLOAT:
-                    raise ValueError("FLOAT ordered dimensions require DECIMAL")
-                if not (field.data_type.is_numeric or field.data_type.is_temporal):
+                if family.ordered_refusal is not None:
+                    raise ValueError(family.ordered_refusal)
+                if not (family.is_numeric or family.is_temporal):
                     raise ValueError(f"{dim.match_strategy.value} requires a numeric or temporal field")
-            if dim.match_strategy in (MatchStrategy.REGEX, MatchStrategy.CONTEXT_REGEX, MatchStrategy.PREFIX, MatchStrategy.SUFFIX, MatchStrategy.CONTAINS) and field.data_type is not DataType.STR:
+            if dim.match_strategy in (MatchStrategy.REGEX, MatchStrategy.CONTEXT_REGEX, MatchStrategy.PREFIX, MatchStrategy.SUFFIX, MatchStrategy.CONTAINS) and not family.supports_pattern:
                 raise ValueError(f"{dim.match_strategy.value} requires STR")
         if len({dim.dimension_name for dim in self.dimensions}) != len(self.dimensions):
             raise ValueError("Duplicate dimension names")
