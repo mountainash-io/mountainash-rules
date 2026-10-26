@@ -19,15 +19,12 @@ if t.TYPE_CHECKING:
     from mountainash_rules.core.dimension import Dimension, DimensionsMetadata
 
 
-
 def _validate_boolean_coercion(policy: BooleanCoercion) -> None:
     """Reject implicit configuration conversions and unknown flag bits."""
     if not isinstance(policy, BooleanCoercion) or int(policy) & ~7:
         raise ValueError(
             "boolean_coercion must be a BooleanCoercion with only known flags"
         )
-
-
 
 
 def extract_context_values(
@@ -99,8 +96,6 @@ def context_binding_expressions(
         (supplied & raw.is_null()).fill_null(False).alias(f"__ctx_null_{name}"),
         origin.alias(f"__ctx_origin_{name}"),
     ], invalid
-
-
 
 
 def bind_context_columns(

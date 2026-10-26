@@ -13,8 +13,6 @@ from mountainash_rules.core.numeric import exact_literal, literal_dtype, same_sc
 from mountainash_rules.core.type_families import type_family
 
 
-
-
 def set_state(
     rel: t.Any,
     dim: Dimension,

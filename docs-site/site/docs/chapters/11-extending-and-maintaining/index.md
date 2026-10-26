@@ -20,11 +20,11 @@ The package has one public import surface (the package root), two engines that s
 | Change | Where | Evidence that must stay valid |
 |---|---|---|
 | A new match strategy | enum value in `core/constants.py`; validation in `core/dimension.py`; its `match` arm in `core/compiler.py`; a strategy class in `decision_table/strategies.py` (and a field-family interpretation if it needs a new region); tests in `tests/core` and `tests/decision_table` | Engine scoring, prevalidation, construction and the finite-completion oracle all agree on both backends. |
-| A field type or `ContextField` attribute | `core/dimension.py`, `core/constants.py` (`DataType`), `core/metadata_tables.py` (flat-table round trip), context binding in `core/context.py`, a field family in `decision_table/fields.py` | Metadata survives `to_tables` / `from_tables`; saved tables reload equal; binding converts and reduces as declared. |
+| A field type or `ContextField` attribute | Declaration in `core/dimension.py` and `core/constants.py` (`DataType`); type behavior in `core/type_families.py` (checks, codecs, binding, admission, signatures and arithmetic); flat-table shape in `core/metadata_tables.py`. Context and region orchestration remain in `core/context.py` and `decision_table/fields.py`. | Metadata survives `to_tables` / `from_tables`; saved tables reload equal; binding converts and reduces as declared. |
 | A hit policy or selection rule | `core/constants.py`, `core/hit_policy.py`, `core/result.py` | Single and batch evaluation agree; re-selection restrictions remain correct; policies stay call-time arguments. |
 | An aggregate operation | `core/aggregate.py` (`AggregateOp`), `decision_table/folds.py`, `core/metadata_tables.py` | Folded outputs, persistence and `build_id` of the metadata. |
 | Persistence format | `decision_table/persistence.py` and `DecisionTable.load` together | `verify_saved_table` and `load` agree on the file list; `build_id` and metadata round trip. |
-| Context validation | `context_validation.py` | `check_context_schema` and `validate_contexts` see what `match` will see (`contexts_to_relation`). |
+| Context validation | Structural extraction and reporting in `context_validation.py`; type-specific admission and representability in `core/type_families.py` | `check_context_schema` and `validate_contexts` see what `match` will see (`contexts_to_relation`). |
 | Result accessors | `core/result.py`, `core/batch_result.py`, `decision_table/apply.py` | `MatchResult.matches` columns stay documented. |
 
 ### Adding a strategy, step by step

@@ -16,8 +16,6 @@ from mountainash_rules.core.set_wildcard import set_state
 from mountainash_rules.core.type_families import type_family
 
 
-
-
 def rule_binding_names(dim: Dimension, endpoint: str | None = None) -> tuple[str, str]:
     name = dim.dimension_name
     if endpoint is not None:
@@ -35,8 +33,6 @@ def rule_flag_state(
         raise ValueError(f"Rule flag {field!r} must be an existing Boolean column")
     flag = ma.col(field)
     return flag.fill_null(False), flag.is_null() | ((~flag).fill_null(False) & marker)
-
-
 
 
 def rule_binding_expressions(

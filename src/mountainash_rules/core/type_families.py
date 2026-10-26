@@ -195,19 +195,29 @@ class TypeFamily:
     def accepts_context_value(self, value: t.Any) -> bool:
         return isinstance(value, self.python_type)
 
-    def context_schema_issues(self, field: ContextField, shape: _Shape) -> tuple[list[str], list[str]]:
+    def context_schema_issues(
+        self, field: ContextField, shape: _Shape
+    ) -> tuple[list[str], list[str]]:
         return [], []
 
-    def representability_problem(self, value: t.Any, field: ContextField, shape: _Shape) -> str | None:
+    def representability_problem(
+        self, value: t.Any, field: ContextField, shape: _Shape
+    ) -> str | None:
         return None
 
-    def signature_placeholder(self, declaration: ContextField | Aggregate) -> BaseExpressionAPI:
+    def signature_placeholder(
+        self, declaration: ContextField | Aggregate
+    ) -> BaseExpressionAPI:
         return ma.lit(self.python_type())
 
-    def signature_scalar(self, raw: BaseExpressionAPI, declaration: ContextField | Aggregate) -> BaseExpressionAPI:
+    def signature_scalar(
+        self, raw: BaseExpressionAPI, declaration: ContextField | Aggregate
+    ) -> BaseExpressionAPI:
         return raw
 
-    def signature_list(self, raw: BaseExpressionAPI, field: ContextField) -> BaseExpressionAPI:
+    def signature_list(
+        self, raw: BaseExpressionAPI, field: ContextField
+    ) -> BaseExpressionAPI:
         return canonicalize_set_expr(raw)
 
     def bounds(self, field: ContextField) -> tuple[t.Any, t.Any]:
@@ -222,13 +232,19 @@ class TypeFamily:
     def literal(self, field: ContextField, value: t.Any) -> BaseExpressionAPI:
         return value if isinstance(value, BaseExpressionAPI) else ma.lit(value)
 
-    def quantise(self, field: ContextField, value: BaseExpressionAPI) -> BaseExpressionAPI:
+    def quantise(
+        self, field: ContextField, value: BaseExpressionAPI
+    ) -> BaseExpressionAPI:
         return value
 
-    def quantise_list(self, field: ContextField, value: BaseExpressionAPI) -> BaseExpressionAPI:
+    def quantise_list(
+        self, field: ContextField, value: BaseExpressionAPI
+    ) -> BaseExpressionAPI:
         return value
 
-    def shift(self, field: ContextField, value: BaseExpressionAPI, direction: int) -> BaseExpressionAPI:
+    def shift(
+        self, field: ContextField, value: BaseExpressionAPI, direction: int
+    ) -> BaseExpressionAPI:
         return value + self.step(field) * direction
 
 
@@ -258,7 +274,9 @@ class IntegerFamily(TypeFamily):
     def accepts_context_value(self, value: t.Any) -> bool:
         return isinstance(value, int) and not isinstance(value, bool)
 
-    def representability_problem(self, value: t.Any, field: ContextField, shape: _Shape) -> str | None:
+    def representability_problem(
+        self, value: t.Any, field: ContextField, shape: _Shape
+    ) -> str | None:
         if shape.int_range is not None:
             low, high = shape.int_range
             if not low <= value <= high:
@@ -266,9 +284,13 @@ class IntegerFamily(TypeFamily):
         return None
 
     def literal(self, field: ContextField, value: t.Any) -> BaseExpressionAPI:
-        return value if isinstance(value, BaseExpressionAPI) else ma.lit(value).cast(int)
+        return (
+            value if isinstance(value, BaseExpressionAPI) else ma.lit(value).cast(int)
+        )
 
-    def quantise(self, field: ContextField, value: BaseExpressionAPI) -> BaseExpressionAPI:
+    def quantise(
+        self, field: ContextField, value: BaseExpressionAPI
+    ) -> BaseExpressionAPI:
         return value.cast(int)
 
     def _invalid_rule_value(
@@ -337,7 +359,9 @@ class DecimalFamily(TypeFamily):
     def accepts_context_value(self, value: t.Any) -> bool:
         return isinstance(value, (Decimal, int)) and not isinstance(value, bool)
 
-    def context_schema_issues(self, field: ContextField, shape: _Shape) -> tuple[list[str], list[str]]:
+    def context_schema_issues(
+        self, field: ContextField, shape: _Shape
+    ) -> tuple[list[str], list[str]]:
         if shape.scale is not None and shape.scale > t.cast(int, field.scale):
             return [], [
                 f"field {field.name!r}: schema scale {shape.scale} is finer than declared scale {field.scale}; "
@@ -345,7 +369,9 @@ class DecimalFamily(TypeFamily):
             ]
         return [], []
 
-    def representability_problem(self, value: t.Any, field: ContextField, shape: _Shape) -> str | None:
+    def representability_problem(
+        self, value: t.Any, field: ContextField, shape: _Shape
+    ) -> str | None:
         number = Decimal(value)
         exponent = number.normalize().as_tuple().exponent
         scale = min(s for s in (field.scale, shape.scale) if s is not None)
@@ -355,36 +381,60 @@ class DecimalFamily(TypeFamily):
             ("declared", field.precision, field.scale),
             ("schema's", shape.precision, shape.scale),
         ):
-            if precision is not None and owner_scale is not None and abs(number) >= Decimal(10) ** (precision - owner_scale):
+            if (
+                precision is not None
+                and owner_scale is not None
+                and abs(number) >= Decimal(10) ** (precision - owner_scale)
+            ):
                 return f"{value!r} exceeds the {owner} precision"
         return None
 
-    def signature_placeholder(self, declaration: ContextField | Aggregate) -> BaseExpressionAPI:
+    def signature_placeholder(
+        self, declaration: ContextField | Aggregate
+    ) -> BaseExpressionAPI:
         return ma.lit(Decimal(0), dtype=self.decimal_dtype(declaration))
 
-    def signature_scalar(self, raw: BaseExpressionAPI, declaration: ContextField | Aggregate) -> BaseExpressionAPI:
+    def signature_scalar(
+        self, raw: BaseExpressionAPI, declaration: ContextField | Aggregate
+    ) -> BaseExpressionAPI:
         return raw.cast(self.decimal_dtype(declaration), rounding=declaration.rounding)
 
-    def signature_list(self, raw: BaseExpressionAPI, field: ContextField) -> BaseExpressionAPI:
-        return canonicalize_set_expr(raw.list.agg(self.signature_scalar(ma.element(), field)))
+    def signature_list(
+        self, raw: BaseExpressionAPI, field: ContextField
+    ) -> BaseExpressionAPI:
+        return canonicalize_set_expr(
+            raw.list.agg(self.signature_scalar(ma.element(), field))
+        )
 
     def bounds(self, field: ContextField) -> tuple[Decimal, Decimal]:
-        top = Decimal(10 ** t.cast(int, field.precision) - 1).scaleb(-t.cast(int, field.scale))
+        top = Decimal(10 ** t.cast(int, field.precision) - 1).scaleb(
+            -t.cast(int, field.scale)
+        )
         return -top, top
 
     def step(self, field: ContextField) -> Decimal:
         return Decimal(1).scaleb(-t.cast(int, field.scale))
 
     def literal(self, field: ContextField, value: t.Any) -> BaseExpressionAPI:
-        return value if isinstance(value, BaseExpressionAPI) else ma.lit(value, dtype=self.decimal_dtype(field))
+        return (
+            value
+            if isinstance(value, BaseExpressionAPI)
+            else ma.lit(value, dtype=self.decimal_dtype(field))
+        )
 
-    def quantise(self, field: ContextField, value: BaseExpressionAPI) -> BaseExpressionAPI:
+    def quantise(
+        self, field: ContextField, value: BaseExpressionAPI
+    ) -> BaseExpressionAPI:
         return value.cast(self.decimal_dtype(field), rounding=field.rounding)
 
-    def quantise_list(self, field: ContextField, value: BaseExpressionAPI) -> BaseExpressionAPI:
+    def quantise_list(
+        self, field: ContextField, value: BaseExpressionAPI
+    ) -> BaseExpressionAPI:
         return canonicalize_set_expr(value.list.agg(self.quantise(field, ma.element())))
 
-    def shift(self, field: ContextField, value: BaseExpressionAPI, direction: int) -> BaseExpressionAPI:
+    def shift(
+        self, field: ContextField, value: BaseExpressionAPI, direction: int
+    ) -> BaseExpressionAPI:
         step = ma.lit(self.step(field) * direction, dtype=self.decimal_dtype(field))
         return (value + step).cast(self.decimal_dtype(field), rounding=field.rounding)
 
@@ -590,10 +640,14 @@ class DateFamily(TypeFamily):
     def accepts_context_value(self, value: t.Any) -> bool:
         return isinstance(value, dt.date) and not isinstance(value, dt.datetime)
 
-    def signature_placeholder(self, declaration: ContextField | Aggregate) -> BaseExpressionAPI:
+    def signature_placeholder(
+        self, declaration: ContextField | Aggregate
+    ) -> BaseExpressionAPI:
         return ma.lit(dt.date(1970, 1, 1))
 
-    def shift(self, field: ContextField, value: BaseExpressionAPI, direction: int) -> BaseExpressionAPI:
+    def shift(
+        self, field: ContextField, value: BaseExpressionAPI, direction: int
+    ) -> BaseExpressionAPI:
         return value.dt.add_days(direction)
 
     def parse(self, text: str) -> dt.date:
@@ -625,10 +679,13 @@ class DatetimeFamily(TypeFamily):
 
     def admits_rule_scalar(self, dtype: t.Any, *, timezone: str | None) -> bool:
         return super().admits_rule_scalar(dtype, timezone=timezone) and (
-            not isinstance(dtype, TimestampDtype) or self._timezone_matches(dtype, timezone)
+            not isinstance(dtype, TimestampDtype)
+            or self._timezone_matches(dtype, timezone)
         )
 
-    def context_schema_issues(self, field: ContextField, shape: _Shape) -> tuple[list[str], list[str]]:
+    def context_schema_issues(
+        self, field: ContextField, shape: _Shape
+    ) -> tuple[list[str], list[str]]:
         errors = []
         if shape.family == "datetime":
             if shape.unit is not None and shape.unit != field.datetime_unit:
@@ -642,35 +699,62 @@ class DatetimeFamily(TypeFamily):
                 )
         return errors, []
 
-    def representability_problem(self, value: t.Any, field: ContextField, shape: _Shape) -> str | None:
+    def representability_problem(
+        self, value: t.Any, field: ContextField, shape: _Shape
+    ) -> str | None:
         if value.microsecond % (self.step(field) // _DATETIME_UNITS["us"][0]):
             return f"{value!r} is finer than unit {field.datetime_unit!r}"
         return None
 
-    def signature_placeholder(self, declaration: ContextField | Aggregate) -> BaseExpressionAPI:
-        return ma.lit(dt.datetime(1970, 1, 1, tzinfo=dt.timezone.utc if declaration.timezone == "utc" else None))
+    def signature_placeholder(
+        self, declaration: ContextField | Aggregate
+    ) -> BaseExpressionAPI:
+        return ma.lit(
+            dt.datetime(
+                1970,
+                1,
+                1,
+                tzinfo=dt.timezone.utc if declaration.timezone == "utc" else None,
+            )
+        )
 
     def bounds(self, field: ContextField) -> tuple[dt.datetime, dt.datetime]:
         zone = dt.timezone.utc if field.timezone == "utc" else None
         micros = 1_000_000 - self.step(field) // _DATETIME_UNITS["us"][0]
-        return dt.datetime(1, 1, 1, tzinfo=zone), dt.datetime(9999, 12, 31, 23, 59, 59, micros, tzinfo=zone)
+        return dt.datetime(1, 1, 1, tzinfo=zone), dt.datetime(
+            9999, 12, 31, 23, 59, 59, micros, tzinfo=zone
+        )
 
     def step(self, field: ContextField) -> dt.timedelta:
         return _DATETIME_UNITS[t.cast(str, field.datetime_unit)][0]
 
     def reduce(self, field: ContextField, value: t.Any) -> t.Any:
         step = self.step(field) // _DATETIME_UNITS["us"][0]
-        return value if step == 1 else value.replace(microsecond=value.microsecond // step * step)
+        return (
+            value
+            if step == 1
+            else value.replace(microsecond=value.microsecond // step * step)
+        )
 
-    def quantise(self, field: ContextField, value: BaseExpressionAPI) -> BaseExpressionAPI:
+    def quantise(
+        self, field: ContextField, value: BaseExpressionAPI
+    ) -> BaseExpressionAPI:
         floored = value.dt.floor(f"1{field.datetime_unit}")
-        return floored.dt.convert_time_zone("UTC") if field.timezone == "utc" else floored
+        return (
+            floored.dt.convert_time_zone("UTC") if field.timezone == "utc" else floored
+        )
 
-    def quantise_list(self, field: ContextField, value: BaseExpressionAPI) -> BaseExpressionAPI:
+    def quantise_list(
+        self, field: ContextField, value: BaseExpressionAPI
+    ) -> BaseExpressionAPI:
         return canonicalize_set_expr(value.list.agg(self.quantise(field, ma.element())))
 
-    def shift(self, field: ContextField, value: BaseExpressionAPI, direction: int) -> BaseExpressionAPI:
-        return getattr(value.dt, _DATETIME_UNITS[t.cast(str, field.datetime_unit)][1])(direction)
+    def shift(
+        self, field: ContextField, value: BaseExpressionAPI, direction: int
+    ) -> BaseExpressionAPI:
+        return getattr(value.dt, _DATETIME_UNITS[t.cast(str, field.datetime_unit)][1])(
+            direction
+        )
 
     def bind_context(
         self,

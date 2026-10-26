@@ -43,7 +43,6 @@ class HitPolicy(StrEnum):
     RULE_ORDER = "rule_order"  # all survivors, rule order
 
 
-
 # Conventional rule-side don't-care markers.  The engine gives them no meaning of their own:
 # a marker is a wildcard only where a ContextField declares it as its ``wildcard``.
 UNKNOWN = "<NA>"
@@ -78,7 +77,6 @@ class DataType(StrEnum):
     def python_type(self) -> type:
         from mountainash_rules.core.type_families import type_family
         return type_family(self).python_type
-
 
 
 # Conventional temporal markers: the proleptic floor, where no business data lives.

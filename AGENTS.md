@@ -49,6 +49,14 @@ not to a local `docs/superpowers/` directory.** (The superpowers skills default 
 
 ## Architecture
 
+### Orthogonal type, strategy and region ownership
+
+`core/type_families.py` is the private owner of Rules type-dependent behavior: seven shared stateless families, selected by one `DataType` mapping. `ContextField` and `Aggregate` retain declaration-specific configuration; callers pass the declaration to the family rather than configuring a family per field.
+
+Families own declaration checks, descriptors, metadata codecs, role-specific rule/list/context binding and admission, context representability, signature conversion and ordered-value arithmetic. These roles deliberately differ: signature conversion is not engine binding, and DATETIME context truncation is not construction flooring. `core/numeric.py` retains shared physical-source and expression mechanics.
+
+Strategies still own matching; `decision_table/fields.py` owns region interpretation, geometry, contributor coverage and bounded successor/predecessor. It delegates value arithmetic to the type family. Validation layers retain structural schema extraction, ordering and finding aggregation; matching does not invoke validation. No family accepts a match strategy or selects a region class.
+
 ### Ternary match logic
 
 Per-dimension match values use signed-integer ternary encoding: **1 = match, 0 = unknown or don't-care, −1 = non-match**. Defined in `core/constants.py`, produced by `core/compiler.py`, consumed by `engines/filter/engine.py` and `core/result.py`. A rule survives when its minimum ternary value is ≥ 0; specificity = count of 1s.
@@ -128,11 +136,12 @@ src/mountainash_rules/
 ├── core/                        # backend-agnostic building blocks (never imports from engines/)
 │   ├── constants.py             # MatchStrategy, HitPolicy, DataType, BooleanCoercion, conventional markers
 │   ├── dimension.py             # ContextField, Dimension, DimensionsMetadata
+│   ├── type_families.py         # seven stateless type owners; declaration/configuration passed per call
 │   ├── aggregate.py             # Aggregate, AggregateOp (SUM/MIN/MAX output folds)
 │   ├── metadata_tables.py       # five flat metadata relations and canonical markers
 │   ├── compiler.py              # DimensionCompiler (ternary expressions, filter engine)
 │   ├── context.py               # context value extraction and binding expressions
-│   ├── numeric.py               # decimal admission and conversion
+│   ├── numeric.py               # shared physical-source, decimal, marker and set-canonicalization leaves
 │   ├── set_wildcard.py          # set-dimension marker predicates
 │   ├── result.py                # RuleResult (+ select()), ExplainResult
 │   ├── hit_policy.py            # SelectionInfo, ordering, assertions, cardinality
