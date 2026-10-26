@@ -290,6 +290,6 @@ Read [What changes where](chapters/11-extending-and-maintaining/index.md#what-ch
 
 ### Which Mountainash workarounds remain?
 
-#366 (integer division on DuckDB), #367 (multi-column explode) and #368 (null ordering in windows). `duckdb` is pinned `<2.0` for #363.
+#366 (integer division on DuckDB) and #376 (null ordering in windows). `duckdb` is pinned `<2.0` for #363.
 
 Read [Known upstream workarounds](chapters/11-extending-and-maintaining/index.md#known-upstream-workarounds).

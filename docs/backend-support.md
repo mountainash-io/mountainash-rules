@@ -51,10 +51,18 @@ Construction and application log the backend executions they issue at stage boun
 ## Mountainash revision
 
 Mountainash is not yet published to PyPI and is not pinned in `pyproject.toml`; test environments
-install it by path (`hatch.toml`). Use a Mountainash revision containing both the shared-schema
-change (PR 413, `b85df022`) and the resolved-container execution follow-on (PR 414, `ae9d408b`).
+install it by path (`hatch.toml`). Use delivered merge `cc9942c223b0d1f7521f987676623d4ba69ea7c6`
+or a descendant containing the shared-schema and resolved-container changes (PRs #413 and #414),
+zipped multi-column explode (PR #419, backlog #377), and null/empty-list explode semantics
+(PR #420, backlog #378).
 Set payloads cast list items with a resolved `ListDtype` (`cast_items(dtype=...)`); the retired
 `item_type=` argument is not accepted.
+
+The contributor bit lookup explodes index and value lists together, pairing each index with its
+exact integer bit value on both supported backends. A null list produces one null row; an empty
+list produces no rows. Set construction handles declared wildcards separately and filters null
+elements after exploding, preserving empty membership as no coverage and empty exclusion as
+excluding nothing.
 
 ## DuckDB pin
 
@@ -68,8 +76,7 @@ Mountainash behaviours the package still works around, each with a comment at th
 | Item | Behaviour | Where it is handled |
 |---|---|---|
 | Mountainash backlog #366 | Integer `//` and `%` are inexact on Ibis-DuckDB for very large operands | `decision_table/masks.py`: contributor ordinals stay far below 2^53, where the arithmetic is exact |
-| Mountainash backlog #367 | A two-column `explode` zips on Polars but cross-joins on Ibis | `decision_table/masks.py`: one list column is exploded and the bit index is recovered as the value's rank |
-| Mountainash backlog #368 | Null ordering in window and sort keys differs by backend | `decision_table/stages.py`: each key is preceded by a presence flag that sorts nulls first on every backend |
+| Mountainash backlog #376 | Null ordering in window and sort keys differs by backend | `decision_table/stages.py`: each key is preceded by a presence flag that sorts nulls first on every backend |
 
 ## Testing
 
