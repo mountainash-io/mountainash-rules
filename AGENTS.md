@@ -102,7 +102,7 @@ Context validation (`context_validation.py`) is a caller-run capability, separat
 
 Context identity is a protocol: a `request_id` plus attributes (or columns) named after the context fields. Python objects become a small in-process relation (`contexts_to_relation` keeps an unset field distinct from an explicit `None` through `model_fields_set`).
 
-Mountainash workarounds still in code, each marked at its call site: #366 (integer `//`/`%` on DuckDB, safe because ordinals stay far below 2^53; `masks.py`), #367 (multi-column `explode`; `masks.py`), #368 (null ordering in windows; `stages.py`). Remove them when the upstream item closes.
+Mountainash workarounds still in code, each marked at its call site: #366 (integer `//`/`%` on DuckDB, safe because ordinals stay far below 2^53; `masks.py`) and #376 (null ordering in windows; `stages.py`). Remove them when the upstream item closes.
 
 ### Backend purity (ENFORCED)
 

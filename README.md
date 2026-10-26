@@ -25,7 +25,7 @@ cd mountainash-rules
 hatch env create
 ```
 
-The package is pure Python. Resolve the configured `mountainash` dependency at delivered merge `ae9d408b72e59c322bae04a4925100a91e01e7fb` or a descendant containing PRs #413 and #414, together with `mountainash-files`, `mountainash-transport`, `mountainash-data` and `mountainash-settings` (see `hatch.toml`). This requirement names a delivered dependency revision, not an invented release version or checkout layout. Keep resolved dependency revisions and installed packages aligned when comparing local results with CI; an existing Hatch environment can contain older non-editable dependency copies.
+The package is pure Python. Resolve the configured `mountainash` dependency at delivered merge `cc9942c223b0d1f7521f987676623d4ba69ea7c6` or a descendant containing PRs #413, #414, #419 and #420, together with `mountainash-files`, `mountainash-transport`, `mountainash-data` and `mountainash-settings` (see `hatch.toml`). This requirement names a delivered dependency revision, not an invented release version or checkout layout. Keep resolved dependency revisions and installed packages aligned when comparing local results with CI; an existing Hatch environment can contain older non-editable dependency copies.
 
 ## Quick Start
 

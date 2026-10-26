@@ -538,7 +538,7 @@ def stage_e_entry_sources(
 def entry_ids(cells: Relation, keys: t.Sequence[str]) -> Relation:
     """``cells`` with ``entry_id``: the 0-based position of each cell sorted by ``keys``.
 
-    Null keys place differently by backend (mountainash backlog #368), so each key is
+    Null keys place differently by backend (mountainash backlog #376), so each key is
     preceded by a presence flag that sorts nulls first on every backend.
     """
     order: list[str] = []

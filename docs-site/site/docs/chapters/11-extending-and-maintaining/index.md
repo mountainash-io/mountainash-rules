@@ -65,7 +65,7 @@ The finite-completion oracle (`tests/decision_table/oracles/`) is the reference 
 
 ## Known upstream workarounds
 
-Three Mountainash behaviours are worked around in code, each commented at its call site: #366 (integer division on DuckDB; `masks.py`), #367 (multi-column `explode`; `masks.py`) and #368 (null ordering in windows; `stages.py`). `duckdb` is pinned `<2.0` (backlog #363). Remove each workaround when the upstream item closes.
+Two Mountainash behaviours are worked around in code, each commented at its call site: #366 (integer division on DuckDB; `masks.py`) and #376 (null ordering in windows; `stages.py`). `duckdb` is pinned `<2.0` (backlog #363). Remove each workaround when the upstream item closes.
 
 ## Review checklist
 

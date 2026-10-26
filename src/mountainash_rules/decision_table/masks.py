@@ -43,8 +43,8 @@ def bit_lookup(like: Relation | None = None) -> Relation:
     """The 63-row ``(bit_index, bit_value)`` lookup; ``bit_value`` has exactly bit ``bit_index`` set.
 
     With ``like``, the lookup is built on that relation's own backend: the exact integer
-    literals are one list exploded from one row of ``like`` (which must not be empty), and
-    ``bit_index`` is each literal's rank.  A relation built from host literals lives on
+    literals are two lists zipped by exploding one row of ``like`` (which must not be empty).
+    Each index stays paired with its exact bit value. A relation built from host literals lives on
     another backend, and a plan joining it cannot be snapshotted without executing it
     (Mountainash refuses: "use a phase-safe plan"), so construction passes the relation the
     lookup will be joined to.
@@ -52,14 +52,15 @@ def bit_lookup(like: Relation | None = None) -> Relation:
     values = [1 << index for index in range(BITS_PER_WORD)]
     if like is None:
         return relation([{BIT_INDEX: index, BIT_VALUE: value} for index, value in enumerate(values)])
-    # One list column is exploded because a two-column explode zips on Polars but cross-joins
-    # on Ibis (mountainash backlog #367); bit_index is recovered as the value's rank.
     return (
         like.limit(1)
-        .select(ma.lit(values).alias(BIT_VALUE))
-        .explode(BIT_VALUE)
         .select(
-            (ma.col(BIT_VALUE).row_number().over(order_by=BIT_VALUE) - 1).cast("int64").alias(BIT_INDEX),
+            ma.lit(list(range(BITS_PER_WORD))).alias(BIT_INDEX),
+            ma.lit(values).alias(BIT_VALUE),
+        )
+        .explode(BIT_INDEX, BIT_VALUE)
+        .select(
+            ma.col(BIT_INDEX).cast("int64").alias(BIT_INDEX),
             ma.col(BIT_VALUE).cast("int64").alias(BIT_VALUE),
         )
     )
