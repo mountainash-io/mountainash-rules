@@ -21,20 +21,18 @@ values beyond Python-level validity checks, so both use one code path.
 from __future__ import annotations
 
 import abc
-import datetime as dt
 import typing as t
 from dataclasses import dataclass
-from decimal import Decimal
 
 import mountainash.expressions as ma
 from mountainash.expressions import BaseExpressionAPI
 from mountainash.relations import Relation, concat
 
-from mountainash_rules.core.compiler import typed_marker_predicate
-from mountainash_rules.core.constants import DataType, MatchStrategy
+from mountainash_rules.core.constants import MatchStrategy
 from mountainash_rules.core.dimension import ContextField, Dimension
-from mountainash_rules.core.numeric import exact_literal
-from mountainash_rules.core.set_wildcard import canonicalize_set_expr, set_state
+from mountainash_rules.core.numeric import exact_literal, typed_marker_predicate
+from mountainash_rules.core.set_wildcard import set_state
+from mountainash_rules.core.type_families import type_family
 from mountainash_rules.decision_table.errors import DecisionTableError
 
 SCOPE = "scope"
@@ -48,7 +46,6 @@ CUT = "__cut"
 VALUE = "value"
 WILDCARD = "wildcard"
 
-ORDERED_TYPES = frozenset({DataType.INT, DataType.DECIMAL, DataType.DATE, DataType.DATETIME})
 PATTERN_STRATEGIES = frozenset(
     {
         MatchStrategy.REGEX,
@@ -64,9 +61,6 @@ TRUTHY_STRATEGIES = PATTERN_STRATEGIES | {
     MatchStrategy.OUTCOME,
 }
 NEGATION_STRATEGIES = frozenset({MatchStrategy.NOT_EQUAL, MatchStrategy.SET_EXCLUSION})
-
-INT_MINIMUM = -(2**31)
-INT_MAXIMUM = 2**31 - 1
 
 
 # ---------------------------------------------------------------------------
@@ -450,7 +444,7 @@ class OrderedField(Field):
     """INT, DECIMAL, DATE and DATETIME: closed intervals cut at concrete type bounds."""
 
     def __init__(self, context_field: ContextField):
-        if context_field.data_type not in ORDERED_TYPES:
+        if not type_family(context_field.data_type).is_ordered:
             raise DecisionTableError(
                 f"OrderedField requires INT, DECIMAL, DATE or DATETIME, not {context_field.data_type.value}"
             )
@@ -460,39 +454,11 @@ class OrderedField(Field):
 
     @property
     def minimum(self) -> t.Any:
-        return self._bounds()[0]
+        return type_family(self.context_field.data_type).bounds(self.context_field)[0]
 
     @property
     def maximum(self) -> t.Any:
-        return self._bounds()[1]
-
-    def _bounds(self) -> tuple[t.Any, t.Any]:
-        cf = self.context_field
-        if cf.data_type is DataType.INT:
-            return INT_MINIMUM, INT_MAXIMUM
-        if cf.data_type is DataType.DECIMAL:
-            top = Decimal(10**cf.precision - 1).scaleb(-cf.scale)
-            return -top, top
-        if cf.data_type is DataType.DATE:
-            return dt.date.min, dt.date.max
-        tzinfo = dt.timezone.utc if cf.timezone == "utc" else None
-        microsecond = {"s": 0, "ms": 999_000, "us": 999_999}[cf.datetime_unit]
-        return (
-            dt.datetime(1, 1, 1, tzinfo=tzinfo),
-            dt.datetime(9999, 12, 31, 23, 59, 59, microsecond, tzinfo=tzinfo),
-        )
-
-    def _step(self) -> t.Any:
-        cf = self.context_field
-        if cf.data_type is DataType.INT:
-            return 1
-        if cf.data_type is DataType.DECIMAL:
-            return Decimal(1).scaleb(-cf.scale)
-        if cf.data_type is DataType.DATE:
-            return dt.timedelta(days=1)
-        return {"s": dt.timedelta(seconds=1), "ms": dt.timedelta(milliseconds=1), "us": dt.timedelta(microseconds=1)}[
-            cf.datetime_unit
-        ]
+        return type_family(self.context_field.data_type).bounds(self.context_field)[1]
 
     def successor(self, value: t.Any) -> t.Any:
         """Next representable value, or ``None`` at the maximum (nothing beyond it is computed)."""
@@ -504,68 +470,27 @@ class OrderedField(Field):
         """Previous representable value, or ``None`` at the minimum."""
         if value <= self.minimum:
             return None
-        return value - self._step()
+        return value - type_family(self.context_field.data_type).step(self.context_field)
 
     def reduce(self, value: t.Any) -> t.Any:
         """Reduce a Python context value to the declared resolution."""
-        cf = self.context_field
-        if cf.data_type is DataType.DATETIME:
-            if cf.datetime_unit == "s":
-                return value.replace(microsecond=0)
-            if cf.datetime_unit == "ms":
-                return value.replace(microsecond=value.microsecond // 1000 * 1000)
-        return value
+        return type_family(self.context_field.data_type).reduce(self.context_field, value)
 
     # -- expressions -----------------------------------------------------
 
     def literal(self, value: t.Any) -> BaseExpressionAPI:
-        if is_expression(value):
-            return value
-        cf = self.context_field
-        if cf.data_type is DataType.INT:
-            return ma.lit(value).cast(int)
-        if cf.data_type is DataType.DECIMAL:
-            return ma.lit(value, dtype=cf.decimal_dtype)
-        return ma.lit(value)
+        return type_family(self.context_field.data_type).literal(self.context_field, value)
 
     def quantise(self, value: BaseExpressionAPI) -> BaseExpressionAPI:
         """Canonical authored value: DECIMAL at declared scale, DATETIME at its unit."""
-        cf = self.context_field
-        if cf.data_type is DataType.DECIMAL:
-            return value.cast(cf.decimal_dtype, rounding=cf.rounding)
-        if cf.data_type is DataType.DATETIME:
-            return self._floor(value)
-        if cf.data_type is DataType.INT:
-            return value.cast(int)
-        return value
+        return type_family(self.context_field.data_type).quantise(self.context_field, value)
 
     def quantise_list(self, payload: BaseExpressionAPI) -> BaseExpressionAPI:
-        cf = self.context_field
-        if cf.data_type is DataType.DECIMAL:
-            element = ma.element().cast(cf.decimal_dtype, rounding=cf.rounding)
-        elif cf.data_type is DataType.DATETIME:
-            element = self._floor(ma.element())
-        else:
-            return payload
-        return canonicalize_set_expr(payload.list.agg(element))
-
-    def _floor(self, value: BaseExpressionAPI) -> BaseExpressionAPI:
-        """Reduce a DATETIME expression to the declared unit, keeping UTC fields tz-aware."""
-        floored = value.dt.floor(f"1{self.context_field.datetime_unit}")
-        return floored.dt.convert_time_zone("UTC") if self.context_field.timezone == "utc" else floored
+        return type_family(self.context_field.data_type).quantise_list(self.context_field, payload)
 
     def shift(self, value: BaseExpressionAPI, direction: int) -> BaseExpressionAPI:
         """Successor (``+1``) or predecessor (``-1``) of an expression, one declared step."""
-        cf = self.context_field
-        if cf.data_type is DataType.INT:
-            return value + direction
-        if cf.data_type is DataType.DECIMAL:
-            step = ma.lit(self._step() * direction, dtype=cf.decimal_dtype)
-            return (value + step).cast(cf.decimal_dtype, rounding=cf.rounding)
-        if cf.data_type is DataType.DATE:
-            return value.dt.add_days(direction)
-        unit = {"s": "add_seconds", "ms": "add_milliseconds", "us": "add_microseconds"}[cf.datetime_unit]
-        return getattr(value.dt, unit)(direction)
+        return type_family(self.context_field.data_type).shift(self.context_field, value, direction)
 
     # -- interpretation --------------------------------------------------
 
@@ -748,7 +673,7 @@ class UnorderedField(Field):
     """STR and BOOL: the values a scope's rules name plus one wildcard piece."""
 
     def __init__(self, context_field: ContextField):
-        if context_field.data_type not in {DataType.STR, DataType.BOOL}:
+        if not type_family(context_field.data_type).is_unordered:
             raise DecisionTableError(
                 f"UnorderedField requires STR or BOOL, not {context_field.data_type.value}"
             )
@@ -940,6 +865,6 @@ def family_for(dimension: Dimension) -> Field:
     """The field family a dimension's strategy is interpreted by."""
     if dimension.match_strategy in TRUTHY_STRATEGIES:
         return TruthyField(dimension.field)
-    if dimension.field.data_type in ORDERED_TYPES:
+    if type_family(dimension.field.data_type).is_ordered:
         return OrderedField(dimension.field)
     return UnorderedField(dimension.field)

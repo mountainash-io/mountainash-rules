@@ -58,9 +58,9 @@ from mountainash.core.dtypes import ListDtype, TimestampDtype
 from mountainash.relations import Relation
 from pydantic import AwareDatetime, BaseModel, NaiveDatetime, TypeAdapter
 
-from mountainash_rules.core.constants import DataType
 from mountainash_rules.core.dimension import ContextField, DimensionsMetadata
 from mountainash_rules.core.numeric import exact_literal
+from mountainash_rules.core.type_families import type_family
 from mountainash_rules.decision_table.apply import REQUEST_ID, contexts_to_relation
 
 __all__: t.Sequence[str] = ("check_context_schema", "validate_contexts")
@@ -78,15 +78,6 @@ _INT_RANGES = {
 _FLOATS = frozenset({MountainashDtype.FP32, MountainashDtype.FP64})
 _TIMESTAMP_UNITS = {0: "s", 3: "ms", 6: "us"}
 _UTC_NAMES = frozenset({"UTC", "Z", "+00:00", "ETC/UTC"})
-_ACCEPTED_FAMILIES: dict[DataType, frozenset[str]] = {
-    DataType.STR: frozenset({"str"}),
-    DataType.INT: frozenset({"int"}),
-    DataType.FLOAT: frozenset({"float", "int"}),
-    DataType.DECIMAL: frozenset({"decimal", "int"}),
-    DataType.BOOL: frozenset({"bool"}),
-    DataType.DATE: frozenset({"date"}),
-    DataType.DATETIME: frozenset({"datetime"}),
-}
 
 
 # --------------------------------------------------------------------------------------
@@ -230,68 +221,28 @@ def _value_problem(value: t.Any, field: ContextField, shape: _Shape) -> str | No
     """Why ``value`` cannot be carried by the field in this schema, or None when it can."""
     if value is None:
         return "null is not allowed by the schema" if shape.nullable is False else None
-    data_type = field.data_type
-    typed = {
-        DataType.STR: isinstance(value, str),
-        DataType.INT: isinstance(value, int) and not isinstance(value, bool),
-        DataType.FLOAT: isinstance(value, (int, float)) and not isinstance(value, bool),
-        DataType.DECIMAL: isinstance(value, (Decimal, int)) and not isinstance(value, bool),
-        DataType.BOOL: isinstance(value, bool),
-        DataType.DATE: isinstance(value, dt.date) and not isinstance(value, dt.datetime),
-        DataType.DATETIME: isinstance(value, dt.datetime),
-    }[data_type]
-    if not typed:
-        return f"{value!r} is not a {data_type.value} value"
+    family = type_family(field.data_type)
+    if not family.accepts_context_value(value):
+        return f"{value!r} is not a {field.data_type.value} value"
     if shape.adapter is not None:
         try:
             shape.adapter.validate_python(value, strict=True)
         except ValueError:
             return f"{value!r} is rejected by the schema annotation"
-    if data_type is DataType.INT and shape.int_range is not None:
-        low, high = shape.int_range
-        if not low <= value <= high:
-            return f"{value!r} is outside the schema's integer range"
-    if data_type is DataType.DECIMAL:
-        number = Decimal(value)
-        exponent = number.normalize().as_tuple().exponent
-        scale = min(s for s in (field.scale, shape.scale) if s is not None)
-        if isinstance(exponent, int) and exponent < -scale:
-            return f"{value!r} has more than {scale} decimal places"
-        for owner, precision, owner_scale in (
-            ("declared", field.precision, field.scale),
-            ("schema's", shape.precision, shape.scale),
-        ):
-            if precision is not None and owner_scale is not None and abs(number) >= Decimal(10) ** (precision - owner_scale):
-                return f"{value!r} exceeds the {owner} precision"
-    if data_type is DataType.DATETIME:
-        step = {"s": 1_000_000, "ms": 1_000}.get(field.datetime_unit, 1)
-        if value.microsecond % step:
-            return f"{value!r} is finer than unit {field.datetime_unit!r}"
-    return None
+    return family.representability_problem(value, field, shape)
 
 
 def _check_field(field: ContextField, shape: _Shape, errors: list[str], notices: list[str]) -> None:
     name = field.name
-    if shape.family not in _ACCEPTED_FAMILIES[field.data_type] | {"null", "any"}:
+    family = type_family(field.data_type)
+    if shape.family not in family.accepted_context_families | {"null", "any"}:
         errors.append(
             f"field {name!r}: schema type {shape.detail} does not match declared {field.data_type.value}"
         )
         return
-    if field.data_type is DataType.DECIMAL and shape.scale is not None and shape.scale > field.scale:
-        notices.append(
-            f"field {name!r}: schema scale {shape.scale} is finer than declared scale {field.scale}; "
-            f"the engine reduces it with {field.rounding}"
-        )
-    if field.data_type is DataType.DATETIME and shape.family == "datetime":
-        if shape.unit is not None and shape.unit != field.datetime_unit:
-            errors.append(
-                f"field {name!r}: schema unit {shape.unit!r} does not match declared {field.datetime_unit!r}"
-            )
-        compatible = {field.timezone, "aware" if field.timezone == "utc" else None}
-        if shape.timezone is not None and shape.timezone not in compatible:
-            errors.append(
-                f"field {name!r}: schema timezone {shape.timezone!r} does not match declared {field.timezone!r}"
-            )
+    schema_errors, schema_notices = family.context_schema_issues(field, shape)
+    errors.extend(schema_errors)
+    notices.extend(schema_notices)
     if field.wildcard_declared:
         problem = _value_problem(field.wildcard, field, shape)
         if problem:
@@ -368,7 +319,7 @@ def _value_checks(field: ContextField, shape: _Shape) -> dict[str, t.Any]:
     """``{reason: row predicate}`` for the checks that apply to one supplied column."""
     column = ma.col(field.name)
     checks: dict[str, t.Any] = {}
-    typed = shape.family in _ACCEPTED_FAMILIES[field.data_type]
+    typed = shape.family in type_family(field.data_type).accepted_context_families
     marker = field.wildcard if field.wildcard_declared and field.wildcard is not None else None
     if shape.is_list:
         ordered = column.list.sort()

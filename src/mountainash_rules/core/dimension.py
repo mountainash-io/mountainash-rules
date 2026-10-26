@@ -2,16 +2,14 @@
 
 from __future__ import annotations
 
-import datetime as dt
 import typing as t
-from decimal import Decimal
 
 from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, field_validator, model_validator
 from mountainash import DecimalDtype
-from mountainash.core.dtypes import TimestampDtype
 
 from mountainash_rules.core.aggregate import Aggregate
-from mountainash_rules.core.constants import DataType, MatchStrategy, PYTHON_TO_DATATYPE
+from mountainash_rules.core.constants import DataType, MatchStrategy
+from mountainash_rules.core.type_families import python_data_type, type_family
 
 
 class ContextField(BaseModel):
@@ -33,7 +31,7 @@ class ContextField(BaseModel):
     @field_validator("data_type", mode="before")
     @classmethod
     def _coerce_data_type(cls, value):
-        return PYTHON_TO_DATATYPE[value] if isinstance(value, type) and value in PYTHON_TO_DATATYPE else value
+        return (python_data_type(value) or value) if isinstance(value, type) else value
 
     @model_validator(mode="after")
     def _validate_field(self):
@@ -41,25 +39,14 @@ class ContextField(BaseModel):
             object.__setattr__(self, "wildcard_declared", True)
         if not self.name:
             raise ValueError("Context field name must be nonempty")
-        if self.data_type is DataType.DECIMAL:
-            if self.precision is None or self.scale is None or not 0 <= self.scale <= self.precision <= 16:
-                raise ValueError("DECIMAL fields require precision 1..16 and scale within precision")
-            if self.rounding not in {"half_to_even", "half_away_from_zero"}:
-                raise ValueError("DECIMAL fields require supported rounding")
-        elif any(value is not None for value in (self.precision, self.scale, self.rounding)):
-            raise ValueError("precision, scale, and rounding require DECIMAL")
-        if self.data_type is DataType.DATETIME:
-            if self.datetime_unit is None or self.timezone is None:
-                raise ValueError("DATETIME fields require datetime_unit and timezone")
-        elif self.datetime_unit is not None or self.timezone is not None:
-            raise ValueError("datetime_unit/timezone require DATETIME")
+        type_family(self.data_type).validate_field(self)
         if any(outcome not in (-1, 0, 1) for outcome in self.truthy.values()):
             raise ValueError("Truthy outcomes must be -1, 0, or 1")
         return self
 
     @property
     def decimal_dtype(self) -> DecimalDtype | None:
-        return DecimalDtype(self.precision, self.scale) if self.precision is not None else None
+        return type_family(self.data_type).decimal_dtype(self)
 
     @property
     def value_dtype(self) -> t.Any:
@@ -69,23 +56,11 @@ class ContextField(BaseModel):
         rule values instead of becoming a naive timestamp. Microsecond storage
         matches Python ``datetime``; the declared unit is applied by truncation.
         """
-        if self.data_type is DataType.DATETIME:
-            utc = self.timezone == "utc"
-            return TimestampDtype(precision=6, timezone_aware=utc, timezone="UTC" if utc else None)
-        return self.data_type.python_type
+        return type_family(self.data_type).value_dtype(self)
 
     def successor(self, value):
         """Return the next representable ordered value at this field's resolution."""
-        if self.data_type is DataType.DATE and isinstance(value, dt.date) and not isinstance(value, dt.datetime):
-            return value + dt.timedelta(days=1)
-        if self.data_type is DataType.DATETIME and isinstance(value, dt.datetime):
-            unit = {"s": dt.timedelta(seconds=1), "ms": dt.timedelta(milliseconds=1), "us": dt.timedelta(microseconds=1)}[self.datetime_unit]
-            return value + unit
-        if self.data_type is DataType.DECIMAL and isinstance(value, Decimal):
-            return value + Decimal(1).scaleb(-self.scale)
-        if self.data_type is DataType.INT and type(value) is int:
-            return value + 1
-        raise ValueError(f"No ordered successor for {value!r} in {self.data_type.value}")
+        return type_family(self.data_type).successor(self, value)
 
 
 class Dimension(BaseModel):
@@ -176,12 +151,13 @@ class DimensionsMetadata(BaseModel):
             except KeyError as exc:
                 raise ValueError(f"Undeclared context field {dim.context_field!r}") from exc
             object.__setattr__(dim, "_field", field)
+            family = type_family(field.data_type)
             if dim.match_strategy in (MatchStrategy.MIN, MatchStrategy.MAX, MatchStrategy.RANGE):
-                if field.data_type is DataType.FLOAT:
-                    raise ValueError("FLOAT ordered dimensions require DECIMAL")
-                if not (field.data_type.is_numeric or field.data_type.is_temporal):
+                if family.ordered_refusal is not None:
+                    raise ValueError(family.ordered_refusal)
+                if not (family.is_numeric or family.is_temporal):
                     raise ValueError(f"{dim.match_strategy.value} requires a numeric or temporal field")
-            if dim.match_strategy in (MatchStrategy.REGEX, MatchStrategy.CONTEXT_REGEX, MatchStrategy.PREFIX, MatchStrategy.SUFFIX, MatchStrategy.CONTAINS) and field.data_type is not DataType.STR:
+            if dim.match_strategy in (MatchStrategy.REGEX, MatchStrategy.CONTEXT_REGEX, MatchStrategy.PREFIX, MatchStrategy.SUFFIX, MatchStrategy.CONTAINS) and not family.supports_pattern:
                 raise ValueError(f"{dim.match_strategy.value} requires STR")
         if len({dim.dimension_name for dim in self.dimensions}) != len(self.dimensions):
             raise ValueError("Duplicate dimension names")

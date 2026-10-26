@@ -8,6 +8,7 @@ from pydantic import BaseModel, ConfigDict, model_validator
 from mountainash import DecimalDtype
 
 from mountainash_rules.core.constants import DataType
+from mountainash_rules.core.type_families import type_family
 
 
 class AggregateOp(StrEnum):
@@ -35,20 +36,9 @@ class Aggregate(BaseModel):
     def _validate_declaration(self):
         if not self.output_name or not self.contribution_column:
             raise ValueError("Output names and contribution columns must be nonempty")
-        if self.data_type is DataType.DECIMAL:
-            if self.precision is None or self.scale is None or not 0 <= self.scale <= self.precision <= 16:
-                raise ValueError("DECIMAL outputs require precision and scale")
-            if self.rounding not in {"half_to_even", "half_away_from_zero"}:
-                raise ValueError("DECIMAL outputs require supported rounding")
-        elif any(value is not None for value in (self.precision, self.scale, self.rounding)):
-            raise ValueError("Decimal declarations require DECIMAL outputs")
-        if self.data_type is DataType.DATETIME:
-            if self.timezone not in {"naive", "utc"}:
-                raise ValueError("DATETIME outputs require timezone")
-        elif self.timezone is not None:
-            raise ValueError("timezone requires DATETIME outputs")
+        type_family(self.data_type).validate_output(self)
         return self
 
     @property
     def decimal_dtype(self) -> DecimalDtype | None:
-        return DecimalDtype(self.precision, self.scale) if self.precision is not None else None
+        return type_family(self.data_type).decimal_dtype(self)

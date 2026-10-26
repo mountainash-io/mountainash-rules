@@ -1,4 +1,4 @@
-"""Concrete decimal admission and one native conversion, shared by both engines."""
+"""Native numeric, marker and set mechanics shared by typed-value consumers."""
 
 from __future__ import annotations
 
@@ -9,6 +9,7 @@ from decimal import Decimal, localcontext
 
 import mountainash.expressions as ma
 from mountainash import DecimalDtype, MountainashDtype, ValueKind, value_kind
+from mountainash.core.dtypes import dtype_family
 from mountainash.expressions import BaseExpressionAPI
 
 
@@ -24,6 +25,7 @@ _INTEGER_TYPES = frozenset(
         MountainashDtype.U64,
     }
 )
+_FLOAT_TYPES = frozenset({MountainashDtype.FP32, MountainashDtype.FP64})
 _DECIMAL_TOKEN = r"^[+-]?([0-9]+(\.[0-9]*)?|\.[0-9]+)$"
 
 
@@ -103,6 +105,53 @@ def exact_literal(value: t.Any) -> BaseExpressionAPI:
     if dtype is MountainashDtype.TIMESTAMP and value.tzinfo is None:
         return ma.lit(value, dtype=dtype)
     return ma.lit(value)
+
+
+def same_scalar_type(left: t.Any, right: t.Any) -> bool:
+    """Compare original scalar domains, allowing widths but not coercive equality."""
+    return (
+        left == right
+        or (left in _INTEGER_TYPES and right in _INTEGER_TYPES)
+        or (left in _FLOAT_TYPES and right in _FLOAT_TYPES)
+        or (isinstance(left, DecimalDtype) and isinstance(right, DecimalDtype))
+        # A column reports its timestamp parameters; a Python literal reports only the family.
+        or (dtype_family(left) is MountainashDtype.TIMESTAMP and dtype_family(right) is MountainashDtype.TIMESTAMP)
+    )
+
+
+def typed_marker_predicate(
+    expr: BaseExpressionAPI,
+    source_dtype: t.Any,
+    markers: list[t.Any],
+) -> BaseExpressionAPI:
+    """Recognize declared markers in the original native scalar domain."""
+    result = ma.lit(False)
+    for marker in markers:
+        if marker is None:
+            result = result | expr.is_null()
+        else:
+            marker_dtype = literal_dtype(marker)
+            if not same_scalar_type(source_dtype, marker_dtype):
+                continue
+            if isinstance(source_dtype, DecimalDtype) and isinstance(marker_dtype, DecimalDtype):
+                if (
+                    marker_dtype.scale > source_dtype.scale
+                    or marker_dtype.precision - marker_dtype.scale
+                    > source_dtype.precision - source_dtype.scale
+                ):
+                    # No original value in this column can denote the marker.
+                    # Binding it in the target interpretation would round it.
+                    continue
+                literal = ma.lit(marker, dtype=source_dtype)
+            else:
+                literal = exact_literal(marker)
+            result = result | expr.eq(literal).fill_null(False)
+    return result
+
+
+def canonicalize_set_expr(col: BaseExpressionAPI) -> BaseExpressionAPI:
+    """Sort and deduplicate concrete sets without synthesizing a wildcard."""
+    return col.list.unique().list.sort()
 
 
 

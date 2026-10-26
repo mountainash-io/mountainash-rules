@@ -2,20 +2,16 @@
 
 from __future__ import annotations
 
-import datetime as dt
 from dataclasses import dataclass
-from decimal import Decimal
 from typing import Any, Literal
 
 import mountainash.expressions as ma
-from mountainash import DecimalDtype, MountainashDtype
-from mountainash.core.dtypes import ListDtype, TimestampDtype, dtype_family
+from mountainash.core.dtypes import ListDtype, dtype_family
 
-from mountainash_rules.core.compiler import _SCALAR_DTYPES, typed_marker_predicate
 from mountainash_rules.core.constants import DataType, MatchStrategy
 from mountainash_rules.core.dimension import ContextField, Dimension, DimensionsMetadata
-from mountainash_rules.core.numeric import exact_literal
-from mountainash_rules.core.set_wildcard import canonicalize_set_expr
+from mountainash_rules.core.numeric import exact_literal, typed_marker_predicate
+from mountainash_rules.core.type_families import type_family
 from mountainash_rules.decision_table.fields import BOUND_SCOPE, BOUND_UUID, SOURCE_UUID, family_for
 from mountainash_rules.decision_table.strategies import strategy_for, unsatisfiable_rules
 
@@ -48,7 +44,6 @@ class ValidatedRules:
     warnings: tuple[Finding, ...]
 
 
-_ORDERED = {DataType.INT, DataType.DECIMAL, DataType.DATE, DataType.DATETIME}
 _SET = {MatchStrategy.SET_MEMBERSHIP, MatchStrategy.SET_EXCLUSION}
 _PATTERNS = {MatchStrategy.REGEX, MatchStrategy.PREFIX, MatchStrategy.SUFFIX, MatchStrategy.CONTAINS, MatchStrategy.CONTEXT_REGEX}
 
@@ -67,37 +62,14 @@ def _declared_scopes(metadata: DimensionsMetadata) -> set[str]:
 
 
 def _strategy_allowed(dim: Dimension) -> bool:
-    strategy, data_type = dim.match_strategy, dim.data_type
+    strategy, family = dim.match_strategy, type_family(dim.data_type)
     if strategy in (MatchStrategy.OUTCOME, MatchStrategy.PRESENCE, MatchStrategy.TRUTHY):
         return True
     if strategy in _PATTERNS:
-        return data_type is DataType.STR
+        return family.supports_pattern
     if strategy in _SET | {MatchStrategy.EXACT, MatchStrategy.NOT_EQUAL}:
-        return data_type is not DataType.FLOAT
-    return strategy in {MatchStrategy.RANGE, MatchStrategy.MIN, MatchStrategy.MAX} and data_type in _ORDERED
-
-
-def _timezone_matches(dtype: Any, timezone: str | None) -> bool:
-    """A timestamp descriptor whose awareness is known must agree with the declared interpretation."""
-    aware = dtype.timezone_aware
-    return not isinstance(aware, bool) or aware == (timezone == "utc")
-
-
-def _scalar_dtype_compatible(dtype: Any, data_type: DataType, timezone: str | None) -> bool:
-    """Whether a scalar descriptor can carry ``data_type`` (and, for DATETIME, its interpretation)."""
-    if data_type is DataType.DECIMAL:
-        return isinstance(dtype, DecimalDtype)
-    expected = {
-        DataType.STR: MountainashDtype.STRING,
-        DataType.BOOL: MountainashDtype.BOOL,
-        DataType.INT: {MountainashDtype.I8, MountainashDtype.I16, MountainashDtype.I32, MountainashDtype.I64, MountainashDtype.U8, MountainashDtype.U16, MountainashDtype.U32, MountainashDtype.U64},
-        DataType.DATE: MountainashDtype.DATE,
-        DataType.DATETIME: MountainashDtype.TIMESTAMP,
-    }.get(data_type)
-    family = dtype_family(dtype)
-    if not (family in expected if isinstance(expected, set) else family is expected):
-        return False
-    return data_type is not DataType.DATETIME or not isinstance(dtype, TimestampDtype) or _timezone_matches(dtype, timezone)
+        return family.supports_table_equality
+    return strategy in {MatchStrategy.RANGE, MatchStrategy.MIN, MatchStrategy.MAX} and family.is_ordered
 
 
 def _schema_type_compatible(dtype: Any, field: ContextField, is_set: bool) -> bool:
@@ -109,20 +81,14 @@ def _schema_type_compatible(dtype: Any, field: ContextField, is_set: bool) -> bo
         # List descriptors differ among supported backends but expose a stable
         # family name; values are still inspected below when rows exist.
         return "list" in str(family).lower() or "array" in str(family).lower()
-    return _scalar_dtype_compatible(dtype, field.data_type, field.timezone)
+    return type_family(field.data_type).admits_rule_scalar(dtype, timezone=field.timezone)
 
 
 def _list_element_schema_compatible(dtype: Any, field: ContextField) -> bool:
     """Check a concrete list element descriptor without materializing rows."""
     if not isinstance(dtype, ListDtype):
         return False
-    element = dtype.element
-    if field.data_type is DataType.DATETIME and isinstance(element, TimestampDtype):
-        return _timezone_matches(element, field.timezone)
-    return (
-        element in _SCALAR_DTYPES.get(field.data_type, frozenset())
-        or (field.data_type is DataType.DECIMAL and isinstance(element, DecimalDtype))
-    )
+    return type_family(field.data_type).admits_rule_element(dtype.element, field)
 
 
 def _dimension_findings(dim: Dimension, schema: dict[str, Any]) -> list[Finding]:
@@ -157,7 +123,7 @@ def _add_schema_findings(metadata: DimensionsMetadata, schema: dict[str, Any], e
     for output in metadata.outputs:
         if output.contribution_column not in schema:
             errors.append(Finding("missing_contribution_column", "error", f"Missing contribution column {output.contribution_column!r}", ()))
-        elif not _scalar_dtype_compatible(schema[output.contribution_column], output.data_type, output.timezone):
+        elif not type_family(output.data_type).admits_rule_scalar(schema[output.contribution_column], timezone=output.timezone):
             errors.append(Finding(
                 "incompatible_contribution_dtype",
                 "error",
@@ -172,28 +138,6 @@ def _add_schema_findings(metadata: DimensionsMetadata, schema: dict[str, Any], e
     for name, data_types in types.items():
         if len(data_types) > 1:
             errors.append(Finding("output_type_conflict", "error", f"Output {name!r} has incompatible types across scopes", tuple(sorted(scopes[name]))))
-
-
-def _signature_placeholder(
-    data_type: DataType,
-    decimal_dtype: DecimalDtype | None = None,
-    timezone: str | None = None,
-) -> Any:
-    values = {
-        DataType.STR: "",
-        DataType.BOOL: False,
-        DataType.INT: 0,
-        DataType.FLOAT: 0.0,
-        DataType.DATE: dt.date(1970, 1, 1),
-        DataType.DATETIME: dt.datetime(
-            1970,
-            1,
-            1,
-            tzinfo=dt.timezone.utc if timezone == "utc" else None,
-        ),
-        DataType.DECIMAL: Decimal(0),
-    }
-    return ma.lit(values[data_type], dtype=decimal_dtype) if decimal_dtype else ma.lit(values[data_type])
 
 
 def _signature_scalar_payload(
@@ -214,14 +158,10 @@ def _signature_scalar_payload(
     if dim.match_strategy is MatchStrategy.OUTCOME:
         # An OUTCOME rule column holds -1/0/1 whatever the field's data type.
         return wildcard, missing, ma.when(wildcard | missing).then(ma.lit(0)).otherwise(raw)
-    payload = (
-        raw.cast(dim.decimal_dtype, rounding=dim.rounding)
-        if dim.data_type is DataType.DECIMAL
-        else raw
-    )
+    family = type_family(dim.data_type)
     return wildcard, missing, ma.when(wildcard | missing).then(
-        _signature_placeholder(dim.data_type, dim.decimal_dtype, dim.field.timezone)
-    ).otherwise(payload)
+        family.signature_placeholder(dim.field)
+    ).otherwise(family.signature_scalar(raw, dim.field))
 
 
 def _signature_set_payload(dim: Dimension, field: str) -> tuple[Any, Any]:
@@ -237,18 +177,7 @@ def _signature_set_payload(dim: Dimension, field: str) -> tuple[Any, Any]:
     payload = ma.when(wildcard).then(
         raw.list.filter(ma.lit(False))
     ).otherwise(raw)
-    if dim.data_type is DataType.DECIMAL:
-        payload = payload.list.agg(
-            ma.element().cast(dim.decimal_dtype, rounding=dim.rounding)
-        )
-    return wildcard, canonicalize_set_expr(payload)
-
-
-def _signature_output_payload(output: Any) -> Any:
-    raw = ma.col(output.contribution_column)
-    if output.data_type is DataType.DECIMAL:
-        return raw.cast(output.decimal_dtype, rounding=output.rounding)
-    return raw
+    return wildcard, type_family(dim.data_type).signature_list(payload, dim.field)
 
 
 def _signature_columns_available(schema: dict[str, Any], metadata: DimensionsMetadata) -> bool:
@@ -261,10 +190,9 @@ def _signature_columns_available(schema: dict[str, Any], metadata: DimensionsMet
         output_types.setdefault(output.output_name, set()).add(output.data_type)
         if (
             output.contribution_column not in schema
-            or not _scalar_dtype_compatible(
+            or not type_family(output.data_type).admits_rule_scalar(
                 schema[output.contribution_column],
-                output.data_type,
-                output.timezone,
+                timezone=output.timezone,
             )
         ):
             return False
@@ -366,14 +294,8 @@ def _signatures(relation: Any, metadata: DimensionsMetadata, errors: list[Findin
         active = scope.eq(output.scope or "default").fill_null(False)
         columns.append(
             ma.when(active)
-            .then(_signature_output_payload(output))
-            .otherwise(
-                _signature_placeholder(
-                    output.data_type,
-                    output.decimal_dtype,
-                    output.timezone,
-                )
-            )
+            .then(type_family(output.data_type).signature_scalar(ma.col(output.contribution_column), output))
+            .otherwise(type_family(output.data_type).signature_placeholder(output))
             .alias(name)
         )
     signatures = relation.select(*columns)
