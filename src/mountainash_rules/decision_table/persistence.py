@@ -131,7 +131,7 @@ def load_table(path: str, *, connection: t.Any = None, storage_profile: t.Any = 
         {name: from_arrow(arrow[name]) for name in METADATA_FILES}
     )
     entries, entry_sources, pattern_conditions = (
-        from_arrow(arrow[name], connection=connection) for name in CONSTRUCTION_FILES
+        from_arrow(arrow[name], target=connection) for name in CONSTRUCTION_FILES
     )
     return DecisionTable(entries, source_metadata, entry_sources, pattern_conditions, build_id)
 
