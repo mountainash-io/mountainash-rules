@@ -120,9 +120,11 @@ def record_cross_joins(monkeypatch) -> list[Relation]:
 def assert_contexts_move_to_the_entries(backend_name, joined) -> None:
     (join,) = joined
     placement = join.explain()
-    assert "ibis_to_polars" not in placement, placement  # the entries are never pulled to the host
+    transfers = [line for line in placement.splitlines() if line.startswith("transfer ")]
+    # the entries are never pulled to the host
+    assert not any(line.split(": ", 1)[1].startswith("ibis") and "-> polars" in line for line in transfers), placement
     if backend_name == "ibis-duckdb":  # the check bites: the context batch is what is transferred
-        assert "polars_to_ibis" in placement, placement
+        assert any(line.split(": ", 1)[1].startswith("polars") and "-> ibis-duckdb" in line for line in transfers), placement
 
 
 def test_the_engine_join_runs_where_the_entries_live(backend_name, monkeypatch):
